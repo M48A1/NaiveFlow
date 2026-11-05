@@ -11,10 +11,10 @@ import Foundation
 /// about it.
 ///
 /// The classification follows the existing extension code, not a guess:
-/// - `TunnelStack+Lifecycle.handleSettingsChanged()` picks `TunnelSettings`
-///   fields up on the live stack (`blockUDP`, `quicPolicy`, `blockWebRTC`,
-///   `preventDNSLeak`, `hideVPNIcon`, tunnel routes) and only restarts the data
-///   plane for a proxy-mode change, so those are `live` / `stackRestart`.
+/// - `TunnelStack+Runtime.reloadSettings()` picks `TunnelSettings` fields up on
+///   the live stack (`blockUDP`, `quicPolicy`, `blockWebRTC`, `preventDNSLeak`,
+///   `hideVPNIcon`, tunnel routes) and only restarts the data plane for a
+///   proxy-mode change, so those are `live` / `stackRestart`.
 /// - `includeAllNetworks`, `excludeLocalNetworks`, APNs and cellular services are
 ///   written into the packet-tunnel preferences by `TunnelController` when it
 ///   connects, so changing them needs a reconnect from the host.

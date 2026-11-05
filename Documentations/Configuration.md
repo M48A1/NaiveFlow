@@ -376,7 +376,7 @@ the engine is running, and classifies each change by what has to happen:
 
 | Scope | Fields | What the app does |
 | --- | --- | --- |
-| `live` | `quic-policy`, `block-udp`, `block-webrtc`, `prevent-dns-leak`, `mitm`, `hide-vpn-icon`, `tun-included-routes`, `tun-excluded-routes`, `bypass-country`, `loglevel` | nothing: the running extension applies it (`handleSettingsChanged`, routing notification) |
+| `live` | `quic-policy`, `block-udp`, `block-webrtc`, `prevent-dns-leak`, `mitm`, `hide-vpn-icon`, `tun-included-routes`, `tun-excluded-routes`, `bypass-country`, `loglevel` | nothing: `ConfigurationCoordinator` announces the change, `RuntimeCoordinator` turns the announcement into `TunnelStack+Runtime.reloadSettings()` and the other reload steps |
 | `stackRestart` | `proxy-mode`, `dns-mode`, `dns-server`, `encrypted-dns-server` | extension rebuilds its data plane in place |
 | `reconnect` | `include-all-networks`, `exclude-local-network`, `include-apns`, `include-cellular-services` | host reconnects so the packet-tunnel preferences are rewritten |
 
@@ -386,6 +386,22 @@ extension picks up from a darwin notification without a disconnect.
 
 `Outcome.requiresReconnect` tells the editor whether to offer a reconnect prompt
 after activation.
+
+## Announcements
+
+The host never posts a notification by name. `ConfigurationCoordinator` decides
+which announcements an activation owes — `settings` whenever any `[General]`
+value changed, `mitm` when the changed keys belong to interception — and
+`ConfigurationInstaller` posts exactly that list.
+
+The extension half is `RuntimeCoordinator`. It turns each announcement back into
+an ordered plan of reload steps (`reloadHostMappings`, `reloadSettings`,
+`reloadRouting`, `reloadMITM`, `reloadActiveConfiguration`, `revalidateQUIC`)
+and skips the steps that only make sense while the tunnel is running — only the
+host-cache invalidation runs in every phase, so a stale `[Host]` override cannot
+survive a start. A test holds the two tables against each other: a notification
+the host can post that no event recognizes fails instead of waking the tunnel for
+nothing.
 
 ## Activation lifecycle
 

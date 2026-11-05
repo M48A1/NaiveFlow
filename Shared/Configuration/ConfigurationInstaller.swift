@@ -177,9 +177,10 @@ extension ConfigurationInstaller {
         DNSResolver.localRequests.flush()
 
         apply(compiled.settings)
-        if !plan.isEmpty {
-            AWNotificationCenter.notifyTunnelSettingsChanged()
-            if plan.contains(field: "mitm") { AWNotificationCenter.notifyMITMChanged() }
+        // The coordinator owns which notifications an install owes the running
+        // extension, so this call site does not keep its own copy of the rule.
+        for announcement in ConfigurationCoordinator.announcements(for: plan) {
+            announcement.post()
         }
         if compiled.settings["loglevel"] != nil {
             notes.append("`loglevel` is recorded but this build has no log level setting to apply it to.")

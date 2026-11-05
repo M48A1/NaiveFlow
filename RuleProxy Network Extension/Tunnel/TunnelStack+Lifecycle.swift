@@ -221,7 +221,12 @@ extension TunnelStack {
 
     // MARK: - Restart
 
-    private func restartStack(configuration: ProxyConfiguration, revalidateMode: Bool = false) {
+    /// Rebuilds the data plane in place.
+    ///
+    /// Called from the settings reload path (`TunnelStack+Runtime`) when a change
+    /// cannot be applied live — a different proxy mode — and from the deferred
+    /// restart job that throttles repeated requests.
+    func restartStack(configuration: ProxyConfiguration, revalidateMode: Bool = false) {
         if revalidateMode, deferredRestartScheduled { return }
 
         let now = MonotonicClock.now
@@ -270,98 +275,15 @@ extension TunnelStack {
         bringUpDataPlane(configuration: configuration)
     }
 
-    // MARK: - Settings Observation
-
-    private func runSettingsObserver() async {
-        let activeConfiguration = AWNotificationCenter.Notification.activeConfigurationChanged as String
-        let settings = AWNotificationCenter.Notification.tunnelSettingsChanged as String
-        let routing = AWNotificationCenter.Notification.routingChanged as String
-        let mitm = AWNotificationCenter.Notification.mitmChanged as String
-        for await name in DarwinNotificationConcurrencyBridge.names([
-            AWNotificationCenter.Notification.activeConfigurationChanged,
-            AWNotificationCenter.Notification.tunnelSettingsChanged,
-            AWNotificationCenter.Notification.routingChanged,
-            AWNotificationCenter.Notification.mitmChanged
-        ]) {
-            switch name {
-            case activeConfiguration: handleActiveConfigurationChanged()
-            case settings: handleSettingsChanged()
-            case routing: await handleRoutingChanged()
-            case mitm: handleMITMChanged()
-            default: break
-            }
-        }
-    }
-
-    private func handleActiveConfigurationChanged() {
-        guard phase == .running else { return }
-        let active: ProxyConfiguration?
-        do {
-            active = try ActiveConfiguration.load()
-        } catch {
-            logger.report(RuleProxyError.store(.corrupted(.configurations, detail: RuleProxyError.describe(error))))
-            return
-        }
-        guard let active else { return }
-        applyConfiguration(active)
-    }
-
-    private func handleSettingsChanged() {
-        DNSHosts.shared.invalidate()
-        guard phase == .running, let configuration else { return }
-
-        let old = settings
-        let new = TunnelSettings.load()
-        guard new != old else { return }
-        settings = new
-        
-        publishUDPConfig()
-
-        if new.quicPolicy != old.quicPolicy {
-            submitPlaneCommand(.revalidateQUIC)
-        }
-        if new.preventDNSLeak != old.preventDNSLeak {
-            connectionRouter.preventDNSLeak.store(new.preventDNSLeak, ordering: .relaxed)
-        }
-        if new.reflectionEnabled != old.reflectionEnabled {
-            publishReflectionEnabled()
-        }
-        let tunnelRoutesChanged = new.tunnelIncludedRoutes != old.tunnelIncludedRoutes
-            || new.tunnelExcludedRoutes != old.tunnelExcludedRoutes
-            || new.hideVPNIcon != old.hideVPNIcon
-            || new.reflectionEnabled != old.reflectionEnabled
-        if tunnelRoutesChanged {
-            requestReapplyTunnelSettings()
-        }
-
-        if computeEffectiveProxyMode() != proxyMode {
-            restartStack(configuration: configuration)
-        }
-    }
-
-    private func handleRoutingChanged() async {
-        guard phase == .running else { return }
-        guard proxyMode == .rule else { return }
-        let compiled = await domainRouter.compileRoutingConfiguration()
-        guard phase == .running, proxyMode == .rule else { return }
-        domainRouter.install(compiled)
-        connectionRouter.clearRejectMarks()
-        recordEngineConfirmation()
-    }
+    // MARK: - Engine Confirmation
 
     /// Leaves the extension's answer next to the snapshot manifest: the host
     /// records what it activated, this records what the engine is actually
     /// running. File IO runs off the tunnel's executor.
-    private func recordEngineConfirmation() {
+    func recordEngineConfirmation() {
         Task.detached(priority: .utility) {
             EngineConfirmationStore.recordRunningSnapshot()
         }
     }
 
-    private func handleMITMChanged() {
-        guard phase == .running else { return }
-        loadMITMSetting()
-        publishUDPConfig()
-        submitPlaneCommand(.revalidateQUIC)
-    }
 }

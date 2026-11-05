@@ -1,6 +1,6 @@
 # RuleProxy 开发排期
 
-更新日期：2026-11-04
+更新日期：2026-11-05
 
 本文件用于逐项执行和跟踪进度，详细设计见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。按阶段验收后推进，不预设固定完成日期；工期在工程能够构建、首批配置样例确定后复核。
 
@@ -182,6 +182,21 @@
 - [ ] iOS/iPadOS、tvOS 及 macOS 分别执行构建与运行验收。
 
 ## 进度记录
+
+### 2026-11-05
+
+- 配置热重载收敛成一张“主机说了什么 → 扩展做什么”的表（**未编译、未测试**：本机没有 `swiftc`/`xcodebuild`，只能由 CI 验证）：
+  - 新增 `Shared/Configuration/RuntimeCoordinator.swift`：扩展与主应用共用的纯数据层，不做 IO。`Event`（`activeConfiguration` / `settings` / `routing` / `mitm`）带 `notificationName`、`init?(notificationName:)` 与 `notificationNames`——注册名单和解码来自同一个 `allCases`，所以“监听了却解不出来”的通知不可能存在；`Action`（`reloadHostMappings` / `reloadSettings` / `reloadRouting` / `reloadMITM` / `reloadActiveConfiguration` / `revalidateQUIC`）带 `requiresRunningPhase`；`Plan` 是有序动作表；`plan(for:)` 是唯一把事件翻成动作的地方。
+  - 新增 `Shared/Configuration/ConfigurationCoordinator.swift`（只进主应用）：`ConfigurationModule`（rule / dns / mitm / outbound，含 `settingOwners`、`owning(section:)`、`owning(setting:)`）、`prepare(...)` 按模块报告一份文档（`ModuleReport` + 文档级诊断）、`plan(from:to:running:)` 借 `ConfigurationReloadPlan` 算出逐模块 `Change`（含 `payloadChanged`），以及 `announcements(for:)`——现在只有这一处决定“装完要发哪些通知”（改到 `[General]` 发 `settings`，改到 MITM 的键再补一个 `mitm`）。
+  - 同一文件用 `nonisolated extension RuntimeCoordinator` 放主机侧桥：`Event(announcement)` 与 `plan(forAnnouncement:)`（名字避开 `plan(for: Event)` 的重载歧义）。扩展 target 不编译这个文件，因此全部 `Announcement` → `Event` 的转换只出现在这一处。
+  - `ConfigurationInstaller` 不再自己挑通知，一律走 `ConfigurationCoordinator.announcements(for:)`；扩展侧按 `Event.notificationNames` 注册、按 `plan(for:)` 执行。
+  - 扩展侧删除旧的 `RuntimeCoordinator.swift`，四个 `handleXChanged()` 拆进 `RuleProxy Network Extension/Tunnel/TunnelStack+Runtime.swift`：`runSettingsObserver()` + `apply(_ plan:)`（按 `requiresRunningPhase` 过滤）+ 每个动作一个方法。逐条对齐旧实现：`reloadHostMappings` = 旧的 `DNSHosts.shared.invalidate()`（唯一在非 running 阶段也执行的一步，避免陈旧的 `[Host]` 覆盖活到下一次启动）；`reloadSettings` = 旧的 `handleSettingsChanged` 全部后续（`publishUDPConfig`、QUIC 重校验、`preventDNSLeak` 存储、reflection 重发布、`requestReapplyTunnelSettings`、代理模式变化时 `restartStack`）；`reloadRouting` = 旧的 `handleRoutingChanged`（编译 → 再次确认仍在 running 且为 rule → `install` + `clearRejectMarks` + 记录引擎确认）；`reloadMITM` + `revalidateQUIC` = 旧的 `handleMITMChanged`（顺序不变）；`reloadActiveConfiguration` = 旧的 `handleActiveConfigurationChanged`。
+  - `TunnelStack+Lifecycle` 只剩启动时的一次 `runSettingsObserver()`（全仓唯一调用点），`restartStack` 从 `private` 放宽到 internal 供重载路径复用，`recordEngineConfirmation()` 保留；规则热重载后的确认写入移进 `reloadRouting`。
+  - `RuleProxy.xcodeproj`：`Shared` 文件夹在扩展 target 的例外集合新增 `Configuration/RuntimeCoordinator.swift`（`Configuration/EngineConfirmation.swift` 本就在其中），`ConfigurationCoordinator.swift` 继续不参与扩展编译。
+  - 新增 `RuleProxy Tests/ConfigurationCoordinatorTests.swift`：把两张表钉在一起——每个 `applies: true` 的键必须有归属模块、未生效的键不许有归属、每个键只出现在一个模块、节名到模块的映射、`prepare` 的逐模块报告与未认领诊断留在文档上、`plan` 的逐模块变更、`Announcement` ↔ `Event` 一一对应（主机能发而扩展不认识时判失败，而不是静默丢弃）、每个 `Announcement` 都规划出非空动作、动作顺序、只有 `reloadHostMappings` 允许在非 running 阶段执行。
+  - 文档：`Documentations/Configuration.md` 的 `live` 一行改指 `ConfigurationCoordinator` / `RuntimeCoordinator` / `TunnelStack+Runtime.reloadSettings()`，并新增 “Announcements” 一节说明这套契约。
+  - 未验证（等 CI）：上述新文件的编译、target 成员（`RuntimeCoordinator.swift` 进扩展、`ConfigurationCoordinatorTests.swift` 进测试 target）、`ConfigurationDiagnostic` 的初始化形状、`ConfigurationReloadPlan.change(for:)` / `payloadChanged`、`CompiledSettings` 下标、`DomainRouter.compileRoutingConfiguration`、`EngineConfirmationStore.recordRunningSnapshot` 的可见性；`ConfigurationSettingsTests` / `ProfileEditorModelTests` / `ConfigurationTextTests` 是否因 API 迁移需要同步修改。
+
 
 ### 2026-11-04
 
