@@ -1,0 +1,1404 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+		CB1C107A2F23B82F00B74CD8 = { "isa" = "PBXBuildFile"; "fileRef" = "CB1C10792F23B82F00B74CD8"; };
+		CB1C10832F23B82F00B74CD8 = { "isa" = "PBXFileSystemSynchronizedBuildFileExceptionSet"; "membershipExceptions" = ( "Info.plist",  ); "target" = "CB1C10762F23B82F00B74CD8"; };
+		CB71CDD42F837D11002B9E1D = { "isa" = "PBXBuildFile"; "fileRef" = "CB71CDC32F837D11002B9E1D"; "settings" = { "ATTRIBUTES" = ( "RemoveHeadersOnCopy",  ); }; };
+		CB71CDC32F837D11002B9E1D = { "path" = "RuleProxy Widget.appex"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.app-extension"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
+		CB71CDC52F837D11002B9E1D = { "isa" = "PBXBuildFile"; "fileRef" = "CB71CDC42F837D11002B9E1D"; };
+		CB2B54B22F6C3E2800F24AC2 = { "isa" = "PBXBuildFile"; "fileRef" = "CB1C10772F23B82F00B74CD8"; "settings" = { "ATTRIBUTES" = ( "RemoveHeadersOnCopy",  ); }; };
+		CB71CDC42F837D11002B9E1D = { "path" = "System/Library/Frameworks/WidgetKit.framework"; "isa" = "PBXFileReference"; "name" = "WidgetKit.framework"; "lastKnownFileType" = "wrapper.framework"; "sourceTree" = "SDKROOT"; };
+		CB1C10822F23B82F00B74CD8 = { "isa" = "PBXBuildFile"; "fileRef" = "CB1C10772F23B82F00B74CD8"; "settings" = { "ATTRIBUTES" = ( "RemoveHeadersOnCopy",  ); }; };
+		CB1C10792F23B82F00B74CD8 = { "path" = "System/Library/Frameworks/NetworkExtension.framework"; "isa" = "PBXFileReference"; "name" = "NetworkExtension.framework"; "lastKnownFileType" = "wrapper.framework"; "sourceTree" = "SDKROOT"; };
+		CB71CDC62F837D11002B9E1D = { "path" = "System/Library/Frameworks/SwiftUI.framework"; "isa" = "PBXFileReference"; "name" = "SwiftUI.framework"; "lastKnownFileType" = "wrapper.framework"; "sourceTree" = "SDKROOT"; };
+		CB2B549C2F6C3E2700F24AC2 = { "path" = "RuleProxy TV.app"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.application"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
+		78B6DF9E2FE7B70D0084897A = { "isa" = "PBXContainerItemProxy"; "containerPortal" = "CB1C105D2F23B81500B74CD8"; "remoteGlobalIDString" = "CB1C10642F23B81500B74CD8"; "remoteInfo" = "RuleProxy"; "proxyType" = "1"; };
+		78B6DF9A2FE7B70D0084897A = { "path" = "RuleProxy Tests.xctest"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.cfbundle"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
+		CB71CDC72F837D11002B9E1D = { "isa" = "PBXBuildFile"; "fileRef" = "CB71CDC62F837D11002B9E1D"; };
+		CB1C10772F23B82F00B74CD8 = { "path" = "RuleProxy Network Extension.appex"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.app-extension"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
+		CB1C10652F23B81500B74CD8 = { "path" = "RuleProxy.app"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.application"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
+
+/* Begin PBXBuildFile section */
+		382A1871306A04490032C2BF /* RuleProxyIP in Frameworks */ = {isa = PBXBuildFile; productRef = 382A1870306A04490032C2BF /* RuleProxyIP */; };
+		3853793F30753251000675B7 /* RuleProxyQUIC in Frameworks */ = {isa = PBXBuildFile; productRef = 3853793E30753251000675B7 /* RuleProxyQUIC */; };
+		3853794130753258000675B7 /* RuleProxyQUIC in Frameworks */ = {isa = PBXBuildFile; productRef = 3853794030753258000675B7 /* RuleProxyQUIC */; };
+		385379433075325D000675B7 /* RuleProxyQUIC in Frameworks */ = {isa = PBXBuildFile; productRef = 385379423075325D000675B7 /* RuleProxyQUIC */; };
+		38B2C4186D241EF7A2278F02 /* BLAKE in Frameworks */ = {isa = PBXBuildFile; productRef = 38B2C49B7761D5E2B8BE528B /* BLAKE */; };
+		38B2C41E20D0A1397B879414 /* BLAKE in Frameworks */ = {isa = PBXBuildFile; productRef = 38B2C410032BCA6342DED63E /* BLAKE */; };
+		38B2C426234A7168B56E86CC /* BLAKE in Frameworks */ = {isa = PBXBuildFile; productRef = 38B2C4CE1CDB7A0B75D898C9 /* BLAKE */; };
+		38B2C4A5307A1F0100D4E6F1 /* YAML in Frameworks */ = {isa = PBXBuildFile; productRef = 38B2C4A3307A1F0100D4E6F1 /* YAML */; };
+		38B2C4A6307A1F0100D4E6F1 /* YAML in Frameworks */ = {isa = PBXBuildFile; productRef = 38B2C4A4307A1F0100D4E6F1 /* YAML */; };
+		CB1C10802F23B82F00B74CD8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CB1C105D2F23B81500B74CD8 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CB1C10762F23B82F00B74CD8;
+			remoteInfo = "Network Extension";
+		};
+		CB2B54B02F6C3E2800F24AC2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CB1C105D2F23B81500B74CD8 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CB1C10762F23B82F00B74CD8;
+			remoteInfo = "Network Extension";
+		};
+		CB71CDD22F837D11002B9E1D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CB1C105D2F23B81500B74CD8 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CB71CDC22F837D11002B9E1D;
+			remoteInfo = WidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		CB1C10872F23B82F00B74CD8 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				CB71CDD42F837D11002B9E1D /* RuleProxy Widget.appex in Embed Foundation Extensions */,
+				CB1C10822F23B82F00B74CD8 /* RuleProxy Network Extension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CB2B54B32F6C3E2800F24AC2 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				CB2B54B22F6C3E2800F24AC2 /* RuleProxy Network Extension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		CB65476A2F65715600C85E4A /* Exceptions for "Shared" folder in "RuleProxy Network Extension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AWCore.swift,
+				AWNotificationCenter.swift,
+				Configuration/EngineConfirmation.swift,
+				DataStore/FailableDecodable.swift,
+				DataStore/SyncStore.swift,
+				MITM/MITMCertificateStore.swift,
+				MITM/X509Builder.swift,
+				Models/DNSMode.swift,
+				Models/HostMapping.swift,
+				Models/LatencyResult.swift,
+				Models/MITMRule.swift,
+				Models/ProxyMode.swift,
+				Models/QUICPolicy.swift,
+				Models/RouteTarget.swift,
+				Models/RoutingRule.swift,
+				Models/TunnelMessage.swift,
+				Networking/ConnectionMetrics.swift,
+				Networking/DNS/DNSAddressFamily.swift,
+				Networking/DNS/DNSHosts.swift,
+				Networking/DNS/DNSLookupCache.swift,
+				Networking/DNS/DNSMessage.swift,
+				Networking/DNS/DNSName.swift,
+				Networking/DNS/DNSResolver.swift,
+				Networking/DNS/DNSUpstreamClient.swift,
+				Networking/DNS/ECHResolver.swift,
+				Networking/IPRoute.swift,
+				Networking/LatencyTester.swift,
+				Networking/Protocols/AnyTLS/AnyTLSConfiguration.swift,
+				Networking/Protocols/AnyTLS/AnyTLSMultiplexer.swift,
+				Networking/Protocols/AnyTLS/AnyTLSMultiplexerPool.swift,
+				Networking/Protocols/AnyTLS/AnyTLSMultiplexerRegistry.swift,
+				Networking/Protocols/AnyTLS/AnyTLSPaddingScheme.swift,
+				Networking/Protocols/AnyTLS/AnyTLSProtocol.swift,
+				Networking/Protocols/AnyTLS/AnyTLSStream.swift,
+				Networking/Protocols/AnyTLS/AnyTLSUDPConnection.swift,
+				"Networking/Protocols/AnyTLS/ProxyClient+AnyTLS.swift",
+				Networking/Protocols/Core/AsyncInbox.swift,
+				Networking/Protocols/Core/CertificatePolicy.swift,
+				Networking/Protocols/Core/H2FlowGate.swift,
+				Networking/Protocols/Core/HPACKEncoder.swift,
+				Networking/Protocols/Core/HTTP2Framer.swift,
+				Networking/Protocols/Core/Multiplexer.swift,
+				Networking/Protocols/Core/MultiplexerPool.swift,
+				"Networking/Protocols/Core/Outbound+Codable.swift",
+				Networking/Protocols/Core/PhaseTransition.swift,
+				Networking/Protocols/Core/ProxyClient.swift,
+				Networking/Protocols/Core/ProxyConfiguration.swift,
+				"Networking/Protocols/Core/ProxyConfiguration+URLExport.swift",
+				"Networking/Protocols/Core/ProxyConfiguration+URLParsing.swift",
+				Networking/Protocols/Core/ProxyConnection.swift,
+				Networking/Protocols/Core/ProxyRequest.swift,
+				Networking/Protocols/Core/ProxyUserAgent.swift,
+				Networking/Protocols/Core/SerialSender.swift,
+				Networking/Protocols/Core/TerminationLatch.swift,
+				Networking/Protocols/Core/TransportPool.swift,
+				Networking/Protocols/Core/TransportReclaim.swift,
+				Networking/Protocols/Core/TunneledTransport.swift,
+				Networking/Protocols/Core/UDPFraming.swift,
+				Networking/Protocols/Direct/DirectConfiguration.swift,
+				Networking/Protocols/Direct/DirectProxyConnection.swift,
+				Networking/Protocols/Direct/DirectUDPProxyConnection.swift,
+				"Networking/Protocols/Direct/ProxyClient+Direct.swift",
+				Networking/Protocols/HTTP3/HTTP3Framer.swift,
+				Networking/Protocols/HTTP3/HTTP3Multiplexer.swift,
+				Networking/Protocols/HTTP3/QPACKEncoder.swift,
+				Networking/Protocols/Hysteria/HysteriaClient.swift,
+				Networking/Protocols/Hysteria/HysteriaConfiguration.swift,
+				Networking/Protocols/Hysteria/HysteriaCongestionControl.swift,
+				Networking/Protocols/Hysteria/HysteriaConnection.swift,
+				Networking/Protocols/Hysteria/HysteriaHTTP3Codec.swift,
+				Networking/Protocols/Hysteria/HysteriaObfuscation.swift,
+				Networking/Protocols/Hysteria/HysteriaObfuscator.swift,
+				Networking/Protocols/Hysteria/HysteriaProtocol.swift,
+				Networking/Protocols/Hysteria/HysteriaSession.swift,
+				Networking/Protocols/Hysteria/HysteriaUDPConnection.swift,
+				"Networking/Protocols/Hysteria/ProxyClient+Hysteria.swift",
+				Networking/Protocols/Nowhere/NowhereClient.swift,
+				Networking/Protocols/Nowhere/NowhereConfiguration.swift,
+				Networking/Protocols/Nowhere/NowhereConnection.swift,
+				Networking/Protocols/Nowhere/NowhereMorph.swift,
+				Networking/Protocols/Nowhere/NowhereMorphCrypto.swift,
+				Networking/Protocols/Nowhere/NowhereProtocol.swift,
+				Networking/Protocols/Nowhere/NowhereSession.swift,
+				Networking/Protocols/Nowhere/NowhereTCPConnection.swift,
+				Networking/Protocols/Nowhere/NowhereUDPConnection.swift,
+				"Networking/Protocols/Nowhere/ProxyClient+Nowhere.swift",
+				Networking/Protocols/QUIC/GQUICClientHello.swift,
+				Networking/Protocols/QUIC/QUICClientHelloSniffer.swift,
+				Networking/Protocols/QUIC/QUICConnection.swift,
+				"Networking/Protocols/QUIC/QUICConnection+Close.swift",
+				"Networking/Protocols/QUIC/QUICConnection+Connect.swift",
+				"Networking/Protocols/QUIC/QUICConnection+Events.swift",
+				"Networking/Protocols/QUIC/QUICConnection+IO.swift",
+				"Networking/Protocols/QUIC/QUICConnection+Migration.swift",
+				"Networking/Protocols/QUIC/QUICConnection+Streams.swift",
+				Networking/Protocols/QUIC/QUICConnectionCore.swift,
+				Networking/Protocols/QUIC/QUICDatagramTransport.swift,
+				Networking/Protocols/QUIC/QUICState.swift,
+				Networking/Protocols/QUIC/QUICTLSHandler.swift,
+				Networking/Protocols/QUIC/QUICTuning.swift,
+				Networking/Protocols/QUIC/QUICVarInt.swift,
+				"Networking/Protocols/RFC/ProxyClient+RFC.swift",
+				Networking/Protocols/RFC/RFCConfiguration.swift,
+				Networking/Protocols/RFC/RFCHTTP2Multiplexer.swift,
+				Networking/Protocols/RFC/RFCHTTP2Stream.swift,
+				Networking/Protocols/RFC/RFCHTTP11Tunnel.swift,
+				Networking/Protocols/RFC/RFCMultiplexerPool.swift,
+				Networking/Protocols/RFC/RFCMultiplexerRegistry.swift,
+				Networking/Protocols/RFC/RFCProtocol.swift,
+				"Networking/Protocols/Shadowsocks/ProxyClient+Shadowsocks.swift",
+				Networking/Protocols/Shadowsocks/Shadowsocks2022.swift,
+				Networking/Protocols/Shadowsocks/ShadowsocksAEAD.swift,
+				Networking/Protocols/Shadowsocks/ShadowsocksCipher.swift,
+				Networking/Protocols/Shadowsocks/ShadowsocksConfiguration.swift,
+				Networking/Protocols/Shadowsocks/ShadowsocksConnection.swift,
+				Networking/Protocols/Shadowsocks/ShadowsocksProtocol.swift,
+				Networking/Protocols/Shadowsocks/ShadowsocksUDPSession.swift,
+				"Networking/Protocols/SOCKS5/ProxyClient+SOCKS5.swift",
+				Networking/Protocols/SOCKS5/SOCKS5Configuration.swift,
+				Networking/Protocols/SOCKS5/SOCKS5Connection.swift,
+				Networking/Protocols/Sudoku/BlockingProxyStream.swift,
+				"Networking/Protocols/Sudoku/ProxyClient+Sudoku.swift",
+				Networking/Protocols/Sudoku/SudokuBuffers.swift,
+				Networking/Protocols/Sudoku/SudokuConfiguration.swift,
+				Networking/Protocols/Sudoku/SudokuConnectionFactory.swift,
+				Networking/Protocols/Sudoku/SudokuHTTPMask.swift,
+				Networking/Protocols/Sudoku/SudokuKeyRecovery.swift,
+				Networking/Protocols/Sudoku/SudokuMultiplexerPool.swift,
+				Networking/Protocols/Sudoku/SudokuMux.swift,
+				Networking/Protocols/Sudoku/SudokuNativeClient.swift,
+				Networking/Protocols/Sudoku/SudokuNativeConfig.swift,
+				Networking/Protocols/Sudoku/SudokuNativeCore.swift,
+				Networking/Protocols/Sudoku/SudokuNativeCrypto.swift,
+				Networking/Protocols/Sudoku/SudokuProxyConnection.swift,
+				Networking/Protocols/Sudoku/SudokuRecordLayer.swift,
+				Networking/Protocols/Sudoku/SudokuSupport.swift,
+				Networking/Protocols/TLS/ECH/ECHConfig.swift,
+				Networking/Protocols/TLS/ECH/ECHConfigResolver.swift,
+				Networking/Protocols/TLS/ECH/ECHEncryption.swift,
+				"Networking/Protocols/TLS/TLS 1.2/TLS12HandshakeKeys.swift",
+				"Networking/Protocols/TLS/TLS 1.2/TLS12KeyDerivation.swift",
+				"Networking/Protocols/TLS/TLS 1.2/TLS12ServerHandshakeState.swift",
+				"Networking/Protocols/TLS/TLS 1.2/TLSClient+TLS12.swift",
+				"Networking/Protocols/TLS/TLS 1.2/TLSRecordConnection+TLS12.swift",
+				"Networking/Protocols/TLS/TLS 1.2/TLSServer+TLS12.swift",
+				"Networking/Protocols/TLS/TLS 1.3/TLS13ApplicationKeys.swift",
+				"Networking/Protocols/TLS/TLS 1.3/TLS13HandshakeKeys.swift",
+				"Networking/Protocols/TLS/TLS 1.3/TLS13HandshakeState.swift",
+				"Networking/Protocols/TLS/TLS 1.3/TLS13KeyDerivation.swift",
+				"Networking/Protocols/TLS/TLS 1.3/TLS13ServerHandshakeState.swift",
+				"Networking/Protocols/TLS/TLS 1.3/TLSClient+TLS13.swift",
+				"Networking/Protocols/TLS/TLS 1.3/TLSRecordConnection+TLS13.swift",
+				Networking/Protocols/TLS/TLSAlertDescription.swift,
+				Networking/Protocols/TLS/TLSAlertLevel.swift,
+				Networking/Protocols/TLS/TLSCipherSuite.swift,
+				Networking/Protocols/TLS/TLSClient.swift,
+				Networking/Protocols/TLS/TLSClientHelloBuilder.swift,
+				Networking/Protocols/TLS/TLSClientHelloParser.swift,
+				Networking/Protocols/TLS/TLSConfiguration.swift,
+				Networking/Protocols/TLS/TLSContentType.swift,
+				Networking/Protocols/TLS/TLSExtensionType.swift,
+				Networking/Protocols/TLS/TLSHandshakeType.swift,
+				Networking/Protocols/TLS/TLSNamedGroup.swift,
+				Networking/Protocols/TLS/TLSProxyConnection.swift,
+				Networking/Protocols/TLS/TLSRandom.swift,
+				Networking/Protocols/TLS/TLSRecordConnection.swift,
+				Networking/Protocols/TLS/TLSRecordCrypto.swift,
+				Networking/Protocols/TLS/TLSServer.swift,
+				Networking/Protocols/TLS/TLSServerHelloBuilder.swift,
+				Networking/Protocols/TLS/TLSSignatureScheme.swift,
+				Networking/Protocols/TLS/TLSStreamTransport.swift,
+				"Networking/Protocols/Trojan/ProxyClient+Trojan.swift",
+				Networking/Protocols/Trojan/TrojanConfiguration.swift,
+				Networking/Protocols/Trojan/TrojanConnection.swift,
+				Networking/Protocols/Trojan/TrojanProtocol.swift,
+				Networking/Protocols/Trojan/TrojanUDPConnection.swift,
+				Networking/Protocols/VLESS/GRPC/GRPCConfiguration.swift,
+				Networking/Protocols/VLESS/GRPC/GRPCConnection.swift,
+				Networking/Protocols/VLESS/GRPC/GRPCProxyConnection.swift,
+				Networking/Protocols/VLESS/HTTPUpgrade/HTTPUpgradeConfiguration.swift,
+				Networking/Protocols/VLESS/HTTPUpgrade/HTTPUpgradeConnection.swift,
+				Networking/Protocols/VLESS/HTTPUpgrade/HTTPUpgradeProxyConnection.swift,
+				"Networking/Protocols/VLESS/ProxyClient+VLESS.swift",
+				"Networking/Protocols/VLESS/ProxyClient+VLESSTransport.swift",
+				Networking/Protocols/VLESS/Reality/RealityClient.swift,
+				Networking/Protocols/VLESS/Reality/RealityConfiguration.swift,
+				Networking/Protocols/VLESS/Reality/RealityProxyConnection.swift,
+				Networking/Protocols/VLESS/VLESSConfiguration.swift,
+				Networking/Protocols/VLESS/VLESSConnection.swift,
+				Networking/Protocols/VLESS/VLESSEncryption.swift,
+				Networking/Protocols/VLESS/VLESSEncryption0RTTCache.swift,
+				Networking/Protocols/VLESS/VLESSEncryptionClient.swift,
+				Networking/Protocols/VLESS/VLESSEncryptionCTR.swift,
+				Networking/Protocols/VLESS/VLESSProtocol.swift,
+				Networking/Protocols/VLESS/VLESSUDPConnection.swift,
+				Networking/Protocols/VLESS/VLESSVision.swift,
+				Networking/Protocols/VLESS/VLESSVisionUDP/VLESSVisionUDPFrame.swift,
+				Networking/Protocols/VLESS/VLESSVisionUDP/VLESSVisionUDPGlobalID.swift,
+				Networking/Protocols/VLESS/VLESSVisionUDP/VLESSVisionUDPMultiplexer.swift,
+				Networking/Protocols/VLESS/VLESSVisionUDP/VLESSVisionUDPMultiplexerPool.swift,
+				Networking/Protocols/VLESS/VLESSVisionUDP/VLESSVisionUDPStream.swift,
+				Networking/Protocols/VLESS/VLESSXORConnection.swift,
+				Networking/Protocols/VLESS/WebSocket/WebSocketConfiguration.swift,
+				Networking/Protocols/VLESS/WebSocket/WebSocketConnection.swift,
+				Networking/Protocols/VLESS/WebSocket/WebSocketProxyConnection.swift,
+				"Networking/Protocols/VLESS/XHTTP/ProxyClient+XHTTP.swift",
+				Networking/Protocols/VLESS/XHTTP/XHTTPChunkedTransfer.swift,
+				Networking/Protocols/VLESS/XHTTP/XHTTPConfiguration.swift,
+				Networking/Protocols/VLESS/XHTTP/XHTTPConnection.swift,
+				"Networking/Protocols/VLESS/XHTTP/XHTTPConnection+H2.swift",
+				"Networking/Protocols/VLESS/XHTTP/XHTTPConnection+H2Transport.swift",
+				"Networking/Protocols/VLESS/XHTTP/XHTTPConnection+H3.swift",
+				"Networking/Protocols/VLESS/XHTTP/XHTTPConnection+HTTP11.swift",
+				Networking/Protocols/VLESS/XHTTP/XHTTPH2Framing.swift,
+				Networking/Protocols/VLESS/XHTTP/XHTTPH3RequestStream.swift,
+				Networking/Protocols/VLESS/XHTTP/XHTTPProxyConnection.swift,
+				Networking/Routing/FlatLabelTrie.swift,
+				Networking/Routing/TieredRouteMatcher.swift,
+				Networking/Transport/ByteTransport.swift,
+				Networking/Transport/ByteTransportAdapters.swift,
+				Networking/Transport/DialDeadline.swift,
+				Networking/Transport/FlowGauge.swift,
+				Networking/Transport/FlowSlot.swift,
+				Networking/Transport/NWTransportHelpers.swift,
+				Networking/Transport/QUICDatagramCarrier.swift,
+				Networking/Transport/TCPTransport.swift,
+				Networking/Transport/UDPTransport.swift,
+				Networking/TunnelAddress.swift,
+				Networking/TunnelLimits.swift,
+				Protocols/SoftDeletable.swift,
+				Utilities/RuleProxyError.swift,
+				Utilities/RuleProxyLogger.swift,
+				Utilities/Bridges/BridgeContext.swift,
+				Utilities/Bridges/BridgeExecutor.swift,
+				Utilities/Bridges/DNSSyscallConcurrencyBridge.swift,
+				Utilities/Bridges/SwiftRegexConcurrencyBridge.swift,
+				"Utilities/Data+appendCompacting.swift",
+				"Utilities/Data+init.swift",
+				Utilities/DeviceCensorship.swift,
+				Utilities/MonotonicClock.swift,
+				"Utilities/String+init.swift",
+				Utilities/Timing/Deadline.swift,
+				Utilities/Timing/TickScheduler.swift,
+				Utilities/Timing/TimerPrecision.swift,
+				"Utilities/UUID+VLESSString.swift",
+				Utilities/VPNStatus.swift,
+			);
+			target = CB1C10762F23B82F00B74CD8 /* RuleProxy Network Extension */;
+		};
+		CB71CDD82F837D11002B9E1D /* Exceptions for "RuleProxy Widget" folder in "RuleProxy Widget" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = CB71CDC22F837D11002B9E1D /* RuleProxy Widget */;
+		};
+		CB71D2EE2F838FF3002B9E1D /* Exceptions for "Shared" folder in "RuleProxy Widget" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AWCore.swift,
+				AWNotificationCenter.swift,
+				Localizable.xcstrings,
+				Models/DNSMode.swift,
+				Models/ProxyMode.swift,
+				Models/QUICPolicy.swift,
+				Utilities/RuleProxyError.swift,
+				Utilities/RuleProxyLogger.swift,
+				Utilities/Bridges/SwiftRegexConcurrencyBridge.swift,
+				Utilities/MonotonicClock.swift,
+				Utilities/Timing/Deadline.swift,
+				Utilities/Timing/TimerPrecision.swift,
+			);
+			target = CB71CDC22F837D11002B9E1D /* RuleProxy Widget */;
+		};
+		CB8632442FB83C1600059EFE /* Exceptions for "RuleProxy" folder in "RuleProxy TV" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				DeepLinkManager.swift,
+				Views/Pages/MITM/MITMRuleSetParser.swift,
+				Views/Pages/Modules/ModuleParser.swift,
+				Views/Pages/Routing/RoutingRuleParser.swift,
+			);
+			target = CB2B549B2F6C3E2700F24AC2 /* RuleProxy TV */;
+		};
+		CBE5B8662F62E736003CECEF /* Exceptions for "RuleProxy" folder in "RuleProxy" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = CB1C10642F23B81500B74CD8 /* RuleProxy */;
+		};
+		CBE5F58E2F6D0A74003CECEF /* Exceptions for "RuleProxy TV" folder in "RuleProxy TV" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = CB2B549B2F6C3E2700F24AC2 /* RuleProxy TV */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		78B6DF9B2FE7B70D0084897A /* RuleProxy Tests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "RuleProxy Tests";
+			sourceTree = "<group>";
+		};
+		CB1C10672F23B81500B74CD8 /* RuleProxy */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				CBE5B8662F62E736003CECEF /* Exceptions for "RuleProxy" folder in "RuleProxy" target */,
+				CB8632442FB83C1600059EFE /* Exceptions for "RuleProxy" folder in "RuleProxy TV" target */,
+			);
+			path = RuleProxy;
+			sourceTree = "<group>";
+		};
+		CB1C107B2F23B82F00B74CD8 /* RuleProxy Network Extension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				CB1C10832F23B82F00B74CD8 /* Exceptions for "RuleProxy Network Extension" folder in "RuleProxy Network Extension" target */,
+			);
+			path = "RuleProxy Network Extension";
+			sourceTree = "<group>";
+		};
+		CB2B549D2F6C3E2700F24AC2 /* RuleProxy TV */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				CBE5F58E2F6D0A74003CECEF /* Exceptions for "RuleProxy TV" folder in "RuleProxy TV" target */,
+			);
+			path = "RuleProxy TV";
+			sourceTree = "<group>";
+		};
+		CB71CDC82F837D11002B9E1D /* RuleProxy Widget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				CB71CDD82F837D11002B9E1D /* Exceptions for "RuleProxy Widget" folder in "RuleProxy Widget" target */,
+			);
+			path = "RuleProxy Widget";
+			sourceTree = "<group>";
+		};
+		CB7A00022F65700100C85E4A /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				CB65476A2F65715600C85E4A /* Exceptions for "Shared" folder in "RuleProxy Network Extension" target */,
+				CB71D2EE2F838FF3002B9E1D /* Exceptions for "Shared" folder in "RuleProxy Widget" target */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		78B6DF972FE7B70D0084897A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CB1C10622F23B81500B74CD8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3853794130753258000675B7 /* RuleProxyQUIC in Frameworks */,
+				38B2C4A5307A1F0100D4E6F1 /* YAML in Frameworks */,
+				38B2C4186D241EF7A2278F02 /* BLAKE in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CB1C10742F23B82F00B74CD8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CB1C107A2F23B82F00B74CD8 /* NetworkExtension.framework in Frameworks */,
+				382A1871306A04490032C2BF /* RuleProxyIP in Frameworks */,
+				3853793F30753251000675B7 /* RuleProxyQUIC in Frameworks */,
+				38B2C426234A7168B56E86CC /* BLAKE in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CB2B54992F6C3E2700F24AC2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				385379433075325D000675B7 /* RuleProxyQUIC in Frameworks */,
+				38B2C4A6307A1F0100D4E6F1 /* YAML in Frameworks */,
+				38B2C41E20D0A1397B879414 /* BLAKE in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CB71CDC02F837D11002B9E1D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CB71CDC72F837D11002B9E1D /* SwiftUI.framework in Frameworks */,
+				CB71CDC52F837D11002B9E1D /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		CB1C105C2F23B81500B74CD8 = {
+			isa = PBXGroup;
+			children = (
+				CB7A00022F65700100C85E4A /* Shared */,
+				CB1C10672F23B81500B74CD8 /* RuleProxy */,
+				CB2B549D2F6C3E2700F24AC2 /* RuleProxy TV */,
+				CB1C107B2F23B82F00B74CD8 /* RuleProxy Network Extension */,
+				CB71CDC82F837D11002B9E1D /* RuleProxy Widget */,
+				78B6DF9B2FE7B70D0084897A /* RuleProxy Tests */,
+				CB1C10782F23B82F00B74CD8 /* Frameworks */,
+				CB1C10662F23B81500B74CD8 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		CB1C10662F23B81500B74CD8 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				CB1C10652F23B81500B74CD8 /* RuleProxy.app */,
+				CB1C10772F23B82F00B74CD8 /* RuleProxy Network Extension.appex */,
+				CB2B549C2F6C3E2700F24AC2 /* RuleProxy TV.app */,
+				CB71CDC32F837D11002B9E1D /* RuleProxy Widget.appex */,
+				78B6DF9A2FE7B70D0084897A /* RuleProxy Tests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		CB1C10782F23B82F00B74CD8 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				CB1C10792F23B82F00B74CD8 /* NetworkExtension.framework */,
+				CB71CDC42F837D11002B9E1D /* WidgetKit.framework */,
+				CB71CDC62F837D11002B9E1D /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		78B6DF992FE7B70D0084897A /* RuleProxy Tests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 78B6DFA22FE7B70D0084897A /* Build configuration list for PBXNativeTarget "RuleProxy Tests" */;
+			buildPhases = (
+				78B6DF962FE7B70D0084897A /* Sources */,
+				78B6DF972FE7B70D0084897A /* Frameworks */,
+				78B6DF982FE7B70D0084897A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				78B6DF9F2FE7B70D0084897A /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				78B6DF9B2FE7B70D0084897A /* RuleProxy Tests */,
+			);
+			name = "RuleProxy Tests";
+			packageProductDependencies = (
+			);
+			productName = "RuleProxy Tests";
+			productReference = 78B6DF9A2FE7B70D0084897A /* RuleProxy Tests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		CB1C10642F23B81500B74CD8 /* RuleProxy */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CB1C10702F23B81600B74CD8 /* Build configuration list for PBXNativeTarget "RuleProxy" */;
+			buildPhases = (
+				CB1C10612F23B81500B74CD8 /* Sources */,
+				CB1C10622F23B81500B74CD8 /* Frameworks */,
+				CB1C10632F23B81500B74CD8 /* Resources */,
+				CB1C10872F23B82F00B74CD8 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CB1C10812F23B82F00B74CD8 /* PBXTargetDependency */,
+				CB71CDD32F837D11002B9E1D /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				CB1C10672F23B81500B74CD8 /* RuleProxy */,
+				CB7A00022F65700100C85E4A /* Shared */,
+			);
+			name = RuleProxy;
+			packageProductDependencies = (
+				3853794030753258000675B7 /* RuleProxyQUIC */,
+				38B2C4A3307A1F0100D4E6F1 /* YAML */,
+				38B2C49B7761D5E2B8BE528B /* BLAKE */,
+			);
+			productName = RuleProxy;
+			productReference = CB1C10652F23B81500B74CD8 /* RuleProxy.app */;
+			productType = "com.apple.product-type.application";
+		};
+		CB1C10762F23B82F00B74CD8 /* RuleProxy Network Extension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CB1C10842F23B82F00B74CD8 /* Build configuration list for PBXNativeTarget "RuleProxy Network Extension" */;
+			buildPhases = (
+				CB1C10732F23B82F00B74CD8 /* Sources */,
+				CB1C10742F23B82F00B74CD8 /* Frameworks */,
+				CB1C10752F23B82F00B74CD8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				CB1C107B2F23B82F00B74CD8 /* RuleProxy Network Extension */,
+			);
+			name = "RuleProxy Network Extension";
+			packageProductDependencies = (
+				382A1870306A04490032C2BF /* RuleProxyIP */,
+				3853793E30753251000675B7 /* RuleProxyQUIC */,
+				38B2C4CE1CDB7A0B75D898C9 /* BLAKE */,
+			);
+			productName = "Network Extension";
+			productReference = CB1C10772F23B82F00B74CD8 /* RuleProxy Network Extension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		CB2B549B2F6C3E2700F24AC2 /* RuleProxy TV */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CB2B54AA2F6C3E2800F24AC2 /* Build configuration list for PBXNativeTarget "RuleProxy TV" */;
+			buildPhases = (
+				CB2B54982F6C3E2700F24AC2 /* Sources */,
+				CB2B54992F6C3E2700F24AC2 /* Frameworks */,
+				CB2B549A2F6C3E2700F24AC2 /* Resources */,
+				CB2B54B32F6C3E2800F24AC2 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CB2B54B12F6C3E2800F24AC2 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				CB2B549D2F6C3E2700F24AC2 /* RuleProxy TV */,
+				CB7A00022F65700100C85E4A /* Shared */,
+			);
+			name = "RuleProxy TV";
+			packageProductDependencies = (
+				385379423075325D000675B7 /* RuleProxyQUIC */,
+				38B2C4A4307A1F0100D4E6F1 /* YAML */,
+				38B2C410032BCA6342DED63E /* BLAKE */,
+			);
+			productName = RuleProxy;
+			productReference = CB2B549C2F6C3E2700F24AC2 /* RuleProxy TV.app */;
+			productType = "com.apple.product-type.application";
+		};
+		CB71CDC22F837D11002B9E1D /* RuleProxy Widget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CB71CDD72F837D11002B9E1D /* Build configuration list for PBXNativeTarget "RuleProxy Widget" */;
+			buildPhases = (
+				CB71CDBF2F837D11002B9E1D /* Sources */,
+				CB71CDC02F837D11002B9E1D /* Frameworks */,
+				CB71CDC12F837D11002B9E1D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				CB71CDC82F837D11002B9E1D /* RuleProxy Widget */,
+			);
+			name = "RuleProxy Widget";
+			packageProductDependencies = (
+			);
+			productName = WidgetExtension;
+			productReference = CB71CDC32F837D11002B9E1D /* RuleProxy Widget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		CB1C105D2F23B81500B74CD8 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2640;
+				TargetAttributes = {
+					78B6DF992FE7B70D0084897A = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = CB1C10642F23B81500B74CD8;
+					};
+					CB1C10642F23B81500B74CD8 = {
+						CreatedOnToolsVersion = 26.0.1;
+					};
+					CB1C10762F23B82F00B74CD8 = {
+						CreatedOnToolsVersion = 26.0.1;
+					};
+					CB2B549B2F6C3E2700F24AC2 = {
+						CreatedOnToolsVersion = 26.0.1;
+					};
+					CB71CDC22F837D11002B9E1D = {
+						CreatedOnToolsVersion = 26.0.1;
+					};
+				};
+			};
+			buildConfigurationList = CB1C10602F23B81500B74CD8 /* Build configuration list for PBXProject "RuleProxy" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				"zh-Hans",
+				ar,
+				ru,
+				es,
+				fa,
+				vi,
+				tr,
+			);
+			mainGroup = CB1C105C2F23B81500B74CD8;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				38B2C4A0307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/RuleProxyIP" */,
+				38B2C4A1307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/RuleProxyQUIC" */,
+				38B2C4A2307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/YAML" */,
+				38B2C44881FD8FEA5EEA4D6E /* XCLocalSwiftPackageReference "Packages/BLAKE" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = CB1C10662F23B81500B74CD8 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				CB1C10642F23B81500B74CD8 /* RuleProxy */,
+				CB2B549B2F6C3E2700F24AC2 /* RuleProxy TV */,
+				CB1C10762F23B82F00B74CD8 /* RuleProxy Network Extension */,
+				CB71CDC22F837D11002B9E1D /* RuleProxy Widget */,
+				78B6DF992FE7B70D0084897A /* RuleProxy Tests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		78B6DF982FE7B70D0084897A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CB1C10632F23B81500B74CD8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CB1C10752F23B82F00B74CD8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CB2B549A2F6C3E2700F24AC2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CB71CDC12F837D11002B9E1D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		78B6DF962FE7B70D0084897A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CB1C10612F23B81500B74CD8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CB1C10732F23B82F00B74CD8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CB2B54982F6C3E2700F24AC2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CB71CDBF2F837D11002B9E1D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		78B6DF9F2FE7B70D0084897A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CB1C10642F23B81500B74CD8 /* RuleProxy */;
+			targetProxy = 78B6DF9E2FE7B70D0084897A /* PBXContainerItemProxy */;
+		};
+		CB1C10812F23B82F00B74CD8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CB1C10762F23B82F00B74CD8 /* RuleProxy Network Extension */;
+			targetProxy = CB1C10802F23B82F00B74CD8 /* PBXContainerItemProxy */;
+		};
+		CB2B54B12F6C3E2800F24AC2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CB1C10762F23B82F00B74CD8 /* RuleProxy Network Extension */;
+			targetProxy = CB2B54B02F6C3E2800F24AC2 /* PBXContainerItemProxy */;
+		};
+		CB71CDD32F837D11002B9E1D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CB71CDC22F837D11002B9E1D /* RuleProxy Widget */;
+			targetProxy = CB71CDD22F837D11002B9E1D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		78B6DFA02FE7B70D0084897A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 352;
+				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy.Tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RuleProxy.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RuleProxy";
+			};
+			name = Debug;
+		};
+		78B6DFA12FE7B70D0084897A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 352;
+				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy.Tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RuleProxy.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RuleProxy";
+			};
+			name = Release;
+		};
+		CB1C106E2F23B81600B74CD8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.6;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		CB1C106F2F23B81600B74CD8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.6;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		CB1C10712F23B81600B74CD8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-Classic AppIcon-Muted";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = RuleProxy/RuleProxy.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 414;
+				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RuleProxy/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = RuleProxy;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "RuleProxy need your camera permission to scan QR Code.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.5;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		CB1C10722F23B81600B74CD8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-Classic AppIcon-Muted";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = RuleProxy/RuleProxy.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 414;
+				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RuleProxy/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = RuleProxy;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "RuleProxy need your camera permission to scan QR Code.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.5;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		CB1C10852F23B82F00B74CD8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = NO;
+				CODE_SIGN_ENTITLEMENTS = "RuleProxy Network Extension/RuleProxy Network Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 414;
+				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "RuleProxy Network Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "RuleProxy Network Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 2.5;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.argsment.RuleProxy.Network-Extension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) NETWORK_EXTENSION";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2,3";
+				TVOS_DEPLOYMENT_TARGET = 18.0;
+			};
+			name = Debug;
+		};
+		CB1C10862F23B82F00B74CD8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = NO;
+				CODE_SIGN_ENTITLEMENTS = "RuleProxy Network Extension/RuleProxy Network Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 414;
+				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "RuleProxy Network Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "RuleProxy Network Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 2.5;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.argsment.RuleProxy.Network-Extension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) NETWORK_EXTENSION";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2,3";
+				TVOS_DEPLOYMENT_TARGET = 18.0;
+			};
+			name = Release;
+		};
+		CB2B54AB2F6C3E2800F24AC2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "RuleProxy TV/RuleProxy TV.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 414;
+				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "RuleProxy TV/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = RuleProxy;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.5;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Debug;
+		};
+		CB2B54AC2F6C3E2800F24AC2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "RuleProxy TV/RuleProxy TV.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 414;
+				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "RuleProxy TV/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = RuleProxy;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.5;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Release;
+		};
+		CB71CDD52F837D11002B9E1D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = "RuleProxy Widget/RuleProxy Widget.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 414;
+				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "RuleProxy Widget/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "RuleProxy Widget";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 2.5;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy.Widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		CB71CDD62F837D11002B9E1D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = "RuleProxy Widget/RuleProxy Widget.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 414;
+				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "RuleProxy Widget/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "RuleProxy Widget";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 2.5;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy.Widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		78B6DFA22FE7B70D0084897A /* Build configuration list for PBXNativeTarget "RuleProxy Tests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				78B6DFA02FE7B70D0084897A /* Debug */,
+				78B6DFA12FE7B70D0084897A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CB1C10602F23B81500B74CD8 /* Build configuration list for PBXProject "RuleProxy" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CB1C106E2F23B81600B74CD8 /* Debug */,
+				CB1C106F2F23B81600B74CD8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CB1C10702F23B81600B74CD8 /* Build configuration list for PBXNativeTarget "RuleProxy" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CB1C10712F23B81600B74CD8 /* Debug */,
+				CB1C10722F23B81600B74CD8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CB1C10842F23B82F00B74CD8 /* Build configuration list for PBXNativeTarget "RuleProxy Network Extension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CB1C10852F23B82F00B74CD8 /* Debug */,
+				CB1C10862F23B82F00B74CD8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CB2B54AA2F6C3E2800F24AC2 /* Build configuration list for PBXNativeTarget "RuleProxy TV" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CB2B54AB2F6C3E2800F24AC2 /* Debug */,
+				CB2B54AC2F6C3E2800F24AC2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CB71CDD72F837D11002B9E1D /* Build configuration list for PBXNativeTarget "RuleProxy Widget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CB71CDD52F837D11002B9E1D /* Debug */,
+				CB71CDD62F837D11002B9E1D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		38B2C44881FD8FEA5EEA4D6E /* XCLocalSwiftPackageReference "Packages/BLAKE" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/BLAKE;
+		};
+		38B2C4A0307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/RuleProxyIP" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/RuleProxyIP;
+		};
+		38B2C4A1307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/RuleProxyQUIC" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/RuleProxyQUIC;
+		};
+		38B2C4A2307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/YAML" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/YAML;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		382A1870306A04490032C2BF /* RuleProxyIP */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RuleProxyIP;
+		};
+		3853793E30753251000675B7 /* RuleProxyQUIC */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RuleProxyQUIC;
+		};
+		3853794030753258000675B7 /* RuleProxyQUIC */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RuleProxyQUIC;
+		};
+		385379423075325D000675B7 /* RuleProxyQUIC */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RuleProxyQUIC;
+		};
+		38B2C410032BCA6342DED63E /* BLAKE */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BLAKE;
+		};
+		38B2C49B7761D5E2B8BE528B /* BLAKE */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BLAKE;
+		};
+		38B2C4A3307A1F0100D4E6F1 /* YAML */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = YAML;
+		};
+		38B2C4A4307A1F0100D4E6F1 /* YAML */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = YAML;
+		};
+		38B2C4CE1CDB7A0B75D898C9 /* BLAKE */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BLAKE;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = CB1C105D2F23B81500B74CD8 /* Project object */;
+}

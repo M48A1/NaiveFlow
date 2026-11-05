@@ -1,0 +1,111 @@
+//
+//  RoutingRulesDatabase.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 4/5/26.
+//
+
+import Foundation
+import SQLite3
+import Synchronization
+
+nonisolated private let logger = RuleProxyLogger(category: "RoutingRulesDatabase")
+
+nonisolated final class RoutingRulesDatabase: Sendable {
+    static let shared = RoutingRulesDatabase()
+
+    private let databaseHandle: Mutex<OpaquePointer?>
+
+    /// Location of the optional routing-preset database.
+    ///
+    /// Presets come from the upstream `AnywhereRules` package, which is a private,
+    /// unpublished repository, so the project no longer links it. If a `Rules.db`
+    /// resource is shipped in the app bundle it is used as-is; otherwise every
+    /// catalog query returns empty results and the routing core keeps working with
+    /// user-defined rule sets only.
+    private static func resolveDatabaseURL() -> URL? {
+        let bundle = Bundle.main
+        if let url = bundle.url(forResource: "Rules", withExtension: "db") {
+            return url
+        }
+        if let url = bundle.url(forResource: "Rules", withExtension: "db", subdirectory: "Rules") {
+            return url
+        }
+        return nil
+    }
+
+    private init() {
+        guard let url = Self.resolveDatabaseURL() else {
+            logger.error("[Routing] Rules.db not found")
+            self.databaseHandle = Mutex(nil)
+            return
+        }
+        var handle: OpaquePointer?
+        if sqlite3_open_v2("\(url.absoluteString)?immutable=1", &handle, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI | SQLITE_OPEN_FULLMUTEX, nil) != SQLITE_OK {
+            logger.error("[Routing] Rules.db open failed")
+            handle = nil
+        }
+        self.databaseHandle = Mutex(handle)
+    }
+
+    // MARK: - Queries
+
+    func loadRules(for source: String) -> [RoutingRule] {
+        databaseHandle.withLock { databaseHandle in
+            guard let databaseHandle else { return [] }
+
+            var statementHandle: OpaquePointer?
+            defer { sqlite3_finalize(statementHandle) }
+
+            guard sqlite3_prepare_v2(databaseHandle, "SELECT type, value FROM rules WHERE source = ?", -1, &statementHandle, nil) == SQLITE_OK else {
+                return []
+            }
+            sqlite3_bind_text(statementHandle, 1, source, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+            var rules: [RoutingRule] = []
+            while sqlite3_step(statementHandle) == SQLITE_ROW {
+                let type = Int(sqlite3_column_int(statementHandle, 0))
+                guard let columnTextPointer = sqlite3_column_text(statementHandle, 1),
+                      let ruleType = RoutingRuleType(rawValue: type) else { continue }
+                rules.append(RoutingRule(type: ruleType, value: String(cString: columnTextPointer)))
+            }
+            return rules
+        }
+    }
+
+    func loadMetadata(_ key: String) -> String? {
+        databaseHandle.withLock { databaseHandle in
+            guard let databaseHandle else { return nil }
+
+            var statementHandle: OpaquePointer?
+            defer { sqlite3_finalize(statementHandle) }
+
+            guard sqlite3_prepare_v2(databaseHandle, "SELECT value FROM metadata WHERE key = ?", -1, &statementHandle, nil) == SQLITE_OK else {
+                return nil
+            }
+            sqlite3_bind_text(statementHandle, 1, key, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+            guard sqlite3_step(statementHandle) == SQLITE_ROW,
+                  let columnTextPointer = sqlite3_column_text(statementHandle, 0) else { return nil }
+            return String(cString: columnTextPointer)
+        }
+    }
+
+    func loadStringArray(_ key: String) -> [String] {
+        guard let json = loadMetadata(key),
+              let data = json.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [String] else {
+            return []
+        }
+        return array
+    }
+
+    func loadStringDictionary(_ key: String) -> [String: String] {
+        guard let json = loadMetadata(key),
+              let data = json.data(using: .utf8),
+              let dictionary = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            return [:]
+        }
+        return dictionary
+    }
+}

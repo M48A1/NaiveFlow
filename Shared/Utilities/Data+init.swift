@@ -1,0 +1,67 @@
+//
+//  Data+init.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 3/1/26.
+//
+
+import Foundation
+
+nonisolated extension Data {
+    init?(hexString: String) {
+        let hex = hexString.replacingOccurrences(of: " ", with: "")
+        guard hex.count % 2 == 0 else { return nil }
+
+        var data = Data(capacity: hex.count / 2)
+        var index = hex.startIndex
+
+        while index < hex.endIndex {
+            let nextIndex = hex.index(index, offsetBy: 2)
+            guard let byte = UInt8(hex[index..<nextIndex], radix: 16) else { return nil }
+            data.append(byte)
+            index = nextIndex
+        }
+
+        self = data
+    }
+    
+    init?(iconBase64 value: String) {
+        guard let data = Data(base64Encoded: value, options: .ignoreUnknownCharacters),
+              !data.isEmpty,
+              data.count <= 256 * 1024
+        else { return nil }
+        self = data
+    }
+
+    init?(base64URLEncoded string: String) {
+        var base64 = string
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+
+        let remainder = base64.count % 4
+        if remainder > 0 {
+            base64 += String(repeating: "=", count: 4 - remainder)
+        }
+
+        guard let data = Data(base64Encoded: base64) else { return nil }
+        self = data
+    }
+
+    func hexEncodedString() -> String {
+        let hexChars: [Character] = Array("0123456789abcdef")
+        var result = ""
+        result.reserveCapacity(count * 2)
+        for byte in self {
+            result.append(hexChars[Int(byte >> 4)])
+            result.append(hexChars[Int(byte & 0x0F)])
+        }
+        return result
+    }
+
+    func base64URLEncodedString() -> String {
+        base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+}

@@ -1,0 +1,856 @@
+//
+//  Shadowsocks2022.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 3/7/26.
+//
+
+import Foundation
+import CryptoKit
+import CommonCrypto
+import Security
+import Synchronization
+
+// MARK: - Constants
+
+private nonisolated let headerTypeClient: UInt8 = 0
+private nonisolated let headerTypeServer: UInt8 = 1
+private nonisolated let maxPaddingLength = 900
+private nonisolated let maxTimestampDiff: Int64 = 30
+private nonisolated let tagSize = 16
+
+// MARK: - Shadowsocks2022Connection
+
+nonisolated final class Shadowsocks2022Connection: ProxyConnection {
+    private let inner: ProxyConnection
+    private let cipher: ShadowsocksCipher
+    private let psk: Data
+    private let pskList: [Data]
+    private let pskHashes: [Data]
+    
+    private struct WriteState {
+        var requestSalt: Data?
+        var nonce: ShadowsocksNonce
+        var subkey: Data?
+    }
+    private let writeState: Mutex<WriteState>
+    
+    private struct ReadState {
+        var nonce: ShadowsocksNonce
+        var subkey: Data?
+        var buffer = Data()
+        var responseHeaderParsed = false
+        var pendingVarHeaderLen: Int? = nil
+        var pendingPayloadLength: Int? = nil
+    }
+    private let readState: Mutex<ReadState>
+    
+    private let handshake: Mutex<Data?>
+
+    private let sendChain = SerialSender()
+
+    init(inner: ProxyConnection, cipher: ShadowsocksCipher, pskList: [Data], addressHeader: Data) {
+        self.inner = inner
+        self.cipher = cipher
+        self.pskList = pskList
+        self.psk = pskList.last!
+        self.handshake = Mutex(addressHeader)
+
+        var hashes: [Data] = []
+        for i in 1..<pskList.count {
+            hashes.append(ShadowsocksKeyDerivation.blake3Hash16(pskList[i]))
+        }
+        self.pskHashes = hashes
+
+        self.writeState = Mutex(WriteState(requestSalt: nil, nonce: ShadowsocksNonce(size: cipher.nonceSize), subkey: nil))
+        self.readState = Mutex(ReadState(nonce: ShadowsocksNonce(size: cipher.nonceSize), subkey: nil))
+    }
+
+    var isConnected: Bool { inner.isConnected }
+
+    func sendRaw(_ data: Data) async throws {
+        let pending: SerialSender.Pending = try writeState.withLock { state in
+            let header: Data? = handshake.withLock { header in
+                defer { header = nil }
+                return header
+            }
+            let output: Data
+            if let header {
+                output = try buildRequest(payload: data, addressHeader: header, state: &state)
+            } else {
+                output = try sealChunks(plaintext: data, state: &state)
+            }
+            let inner = self.inner
+            return sendChain.submit { try await inner.sendRaw(output) }
+        }
+        try await pending.value()
+    }
+
+    func receiveRaw() async throws -> Data? {
+        while true {
+            guard let data = try await inner.receiveRaw(), !data.isEmpty else {
+                return nil
+            }
+            let requestSalt = writeState.withLock { $0.requestSalt }
+            let plaintext = try readState.withLock { try processReceived(data, requestSalt: requestSalt, state: &$0) }
+            if plaintext.isEmpty {
+                continue
+            }
+            return plaintext
+        }
+    }
+
+    func cancel() {
+        sendChain.cancel()
+        inner.cancel()
+    }
+
+    // MARK: - Request Construction
+
+    private func buildRequest(payload: Data, addressHeader: Data, state: inout WriteState) throws -> Data {
+        let keySize = cipher.keySize
+
+        var saltBytes = [UInt8](repeating: 0, count: keySize)
+        _ = SecRandomCopyBytes(kSecRandomDefault, keySize, &saltBytes)
+        let salt = Data(saltBytes)
+        state.requestSalt = salt
+
+        let sessionKey = ShadowsocksKeyDerivation.deriveSessionKey(psk: psk, salt: salt, keySize: keySize)
+        state.subkey = sessionKey
+
+        var output = Data()
+        output.append(salt)
+
+        if pskList.count >= 2 {
+            try writeIdentityHeaders(into: &output, salt: salt)
+        }
+        
+        let firstPayload = payload.prefix(Int(UInt16.max) - addressHeader.count - 2)
+        
+        let paddingLen = firstPayload.count < maxPaddingLength ? Int.random(in: 1...maxPaddingLength) : 0
+        let variableHeaderLen = addressHeader.count + 2 + paddingLen + firstPayload.count
+
+        var fixedHeader = Data(capacity: 11)
+        fixedHeader.append(headerTypeClient)
+        var timestamp = UInt64(Date().timeIntervalSince1970).bigEndian
+        withUnsafeBytes(of: &timestamp) { fixedHeader.append(contentsOf: $0) }
+        var varLenBE = UInt16(variableHeaderLen).bigEndian
+        withUnsafeBytes(of: &varLenBE) { fixedHeader.append(contentsOf: $0) }
+
+        let nonce0 = state.nonce.next()
+        let sealedFixed = try ShadowsocksAEADCrypto.seal(
+            cipher: cipher, key: sessionKey, nonce: nonce0, plaintext: fixedHeader
+        )
+        output.append(sealedFixed)
+        
+        var variableHeader = Data(capacity: variableHeaderLen)
+        variableHeader.append(addressHeader)
+        var paddingLenBE = UInt16(paddingLen).bigEndian
+        withUnsafeBytes(of: &paddingLenBE) { variableHeader.append(contentsOf: $0) }
+        if paddingLen > 0 {
+            variableHeader.append(Data(repeating: 0, count: paddingLen))
+        }
+        variableHeader.append(firstPayload)
+
+        let nonce1 = state.nonce.next()
+        let sealedVariable = try ShadowsocksAEADCrypto.seal(
+            cipher: cipher, key: sessionKey, nonce: nonce1, plaintext: variableHeader
+        )
+        output.append(sealedVariable)
+
+        let remainder = payload.dropFirst(firstPayload.count)
+        if !remainder.isEmpty {
+            output.append(try sealChunks(plaintext: Data(remainder), state: &state))
+        }
+
+        return output
+    }
+    
+    private func writeIdentityHeaders(into output: inout Data, salt: Data) throws {
+        let keySize = cipher.keySize
+        for i in 0..<(pskList.count - 1) {
+            let identitySubkey = ShadowsocksKeyDerivation.deriveIdentitySubkey(
+                psk: pskList[i], salt: salt, keySize: keySize
+            )
+            let pskHash = pskHashes[i]
+            let encryptedHeader = try aesECBEncrypt(key: identitySubkey, block: pskHash)
+            output.append(encryptedHeader)
+        }
+    }
+
+    private func sealChunks(plaintext: Data, state: inout WriteState) throws -> Data {
+        guard let subkey = state.subkey else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+        let maxPayload = ShadowsocksAEADWriter.maxPayloadSize
+        var output = Data()
+        var offset = 0
+
+        while offset < plaintext.count {
+            let remaining = plaintext.count - offset
+            let chunkSize = min(remaining, maxPayload)
+            let chunk = plaintext[plaintext.startIndex.advanced(by: offset)..<plaintext.startIndex.advanced(by: offset + chunkSize)]
+
+            let lengthBytes = Data([UInt8(chunkSize >> 8), UInt8(chunkSize & 0xFF)])
+            let encLen = try ShadowsocksAEADCrypto.seal(
+                cipher: cipher, key: subkey, nonce: state.nonce.next(), plaintext: lengthBytes
+            )
+            output.append(encLen)
+
+            let encPayload = try ShadowsocksAEADCrypto.seal(
+                cipher: cipher, key: subkey, nonce: state.nonce.next(), plaintext: chunk
+            )
+            output.append(encPayload)
+
+            offset += chunkSize
+        }
+
+        return output
+    }
+
+    // MARK: - Response Parsing
+
+    private func processReceived(_ data: Data, requestSalt: Data?, state: inout ReadState) throws -> Data {
+        state.buffer.append(data)
+        var output = Data()
+
+        if let varLen = state.pendingVarHeaderLen {
+            guard let parsed = try parseVariableHeader(varLen: varLen, state: &state) else {
+                return Data()
+            }
+            output.append(parsed)
+        }
+
+        if !state.responseHeaderParsed {
+            guard let parsed = try parseResponseHeader(requestSalt: requestSalt, state: &state) else {
+                return Data()
+            }
+            output.append(parsed)
+        }
+
+        if state.responseHeaderParsed {
+            let chunks = try decryptChunks(state: &state)
+            output.append(chunks)
+        }
+
+        return output
+    }
+
+    private func parseResponseHeader(requestSalt: Data?, state: inout ReadState) throws -> Data? {
+        let keySize = cipher.keySize
+        
+        let fixedHeaderPlainLen = 1 + 8 + keySize + 2
+        let minNeeded = keySize + fixedHeaderPlainLen + tagSize
+        guard state.buffer.count >= minNeeded else { return nil }
+
+        let salt = state.buffer.prefix(keySize)
+
+        let sessionKey = ShadowsocksKeyDerivation.deriveSessionKey(psk: psk, salt: salt, keySize: keySize)
+        state.subkey = sessionKey
+
+        let fixedChunkLen = fixedHeaderPlainLen + tagSize
+        let fixedChunkStart = keySize
+
+        let fixedChunk = state.buffer[fixedChunkStart..<(fixedChunkStart + fixedChunkLen)]
+        state.buffer.removeFirst(keySize + fixedChunkLen)
+        if state.buffer.isEmpty { state.buffer = Data() } else { state.buffer = Data(state.buffer) }
+
+        let fixedHeader = try ShadowsocksAEADCrypto.open(
+            cipher: cipher, key: sessionKey, nonce: state.nonce.next(), ciphertext: fixedChunk
+        )
+        
+        guard fixedHeader.count == fixedHeaderPlainLen else {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+        }
+
+        var offset = fixedHeader.startIndex
+        let headerType = fixedHeader[offset]
+        offset += 1
+
+        guard headerType == headerTypeServer else {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.malformedHeader))
+        }
+
+        var epochBE: UInt64 = 0
+        _ = withUnsafeMutableBytes(of: &epochBE) { pointer in
+            fixedHeader[offset..<offset+8].copyBytes(to: pointer)
+        }
+        let epoch = Int64(clamping: UInt64(bigEndian: epochBE))
+        let now = Int64(Date().timeIntervalSince1970)
+        if abs(now - epoch) > maxTimestampDiff {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.staleTimestamp))
+        }
+        offset += 8
+
+        let responseSalt = Data(fixedHeader[offset..<offset+keySize])
+        offset += keySize
+        if let requestSalt, responseSalt != requestSalt {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.replayedSalt))
+        }
+
+        let varLen = Int(UInt16(fixedHeader[offset]) << 8 | UInt16(fixedHeader[offset + 1]))
+
+        if let varData = try parseVariableHeader(varLen: varLen, state: &state) {
+            return varData
+        } else {
+            return Data()
+        }
+    }
+    
+    private func parseVariableHeader(varLen: Int, state: inout ReadState) throws -> Data? {
+        let varChunkLen = varLen + tagSize
+        guard state.buffer.count >= varChunkLen else {
+            state.pendingVarHeaderLen = varLen
+            return nil
+        }
+
+        let varChunk = state.buffer.prefix(varChunkLen)
+        state.buffer.removeFirst(varChunkLen)
+        if state.buffer.isEmpty { state.buffer = Data() } else { state.buffer = Data(state.buffer) }
+
+        guard let subkey = state.subkey else {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+        }
+
+        let varData = try ShadowsocksAEADCrypto.open(
+            cipher: cipher, key: subkey, nonce: state.nonce.next(), ciphertext: varChunk
+        )
+
+        state.pendingVarHeaderLen = nil
+        state.responseHeaderParsed = true
+        return varData
+    }
+
+    private func decryptChunks(state: inout ReadState) throws -> Data {
+        guard let subkey = state.subkey else { return Data() }
+        var output = Data()
+        let base = state.buffer.startIndex
+        var offset = 0
+
+        while true {
+            let remaining = state.buffer.count - offset
+            let payloadLen: Int
+
+            if let pending = state.pendingPayloadLength {
+                payloadLen = pending
+            } else {
+                let lenNeeded = 2 + tagSize
+                guard remaining >= lenNeeded else { break }
+
+                let encLen = state.buffer[(base + offset)..<(base + offset + lenNeeded)]
+                let lenData = try ShadowsocksAEADCrypto.open(
+                    cipher: cipher, key: subkey, nonce: state.nonce.next(), ciphertext: encLen
+                )
+                guard lenData.count == 2 else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+                offset += lenNeeded
+
+                payloadLen = Int(UInt16(lenData[lenData.startIndex]) << 8 | UInt16(lenData[lenData.startIndex + 1]))
+            }
+
+            let payloadNeeded = payloadLen + tagSize
+            let remainingAfterLen = state.buffer.count - offset
+            guard remainingAfterLen >= payloadNeeded else {
+                state.pendingPayloadLength = payloadLen
+                break
+            }
+
+            state.pendingPayloadLength = nil
+
+            let encPayload = state.buffer[(base + offset)..<(base + offset + payloadNeeded)]
+            offset += payloadNeeded
+
+            let payload = try ShadowsocksAEADCrypto.open(
+                cipher: cipher, key: subkey, nonce: state.nonce.next(), ciphertext: encPayload
+            )
+            output.append(payload)
+        }
+
+        if offset > 0 {
+            state.buffer.removeFirst(offset)
+            if state.buffer.isEmpty { state.buffer = Data() } else { state.buffer = Data(state.buffer) }
+        }
+
+        return output
+    }
+}
+
+// MARK: - Shadowsocks2022UDPConnection
+
+nonisolated final class Shadowsocks2022AESUDPConnection: ProxyConnection {
+    private let inner: ProxyConnection
+    private let cipher: ShadowsocksCipher
+    private let psk: Data
+    private let pskList: [Data]
+    private let pskHashes: [Data]
+    private let headerEncryptPSK: Data
+    private let dstHost: String
+    private let dstPort: UInt16
+
+    private let sessionID: UInt64
+    private let packetID = Atomic<UInt64>(0)
+    private let sessionKey: Data
+    
+    private struct RemoteSessionCache { var id: UInt64 = 0; var key: Data? }
+    private let remoteSessionCache = Mutex(RemoteSessionCache())
+
+    init(inner: ProxyConnection, cipher: ShadowsocksCipher, pskList: [Data], dstHost: String, dstPort: UInt16) {
+        self.inner = inner
+        self.cipher = cipher
+        self.pskList = pskList
+        self.psk = pskList.last!
+        self.headerEncryptPSK = pskList.first!
+        self.dstHost = dstHost
+        self.dstPort = dstPort
+
+        var hashes: [Data] = []
+        for i in 1..<pskList.count {
+            hashes.append(ShadowsocksKeyDerivation.blake3Hash16(pskList[i]))
+        }
+        self.pskHashes = hashes
+
+        var randomSessionID: UInt64 = 0
+        _ = withUnsafeMutableBytes(of: &randomSessionID) { pointer in
+            SecRandomCopyBytes(kSecRandomDefault, 8, pointer.baseAddress!)
+        }
+        self.sessionID = randomSessionID
+
+        var sidBE = randomSessionID.bigEndian
+        let sidData = Data(bytes: &sidBE, count: 8)
+        self.sessionKey = ShadowsocksKeyDerivation.deriveSessionKey(psk: pskList.last!, salt: sidData, keySize: cipher.keySize)
+
+    }
+
+    var isConnected: Bool { inner.isConnected }
+    var deliversDatagrams: Bool { true }
+
+    func sendRaw(_ data: Data) async throws {
+        let encrypted = try encryptPacket(payload: data)
+        try await inner.send(encrypted)
+    }
+
+    func receiveRaw() async throws -> Data? {
+        while true {
+            guard let data = try await inner.receive() else {
+                return nil
+            }
+            if let payload = try? decryptPacket(data) {
+                return payload
+            }
+        }
+    }
+
+    func cancel() {
+        inner.cancel()
+    }
+
+    private func encryptPacket(payload: Data) throws -> Data {
+        let pid = packetID.wrappingAdd(1, ordering: .relaxed).newValue
+        var header = Data(capacity: 16)
+        var sidBE = sessionID.bigEndian
+        withUnsafeBytes(of: &sidBE) { header.append(contentsOf: $0) }
+        var pidBE = pid.bigEndian
+        withUnsafeBytes(of: &pidBE) { header.append(contentsOf: $0) }
+
+        var identityData = Data()
+        if pskList.count >= 2 {
+            for i in 0..<(pskList.count - 1) {
+                let pskHash = pskHashes[i]
+                var xored = Data(count: 16)
+                for j in 0..<16 { xored[j] = pskHash[j] ^ header[j] }
+                let encrypted = try aesECBEncrypt(key: pskList[i], block: xored)
+                identityData.append(encrypted)
+            }
+        }
+        
+        let addressHeader = ShadowsocksProtocol.buildAddressHeader(host: dstHost, port: dstPort)
+        let paddingLen = (dstPort == 53 && payload.count < maxPaddingLength)
+            ? Int.random(in: 1...(maxPaddingLength - payload.count))
+            : 0
+
+        var body = Data(capacity: 1 + 8 + 2 + paddingLen + addressHeader.count + payload.count)
+        body.append(headerTypeClient)
+        var timestamp = UInt64(Date().timeIntervalSince1970).bigEndian
+        withUnsafeBytes(of: &timestamp) { body.append(contentsOf: $0) }
+        var paddingLenBE = UInt16(paddingLen).bigEndian
+        withUnsafeBytes(of: &paddingLenBE) { body.append(contentsOf: $0) }
+        if paddingLen > 0 {
+            body.append(Data(repeating: 0, count: paddingLen))
+        }
+        body.append(addressHeader)
+        body.append(payload)
+        
+        let nonce = header[4..<16]
+        let sealedBody = try ShadowsocksAEADCrypto.seal(
+            cipher: cipher, key: sessionKey, nonce: nonce, plaintext: body
+        )
+
+        let encryptedHeader = try aesECBEncrypt(key: headerEncryptPSK, block: header)
+
+        var packet = Data(capacity: encryptedHeader.count + identityData.count + sealedBody.count)
+        packet.append(encryptedHeader)
+        packet.append(identityData)
+        packet.append(sealedBody)
+        return packet
+    }
+
+    private func decryptPacket(_ data: Data) throws -> Data {
+        guard data.count >= 16 + tagSize else {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+        }
+        
+        let header = try aesECBDecrypt(key: psk, block: data.prefix(16))
+
+        var sidBE: UInt64 = 0
+        _ = withUnsafeMutableBytes(of: &sidBE) { pointer in
+            header[0..<8].copyBytes(to: pointer)
+        }
+        let remoteSession = UInt64(bigEndian: sidBE)
+
+        let remoteCipherKey: Data
+        if let cached = remoteSessionCache.withLock({ $0.id == remoteSession ? $0.key : nil }) {
+            remoteCipherKey = cached
+        } else {
+            var remoteSessionBE = remoteSession.bigEndian
+            let rsData = Data(bytes: &remoteSessionBE, count: 8)
+            remoteCipherKey = ShadowsocksKeyDerivation.deriveSessionKey(psk: psk, salt: rsData, keySize: cipher.keySize)
+            remoteSessionCache.withLock { $0.id = remoteSession; $0.key = remoteCipherKey }
+        }
+        
+        let nonce = header[4..<16]
+        let sealedBody = data.suffix(from: data.startIndex + 16)
+        let body = try ShadowsocksAEADCrypto.open(
+            cipher: cipher, key: remoteCipherKey, nonce: nonce, ciphertext: sealedBody
+        )
+        
+        guard body.count >= 1 + 8 + 8 + 2 else {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+        }
+
+        var offset = body.startIndex
+        let headerType = body[offset]
+        offset += 1
+
+        guard headerType == headerTypeServer else {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.malformedHeader))
+        }
+
+        var epochBE: UInt64 = 0
+        _ = withUnsafeMutableBytes(of: &epochBE) { pointer in
+            body[offset..<offset+8].copyBytes(to: pointer)
+        }
+        let epoch = Int64(clamping: UInt64(bigEndian: epochBE))
+        let now = Int64(Date().timeIntervalSince1970)
+        if abs(now - epoch) > maxTimestampDiff {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.staleTimestamp))
+        }
+        offset += 8
+
+        var clientSidBE: UInt64 = 0
+        _ = withUnsafeMutableBytes(of: &clientSidBE) { pointer in
+            body[offset..<offset+8].copyBytes(to: pointer)
+        }
+        let clientSid = UInt64(bigEndian: clientSidBE)
+        guard clientSid == sessionID else {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+        }
+        offset += 8
+
+        guard body.endIndex - offset >= 2 else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+        let paddingLen = Int(UInt16(body[offset]) << 8 | UInt16(body[offset + 1]))
+        offset += 2
+        guard body.endIndex - offset >= paddingLen else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+        offset += paddingLen
+
+        guard let parsed = ShadowsocksProtocol.decodeUDPPacket(data: Data(body[offset...])) else {
+            throw RuleProxyError.proxy(.shadowsocks, .protocolViolation(detail: "invalid address header"))
+        }
+
+        return parsed.payload
+    }
+}
+
+// MARK: - Shadowsocks2022ChaChaUDPConnection
+
+nonisolated final class Shadowsocks2022ChaChaUDPConnection: ProxyConnection {
+    private let inner: ProxyConnection
+    private let psk: Data
+    private let dstHost: String
+    private let dstPort: UInt16
+
+    private let sessionID: UInt64
+    private let packetID = Atomic<UInt64>(0)
+
+    init(inner: ProxyConnection, psk: Data, dstHost: String, dstPort: UInt16) {
+        self.inner = inner
+        self.psk = psk
+        self.dstHost = dstHost
+        self.dstPort = dstPort
+
+        var sid: UInt64 = 0
+        _ = withUnsafeMutableBytes(of: &sid) { pointer in
+            SecRandomCopyBytes(kSecRandomDefault, 8, pointer.baseAddress!)
+        }
+        self.sessionID = sid
+    }
+
+    var isConnected: Bool { inner.isConnected }
+    var deliversDatagrams: Bool { true }
+
+    func sendRaw(_ data: Data) async throws {
+        let encrypted = try encryptPacket(payload: data)
+        try await inner.send(encrypted)
+    }
+
+    func receiveRaw() async throws -> Data? {
+        while true {
+            guard let data = try await inner.receive() else {
+                return nil
+            }
+            if let payload = try? decryptPacket(data) {
+                return payload
+            }
+        }
+    }
+
+    func cancel() {
+        inner.cancel()
+    }
+
+    private func encryptPacket(payload: Data) throws -> Data {
+        var nonceBytes = [UInt8](repeating: 0, count: 24)
+        _ = SecRandomCopyBytes(kSecRandomDefault, 24, &nonceBytes)
+        let nonce = Data(nonceBytes)
+        
+        let addressHeader = ShadowsocksProtocol.buildAddressHeader(host: dstHost, port: dstPort)
+        let paddingLen = (dstPort == 53 && payload.count < maxPaddingLength)
+            ? Int.random(in: 1...(maxPaddingLength - payload.count))
+            : 0
+
+        let pid = packetID.wrappingAdd(1, ordering: .relaxed).newValue
+        var body = Data(capacity: 8 + 8 + 1 + 8 + 2 + paddingLen + addressHeader.count + payload.count)
+        var sidBE = sessionID.bigEndian
+        withUnsafeBytes(of: &sidBE) { body.append(contentsOf: $0) }
+        var pidBE = pid.bigEndian
+        withUnsafeBytes(of: &pidBE) { body.append(contentsOf: $0) }
+        body.append(headerTypeClient)
+        var timestamp = UInt64(Date().timeIntervalSince1970).bigEndian
+        withUnsafeBytes(of: &timestamp) { body.append(contentsOf: $0) }
+        var paddingLenBE = UInt16(paddingLen).bigEndian
+        withUnsafeBytes(of: &paddingLenBE) { body.append(contentsOf: $0) }
+        if paddingLen > 0 {
+            body.append(Data(repeating: 0, count: paddingLen))
+        }
+        body.append(addressHeader)
+        body.append(payload)
+
+        let sealed = try XChaCha20Poly1305.seal(key: psk, nonce: nonce, plaintext: body)
+
+        var packet = Data(capacity: nonce.count + sealed.count)
+        packet.append(nonce)
+        packet.append(sealed)
+        return packet
+    }
+
+    private func decryptPacket(_ data: Data) throws -> Data {
+        guard data.count >= 24 + tagSize else {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+        }
+
+        let nonce = data.prefix(24)
+        let ciphertext = data.suffix(from: data.startIndex + 24)
+
+        let body = try XChaCha20Poly1305.open(key: psk, nonce: nonce, ciphertext: ciphertext)
+        
+        guard body.count >= 8 + 8 + 1 + 8 + 8 + 2 else {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+        }
+
+        var offset = body.startIndex
+        offset += 8
+        offset += 8
+
+        let headerType = body[offset]
+        offset += 1
+        guard headerType == headerTypeServer else {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.malformedHeader))
+        }
+
+        var epochBE: UInt64 = 0
+        _ = withUnsafeMutableBytes(of: &epochBE) { pointer in
+            body[offset..<offset+8].copyBytes(to: pointer)
+        }
+        let epoch = Int64(clamping: UInt64(bigEndian: epochBE))
+        let now = Int64(Date().timeIntervalSince1970)
+        if abs(now - epoch) > maxTimestampDiff {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.staleTimestamp))
+        }
+        offset += 8
+
+        var clientSidBE: UInt64 = 0
+        _ = withUnsafeMutableBytes(of: &clientSidBE) { pointer in
+            body[offset..<offset+8].copyBytes(to: pointer)
+        }
+        let clientSid = UInt64(bigEndian: clientSidBE)
+        guard clientSid == sessionID else {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+        }
+        offset += 8
+
+        guard body.endIndex - offset >= 2 else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+        let paddingLen = Int(UInt16(body[offset]) << 8 | UInt16(body[offset + 1]))
+        offset += 2
+        guard body.endIndex - offset >= paddingLen else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+        offset += paddingLen
+
+        guard let parsed = ShadowsocksProtocol.decodeUDPPacket(data: Data(body[offset...])) else {
+            throw RuleProxyError.proxy(.shadowsocks, .protocolViolation(detail: "invalid address header"))
+        }
+
+        return parsed.payload
+    }
+}
+
+// MARK: - AES-ECB Single Block
+
+private nonisolated func aesECBEncrypt(key: Data, block: Data) throws -> Data {
+    guard block.count == 16 else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+    var outBytes = [UInt8](repeating: 0, count: 16 + kCCBlockSizeAES128)
+    var outLen: Int = 0
+    let status = key.withUnsafeBytes { keyPtr in
+        block.withUnsafeBytes { blockPtr in
+            CCCrypt(
+                CCOperation(kCCEncrypt),
+                CCAlgorithm(kCCAlgorithmAES),
+                CCOptions(kCCOptionECBMode),
+                keyPtr.baseAddress!, key.count,
+                nil, // no IV for ECB
+                blockPtr.baseAddress!, 16,
+                &outBytes, outBytes.count,
+                &outLen
+            )
+        }
+    }
+    guard status == kCCSuccess else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+    return Data(outBytes.prefix(16))
+}
+
+private nonisolated func aesECBDecrypt(key: Data, block: Data) throws -> Data {
+    guard block.count == 16 else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+    var outBytes = [UInt8](repeating: 0, count: 16 + kCCBlockSizeAES128)
+    var outLen: Int = 0
+    let status = key.withUnsafeBytes { keyPtr in
+        block.withUnsafeBytes { blockPtr in
+            CCCrypt(
+                CCOperation(kCCDecrypt),
+                CCAlgorithm(kCCAlgorithmAES),
+                CCOptions(kCCOptionECBMode),
+                keyPtr.baseAddress!, key.count,
+                nil,
+                blockPtr.baseAddress!, 16,
+                &outBytes, outBytes.count,
+                &outLen
+            )
+        }
+    }
+    guard status == kCCSuccess else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+    return Data(outBytes.prefix(16))
+}
+
+// MARK: - XChaCha20-Poly1305
+
+nonisolated enum XChaCha20Poly1305 {
+
+    static func seal(key: Data, nonce: Data, plaintext: Data) throws -> Data {
+        guard nonce.count == 24, key.count == 32 else {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+        }
+        
+        let subkey = hChaCha20(key: key, nonce: Data(nonce.prefix(16)))
+        
+        var chachaNonce = Data(repeating: 0, count: 4)
+        chachaNonce.append(nonce[nonce.startIndex + 16..<nonce.startIndex + 24])
+
+        let symmetricKey = SymmetricKey(data: subkey)
+        let nonceObj = try ChaChaPoly.Nonce(data: chachaNonce)
+        let sealed = try ChaChaPoly.seal(plaintext, using: symmetricKey, nonce: nonceObj)
+        return sealed.ciphertext + sealed.tag
+    }
+
+    static func open(key: Data, nonce: Data, ciphertext: Data) throws -> Data {
+        guard nonce.count == 24, key.count == 32 else {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+        }
+        guard ciphertext.count >= 16 else {
+            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+        }
+
+        let subkey = hChaCha20(key: key, nonce: Data(nonce.prefix(16)))
+
+        var chachaNonce = Data(repeating: 0, count: 4)
+        chachaNonce.append(nonce[nonce.startIndex + 16..<nonce.startIndex + 24])
+
+        let symmetricKey = SymmetricKey(data: subkey)
+        let nonceObj = try ChaChaPoly.Nonce(data: chachaNonce)
+        let ciphertextWithoutTag = ciphertext.prefix(ciphertext.count - 16)
+        let tag = ciphertext.suffix(16)
+        let box = try ChaChaPoly.SealedBox(nonce: nonceObj, ciphertext: ciphertextWithoutTag, tag: tag)
+        return try ChaChaPoly.open(box, using: symmetricKey)
+    }
+    
+    private static func hChaCha20(key: Data, nonce: Data) -> Data {
+        var state: [UInt32] = Array(repeating: 0, count: 16)
+        
+        state[0] = 0x61707865
+        state[1] = 0x3320646e
+        state[2] = 0x79622d32
+        state[3] = 0x6b206574
+
+        key.withUnsafeBytes { pointer in
+            for i in 0..<8 {
+                state[4 + i] = pointer.load(fromByteOffset: i * 4, as: UInt32.self).littleEndian
+            }
+        }
+
+        nonce.withUnsafeBytes { pointer in
+            for i in 0..<4 {
+                state[12 + i] = pointer.load(fromByteOffset: i * 4, as: UInt32.self).littleEndian
+            }
+        }
+        
+        for _ in 0..<10 {
+            quarterRound(&state, 0, 4, 8, 12)
+            quarterRound(&state, 1, 5, 9, 13)
+            quarterRound(&state, 2, 6, 10, 14)
+            quarterRound(&state, 3, 7, 11, 15)
+            quarterRound(&state, 0, 5, 10, 15)
+            quarterRound(&state, 1, 6, 11, 12)
+            quarterRound(&state, 2, 7, 8, 13)
+            quarterRound(&state, 3, 4, 9, 14)
+        }
+        
+        var output = Data(count: 32)
+        output.withUnsafeMutableBytes { pointer in
+            let p = pointer.bindMemory(to: UInt32.self)
+            p[0] = state[0].littleEndian
+            p[1] = state[1].littleEndian
+            p[2] = state[2].littleEndian
+            p[3] = state[3].littleEndian
+            p[4] = state[12].littleEndian
+            p[5] = state[13].littleEndian
+            p[6] = state[14].littleEndian
+            p[7] = state[15].littleEndian
+        }
+        return output
+    }
+
+    private static func quarterRound(_ s: inout [UInt32], _ a: Int, _ b: Int, _ c: Int, _ d: Int) {
+        s[a] = s[a] &+ s[b]; s[d] = (s[d] ^ s[a]).rotatedLeft(by: 16)
+        s[c] = s[c] &+ s[d]; s[b] = (s[b] ^ s[c]).rotatedLeft(by: 12)
+        s[a] = s[a] &+ s[b]; s[d] = (s[d] ^ s[a]).rotatedLeft(by: 8)
+        s[c] = s[c] &+ s[d]; s[b] = (s[b] ^ s[c]).rotatedLeft(by: 7)
+    }
+}
+
+private nonisolated extension UInt32 {
+    func rotatedLeft(by count: Int) -> UInt32 {
+        return (self << count) | (self >> (32 - count))
+    }
+}

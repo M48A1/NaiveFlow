@@ -1,0 +1,267 @@
+//
+//  DNSUpstreamClient.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 7/24/26.
+//
+
+import Foundation
+
+nonisolated private let logger = RuleProxyLogger(category: "DNSUpstreamClient")
+
+nonisolated enum DNSUpstreamClient {
+    static let queryTimeout: Duration = .seconds(4)
+    
+    private static let recordUDPPayloadSize: UInt16 = 1232
+
+    // MARK: - Public API
+    
+    static func resolve(
+        _ host: String,
+        via upstream: DNSUpstream,
+        family: DNSAddressFamily = .preferIPv4
+    ) async throws -> [String] {
+        let addresses: [String]
+        do {
+            switch upstream {
+            case .system:
+                throw RuleProxyError.dns(.resolutionFailed(host: host, detail: "no upstream configured"))
+            case .plain(let server, let port):
+                addresses = try await queryAll(host, family: family) { name, type in
+                    try await queryPlain(name, type: type, server: server, port: port)
+                }
+            case .doh(let url):
+                addresses = try await queryAll(host, family: family) { name, type in
+                    try await queryDoH(name, type: type, url: url)
+                }
+            }
+        } catch {
+            logger.report("[DNS] \(host) via \(describe(upstream))", error: error)
+            throw error
+        }
+
+        guard !addresses.isEmpty else {
+            throw RuleProxyError.dns(.noAddresses(host: host))
+        }
+        return addresses
+    }
+    
+    static func queryRecord(
+        _ host: String,
+        type: UInt16,
+        via upstream: DNSUpstream,
+        accept: @escaping @Sendable (Data) -> Data?
+    ) async throws -> (payload: Data, ttl: UInt32)? {
+        do {
+            switch upstream {
+            case .system:
+                throw RuleProxyError.dns(.resolutionFailed(host: host, detail: "no upstream configured"))
+            case .plain(let server, let port):
+                return try await queryRecordPlain(host, type: type, server: server, port: port, accept: accept)
+            case .doh(let url):
+                return try await queryRecordDoH(host, type: type, url: url, accept: accept)
+            }
+        } catch {
+            logger.report("[DNS] \(host) type \(type) via \(describe(upstream))", error: error)
+            throw error
+        }
+    }
+
+    // MARK: - Internal
+    
+    private static func queryAll(
+        _ host: String,
+        family: DNSAddressFamily,
+        query: @escaping @Sendable (String, UInt16) async throws -> [String]
+    ) async throws -> [String] {
+        switch family {
+        case .ipv4:
+            return try await query(host, DNSMessage.typeA)
+        case .ipv6:
+            return try await query(host, DNSMessage.typeAAAA)
+        case .preferIPv4:
+            async let ipv4 = query(host, DNSMessage.typeA)
+            async let ipv6 = query(host, DNSMessage.typeAAAA)
+            var addresses: [String] = []
+            var failure: (any Error)?
+            do { addresses += try await ipv4 } catch { failure = error }
+            do { addresses += try await ipv6 } catch { failure = failure ?? error }
+            if addresses.isEmpty, let failure { throw failure }
+            let ipv4Addresses = addresses.filter { !$0.contains(":") }
+            return ipv4Addresses.isEmpty ? addresses : ipv4Addresses
+        }
+    }
+
+    // MARK: - Plain
+
+    private static func queryPlain(
+        _ name: String,
+        type: UInt16,
+        server: String,
+        port: UInt16
+    ) async throws -> [String] {
+        let id = UInt16.random(in: UInt16.min...UInt16.max)
+        guard let query = DNSMessage.makeQuery(domain: name, type: type, id: id) else {
+            throw RuleProxyError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
+        }
+
+        let transport = UDPTransport(host: server, port: port)
+        defer { transport.cancel() }
+        
+        return try await withDialDeadline(queryTimeout) {
+            transport.cancel()
+        } error: {
+            RuleProxyError.dns(.timedOut(host: name))
+        } operation: {
+            try await transport.connect()
+            try await transport.send(query)
+            while true {
+                let datagram = try await transport.receive()
+                if let addresses = try decode(datagram, id: id) { return addresses }
+            }
+        }
+    }
+
+    private static func queryRecordPlain(
+        _ name: String,
+        type: UInt16,
+        server: String,
+        port: UInt16,
+        accept: @escaping @Sendable (Data) -> Data?
+    ) async throws -> (payload: Data, ttl: UInt32)? {
+        let id = UInt16.random(in: UInt16.min...UInt16.max)
+        guard let query = DNSMessage.makeQuery(
+            domain: name,
+            type: type,
+            id: id,
+            udpPayloadSize: recordUDPPayloadSize
+        ) else {
+            throw RuleProxyError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
+        }
+
+        let transport = UDPTransport(host: server, port: port)
+        defer { transport.cancel() }
+
+        return try await withDialDeadline(queryTimeout) {
+            transport.cancel()
+        } error: {
+            RuleProxyError.dns(.timedOut(host: name))
+        } operation: {
+            try await transport.connect()
+            try await transport.send(query)
+            while true {
+                let datagram = try await transport.receive()
+                if let records = try decodeRecords(datagram, id: id, type: type) {
+                    return firstAccepted(records, accept: accept)
+                }
+            }
+        }
+    }
+
+    // MARK: - DoH
+
+    private static func queryDoH(_ name: String, type: UInt16, url: URL) async throws -> [String] {
+        let id: UInt16 = 0
+        guard let query = DNSMessage.makeQuery(domain: name, type: type, id: id) else {
+            throw RuleProxyError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = query
+        request.setValue("application/dns-message", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/dns-message", forHTTPHeaderField: "Accept")
+        request.setValue(ProxyUserAgent.default, forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = TimeInterval(queryTimeout.components.seconds)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+        guard status == 200 else {
+            throw RuleProxyError.dns(.resolutionFailed(host: name, detail: "DoH HTTP \(status)"))
+        }
+        guard let addresses = try decode(data, id: id) else {
+            throw RuleProxyError.dns(.malformedResponse)
+        }
+        return addresses
+    }
+
+    private static func queryRecordDoH(
+        _ name: String,
+        type: UInt16,
+        url: URL,
+        accept: @escaping @Sendable (Data) -> Data?
+    ) async throws -> (payload: Data, ttl: UInt32)? {
+        let id: UInt16 = 0
+        guard let query = DNSMessage.makeQuery(domain: name, type: type, id: id) else {
+            throw RuleProxyError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = query
+        request.setValue("application/dns-message", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/dns-message", forHTTPHeaderField: "Accept")
+        request.setValue(ProxyUserAgent.default, forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = TimeInterval(queryTimeout.components.seconds)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+        guard status == 200 else {
+            throw RuleProxyError.dns(.resolutionFailed(host: name, detail: "DoH HTTP \(status)"))
+        }
+        guard let records = try decodeRecords(data, id: id, type: type) else {
+            throw RuleProxyError.dns(.malformedResponse)
+        }
+        return firstAccepted(records, accept: accept)
+    }
+
+    // MARK: - Shared decoding
+
+    private static func decode(_ message: Data, id: UInt16) throws -> [String]? {
+        do {
+            return try DNSMessage.parseAddresses(message, expectedID: id)
+        } catch DNSMessage.ParseFailure.identifierMismatch {
+            return nil
+        } catch DNSMessage.ParseFailure.serverFailure {
+            return []
+        } catch {
+            throw RuleProxyError.dns(.malformedResponse)
+        }
+    }
+
+    private static func decodeRecords(
+        _ message: Data,
+        id: UInt16,
+        type: UInt16
+    ) throws -> [(rdata: Data, ttl: UInt32)]? {
+        do {
+            return try DNSMessage.parseRecords(message, expectedID: id, type: type)
+        } catch DNSMessage.ParseFailure.identifierMismatch {
+            return nil
+        } catch DNSMessage.ParseFailure.serverFailure {
+            return []
+        } catch {
+            throw RuleProxyError.dns(.malformedResponse)
+        }
+    }
+
+    private static func firstAccepted(
+        _ records: [(rdata: Data, ttl: UInt32)],
+        accept: (Data) -> Data?
+    ) -> (payload: Data, ttl: UInt32)? {
+        for record in records {
+            if let payload = accept(record.rdata) { return (payload, record.ttl) }
+        }
+        return nil
+    }
+    
+    private static func describe(_ upstream: DNSUpstream) -> String {
+        switch upstream {
+        case .system: return "system"
+        case .plain(let host, let port): return "\(host):\(port)"
+        case .doh(let url): return "DoH \(url.host ?? "?")"
+        }
+    }
+}

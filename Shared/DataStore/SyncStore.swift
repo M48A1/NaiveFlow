@@ -1,0 +1,551 @@
+//
+//  SyncStore.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 8/13/26.
+//
+
+import Foundation
+import Synchronization
+import CryptoKit
+import SwiftData
+
+nonisolated private let logger = RuleProxyLogger(category: "SyncStore")
+
+@Model
+nonisolated final class SyncItem {
+    var collection: String = ""
+    var itemID: String = ""
+    @Attribute(.externalStorage) var payload: Data = Data()
+    var updatedAt: Date = Date()
+    var deletedAt: Date?
+    var systemFields: Data?
+
+    init(collection: String, itemID: String, payload: Data, updatedAt: Date, deletedAt: Date? = nil, systemFields: Data? = nil) {
+        self.collection = collection
+        self.itemID = itemID
+        self.payload = payload
+        self.updatedAt = updatedAt
+        self.deletedAt = deletedAt
+        self.systemFields = systemFields
+    }
+}
+
+nonisolated struct SyncPayloadItem: Sendable, Equatable {
+    let id: String
+    let payload: Data
+    let updatedAt: Date
+    let deletedAt: Date?
+}
+
+nonisolated struct SyncItemRef: Hashable, Sendable {
+    let key: SyncStore.Key
+    let itemID: String
+}
+
+nonisolated enum SyncChange: Sendable {
+    case save(SyncItemRef)
+    case delete(SyncItemRef)
+}
+
+nonisolated final class SyncStore: Sendable {
+    static let shared = SyncStore()
+
+    enum Key: String, CaseIterable {
+        case configurations
+        case chains
+        case groups
+        case subscriptions
+        case customRuleSets
+        case mitm
+        case modules
+    }
+
+    struct ItemSnapshot: Sendable {
+        let payload: Data
+        let updatedAt: Date
+        let deletedAt: Date?
+        let systemFields: Data?
+    }
+
+    struct RemoteItem: Sendable {
+        let ref: SyncItemRef
+        let payload: Data
+        let updatedAt: Date
+        let deletedAt: Date?
+        let systemFields: Data
+    }
+    
+    static let maxSyncedPayloadBytes = 900_000
+
+    private let store: Mutex<ModelContainer?>
+
+    private static let orderItemID = "#order"
+
+    private let changeObserver = Mutex<ChangeObserver?>(nil)
+
+    private init(container: ModelContainer?) {
+        store = Mutex(container)
+    }
+
+    private convenience init() {
+        self.init(container: Self.makeContainer())
+    }
+
+    static func ephemeral() -> SyncStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SyncStore-\(UUID().uuidString).store")
+        let config = ModelConfiguration(url: url, cloudKitDatabase: .none)
+        let container = try? ModelContainer(for: Self.schema, configurations: config)
+        return SyncStore(container: container)
+    }
+
+    private static let schema = Schema([SyncItem.self])
+
+    private static func makeContainer() -> ModelContainer? {
+        do {
+            return try ModelContainer(for: schema, configurations: makeConfiguration())
+        } catch {
+            logger.report("[Sync] Store open failed", error: error)
+            return nil
+        }
+    }
+
+    #if os(tvOS)
+    private static func makeConfiguration() throws -> ModelConfiguration {
+        ModelConfiguration(
+            groupContainer: .identifier(AWCore.Identifier.appGroupSuite),
+            cloudKitDatabase: .none
+        )
+    }
+    #else
+    static let storeURL = URL.applicationSupportDirectory.appendingPathComponent("default.store")
+
+    private static func makeConfiguration() throws -> ModelConfiguration {
+        try FileManager.default.createDirectory(
+            at: storeURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        return ModelConfiguration(url: storeURL, cloudKitDatabase: .none)
+    }
+    #endif
+
+    // MARK: - Change observation
+
+    private struct ChangeObserver: Sendable {
+        let deliver: @Sendable ([SyncChange]) -> Void
+    }
+
+    func setChangeObserver(_ observer: (@Sendable ([SyncChange]) -> Void)?) {
+        let box = observer.map { ChangeObserver(deliver: $0) }
+        changeObserver.withLock { $0 = box }
+    }
+
+    private func notify(_ changes: [SyncChange]) {
+        guard !changes.isEmpty else { return }
+        changeObserver.withLock { $0 }?.deliver(changes)
+    }
+
+    // MARK: - Quarantine
+
+    static func quarantine(_ key: Key, _ data: Data) {
+        guard !data.isEmpty else { return }
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: AWCore.Identifier.appGroupSuite
+        ) else { return }
+        let digest = SHA256.hash(data: data).prefix(8).map { String(format: "%02x", $0) }.joined()
+        let directory = container.appendingPathComponent("SyncQuarantine", isDirectory: true)
+        let file = directory.appendingPathComponent("\(key.rawValue)-\(digest).json")
+        guard !FileManager.default.fileExists(atPath: file.path) else { return }
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: file)
+            logger.error("[Sync] Undecodable \(key.rawValue) payload: \(file.lastPathComponent)")
+        } catch {
+            logger.report("[Sync] Quarantine write failed", error: error)
+        }
+    }
+
+    // MARK: - Items
+
+    func loadItems(_ key: Key) -> [Data] {
+        store.withLock { container in
+            guard let container else { return [] }
+            let context = ModelContext(container)
+            return Self.orderedWinners(key, in: context).map(\.payload)
+        }
+    }
+
+    func save(_ key: Key, items: [SyncPayloadItem], order: [String]) {
+        for item in items where item.payload.count > Self.maxSyncedPayloadBytes {
+            logger.warning("[Sync] \(key.rawValue) \(item.id): Payload too large")
+        }
+        let changes = store.withLock { container -> [SyncChange] in
+            guard let container else { return [] }
+            let context = ModelContext(container)
+            let rows = Self.fetchItems(key, in: context)
+            let changedIDs = Self.upsert(key, items: items, rows: rows, in: context)
+            let orderChanged = Self.updateOrder(key, order, rows: rows, in: context)
+            guard !changedIDs.isEmpty || orderChanged else { return [] }
+            do {
+                try context.save()
+            } catch {
+                logger.report("[Sync] \(key.rawValue) save failed", error: error)
+                return []
+            }
+            var changes = changedIDs.map { SyncChange.save(SyncItemRef(key: key, itemID: $0)) }
+            if orderChanged { changes.append(.save(SyncItemRef(key: key, itemID: Self.orderItemID))) }
+            return changes
+        }
+        notify(changes)
+    }
+
+    func reconcile() {
+        let deletions = store.withLock { container -> [SyncChange] in
+            guard let container else { return [] }
+            let context = ModelContext(container)
+            let cutoff = Date.now.addingTimeInterval(-Tombstone.lifetime)
+            var deletions: [SyncChange] = []
+            var changed = false
+            for key in Key.allCases {
+                let winners = Self.winners(of: Self.fetchItems(key, in: context)) { loser in
+                    context.delete(loser)
+                    changed = true
+                }
+                for row in winners.values where row.itemID != Self.orderItemID {
+                    if let deletedAt = row.deletedAt, deletedAt < cutoff {
+                        context.delete(row)
+                        deletions.append(.delete(SyncItemRef(key: key, itemID: row.itemID)))
+                        changed = true
+                    }
+                }
+            }
+            guard changed else { return [] }
+            do {
+                try context.save()
+            } catch {
+                logger.report("[Sync] Reconcile failed", error: error)
+                return []
+            }
+            return deletions
+        }
+        notify(deletions)
+    }
+
+    // MARK: - Cloud bridge
+
+    func allItemRefs() -> [SyncItemRef] {
+        store.withLock { container in
+            guard let container else { return [] }
+            let context = ModelContext(container)
+            var descriptor = FetchDescriptor<SyncItem>()
+            descriptor.propertiesToFetch = [\.collection, \.itemID]
+            let rows = (try? context.fetch(descriptor)) ?? []
+            var refs: Set<SyncItemRef> = []
+            for row in rows {
+                guard let key = Key(rawValue: row.collection) else { continue }
+                refs.insert(SyncItemRef(key: key, itemID: row.itemID))
+            }
+            return Array(refs)
+        }
+    }
+    
+    func refsNeedingUpload() -> [SyncItemRef] {
+        store.withLock { container in
+            guard let container else { return [] }
+            let context = ModelContext(container)
+            var descriptor = FetchDescriptor<SyncItem>(predicate: #Predicate { $0.systemFields == nil })
+            descriptor.propertiesToFetch = [\.collection, \.itemID]
+            let rows = (try? context.fetch(descriptor)) ?? []
+            var refs: Set<SyncItemRef> = []
+            for row in rows {
+                guard let key = Key(rawValue: row.collection) else { continue }
+                refs.insert(SyncItemRef(key: key, itemID: row.itemID))
+            }
+            return Array(refs)
+        }
+    }
+
+    func snapshots(for refs: [SyncItemRef]) -> [SyncItemRef: ItemSnapshot] {
+        guard !refs.isEmpty else { return [:] }
+        return store.withLock { container in
+            guard let container else { return [:] }
+            let context = ModelContext(container)
+            var result: [SyncItemRef: ItemSnapshot] = [:]
+            for key in Set(refs.map(\.key)) {
+                let winners = Self.winners(of: Self.fetchItems(key, in: context))
+                for ref in refs where ref.key == key {
+                    guard let row = winners[ref.itemID] else { continue }
+                    result[ref] = ItemSnapshot(
+                        payload: row.payload,
+                        updatedAt: row.updatedAt,
+                        deletedAt: row.deletedAt,
+                        systemFields: row.systemFields
+                    )
+                }
+            }
+            return result
+        }
+    }
+
+    func storeSystemFields(_ updates: [(ref: SyncItemRef, data: Data?)]) {
+        guard !updates.isEmpty else { return }
+        store.withLock { container in
+            guard let container else { return }
+            let context = ModelContext(container)
+            var changed = false
+            for key in Set(updates.map(\.ref.key)) {
+                let winners = Self.winners(of: Self.fetchItems(key, in: context))
+                for update in updates where update.ref.key == key {
+                    guard let row = winners[update.ref.itemID], row.systemFields != update.data else { continue }
+                    row.systemFields = update.data
+                    changed = true
+                }
+            }
+            guard changed else { return }
+            try? context.save()
+        }
+    }
+
+    func clearAllSystemFields() {
+        store.withLock { container in
+            guard let container else { return }
+            let context = ModelContext(container)
+            var changed = false
+            for key in Key.allCases {
+                for row in Self.fetchItems(key, in: context) where row.systemFields != nil {
+                    row.systemFields = nil
+                    changed = true
+                }
+            }
+            guard changed else { return }
+            try? context.save()
+        }
+    }
+
+    func applyRemote(saves: [RemoteItem], deletes: [SyncItemRef]) -> Set<Key> {
+        var changedKeys: Set<Key> = []
+        var reuploads: [SyncChange] = []
+        store.withLock { container in
+            guard let container else { return }
+            let context = ModelContext(container)
+            var dirty = false
+            let saveGroups = Dictionary(grouping: saves, by: { $0.ref.key })
+            let deleteGroups = Dictionary(grouping: deletes, by: { $0.key })
+            for key in Set(saveGroups.keys).union(deleteGroups.keys) {
+                var rows = Self.winners(of: Self.fetchItems(key, in: context)) { loser in
+                    context.delete(loser)
+                    dirty = true
+                }
+                for item in saveGroups[key] ?? [] {
+                    guard let row = rows[item.ref.itemID] else {
+                        let inserted = SyncItem(
+                            collection: key.rawValue,
+                            itemID: item.ref.itemID,
+                            payload: item.payload,
+                            updatedAt: item.updatedAt,
+                            deletedAt: item.deletedAt,
+                            systemFields: item.systemFields
+                        )
+                        context.insert(inserted)
+                        rows[item.ref.itemID] = inserted
+                        changedKeys.insert(key)
+                        dirty = true
+                        continue
+                    }
+                    if Self.prevails(
+                        stamp: item.updatedAt, deleted: item.deletedAt != nil, payload: item.payload,
+                        overStamp: row.updatedAt, deleted: row.deletedAt != nil, payload: row.payload
+                    ) {
+                        row.payload = item.payload
+                        row.updatedAt = item.updatedAt
+                        row.deletedAt = item.deletedAt
+                        row.systemFields = item.systemFields
+                        changedKeys.insert(key)
+                        dirty = true
+                    } else {
+                        if row.systemFields != item.systemFields {
+                            row.systemFields = item.systemFields
+                            dirty = true
+                        }
+                        if Self.prevails(
+                            stamp: row.updatedAt, deleted: row.deletedAt != nil, payload: row.payload,
+                            overStamp: item.updatedAt, deleted: item.deletedAt != nil, payload: item.payload
+                        ) {
+                            reuploads.append(.save(item.ref))
+                        }
+                    }
+                }
+                for ref in deleteGroups[key] ?? [] {
+                    guard let row = rows[ref.itemID] else { continue }
+                    if row.deletedAt != nil {
+                        context.delete(row)
+                        dirty = true
+                    } else {
+                        row.systemFields = nil
+                        dirty = true
+                        reuploads.append(.save(ref))
+                    }
+                }
+            }
+            guard dirty else { return }
+            do {
+                try context.save()
+            } catch {
+                logger.report("[Sync] Remote changes save failed", error: error)
+                changedKeys = []
+                reuploads = saves.map { .save($0.ref) }
+            }
+        }
+        notify(reuploads)
+        return changedKeys
+    }
+
+    // MARK: - Item internals
+
+    private static func fetchItems(_ key: Key, in context: ModelContext) -> [SyncItem] {
+        let raw = key.rawValue
+        let predicate = #Predicate<SyncItem> { $0.collection == raw }
+        return (try? context.fetch(FetchDescriptor<SyncItem>(predicate: predicate))) ?? []
+    }
+    
+    private static func winners(of rows: [SyncItem], onLoser: ((SyncItem) -> Void)? = nil) -> [String: SyncItem] {
+        var winners: [String: SyncItem] = [:]
+        for row in rows {
+            guard let incumbent = winners[row.itemID] else {
+                winners[row.itemID] = row
+                continue
+            }
+            let loser: SyncItem
+            if prevails(
+                stamp: row.updatedAt, deleted: row.deletedAt != nil, payload: row.payload,
+                overStamp: incumbent.updatedAt, deleted: incumbent.deletedAt != nil, payload: incumbent.payload
+            ) {
+                winners[row.itemID] = row
+                loser = incumbent
+            } else {
+                loser = row
+            }
+            onLoser?(loser)
+        }
+        return winners
+    }
+
+    private static func prevails(
+        stamp: Date, deleted: Bool, payload: @autoclosure () -> Data,
+        overStamp incumbentStamp: Date, deleted incumbentDeleted: Bool, payload incumbentPayload: @autoclosure () -> Data
+    ) -> Bool {
+        if stamp != incumbentStamp { return stamp > incumbentStamp }
+        switch (deleted, incumbentDeleted) {
+        case (true, false): return true
+        case (false, true): return false
+        default: break
+        }
+        let challenger = payload(), incumbent = incumbentPayload()
+        guard challenger != incumbent else { return false }
+        if challenger.count != incumbent.count {
+            return incumbent.count < challenger.count
+        }
+        return incumbent.lexicographicallyPrecedes(challenger)
+    }
+
+    private static func upsert(_ key: Key, items: [SyncPayloadItem], rows: [SyncItem], in context: ModelContext) -> [String] {
+        guard !items.isEmpty else { return [] }
+        let incumbents = winners(of: rows.filter { $0.itemID != orderItemID })
+        var changed: [String] = []
+        for item in items where item.id != orderItemID {
+            guard let row = incumbents[item.id] else {
+                context.insert(
+                    SyncItem(
+                        collection: key.rawValue,
+                        itemID: item.id,
+                        payload: item.payload,
+                        updatedAt: item.updatedAt,
+                        deletedAt: item.deletedAt
+                    )
+                )
+                changed.append(item.id)
+                continue
+            }
+            if row.updatedAt == item.updatedAt, (row.deletedAt != nil) == (item.deletedAt != nil) { continue }
+            guard prevails(
+                stamp: item.updatedAt, deleted: item.deletedAt != nil, payload: item.payload,
+                overStamp: row.updatedAt, deleted: row.deletedAt != nil, payload: row.payload
+            ) else { continue }
+            row.payload = item.payload
+            row.updatedAt = item.updatedAt
+            row.deletedAt = item.deletedAt
+            changed.append(item.id)
+        }
+        return changed
+    }
+
+    private static func updateOrder(_ key: Key, _ order: [String], rows: [SyncItem], in context: ModelContext) -> Bool {
+        let row = winners(of: rows.filter { $0.itemID == orderItemID })[orderItemID]
+        let payload = (try? JSONEncoder().encode(order)) ?? Data("[]".utf8)
+        if let row {
+            guard row.payload != payload else { return false }
+            row.updatedAt = SyncStamp.after(row.updatedAt)
+            row.payload = payload
+            return true
+        }
+        guard !order.isEmpty else { return false }
+        context.insert(
+            SyncItem(
+                collection: key.rawValue,
+                itemID: Self.orderItemID,
+                payload: payload,
+                updatedAt: .now
+            )
+        )
+        return true
+    }
+
+    private static func orderedWinners(_ key: Key, in context: ModelContext) -> [SyncItem] {
+        var itemRows = winners(of: fetchItems(key, in: context))
+        let orderRow = itemRows.removeValue(forKey: orderItemID)
+        let order = orderRow.flatMap { try? JSONDecoder().decode([String].self, from: $0.payload) } ?? []
+        let position = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        return itemRows.values.sorted { a, b in
+            switch (position[a.itemID], position[b.itemID]) {
+            case let (first?, second?): return first < second
+            case (.some, .none): return true
+            case (.none, .some): return false
+            case (.none, .none):
+                if a.updatedAt != b.updatedAt { return a.updatedAt < b.updatedAt }
+                return a.itemID < b.itemID
+            }
+        }
+    }
+}
+
+// MARK: - Payload codec
+
+nonisolated enum SyncCodec {
+    static func encodeItems<T: Codable & Identifiable & SoftDeletable>(_ items: [T]) -> [SyncPayloadItem] where T.ID == UUID {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return items.compactMap { item in
+            do {
+                let payload = try encoder.encode(item)
+                return SyncPayloadItem(id: item.id.uuidString, payload: payload, updatedAt: item.syncStamp, deletedAt: item.deletedAt)
+            } catch {
+                logger.report("[Sync] \(T.self) \(item.id) encode failed", error: error)
+                return nil
+            }
+        }
+    }
+
+    static func decodeItems<T: Decodable>(_ type: T.Type, key: SyncStore.Key, payloads: [Data]) -> [T] {
+        let decoder = JSONDecoder()
+        return payloads.compactMap { payload in
+            if let item = try? decoder.decode(T.self, from: payload) { return item }
+            SyncStore.quarantine(key, payload)
+            return nil
+        }
+    }
+
+    static func order<T: Identifiable>(of live: [T]) -> [String] where T.ID == UUID {
+        live.map { $0.id.uuidString }
+    }
+}

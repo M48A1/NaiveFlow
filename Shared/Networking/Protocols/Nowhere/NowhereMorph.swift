@@ -1,0 +1,491 @@
+//
+//  NowhereMorph.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 9/11/26.
+//
+
+import CryptoKit
+import Foundation
+import Security
+import Synchronization
+
+nonisolated enum NowhereMorph {
+    static let nonceSize = 12
+    static let tcpPreludeSize = 64
+    static let udpPreludeSize = 12
+    static let byteLimit: UInt64 = (1 << 38) - 64
+    private static let handshakeDeadline: Duration = .seconds(30)
+    private static let maximumPreludeCounter: UInt64 = (1 << 48) - 1
+    private static let tcpClientToServerLabel = "tcp c2s"
+    private static let tcpServerToClientLabel = "tcp s2c"
+    private static let udpClientToServerLabel = "udp c2s"
+    private static let udpServerToClientLabel = "udp s2c"
+    private static let tcpPreludeAuthLabel = "tcp prelude auth"
+    private static let tcpPreludeMaskLabel = "tcp prelude mask"
+
+    private struct PreludeState {
+        var identity: Result<Data, Error>?
+        var counter: UInt64 = 0
+    }
+
+    private static let preludeState = Mutex(PreludeState(identity: nil, counter: 0))
+
+    struct Keys: Hashable, Sendable {
+        let tcpClientToServer: Data
+        let tcpServerToClient: Data
+        let udpClientToServer: Data
+        let udpServerToClient: Data
+        let tcpPreludeAuth: Data
+        let tcpPreludeMask: Data
+    }
+
+    static func deriveKeys(sharedKey: String) -> Keys {
+        let root = Data(HMAC<SHA256>.authenticationCode(
+            for: Data(sharedKey.utf8),
+            using: SymmetricKey(data: Data("nowhere/nw3/morph".utf8))
+        ))
+        func derive(_ label: String) -> Data {
+            var input = Data(label.utf8)
+            input.append(0x01)
+            return Data(HMAC<SHA256>.authenticationCode(for: input, using: SymmetricKey(data: root)))
+        }
+        return Keys(
+            tcpClientToServer: derive(tcpClientToServerLabel),
+            tcpServerToClient: derive(tcpServerToClientLabel),
+            udpClientToServer: derive(udpClientToServerLabel),
+            udpServerToClient: derive(udpServerToClientLabel),
+            tcpPreludeAuth: derive(tcpPreludeAuthLabel),
+            tcpPreludeMask: derive(tcpPreludeMaskLabel)
+        )
+    }
+
+    static func makePrelude(policy: NowhereMorphPrelude, network: NowhereNetwork) throws -> Data {
+        let count = network == .tcp ? tcpPreludeSize : udpPreludeSize
+        var prelude = try NowhereMorphNonceGenerator.secureRandomBytes(count: count)
+        guard prelude.count == count else {
+            throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Failed to generate Morph prelude"))
+        }
+        switch policy {
+        case .fade:
+            let a: Int
+            let b: Int
+            switch network {
+            case .tcp:
+                let boundaries = try NowhereMorphNonceGenerator.secureRandomBytes(count: 2)
+                a = 8 + Int(try sampleBelow(boundaries[0], upper: 5))
+                b = 16 + Int(try sampleBelow(boundaries[1], upper: 17))
+            case .udp:
+                a = 2
+                b = 10
+            }
+            try prelude.withUnsafeMutableBytes { (bytes: UnsafeMutableRawBufferPointer) in
+                for index in 0..<a {
+                    bytes[index] = 0x20 + (try sampleBelow(bytes[index], upper: 95))
+                }
+                for index in a..<b {
+                    bytes[index] &= 0x7f
+                }
+            }
+        case .full8:
+            break
+        case .low7:
+            prelude.withUnsafeMutableBytes { bytes in
+                for index in bytes.indices {
+                    bytes[index] &= 0x7f
+                }
+            }
+        }
+        return prelude
+    }
+
+    private static func sampleBelow(_ initial: UInt8, upper: UInt8) throws -> UInt8 {
+        let limit = 256 - 256 % Int(upper)
+        var byte = initial
+        while Int(byte) >= limit {
+            byte = try NowhereMorphNonceGenerator.secureRandomBytes(count: 1)[0]
+        }
+        return byte % upper
+    }
+
+    static func authenticatePrelude(_ prelude: inout Data, nonce: Data, keys: Keys) throws {
+        let (identity, counter) = try preludeState.withLock { state in
+            if state.identity == nil {
+                state.identity = Result {
+                    try NowhereMorphNonceGenerator.secureRandomBytes(count: 8)
+                }
+            }
+            let identity = try state.identity!.get()
+            guard state.counter < maximumPreludeCounter else {
+                throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Morph prelude counter exhausted"))
+            }
+            state.counter += 1
+            return (identity, state.counter)
+        }
+        var input = nonce
+        input.append(contentsOf: prelude.prefix(32))
+        var highBits = [UInt8](repeating: 0, count: 4)
+        for index in 0..<32 {
+            highBits[index / 8] |= (prelude[prelude.startIndex + 32 + index] >> 7) << (7 - index % 8)
+        }
+        input.append(contentsOf: highBits)
+        input.append(identity)
+        for byte in (0..<6).reversed() {
+            input.append(UInt8(truncatingIfNeeded: counter >> (byte * 8)))
+        }
+        let tag = HMAC<SHA256>.authenticationCode(for: input, using: SymmetricKey(data: keys.tcpPreludeAuth))
+        let mask = HMAC<SHA256>.authenticationCode(for: input.prefix(48), using: SymmetricKey(data: keys.tcpPreludeMask))
+        var payload = Data(input.suffix(14))
+        payload.append(contentsOf: tag.prefix(14))
+        let masked = zip(payload, mask).map { $0 ^ $1 }
+        prelude.withUnsafeMutableBytes { (bytes: UnsafeMutableRawBufferPointer) in
+            var accumulator: UInt16 = 0
+            var bits = 0
+            var index = 32
+            for byte in masked {
+                accumulator = (accumulator << 8) | UInt16(byte)
+                bits += 8
+                while bits >= 7 {
+                    bits -= 7
+                    bytes[index] = (bytes[index] & 0x80) | UInt8((accumulator >> bits) & 0x7f)
+                    index += 1
+                }
+            }
+        }
+    }
+
+    static func connectTLS(
+        client: TLSClient,
+        base: any ByteTransport,
+        keys: Keys,
+        prelude: NowhereMorphPrelude
+    ) async throws -> TLSRecordConnection {
+        do {
+            return try await withTaskCancellationHandler {
+                try Task.checkCancellation()
+                let record = try await withDialDeadline(handshakeDeadline, onExpiry: {
+                    base.cancel()
+                    client.cancel()
+                }, error: {
+                    RuleProxyError.tls(.handshakeFailed(detail: "Morph bootstrap or TLS handshake timed out"))
+                }, discardingLateResult: { record in
+                    record.cancel()
+                }, operation: {
+                    let transport = try await NowhereMorphTCPTransport.bootstrap(
+                        inner: base,
+                        keys: keys,
+                        prelude: prelude
+                    )
+                    return try await client.connect(transport: transport)
+                })
+                guard !Task.isCancelled else {
+                    record.cancel()
+                    throw CancellationError()
+                }
+                return record
+            } onCancel: {
+                base.cancel()
+                client.cancel()
+            }
+        } catch {
+            base.cancel()
+            client.cancel()
+            throw error
+        }
+    }
+
+    static func apply(_ input: Data, key: Data, nonce: Data, offset: UInt64) throws -> Data {
+        try validate(count: input.count, keyCount: key.count, nonceCount: nonce.count, offset: offset)
+        if input.isEmpty { return Data() }
+        var output = Data(count: input.count)
+        output.withUnsafeMutableBytes { destination in
+            input.withUnsafeBytes { source in
+                key.withUnsafeBytes { keyBytes in
+                    nonce.withUnsafeBytes { nonceBytes in
+                        NowhereMorphCrypto.xor(
+                            destination: destination,
+                            input: source,
+                            key: keyBytes,
+                            nonce: nonceBytes,
+                            offset: offset
+                        )
+                    }
+                }
+            }
+        }
+        return output
+    }
+
+    static func apply(
+        _ input: UnsafeRawBufferPointer,
+        into output: UnsafeMutableRawBufferPointer,
+        key: UnsafeRawBufferPointer,
+        nonce: UnsafeRawBufferPointer,
+        offset: UInt64
+    ) throws {
+        try validate(count: input.count, keyCount: key.count, nonceCount: nonce.count, offset: offset)
+        guard output.count == input.count else {
+            throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Morph buffer size mismatch"))
+        }
+        NowhereMorphCrypto.xor(destination: output, input: input, key: key, nonce: nonce, offset: offset)
+    }
+
+    private static func validate(count: Int, keyCount: Int, nonceCount: Int, offset: UInt64) throws {
+        guard keyCount == 32, nonceCount == nonceSize,
+              offset <= byteLimit, UInt64(count) <= byteLimit - offset else {
+            throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Morph stream limit exceeded"))
+        }
+    }
+}
+
+nonisolated final class NowhereMorphNonceGenerator: Sendable {
+    typealias RandomBytes = @Sendable (Int) throws -> Data
+
+    private struct State {
+        var key: Data
+        var nonce: Data
+        var offset: UInt64
+    }
+
+    private let state: Mutex<State>
+    private let randomBytes: RandomBytes
+    private let reseedByteLimit: UInt64
+
+    init(
+        randomBytes: @escaping RandomBytes = NowhereMorphNonceGenerator.secureRandomBytes,
+        reseedByteLimit: UInt64 = NowhereMorph.byteLimit
+    ) throws {
+        guard reseedByteLimit >= UInt64(NowhereMorph.nonceSize) else {
+            throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Invalid Morph nonce limit"))
+        }
+        self.randomBytes = randomBytes
+        self.reseedByteLimit = reseedByteLimit
+        state = Mutex(try Self.makeState(randomBytes: randomBytes))
+    }
+
+    func next(into nonce: UnsafeMutableRawBufferPointer) throws {
+        try state.withLock { state in
+            if state.offset > reseedByteLimit - UInt64(NowhereMorph.nonceSize) {
+                state = try Self.makeState(randomBytes: randomBytes)
+            }
+            let offset = state.offset
+            try withUnsafeTemporaryAllocation(byteCount: NowhereMorph.nonceSize, alignment: 4) { zero in
+                zero.initializeMemory(as: UInt8.self, repeating: 0)
+                try state.key.withUnsafeBytes { key in
+                    try state.nonce.withUnsafeBytes { base in
+                        try NowhereMorph.apply(UnsafeRawBufferPointer(zero), into: nonce, key: key, nonce: base, offset: offset)
+                    }
+                }
+            }
+            state.offset += UInt64(NowhereMorph.nonceSize)
+        }
+    }
+
+    private static func makeState(randomBytes: RandomBytes) throws -> State {
+        let seed = try randomBytes(44)
+        guard seed.count == 44 else {
+            throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Failed to seed Morph nonce generator"))
+        }
+        return State(key: Data(seed.prefix(32)), nonce: Data(seed.suffix(12)), offset: 0)
+    }
+
+    static func secureRandomBytes(count: Int) throws -> Data {
+        var bytes = Data(count: count)
+        let status = bytes.withUnsafeMutableBytes {
+            SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!)
+        }
+        guard status == errSecSuccess else {
+            throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Failed to seed Morph nonce generator"))
+        }
+        return bytes
+    }
+}
+
+nonisolated final class NowhereMorphPacketObfuscator: QUICPreludeCapable {
+    private struct FailureState {
+        var failed = false
+        var handler: (@Sendable (Error) -> Void)?
+    }
+
+    private let sendKey: Data
+    private let receiveKey: Data
+    private let nonceGenerator: NowhereMorphNonceGenerator
+    private let prelude: NowhereMorphPrelude
+    private let failureState = Mutex(FailureState())
+
+    convenience init(sendKey: Data, receiveKey: Data, prelude: NowhereMorphPrelude = .fade) throws {
+        self.init(
+            sendKey: sendKey,
+            receiveKey: receiveKey,
+            nonceGenerator: try NowhereMorphNonceGenerator(),
+            prelude: prelude
+        )
+    }
+
+    init(
+        sendKey: Data,
+        receiveKey: Data,
+        nonceGenerator: NowhereMorphNonceGenerator,
+        prelude: NowhereMorphPrelude = .fade
+    ) {
+        self.sendKey = sendKey
+        self.receiveKey = receiveKey
+        self.nonceGenerator = nonceGenerator
+        self.prelude = prelude
+    }
+
+    func makePrelude() throws -> Data {
+        try NowhereMorph.makePrelude(policy: prelude, network: .udp)
+    }
+
+    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {
+        let error: Error? = failureState.withLock { state in
+            state.handler = handler
+            return state.failed
+                ? RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Morph nonce generation failed"))
+                : nil
+        }
+        if let error { handler(error) }
+    }
+
+    func seal(_ packet: UnsafeRawBufferPointer) -> [Data] {
+        var output = Data(count: NowhereMorph.nonceSize + packet.count)
+        let sealed: Bool = output.withUnsafeMutableBytes { raw in
+            let nonce = UnsafeMutableRawBufferPointer(rebasing: raw[..<NowhereMorph.nonceSize])
+            let payload = UnsafeMutableRawBufferPointer(rebasing: raw[NowhereMorph.nonceSize...])
+            do {
+                try nonceGenerator.next(into: nonce)
+                try sendKey.withUnsafeBytes { key in
+                    try NowhereMorph.apply(packet, into: payload, key: key, nonce: UnsafeRawBufferPointer(nonce), offset: 0)
+                }
+                return true
+            } catch {
+                reportFailure(error)
+                return false
+            }
+        }
+        return sealed ? [output] : []
+    }
+
+    func open(_ datagram: Data) -> Data? {
+        let count = datagram.count - NowhereMorph.nonceSize
+        guard count > 0 else { return nil }
+        var output = Data(count: count)
+        let opened: Bool = datagram.withUnsafeBytes { raw in
+            output.withUnsafeMutableBytes { destination in
+                receiveKey.withUnsafeBytes { key in
+                    (try? NowhereMorph.apply(
+                        UnsafeRawBufferPointer(rebasing: raw[NowhereMorph.nonceSize...]),
+                        into: destination,
+                        key: key,
+                        nonce: UnsafeRawBufferPointer(rebasing: raw[..<NowhereMorph.nonceSize]),
+                        offset: 0
+                    )) != nil
+                }
+            }
+        }
+        return opened ? output : nil
+    }
+
+    private func reportFailure(_ error: Error) {
+        let handler: (@Sendable (Error) -> Void)? = failureState.withLock { state in
+            guard !state.failed else { return nil }
+            state.failed = true
+            return state.handler
+        }
+        handler?(error)
+    }
+}
+
+nonisolated final class NowhereMorphTCPTransport: ByteTransport, Sendable {
+    private struct State {
+        let nonce: Data
+        var sendOffset: UInt64 = 0
+        var receiveOffset: UInt64 = 0
+    }
+
+    private let inner: any ByteTransport
+    private let clientToServerKey: Data
+    private let serverToClientKey: Data
+    private let state: Mutex<State>
+
+    private init(inner: any ByteTransport, keys: NowhereMorph.Keys, nonce: Data) throws {
+        guard nonce.count == NowhereMorph.nonceSize else {
+            throw RuleProxyError.proxy(.nowhere, .protocolViolation(detail: "Invalid Morph nonce"))
+        }
+        self.inner = inner
+        clientToServerKey = keys.tcpClientToServer
+        serverToClientKey = keys.tcpServerToClient
+        state = Mutex(State(nonce: nonce))
+    }
+
+    static func bootstrap(
+        inner: any ByteTransport,
+        keys: NowhereMorph.Keys,
+        prelude policy: NowhereMorphPrelude
+    ) async throws -> NowhereMorphTCPTransport {
+        do {
+            var prelude = try NowhereMorph.makePrelude(policy: policy, network: .tcp)
+            let nonce = try NowhereMorphNonceGenerator.secureRandomBytes(
+                count: NowhereMorph.nonceSize
+            )
+            let transport = try NowhereMorphTCPTransport(inner: inner, keys: keys, nonce: nonce)
+            try Task.checkCancellation()
+            try NowhereMorph.authenticatePrelude(&prelude, nonce: nonce, keys: keys)
+            try await inner.send(prelude)
+            try await inner.send(nonce)
+            return transport
+        } catch {
+            inner.cancel()
+            throw error
+        }
+    }
+
+    var isReady: Bool { inner.isReady }
+
+    func send(_ data: Data) async throws {
+        do {
+            let wire = try state.withLock { state -> Data in
+                let ciphertext = try NowhereMorph.apply(
+                    data,
+                    key: clientToServerKey,
+                    nonce: state.nonce,
+                    offset: state.sendOffset
+                )
+                state.sendOffset += UInt64(data.count)
+                return ciphertext
+            }
+            try await inner.send(wire)
+        } catch {
+            inner.cancel()
+            throw error
+        }
+    }
+
+    func receive() async throws -> TransportChunk {
+        do {
+            switch try await inner.receive() {
+            case .end:
+                return .end
+            case .bytes(let data):
+                return try state.withLock { state in
+                    let plaintext = try NowhereMorph.apply(
+                        data,
+                        key: serverToClientKey,
+                        nonce: state.nonce,
+                        offset: state.receiveOffset
+                    )
+                    state.receiveOffset += UInt64(data.count)
+                    return .bytes(plaintext)
+                }
+            }
+        } catch {
+            inner.cancel()
+            throw error
+        }
+    }
+
+    func cancel() {
+        inner.cancel()
+    }
+}

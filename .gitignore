@@ -1,0 +1,43 @@
+# ===== macOS =====
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ===== Xcode / SwiftPM build output =====
+build/
+DerivedData/
+.swiftpm/
+*.xcuserstate
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Xcode 16+ derived compilation cache (RuleProxy.xcodeproj/-Xcc)
+-Xcc/
+
+# Xcode workspace/package user settings
+*.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+Package.resolved.bak
+
+# ===== Swift Package Manager =====
+.build/
+Packages/*/.build/
+
+# ===== Editors =====
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+
+# ===== Third-party reference clone =====
+# Reference/Anywhere is a local clone of https://github.com/NodePassProject/Anywhere.git
+# kept for reading only. Track it as a submodule instead if it must be referenced:
+#   git submodule add https://github.com/NodePassProject/Anywhere.git Reference/Anywhere
+Reference/Anywhere/
+
+# ===== Misc =====
+*.log
+*.tmp

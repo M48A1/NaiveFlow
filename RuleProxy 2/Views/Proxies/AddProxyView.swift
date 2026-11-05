@@ -1,0 +1,357 @@
+//
+//  AddProxyView.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 2/16/26.
+//
+
+import SwiftUI
+import UniformTypeIdentifiers
+
+nonisolated private let fileImportAllowedContentTypes: [UTType] = [UTType(filenameExtension: "ajson") ?? .data]
+
+fileprivate enum Method: String, CaseIterable, Identifiable {
+    var id: String { self.rawValue }
+
+    case qrCode = "qrCode"
+    case link = "link"
+    case file = "file"
+    case manual = "manual"
+
+    var image: String {
+        switch self {
+        case .qrCode: "qrcode.viewfinder"
+        case .link: "link"
+        case .file: "folder"
+        case .manual: "hand.point.up.left"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .qrCode: String(localized: "QR Code")
+        case .link: String(localized: "Link")
+        case .file: String(localized: "File")
+        case .manual: String(localized: "Manual")
+        }
+    }
+}
+
+struct AddProxyView: View {
+    @Environment(\.dismiss) var dismiss
+    @Environment(Operations.self) private var operations
+    @Binding var showingManualAddSheet: Bool
+    var deepLinkURL: String?
+
+    @State private var selectedMethod: Method?
+    @State private var showingQRScanner = false
+    @State private var showingFileImporter = false
+    @State private var linkURL = ""
+    @State private var isLoading = false
+    @State private var showingError = false
+    @State private var errorMessage = ""
+    @State private var showingRemnawaveHWIDAlert = false
+    @State private var pendingSubscriptionURL = ""
+
+    init(showingManualAddSheet: Binding<Bool>, deepLinkURL: String? = nil) {
+        _showingManualAddSheet = showingManualAddSheet
+        if let deepLinkURL {
+            _selectedMethod = State(initialValue: .link)
+            _linkURL = State(initialValue: deepLinkURL)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            header
+                .geometryGroup()
+            
+            VStack {
+                methodPicker
+                    .geometryGroup()
+                
+                if selectedMethod == .link {
+                    linkInputField
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        .geometryGroup()
+                }
+            }
+            
+            continueButton
+        }
+        .padding(20)
+        .frame(maxHeight: .infinity, alignment: .bottom)
+        .onChange(of: selectedMethod) {
+            if selectedMethod == .link && linkURL.isEmpty {
+                checkClipboard()
+            }
+        }
+        .qrScanner(isScanning: $showingQRScanner) { code in
+            importFromString(code)
+        }
+        .fileImporter(
+            isPresented: $showingFileImporter,
+            allowedContentTypes: fileImportAllowedContentTypes
+        ) { result in
+            importFromFile(result)
+        }
+        .alert("Import Failed", isPresented: $showingError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage)
+        }
+        .alert("Remnawave HWID", isPresented: $showingRemnawaveHWIDAlert) {
+            Button("Enable") {
+                fetchSubscription(url: pendingSubscriptionURL)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Enable \("Remnawave HWID") to continue.")
+        }
+    }
+
+    private var isContinueDisabled: Bool {
+        switch selectedMethod {
+        case .link: linkURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading
+        case nil: true
+        default: false
+        }
+    }
+    
+    @ViewBuilder
+    var header: some View {
+        HStack {
+            Text("Add Proxy")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Spacer(minLength: 0)
+
+            if #available(iOS 26.0, *) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .frame(width: 15, height: 15)
+                        .padding(10)
+                        .glassEffect(.regular.interactive(), in: .circle)
+                }
+                .buttonStyle(.plain)
+            }
+            else {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .frame(width: 15, height: 15)
+                        .padding(10)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - Method Picker
+    
+    @ViewBuilder
+    var methodPicker: some View {
+        ForEach(Method.allCases) { method in
+            let isSelected: Bool = selectedMethod == method
+            
+            HStack(spacing: 10) {
+                Image(systemName: method.image)
+                    .font(.title)
+                    .frame(width: 40)
+                
+                Text(method.title)
+                    .fontWeight(.semibold)
+                
+                Spacer(minLength: 0)
+                
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle.fill")
+                    .font(.title)
+                    .contentTransition(.symbolEffect)
+                    .foregroundStyle(isSelected ? Color.blue : Color.gray.opacity(0.2))
+            }
+            .padding(.vertical, 6)
+            .contentShape(.rect)
+            .onTapGesture {
+                withAnimation(.snappy) {
+                    selectedMethod = isSelected ? nil : method
+                }
+            }
+        }
+    }
+
+    // MARK: - Link Input
+
+    private var linkInputField: some View {
+        VStack {
+            TextField(String("Link"), text: $linkURL)
+                .textFieldStyle(LinkTextFieldStyle())
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+                .autocorrectionDisabled()
+            Text("Supports proxy, subscription and Clash links")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.top, 12)
+    }
+    
+    // MARK: - Continue Button
+    @ViewBuilder
+    private var continueButton: some View {
+        if #available(iOS 26.0, *) {
+            Button {
+                handleContinue()
+            } label: {
+                if isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                } else {
+                    Text("Continue")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+            }
+            .disabled(isContinueDisabled)
+            .buttonStyle(.glassProminent)
+            .geometryGroup()
+        } else {
+            Button {
+                handleContinue()
+            } label: {
+                if isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                } else {
+                    Text("Continue")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+            }
+            .disabled(isContinueDisabled)
+            .buttonStyle(.borderedProminent)
+            .geometryGroup()
+        }
+    }
+
+    // MARK: - Actions
+
+    private func checkClipboard() {
+        guard let clip = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        if ProxyConfiguration.canParseURL(clip) || clip.hasPrefix("http://") || clip.hasPrefix("https://") {
+            linkURL = clip
+        }
+    }
+
+    private func handleContinue() {
+        switch selectedMethod {
+        case .qrCode:
+            showingQRScanner = true
+        case .link:
+            importFromString(linkURL)
+        case .file:
+            showingFileImporter = true
+        case .manual:
+            showingManualAddSheet = true
+            dismiss()
+        case .none:
+            break
+        }
+    }
+
+    private func importFromString(_ string: String) {
+        var trimmedURL = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if let embedded = DeepLinkManager.extractAddProxyLink(from: trimmedURL) {
+            trimmedURL = embedded
+        }
+        
+        if ProxyConfiguration.canParseURL(trimmedURL) {
+            do {
+                let configuration = try ProxyConfiguration.parse(url: trimmedURL)
+                operations.configurations.add(configuration); operations.selection.selectIfNone(configuration)
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+                showingError = true
+            }
+        } else {
+            let requiresRemnawaveHWID = false
+            if requiresRemnawaveHWID && !AWCore.getRemnawaveHWIDEnabled() {
+                pendingSubscriptionURL = trimmedURL
+                showingRemnawaveHWIDAlert = true
+                return
+            }
+            fetchSubscription(url: trimmedURL)
+        }
+    }
+
+    private func importFromFile(_ result: Result<URL, Error>) {
+        do {
+            let url = try result.get()
+            guard url.pathExtension.lowercased() == "ajson" else {
+                errorMessage = String(localized: "Invalid AJSON File.")
+                showingError = true
+                return
+            }
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            guard let body = String(data: try Data(contentsOf: url), encoding: .utf8) else {
+                errorMessage = String(localized: "Invalid AJSON File.")
+                showingError = true
+                return
+            }
+            let document = try AJSONParser.parse(body)
+            guard !document.configurations.isEmpty else {
+                throw RuleProxyError.subscription(.noConfigurations)
+            }
+            let imported = operations.configurations.importStandalone(document)
+            if let first = imported.first { operations.selection.selectIfNone(first) }
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+            showingError = true
+        }
+    }
+
+    private func fetchSubscription(url: String) {
+        isLoading = true
+        Task {
+            do {
+                let result = try await SubscriptionFetcher.fetch(url: url)
+                let subscription = Subscription(
+                    name: result.name ?? URL(string: url)?.host ?? String(localized: "Subscription"),
+                    url: url,
+                    lastUpdate: Date(),
+                    upload: result.upload,
+                    download: result.download,
+                    total: result.total,
+                    expire: result.expire,
+                    iconLight: result.iconLight,
+                    iconDark: result.iconDark
+                )
+                operations.subscriptions.add(subscription, result: result)
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+                showingError = true
+            }
+            isLoading = false
+        }
+    }
+}
+
+private struct LinkTextFieldStyle: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .padding(16)
+            .background(.gray.opacity(0.1), in: .capsule)
+    }
+}
