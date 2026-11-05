@@ -1,0 +1,16 @@
+//
+//  TunnelLimits.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 7/5/26.
+//
+
+import Foundation
+
+nonisolated enum TunnelLimits {
+    static let tcpMaxConnections = 128
+    static let udpMaxFlows = 128
+    static let udpMaxPendingResolutions = 64
+    static let udpMaxPendingSniffs = 64
+    static let udpMaxQUICBlocks = 256
+}

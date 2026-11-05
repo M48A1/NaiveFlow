@@ -1,0 +1,93 @@
+//
+//  BridgeExecutor.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 7/15/26.
+//
+
+import Dispatch
+
+nonisolated final class BridgeExecutor: SerialExecutor, @unchecked Sendable {
+    let queue: DispatchQueue
+    
+    private let onQueueKey = DispatchSpecificKey<Bool>()
+    
+    init(label: String, qos: DispatchQoS = .userInitiated) {
+        self.queue = DispatchQueue(label: label, qos: qos, autoreleaseFrequency: .workItem)
+        self.queue.setSpecific(key: onQueueKey, value: true)
+    }
+    
+    // MARK: SerialExecutor
+    
+    func enqueue(_ job: consuming ExecutorJob) {
+        let job = UnownedJob(job)
+        let executor = asUnownedSerialExecutor()
+        queue.async {
+            job.runSynchronously(on: executor)
+        }
+    }
+    
+    func asUnownedSerialExecutor() -> UnownedSerialExecutor {
+        UnownedSerialExecutor(ordinary: self)
+    }
+    
+    func checkIsolated() {
+        dispatchPrecondition(condition: .onQueue(queue))
+    }
+    
+    // MARK: On-queue interop
+    
+    var isOnQueue: Bool {
+        DispatchQueue.getSpecific(key: onQueueKey) == true
+    }
+}
+
+nonisolated final class BridgeDeadlineTimer: @unchecked Sendable {
+
+    private let timer: DispatchSourceTimer
+    private let cancelled = OneShotLatch()
+
+    init(queue: DispatchQueue, handler: @escaping @Sendable () -> Void) {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.setEventHandler(handler: handler)
+        self.timer = timer
+        timer.schedule(deadline: .distantFuture, leeway: .nanoseconds(0))
+        timer.resume()
+    }
+
+    func arm(at instant: MonotonicClock.Instant, precision: TimerPrecision) {
+        guard !cancelled.isClaimed else { return }
+        let remaining = max(MonotonicClock.instant.duration(to: instant), .zero)
+        let tolerance = precision.tolerance(forRemaining: remaining)
+        timer.schedule(
+            deadline: .now() + Self.dispatchInterval(remaining),
+            leeway: Self.dispatchInterval(tolerance)
+        )
+    }
+
+    func schedule(afterNanoseconds nanoseconds: UInt64) {
+        guard !cancelled.isClaimed else { return }
+        timer.schedule(
+            deadline: .now() + .nanoseconds(Int(min(nanoseconds, UInt64(Int.max)))),
+            leeway: .nanoseconds(0)
+        )
+    }
+
+    func parkUntilRearmed() {
+        guard !cancelled.isClaimed else { return }
+        timer.schedule(deadline: .distantFuture, leeway: .nanoseconds(0))
+    }
+
+    private static func dispatchInterval(_ duration: Duration) -> DispatchTimeInterval {
+        .nanoseconds(Int(clamping: max(duration.nanosecondsClamped, 0)))
+    }
+
+    func cancel() {
+        guard cancelled.claim() else { return }
+        timer.cancel()
+    }
+
+    deinit {
+        cancel()
+    }
+}

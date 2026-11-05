@@ -1,0 +1,118 @@
+//
+//  Operations.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 8/20/26.
+//
+
+import Foundation
+import Observation
+
+@MainActor
+@Observable
+final class Operations {
+    @ObservationIgnored private let container: AppContainer
+
+    init(container: AppContainer) {
+        self.container = container
+    }
+
+    var configurations: ConfigurationOperations {
+        ConfigurationOperations(store: container.configurationStore, reaction: container.mutationReaction)
+    }
+
+    var chains: ChainOperations {
+        ChainOperations(store: container.chainStore, reaction: container.mutationReaction)
+    }
+
+    var subscriptions: SubscriptionOperations {
+        SubscriptionOperations(
+            store: container.subscriptionStore,
+            configurationStore: container.configurationStore,
+            reaction: container.mutationReaction
+        )
+    }
+
+    var groups: GroupOperations {
+        GroupOperations(store: container.groupStore)
+    }
+
+    var certificates: CertificateOperations {
+        CertificateOperations(store: container.certificateStore)
+    }
+
+    var routingRuleSets: RoutingRuleSetOperations {
+        RoutingRuleSetOperations(
+            routingRuleSetStore: container.routingRuleSetStore,
+            routingExportScheduler: container.routingExportScheduler
+        )
+    }
+
+    /// The text configuration that mirrors the stores in both directions.
+    /// Assembled per call so `exportCurrent()` always renders the live stores.
+    var configurationDocument: ConfigurationDocumentOperations {
+        ConfigurationDocumentOperations(
+            configurationStore: container.configurationStore,
+            chainStore: container.chainStore,
+            groupStore: container.groupStore,
+            routingRuleSetStore: container.routingRuleSetStore,
+            mitmRuleSetStore: container.mitmRuleSetStore,
+            moduleStore: container.moduleStore,
+            installer: ConfigurationInstaller(
+                configurationStore: container.configurationStore,
+                groupStore: container.groupStore,
+                ruleSetStore: container.routingRuleSetStore,
+                selection: container.selection,
+                reaction: container.mutationReaction
+            ),
+            activation: ConfigurationActivation()
+        )
+    }
+
+    var mitmRuleSets: MITMRuleSetOperations {
+        MITMRuleSetOperations(
+            mitmRuleSetStore: container.mitmRuleSetStore,
+            mitmExportScheduler: container.mitmExportScheduler
+        )
+    }
+
+    var modules: ModuleOperations {
+        ModuleOperations(
+            moduleStore: container.moduleStore,
+            routingExportScheduler: container.routingExportScheduler,
+            mitmExportScheduler: container.mitmExportScheduler
+        )
+    }
+
+    var selection: SelectionOperations {
+        SelectionOperations(proxySelection: container.selection)
+    }
+
+    var tunnel: TunnelOperations {
+        TunnelOperations(tunnel: container.tunnel, selection: container.selection)
+    }
+
+    var latency: LatencyRunner {
+        LatencyRunner(
+            latency: container.latency,
+            tunnel: container.tunnel,
+            configurationStore: container.configurationStore,
+            chainStore: container.chainStore
+        )
+    }
+    
+    func reload(_ keys: Set<SyncStore.Key>) async {
+        let stores: [(SyncStore.Key, any Reloadable)] = [
+            (.groups, container.groupStore),
+            (.subscriptions, container.subscriptionStore),
+            (.chains, container.chainStore),
+            (.configurations, container.configurationStore),
+            (.customRuleSets, container.routingRuleSetStore),
+            (.mitm, container.mitmRuleSetStore),
+            (.modules, container.moduleStore),
+        ]
+        let affected = stores.filter { keys.contains($0.0) }.map(\.1)
+        guard !affected.isEmpty else { return }
+        await ReloadOperation(stores: affected, reaction: container.mutationReaction).run()
+    }
+}

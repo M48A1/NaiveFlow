@@ -1,0 +1,270 @@
+//
+//  QUICConnection+Migration.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 7/18/26.
+//
+
+import Foundation
+import Synchronization
+import Network
+import RuleProxyQUIC
+
+nonisolated private let logger = RuleProxyLogger(category: "QUICConnection")
+
+extension QUICConnectionCore {
+
+    enum PathValidationResult {
+        case success, failure, aborted
+    }
+
+    // MARK: Migration
+
+    var migrationEnabled: Bool {
+        transport == nil && !tuning.disableActiveMigration
+    }
+
+    func makeMigrationLocalAddr() -> sockaddr_storage {
+        migrationCounter = migrationCounter &+ 1
+        let tag = migrationCounter == 0 ? 1 : migrationCounter
+        var storage = sockaddr_storage()
+        withUnsafeMutablePointer(to: &storage) { sp in
+            if Int32(remoteAddr.ss_family) == AF_INET6 {
+                sp.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { sin6 in
+                    sin6.pointee = sockaddr_in6()
+                    sin6.pointee.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+                    sin6.pointee.sin6_family = sa_family_t(AF_INET6)
+                    var a = in6addr_any
+                    withUnsafeMutableBytes(of: &a) { bytes in
+                        bytes[0] = 0xfd          // unique-local prefix
+                        bytes[15] = tag
+                    }
+                    sin6.pointee.sin6_addr = a
+                }
+            } else {
+                sp.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { sin in
+                    sin.pointee = sockaddr_in()
+                    sin.pointee.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+                    sin.pointee.sin_family = sa_family_t(AF_INET)
+                    sin.pointee.sin_addr.s_addr = UInt32(tag).bigEndian  // 0.0.0.tag
+                }
+            }
+        }
+        return storage
+    }
+
+    func setMigration(_ new: Migration) {
+        guard Migration.canTransition(from: migration, to: new) else {
+            logger.error("[QUIC] \(host): Invalid migration transition: \(migration.label) → \(new.label)")
+            return
+        }
+        if case .proactiveProbing = new {} else {
+            proactiveDeadlineToken?.cancel()
+            proactiveDeadlineToken = nil
+        }
+        migration = new
+    }
+
+    func attemptReactiveMigration() {
+        switch migration {
+        case .proactiveProbing, .proactiveValidating:
+            abortProactiveMigration(countAsFailure: false)
+        case .none, .reactiveValidating:
+            break
+        }
+
+        guard migrationEnabled, phase == .connected, case .none = migration,
+              migrationFailures < Self.maxMigrationFailures,
+              let engine else {
+            close(error: RuleProxyError.quic(.connectionFailed(detail: "network path lost")))
+            return
+        }
+
+        let newCarrier = QUICDatagramCarrier(obfuscator: obfuscator, executor: executor)
+        var placeholder = sockaddr_storage()
+        let remote = remoteAddr
+        do {
+            try newCarrier.connect(remoteAddr: remote, localAddr: &placeholder)
+        } catch {
+            close(error: error)
+            return
+        }
+
+        let newLocal = makeMigrationLocalAddr()
+        do {
+            try engine.migrate(to: quicPath(local: newLocal), immediately: true, now: currentTimestamp())
+        } catch {
+            newCarrier.close()
+            migrationFailures += 1
+            close(error: RuleProxyError.quic(.connectionFailed(detail: "migration rejected: \(RuleProxyError.describe(error))")))
+            return
+        }
+
+        setMigration(.reactiveValidating(localAddr: newLocal))
+        let oldCarrier = carrier
+        carrier = newCarrier
+        localAddr = newLocal
+        armActiveCarrier(newCarrier, localAddr: newLocal)
+        oldCarrier?.close()
+        writeToUDP()
+        rescheduleTimer()
+    }
+
+    func attemptProactiveMigration() {
+        guard migrationEnabled, phase == .connected, case .none = migration,
+              migrationFailures < Self.maxMigrationFailures,
+              engine != nil,
+              let oldType = carrier?.currentInterfaceType else { return }
+
+        let target = QUICDatagramCarrier(obfuscator: obfuscator, executor: executor)
+        var placeholder = sockaddr_storage()
+        let remote = remoteAddr
+        do {
+            try target.connect(remoteAddr: remote, localAddr: &placeholder)
+        } catch {
+            target.close()
+            return
+        }
+
+        let newLocal = makeMigrationLocalAddr()
+        setMigration(.proactiveProbing(target: target, localAddr: newLocal))
+
+        armReceive(target, localAddr: newLocal) { [weak owner, weak target] _ in
+            guard let target else { return }
+            owner?.update { $0.abortProactiveIfNotValidating(target: target) }
+        }
+        target.onPathDown = { [weak owner, weak target] in
+            guard let target else { return }
+            owner?.update { $0.abortProactiveIfNotValidating(target: target) }
+        }
+        scheduleProactiveDeadline(target: target, validating: false)
+        target.onReady = { [weak owner, weak target] in
+            guard let target else { return }
+            owner?.update { $0.beginProactiveValidation(target: target, oldType: oldType) }
+        }
+    }
+
+    private func scheduleProactiveDeadline(target: QUICDatagramCarrier, validating: Bool) {
+        proactiveDeadlineToken?.cancel()
+        proactiveDeadlineToken = TickScheduler.shared.schedule(
+            in: .seconds(Self.proactiveReadyTimeout),
+            precision: .relaxed
+        ) { [weak owner, weak target] in
+            guard let target else { return }
+            owner?.update { core in
+                switch core.migration {
+                case .proactiveProbing(let current, _) where !validating && current === target:
+                    core.abortProactiveMigration(countAsFailure: false)
+                case .proactiveValidating(let current, _) where validating && current === target:
+                    core.abortProactiveMigration(countAsFailure: true)
+                default: break
+                }
+            }
+        }
+    }
+
+    private func beginProactiveValidation(target: QUICDatagramCarrier, oldType: NWInterface.InterfaceType) {
+        guard case .proactiveProbing(let current, let migratingLocal) = migration, current === target else { return }
+        guard let engine, let newType = target.currentInterfaceType, newType != oldType else {
+            abortProactiveIfNotValidating()
+            return
+        }
+        do {
+            try engine.migrate(to: quicPath(local: migratingLocal), immediately: false, now: currentTimestamp())
+        } catch {
+            abortProactiveMigration(countAsFailure: true)
+            return
+        }
+        setMigration(.proactiveValidating(target: target, localAddr: migratingLocal))
+        scheduleProactiveDeadline(target: target, validating: true)
+        writeToUDP()
+        rescheduleTimer()
+    }
+
+    func abortProactiveMigration(countAsFailure: Bool) {
+        if case .proactiveValidating = migration {
+            engine?.cancelPendingMigration(now: currentTimestamp())
+        }
+        switch migration {
+        case .proactiveProbing(let target, _), .proactiveValidating(let target, _):
+            target.close()
+            setMigration(.none)
+            if countAsFailure { migrationFailures += 1 }
+        case .none, .reactiveValidating:
+            break
+        }
+    }
+
+    func abortProactiveIfNotValidating(target: QUICDatagramCarrier? = nil) {
+        guard case .proactiveProbing(let current, _) = migration, target == nil || current === target else { return }
+        abortProactiveMigration(countAsFailure: false)
+    }
+
+    func handlePathValidation(result: PathValidationResult, pathLocal: QUICSocketAddress) {
+        switch migration {
+        case .none:
+            return
+        case .proactiveProbing:
+            return
+        case .proactiveValidating(let target, let migratingLocal):
+            guard pathBelongsToMigration(pathLocal, expected: migratingLocal) else { return }
+            switch result {
+            case .success:
+                let old = carrier
+                carrier = target
+                localAddr = migratingLocal
+                armActiveCarrier(target, localAddr: migratingLocal)
+                old?.close()
+                setMigration(.none)
+                migrationFailures = 0
+            case .failure:
+                abortProactiveMigration(countAsFailure: true)
+            case .aborted:
+                abortProactiveMigration(countAsFailure: false)
+            }
+        case .reactiveValidating(let migratingLocal):
+            guard pathBelongsToMigration(pathLocal, expected: migratingLocal) else { return }
+            switch result {
+            case .success:
+                setMigration(.none)
+                migrationFailures = 0
+            case .failure:
+                setMigration(.none)
+                close(error: RuleProxyError.quic(.connectionFailed(detail: "migration path validation failed")))
+            case .aborted:
+                setMigration(.none)
+            }
+        }
+    }
+
+    private func pathBelongsToMigration(_ pathLocal: QUICSocketAddress, expected: sockaddr_storage) -> Bool {
+        pathLocal == QUICSocketAddress(expected, length: addrLen)
+    }
+
+    func carrierForOutPath(local: QUICSocketAddress) -> QUICDatagramCarrier? {
+        switch migration {
+        case .proactiveProbing(let target, let migratingLocal),
+             .proactiveValidating(let target, let migratingLocal):
+            if local == QUICSocketAddress(migratingLocal, length: addrLen) { return target }
+            return carrier
+        case .none, .reactiveValidating:
+            return carrier
+        }
+    }
+
+    func sendDatagrams(_ datagrams: [Data], to carrier: QUICDatagramCarrier?) {
+        if let transport {
+            let datagrams = datagrams.map { datagram in
+                datagram.withUnsafeBytes { Data(bytes: $0.baseAddress!, count: $0.count) }
+            }
+            if let transportSealContinuation {
+                for datagram in datagrams { transportSealContinuation.yield(datagram) }
+            } else {
+                publish { for datagram in datagrams { transport.sendDatagram(datagram) } }
+            }
+            return
+        }
+        guard let carrier else { return }
+        publish { carrier.send(datagrams) }
+    }
+}

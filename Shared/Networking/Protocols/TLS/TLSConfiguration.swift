@@ -1,0 +1,155 @@
+//
+//  TLSConfiguration.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 3/1/26.
+//
+
+import Foundation
+
+nonisolated enum TLSVersion: UInt16, Codable {
+    case tls10 = 0x0301
+    case tls11 = 0x0302
+    case tls12 = 0x0303
+    case tls13 = 0x0304
+}
+
+nonisolated struct TLSConfiguration {
+    let serverName: String
+    let alpn: [String]?
+    let minVersion: TLSVersion?
+    let maxVersion: TLSVersion?
+    
+    let insecureSkipVerify: Bool
+    
+    let echEnabled: Bool
+    let echConfig: String?
+    var echIsOpportunistic: Bool { echEnabled && echConfig == nil }
+
+    let fingerprint: TLSFingerprint
+
+    init(serverName: String, alpn: [String]? = nil,
+         minVersion: TLSVersion? = nil, maxVersion: TLSVersion? = nil,
+         echEnabled: Bool? = nil, echConfig: String? = nil,
+         fingerprint: TLSFingerprint = .default,
+         insecureSkipVerify: Bool = false) {
+        self.serverName = serverName
+        self.alpn = alpn
+        self.minVersion = minVersion
+        self.maxVersion = maxVersion
+        self.insecureSkipVerify = insecureSkipVerify
+        let inlineECH = (echConfig?.isEmpty ?? true) ? nil : echConfig
+        self.echEnabled = echEnabled ?? (inlineECH != nil)
+        self.echConfig = inlineECH
+        self.fingerprint = fingerprint
+    }
+    
+    static func echSettings(fromQueryValue value: String?) -> (config: String?, enabled: Bool) {
+        guard let value, !value.isEmpty else { return (nil, false) }
+        guard ECHConfigResolver.resolveImmediate(value) != nil else { return (nil, true) }
+        return (value, true)
+    }
+    
+    static func parse(from params: [String: String], serverAddress: String) throws -> TLSConfiguration? {
+        guard params["security"] == "tls" else { return nil }
+
+        let sni = params["sni"] ?? serverAddress
+
+        var alpn: [String]? = nil
+        if let alpnString = params["alpn"], !alpnString.isEmpty {
+            alpn = alpnString.split(separator: ",").map { String($0) }
+        }
+
+        let fingerprint = params["fp"].flatMap { TLSFingerprint(importValue: $0) } ?? .default
+
+        let minVersion = Self.parseTLSVersion(params["minVersion"])
+        let maxVersion = Self.parseTLSVersion(params["maxVersion"])
+
+        let ech = echSettings(fromQueryValue: params["ech"])
+
+        return TLSConfiguration(
+            serverName: sni,
+            alpn: alpn,
+            minVersion: minVersion,
+            maxVersion: maxVersion,
+            echEnabled: ech.enabled,
+            echConfig: ech.config,
+            fingerprint: fingerprint
+        )
+    }
+
+    private static func parseTLSVersion(_ string: String?) -> TLSVersion? {
+        switch string {
+        case "1.0": return .tls10
+        case "1.1": return .tls11
+        case "1.2": return .tls12
+        case "1.3": return .tls13
+        default:    return nil
+        }
+    }
+    
+    var echQueryValue: String? {
+        guard let ech = echConfig, !ech.isEmpty else { return nil }
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&#=+/")
+        return ech.addingPercentEncoding(withAllowedCharacters: allowed) ?? ech
+    }
+}
+
+extension TLSConfiguration: Codable {
+    enum CodingKeys: String, CodingKey {
+        case serverName, alpn, fingerprint, minVersion, maxVersion, echEnabled, echConfig, insecureSkipVerify
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        serverName = try container.decode(String.self, forKey: .serverName)
+        alpn = try container.decodeIfPresent([String].self, forKey: .alpn)
+        fingerprint = try container.decodeIfPresent(TLSFingerprint.self, forKey: .fingerprint) ?? .default
+        minVersion = try container.decodeIfPresent(TLSVersion.self, forKey: .minVersion)
+        maxVersion = try container.decodeIfPresent(TLSVersion.self, forKey: .maxVersion)
+        insecureSkipVerify = try container.decodeIfPresent(Bool.self, forKey: .insecureSkipVerify) ?? false
+        let rawECH = try container.decodeIfPresent(String.self, forKey: .echConfig)
+        let inlineECH = (rawECH?.isEmpty ?? true) ? nil : rawECH
+        // Absent flag → infer from inline config presence.
+        echEnabled = try container.decodeIfPresent(Bool.self, forKey: .echEnabled) ?? (inlineECH != nil)
+        echConfig = inlineECH
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(serverName, forKey: .serverName)
+        try container.encodeIfPresent(alpn, forKey: .alpn)
+        try container.encode(fingerprint, forKey: .fingerprint)
+        try container.encodeIfPresent(minVersion, forKey: .minVersion)
+        try container.encodeIfPresent(maxVersion, forKey: .maxVersion)
+        if insecureSkipVerify { try container.encode(insecureSkipVerify, forKey: .insecureSkipVerify) }
+        // Persist the flag only when it can't be inferred from `echConfig` presence.
+        if echEnabled != (echConfig != nil) { try container.encode(echEnabled, forKey: .echEnabled) }
+        try container.encodeIfPresent(echConfig, forKey: .echConfig)
+    }
+}
+
+nonisolated extension TLSConfiguration: Equatable, Hashable {
+    static func == (lhs: TLSConfiguration, rhs: TLSConfiguration) -> Bool {
+        lhs.serverName == rhs.serverName &&
+        lhs.alpn == rhs.alpn &&
+        lhs.fingerprint == rhs.fingerprint &&
+        lhs.minVersion == rhs.minVersion &&
+        lhs.maxVersion == rhs.maxVersion &&
+        lhs.insecureSkipVerify == rhs.insecureSkipVerify &&
+        lhs.echEnabled == rhs.echEnabled &&
+        lhs.echConfig == rhs.echConfig
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(serverName)
+        hasher.combine(alpn)
+        hasher.combine(fingerprint)
+        hasher.combine(minVersion)
+        hasher.combine(maxVersion)
+        hasher.combine(insecureSkipVerify)
+        hasher.combine(echEnabled)
+        hasher.combine(echConfig)
+    }
+}

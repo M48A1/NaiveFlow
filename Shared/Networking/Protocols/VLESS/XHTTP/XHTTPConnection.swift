@@ -1,0 +1,1597 @@
+//
+//  XHTTPConnection.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 3/1/26.
+//
+
+import Foundation
+import Synchronization
+
+nonisolated enum XHTTPChannelRole {
+    case combined
+    case downloadOnly
+    case uploadOnly
+}
+
+nonisolated final class XHTTPConnection: Sendable {
+    let configuration: XHTTPConfiguration
+    let mode: XHTTPMode
+    let sessionId: String
+
+    let download: any ByteTransport
+
+    let uploadConnectionFactory: (@Sendable () async throws -> any ByteTransport)?
+
+    var role: XHTTPChannelRole { state.withLock { $0.role } }
+    func configureRole(_ role: XHTTPChannelRole) { state.withLock { $0.role = role } }
+
+    var uploadChannel: XHTTPConnection? { state.withLock { $0.uploadChannel } }
+    func attachUploadChannel(_ channel: XHTTPConnection?) { state.withLock { $0.uploadChannel = channel } }
+
+    var xmuxLease: XHTTPXMUXMultiplexerLease? { state.withLock { $0.xmuxLease } }
+    func configureXMUXLease(_ lease: XHTTPXMUXMultiplexerLease) { state.withLock { $0.xmuxLease = lease } }
+
+    let packetUpChain = SerialSender()
+
+    let useHTTP2: Bool
+    let h2FrameReader: H2FrameReader
+    static let maxH2ReadBufferSize = 2_097_152
+    static let maxResponseHeaderSize = 65_536
+
+    var h2UploadStreamId: UInt32 { state.withLock { $0.h2UploadStreamId } }
+    var h2DownloadStreamId: UInt32 { state.withLock { $0.h2DownloadStreamId } }
+    func configureH2StreamIDs(upload: UInt32, download: UInt32) {
+        state.withLock { $0.h2UploadStreamId = upload; $0.h2DownloadStreamId = download }
+    }
+
+    var h3Multiplexer: HTTP3Multiplexer? { state.withLock { $0.h3Multiplexer } }
+    func adoptH3Multiplexer(_ multiplexer: HTTP3Multiplexer) { state.withLock { $0.h3Multiplexer = multiplexer } }
+
+    var useHTTP3: Bool { h3Multiplexer != nil }
+
+    var sharedH2: XHTTPH2Multiplexer? { state.withLock { $0.sharedH2 } }
+    func adoptSharedH2(_ multiplexer: XHTTPH2Multiplexer) { state.withLock { $0.sharedH2 = multiplexer } }
+
+    var usesSharedH2: Bool { sharedH2 != nil }
+
+    // MARK: - Guarded State
+
+    enum Phase: PhaseTransitionable {
+        case live
+        case halfClosed
+        case cancelled
+
+        static func canTransition(from old: Phase, to new: Phase) -> Bool {
+            switch (old, new) {
+            case (.live, .halfClosed):
+                return true
+            case (_, .cancelled):
+                return old != .cancelled
+            default:
+                return false
+            }
+        }
+    }
+
+    struct State: PhaseHolding {
+        var phase: Phase = .live
+
+        var role: XHTTPChannelRole = .combined
+        var uploadChannel: XHTTPConnection?
+        var xmuxLease: XHTTPXMUXMultiplexerLease?
+        var h2UploadStreamId: UInt32 = 3
+        var h2DownloadStreamId: UInt32 = 1
+        var h3Multiplexer: HTTP3Multiplexer?
+        var sharedH2: XHTTPH2Multiplexer?
+
+        var uploadTransport: (any ByteTransport)?
+        var uploadDrainTask: Task<Void, Never>?
+
+        var nextSeq: Int64 = 0
+        var chunkedDecoder = ChunkedTransferDecoder()
+
+        var packetUpLastFlushTime: UInt64 = 0
+
+        var headerBuffer = Data()
+
+        var h2DataBuffer = Data()
+        var h2PeerConnectionWindow: Int = 65535
+        var h2PeerStreamSendWindow: Int = 65535
+        var h2PeerInitialWindowSize: Int = 65535
+        var h2LocalWindowSize: Int = 4_194_304
+        var h2MaxFrameSize: Int = 16384
+        var h2ResponseReceived = false
+
+        var h2FlowGate = H2FlowGate()
+        var h2PacketStreamWindows: [UInt32: Int] = [:]
+
+        var h2ConnectionReceiveConsumed: Int = 0
+        var h2StreamReceiveConsumed: Int = 0
+
+        var h2NextPacketStreamId: UInt32 = 3
+
+        var h3Download: XHTTPH3RequestStream?
+        var h3Upload: XHTTPH3RequestStream?
+
+        var sharedH2Download: XHTTPH2Stream?
+        var sharedH2Upload: XHTTPH2Stream?
+    }
+
+    let state = Mutex(State())
+
+    var isConnected: Bool {
+        let live = state.withLock { $0.phase != .cancelled }
+        return live && (uploadChannel?.isConnected ?? true)
+    }
+
+    // MARK: - X-Padding
+
+    func applyPadding(to request: inout String, forPath path: String) {
+        let padding = configuration.generatePadding()
+
+        if !configuration.xPaddingObfsMode {
+            request += "Referer: https://\(configuration.host)\(path)?\(configuration.xPaddingKey)=\(padding)\r\n"
+            return
+        }
+
+        switch configuration.xPaddingPlacement {
+        case .header:
+            request += "\(configuration.xPaddingHeader): \(padding)\r\n"
+        case .queryInHeader:
+            request += "\(configuration.xPaddingHeader): https://\(configuration.host)\(path)?\(configuration.xPaddingKey)=\(padding)\r\n"
+        case .cookie:
+            request += "Cookie: \(configuration.xPaddingKey)=\(padding)\r\n"
+        case .query:
+            // Appended to the URL in the request line.
+            break
+        default:
+            break
+        }
+    }
+
+    func pathWithQueryPadding(_ basePath: String) -> String {
+        if configuration.xPaddingObfsMode && configuration.xPaddingPlacement == .query {
+            let padding = configuration.generatePadding()
+            return "\(basePath)?\(configuration.xPaddingKey)=\(padding)"
+        }
+        return basePath
+    }
+
+    // MARK: - Session/Seq Metadata
+
+    func applySessionId(to request: inout String, path: inout String) {
+        guard !sessionId.isEmpty else { return }
+        let key = configuration.normalizedSessionIDKey
+        switch configuration.sessionIDPlacement {
+        case .path:
+            path = appendToPath(path, sessionId)
+        case .query:
+            break
+        case .header:
+            request += "\(key): \(sessionId)\r\n"
+        case .cookie:
+            request += "Cookie: \(key)=\(sessionId)\r\n"
+        default:
+            break
+        }
+    }
+
+    func queryParamsForMeta(seq: Int64? = nil) -> String {
+        var parts: [String] = []
+        if !sessionId.isEmpty && configuration.sessionIDPlacement == .query {
+            let key = configuration.normalizedSessionIDKey
+            parts.append("\(key)=\(sessionId)")
+        }
+        if let seq, configuration.seqPlacement == .query {
+            let key = configuration.normalizedSeqKey
+            parts.append("\(key)=\(seq)")
+        }
+        return parts.joined(separator: "&")
+    }
+
+    func applySeq(to request: inout String, path: inout String, seq: Int64) {
+        let key = configuration.normalizedSeqKey
+        switch configuration.seqPlacement {
+        case .path:
+            path = appendToPath(path, "\(seq)")
+        case .query:
+            // Handled in queryParamsForMeta
+            break
+        case .header:
+            request += "\(key): \(seq)\r\n"
+        case .cookie:
+            request += "Cookie: \(key)=\(seq)\r\n"
+        default:
+            break
+        }
+    }
+
+    func appendToPath(_ path: String, _ segment: String) -> String {
+        if path.hasSuffix("/") {
+            return path + segment
+        }
+        return path + "/" + segment
+    }
+
+    // MARK: - Uplink Data Placement
+
+    enum UplinkDataField {
+        case header(name: String, value: String)
+        case cookie(pair: String)
+    }
+
+    var uplinkDataIsNonBody: Bool {
+        configuration.uplinkDataPlacement == .header || configuration.uplinkDataPlacement == .cookie
+    }
+
+    func uplinkDataFields(for payload: Data) -> [UplinkDataField] {
+        guard uplinkDataIsNonBody else { return [] }
+        let encoded = payload.base64URLEncodedString()
+        guard !encoded.isEmpty else { return [] }
+        let key = configuration.uplinkDataKey
+        // base64url output is ASCII, so chunking by Character == chunking by byte.
+        let characters = Array(encoded)
+        let chunkSize = configuration.uplinkChunkSize > 0 ? configuration.uplinkChunkSize : characters.count
+        var fields: [UplinkDataField] = []
+        var start = 0
+        var index = 0
+        while start < characters.count {
+            let end = min(start + chunkSize, characters.count)
+            let chunk = String(characters[start..<end])
+            switch configuration.uplinkDataPlacement {
+            case .header: fields.append(.header(name: "\(key)-\(index)", value: chunk))
+            case .cookie: fields.append(.cookie(pair: "\(key)_\(index)=\(chunk)"))
+            default: break
+            }
+            start = end
+            index += 1
+        }
+        return fields
+    }
+
+    func buildRequestLine(method: String, path: String, queryParts: [String]) -> String {
+        var url = path
+        var allQuery = queryParts.filter { !$0.isEmpty }
+        let configQuery = configuration.normalizedQuery
+        if !configQuery.isEmpty {
+            allQuery.insert(configQuery, at: 0)
+        }
+        if configuration.xPaddingObfsMode && configuration.xPaddingPlacement == .query {
+            let padding = configuration.generatePadding()
+            allQuery.append("\(configuration.xPaddingKey)=\(padding)")
+        }
+        if !allQuery.isEmpty {
+            url += "?" + allQuery.joined(separator: "&")
+        }
+        return "\(method) \(url) HTTP/1.1\r\n"
+    }
+
+    // MARK: - Initializers
+
+    init(download: any ByteTransport, configuration: XHTTPConfiguration, mode: XHTTPMode, sessionId: String, useHTTP2: Bool = false, uploadConnectionFactory: (@Sendable () async throws -> any ByteTransport)? = nil) {
+        self.configuration = configuration
+        self.mode = mode
+        self.sessionId = sessionId
+        self.useHTTP2 = useHTTP2
+        self.uploadConnectionFactory = uploadConnectionFactory
+        self.download = download
+        self.h2FrameReader = H2FrameReader(maxBufferSize: Self.maxH2ReadBufferSize, receive: download.receive)
+    }
+
+    convenience init(h3Multiplexer: HTTP3Multiplexer, configuration: XHTTPConfiguration, mode: XHTTPMode, sessionId: String) {
+        self.init(download: NullByteTransport(), configuration: configuration, mode: mode, sessionId: sessionId)
+        adoptH3Multiplexer(h3Multiplexer)
+    }
+
+    convenience init(sharedH2: XHTTPH2Multiplexer, configuration: XHTTPConfiguration, mode: XHTTPMode, sessionId: String) {
+        self.init(download: NullByteTransport(), configuration: configuration, mode: mode, sessionId: sessionId)
+        adoptSharedH2(sharedH2)
+    }
+
+    // MARK: - Setup
+
+    func performSetup() async throws {
+        try await performLegSetup()
+        if let uploadChannel {
+            try await uploadChannel.performLegSetup()
+        }
+    }
+
+    private func performLegSetup() async throws {
+        if usesSharedH2 {
+            try await performSharedH2Setup()
+        } else if useHTTP3 {
+            try await performH3Setup()
+        } else if useHTTP2 {
+            try await performH2Setup()
+        } else {
+            switch role {
+            case .downloadOnly:
+                try await performDownloadOnlyHTTP11Setup()
+            case .uploadOnly:
+                try await performUploadOnlyHTTP11Setup()
+            case .combined:
+                if mode == .streamOne {
+                    try await performStreamOneSetup()
+                } else if mode == .streamUp {
+                    try await performStreamUpSetup()
+                } else {
+                    try await performPacketUpSetup()
+                }
+            }
+        }
+    }
+
+    // MARK: - Send
+
+    func send(_ data: Data) async throws {
+        if let uploadChannel {
+            try await uploadChannel.send(data)
+            return
+        }
+        if mode == .packetUp {
+            try await sendPacketUp(data)
+            return
+        }
+        if usesSharedH2 {
+            let stream = state.withLock { state in (mode == .streamUp) ? state.sharedH2Upload : state.sharedH2Download }
+            guard let stream else { throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)) }
+            try await stream.sendData(data, endStream: false)
+            return
+        }
+        if useHTTP3 {
+            let stream = state.withLock { state in (mode == .streamUp) ? state.h3Upload : state.h3Download }
+            guard let stream else { throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)) }
+            try await stream.sendBody(data, fin: false)
+            return
+        }
+        if useHTTP2 {
+            try await sendH2Data(data: data, streamId: mode == .streamUp ? h2UploadStreamId : 1)
+        } else if mode == .streamOne {
+            try await sendStreamOne(data: data)
+        } else if mode == .streamUp {
+            try await sendStreamUp(data: data)
+        }
+    }
+
+    // MARK: - Receive
+
+    func receive() async throws -> Data? {
+        if usesSharedH2 {
+            guard let stream = state.withLock({ $0.sharedH2Download }) else { return nil }
+            do {
+                guard let data = try await stream.receive() else {
+                    state.withLock { _ = $0.transition(to: .halfClosed) }
+                    return nil
+                }
+                return data
+            } catch {
+                state.withLock { _ = $0.transition(to: .halfClosed) }
+                throw error
+            }
+        }
+        if useHTTP3 {
+            return try await receiveH3Data()
+        }
+        if useHTTP2 {
+            return try await receiveH2Data()
+        }
+
+        enum ChunkedRead { case data(Data); case eof; case malformed; case read }
+        while true {
+            let step: ChunkedRead = state.withLock { state in
+                if let decoded = state.chunkedDecoder.nextChunk() { return .data(decoded) }
+                if state.chunkedDecoder.isMalformed {
+                    state.transition(to: .halfClosed)
+                    return .malformed
+                }
+                if state.chunkedDecoder.isFinished {
+                    state.transition(to: .halfClosed)
+                    return .eof
+                }
+                return .read
+            }
+            switch step {
+            case .data(let decoded): return decoded
+            case .eof: return nil
+            case .malformed:
+                throw RuleProxyError.proxy(.xhttp, .protocolViolation(detail: "malformed chunked framing"))
+            case .read: break
+            }
+
+            let chunk = try await download.receive()
+            guard case .bytes(let data) = chunk, !data.isEmpty else {
+                state.withLock { _ = $0.transition(to: .halfClosed) }
+                return nil // EOF
+            }
+            state.withLock { $0.chunkedDecoder.feed(data) }
+        }
+    }
+
+    // MARK: - Cancel
+
+    func cancel() {
+        let teardown = state.withLock { state -> (
+            h3Download: XHTTPH3RequestStream?,
+            h3Upload: XHTTPH3RequestStream?,
+            h3Session: HTTP3Multiplexer?,
+            sharedH2Download: XHTTPH2Stream?,
+            sharedH2Upload: XHTTPH2Stream?,
+            lease: XHTTPXMUXMultiplexerLease?,
+            upload: (any ByteTransport)?
+        )? in
+            guard state.transition(to: .cancelled) else { return nil }
+            state.chunkedDecoder = ChunkedTransferDecoder()
+            state.headerBuffer.removeAll()
+            h2FrameReader.reset()
+            state.h2DataBuffer.removeAll()
+            let h3DownloadStream = state.h3Download
+            let h3UploadStream = state.h3Upload
+            let h3Session = state.h3Multiplexer
+            let sharedH2DownloadStream = state.sharedH2Download
+            let sharedH2UploadStream = state.sharedH2Upload
+            state.sharedH2Download = nil
+            state.sharedH2Upload = nil
+            let lease = state.xmuxLease
+            state.xmuxLease = nil
+            let upload = state.uploadTransport
+            state.uploadTransport = nil
+            state.uploadDrainTask?.cancel()
+            state.uploadDrainTask = nil
+            state.h2FlowGate.wakeAll()
+            return (
+                h3DownloadStream,
+                h3UploadStream,
+                h3Session,
+                sharedH2DownloadStream,
+                sharedH2UploadStream,
+                lease,
+                upload
+            )
+        }
+
+        guard let teardown else { return }
+
+        packetUpChain.cancel()
+        download.cancel()
+        teardown.upload?.cancel()
+        teardown.h3Download?.close()
+        teardown.h3Upload?.close()
+        teardown.sharedH2Download?.close()
+        teardown.sharedH2Upload?.close()
+        if let lease = teardown.lease {
+            lease.release()
+        } else {
+            teardown.h3Session?.close()
+        }
+        uploadChannel?.cancel()
+    }
+
+    // MARK: - Packet-Up
+
+    private func sendPacketUp(_ data: Data) async throws {
+        try await packetUpChain.run { [self] in
+            let closed = state.withLock { $0.phase == .cancelled }
+            if closed { throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)) }
+
+            try await rateLimitPacketUp()
+
+            if usesSharedH2 {
+                try await sendSharedH2PacketUp(data: data)
+            } else if useHTTP3 {
+                try await sendH3PacketUp(data: data)
+            } else if useHTTP2 {
+                try await sendH2PacketUp(data: data)
+            } else {
+                try await sendPacketUpHTTP11(data: data)
+            }
+        }
+    }
+
+    private func rateLimitPacketUp() async throws {
+        let delayMs = configuration.scMinPostsIntervalMs
+        if delayMs > 0 {
+            let waitMs: Int = state.withLock { state in
+                guard state.packetUpLastFlushTime != 0 else { return 0 }
+                let elapsedNs = MonotonicClock.nanoseconds &- state.packetUpLastFlushTime
+                let elapsedMs = Int(min(elapsedNs / 1_000_000, UInt64(Int.max)))
+                return elapsedMs >= delayMs ? 0 : delayMs - elapsedMs
+            }
+            if waitMs > 0 {
+                try await Task.sleep(for: .milliseconds(waitMs), precision: .prompt)
+            }
+        }
+        state.withLock { $0.packetUpLastFlushTime = MonotonicClock.nanoseconds }
+    }
+}
+
+// MARK: - XMUX Connection Pooling
+
+nonisolated protocol XHTTPXMUXMultiplexerPoolable: AnyObject, Sendable {
+    var isPoolClosed: Bool { get }
+    func poolClose()
+}
+
+nonisolated final class XHTTPXMUXMultiplexerLease: Sendable {
+    let connection: XHTTPXMUXMultiplexerPoolable
+    
+    private let manager: XHTTPXMUXMultiplexerManager
+
+    private let clientID: UInt64
+
+    private let released = OneShotLatch()
+
+    init(connection: XHTTPXMUXMultiplexerPoolable, manager: XHTTPXMUXMultiplexerManager, clientID: UInt64) {
+        self.connection = connection
+        self.manager = manager
+        self.clientID = clientID
+    }
+
+    func noteRequest() {
+        manager.noteRequest(clientID)
+    }
+
+    func release() {
+        guard released.claim() else { return }
+        manager.releaseSlot(clientID)
+    }
+}
+
+nonisolated final class XHTTPXMUXMultiplexerManager: Sendable {
+    private let config: XHTTPXMUXMultiplexerConfiguration
+
+    private let concurrency: Int
+
+    private let connections: Int
+
+    private let newConnection: @Sendable () async -> XHTTPXMUXMultiplexerPoolable?
+
+    private enum Phase: PhaseTransitionable {
+        case dialing, ready
+
+        static func canTransition(from old: Phase, to new: Phase) -> Bool {
+            switch (old, new) {
+            case (.dialing, .ready):
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    private struct ClientEntry: PhaseHolding {
+        var phase: Phase = .dialing
+        var connection: XHTTPXMUXMultiplexerPoolable?
+        var openUsage = 0
+        var leftUsage: Int
+        var leftRequests: Int
+        let unreusableAt: TimeInterval?
+        var dialTask: Task<XHTTPXMUXMultiplexerPoolable?, Never>?
+        var dialWaiters: [(id: UInt64, cont: AsyncStream<Never>.Continuation)] = []
+
+        func isRetired(now: TimeInterval) -> Bool {
+            if phase == .dialing { return false }
+            if connection?.isPoolClosed == true { return true }
+            if leftUsage == 0 || leftRequests <= 0 { return true }
+            if let unreusableAt, now > unreusableAt { return true }
+            return false
+        }
+    }
+
+    private struct PoolState {
+        var entries: [UInt64: ClientEntry] = [:]
+        var nextID: UInt64 = 0
+        var nextWaiterID: UInt64 = 0
+    }
+    private let pool = Mutex(PoolState())
+
+    private let registry: XHTTPXMUXMultiplexerRegistry?
+    fileprivate let registryKey: XHTTPXMUXMultiplexerRegistry.Key?
+
+    fileprivate init(
+        config: XHTTPXMUXMultiplexerConfiguration,
+        newConnection: @escaping @Sendable () async -> XHTTPXMUXMultiplexerPoolable?,
+        registry: XHTTPXMUXMultiplexerRegistry? = nil,
+        registryKey: XHTTPXMUXMultiplexerRegistry.Key? = nil
+    ) {
+        self.config = config
+        self.concurrency = config.maxConcurrency.random()
+        self.connections = config.maxConnections.random()
+        self.newConnection = newConnection
+        self.registry = registry
+        self.registryKey = registryKey
+    }
+
+    func acquire() async -> XHTTPXMUXMultiplexerLease? {
+        let now = MonotonicClock.now
+        var retiredIdle: [XHTTPXMUXMultiplexerPoolable] = []
+        pool.withLock { pool in
+            let retiredIDs = pool.entries.compactMap { $0.value.isRetired(now: now) ? $0.key : nil }
+            for id in retiredIDs {
+                guard pool.entries[id]!.openUsage == 0 else { continue }
+                if let connection = pool.entries[id]!.connection {
+                    retiredIdle.append(connection)
+                }
+                pool.entries[id] = nil
+            }
+        }
+        for connection in retiredIdle { connection.poolClose() }
+
+        enum Decision {
+            case ready(XHTTPXMUXMultiplexerPoolable, UInt64)
+            case dialOrJoin(UInt64)
+        }
+        let decision: Decision = pool.withLock { pool in
+            if let id = selectReusable(in: pool.entries, now: now) {
+                pool.entries[id]!.openUsage += 1
+                if pool.entries[id]!.leftUsage > 0 { pool.entries[id]!.leftUsage -= 1 }
+                switch pool.entries[id]!.phase {
+                case .ready:
+                    return .ready(pool.entries[id]!.connection!, id)
+                case .dialing:
+                    return .dialOrJoin(id)
+                }
+            }
+
+            let reuseRand = config.cMaxReuseTimes.random()
+            let leftUsage = reuseRand > 0 ? reuseRand - 1 : -1
+            let reqRand = config.hMaxRequestTimes.random()
+            let leftRequests = reqRand > 0 ? reqRand : Int.max
+            let secsRand = config.hMaxReusableSecs.random()
+            let unreusableAt: TimeInterval? = secsRand > 0 ? now + Double(secsRand) : nil
+
+            let id = pool.nextID
+            pool.nextID &+= 1
+            var entry = ClientEntry(leftUsage: leftUsage, leftRequests: leftRequests, unreusableAt: unreusableAt)
+            entry.openUsage = 1
+            entry.dialTask = Task { [weak self] in await self?.performDial(for: id) ?? nil }
+            pool.entries[id] = entry
+            return .dialOrJoin(id)
+        }
+
+        switch decision {
+        case .ready(let connection, let id):
+            return makeLease(connection, id)
+        case .dialOrJoin(let id):
+            guard let connection = await joinDial(id: id) else {
+                releaseSlot(id)
+                return nil
+            }
+            return makeLease(connection, id)
+        }
+    }
+
+    private func joinDial(id: UInt64) async -> XHTTPXMUXMultiplexerPoolable? {
+        enum Step {
+            case settled(XHTTPXMUXMultiplexerPoolable?)
+            case wait(AsyncStream<Never>, UInt64)
+        }
+        while true {
+            let step: Step = pool.withLock { pool in
+                guard var entry = pool.entries[id] else { return .settled(nil) }
+                switch entry.phase {
+                case .ready: return .settled(entry.connection)
+                case .dialing:
+                    let waiterID = pool.nextWaiterID
+                    pool.nextWaiterID &+= 1
+                    let (stream, cont) = AsyncStream.makeStream(of: Never.self)
+                    entry.dialWaiters.append((id: waiterID, cont: cont))
+                    pool.entries[id] = entry
+                    return .wait(stream, waiterID)
+                }
+            }
+            switch step {
+            case .settled(let connection):
+                return connection
+            case .wait(let stream, let waiterID):
+                for await _ in stream {}
+                pool.withLock { pool in
+                    pool.entries[id]?.dialWaiters.removeAll { $0.id == waiterID }
+                }
+                if Task.isCancelled { return nil }
+            }
+        }
+    }
+
+    private func performDial(for id: UInt64) async -> XHTTPXMUXMultiplexerPoolable? {
+        let connection = await newConnection()
+        var adopted = false
+        var drained = false
+        var waiters: [AsyncStream<Never>.Continuation] = []
+        pool.withLock { pool in
+            waiters = pool.entries[id]?.dialWaiters.map(\.cont) ?? []
+            pool.entries[id]?.dialWaiters.removeAll()
+            if let connection, pool.entries[id] != nil {
+                pool.entries[id]!.connection = connection
+                pool.entries[id]!.transition(to: .ready)
+                adopted = true
+            } else {
+                pool.entries[id] = nil
+                drained = pool.entries.isEmpty
+            }
+        }
+        for cont in waiters { cont.finish() }
+        if !adopted { connection?.poolClose() }
+        if drained { registry?.evictIfEmpty(self) }
+        return adopted ? connection : nil
+    }
+
+    private func selectReusable(in entries: [UInt64: ClientEntry], now: TimeInterval) -> UInt64? {
+        let live = entries.filter { !$0.value.isRetired(now: now) }
+        if live.isEmpty { return nil }
+        if connections > 0 && live.count < connections { return nil }
+        let eligible = concurrency > 0 ? live.filter { $0.value.openUsage < concurrency } : live
+        return eligible.keys.randomElement()
+    }
+
+    private func makeLease(_ connection: XHTTPXMUXMultiplexerPoolable, _ clientID: UInt64) -> XHTTPXMUXMultiplexerLease {
+        XHTTPXMUXMultiplexerLease(connection: connection, manager: self, clientID: clientID)
+    }
+
+    func releaseSlot(_ clientID: UInt64) {
+        let orphaned = registry.map { !$0.isRegistered(self) } ?? false
+        var shouldClose: XHTTPXMUXMultiplexerPoolable?
+        let drained: Bool = pool.withLock { pool in
+            guard pool.entries[clientID] != nil else { return pool.entries.isEmpty }
+            if pool.entries[clientID]!.openUsage > 0 { pool.entries[clientID]!.openUsage -= 1 }
+            if pool.entries[clientID]!.openUsage == 0,
+               orphaned || pool.entries[clientID]!.isRetired(now: MonotonicClock.now) {
+                shouldClose = pool.entries[clientID]!.connection
+                pool.entries[clientID] = nil
+            }
+            return pool.entries.isEmpty
+        }
+        shouldClose?.poolClose()
+        if drained { registry?.evictIfEmpty(self) }
+    }
+
+    func noteRequest(_ clientID: UInt64) {
+        pool.withLock { pool in
+            guard pool.entries[clientID] != nil else { return }
+            let left = pool.entries[clientID]!.leftRequests
+            if left > 0 && left != Int.max { pool.entries[clientID]!.leftRequests = left - 1 }
+        }
+    }
+
+    fileprivate func hasNoClients() -> Bool {
+        pool.withLock { $0.entries.isEmpty }
+    }
+
+    func closeAll() {
+        typealias Drained = (
+            connections: [XHTTPXMUXMultiplexerPoolable],
+            dials: [Task<XHTTPXMUXMultiplexerPoolable?, Never>],
+            waiters: [AsyncStream<Never>.Continuation]
+        )
+        let drained: Drained = pool.withLock { pool in
+            let result = (pool.entries.values.compactMap { $0.connection },
+                          pool.entries.values.compactMap { $0.dialTask },
+                          pool.entries.values.flatMap { $0.dialWaiters.map(\.cont) })
+            pool.entries.removeAll()
+            return result
+        }
+        for connection in drained.connections { connection.poolClose() }
+        for dial in drained.dials { dial.cancel() }
+        for waiter in drained.waiters { waiter.finish() }
+    }
+}
+
+nonisolated final class XHTTPXMUXMultiplexerRegistry: Sendable {
+    nonisolated static let shared = XHTTPXMUXMultiplexerRegistry()
+
+    fileprivate struct Key: Hashable {
+        let endpoint: String
+        let chain: [ProxyConfiguration]
+    }
+
+    private let managers = Mutex<[Key: XHTTPXMUXMultiplexerManager]>([:])
+
+    private init() {}
+
+    func manager(
+        key endpoint: String,
+        chain: [ProxyConfiguration] = [],
+        config: XHTTPXMUXMultiplexerConfiguration,
+        makeFactory: () -> (@Sendable () async -> XHTTPXMUXMultiplexerPoolable?)
+    ) -> XHTTPXMUXMultiplexerManager {
+        let key = Key(endpoint: endpoint, chain: chain)
+        let factory = makeFactory()
+        return managers.withLock { managers in
+            if let existing = managers[key] { return existing }
+            let manager = XHTTPXMUXMultiplexerManager(
+                config: config, newConnection: factory, registry: self, registryKey: key
+            )
+            managers[key] = manager
+            return manager
+        }
+    }
+
+    fileprivate func isRegistered(_ manager: XHTTPXMUXMultiplexerManager) -> Bool {
+        guard let key = manager.registryKey else { return true }
+        return managers.withLock { $0[key] === manager }
+    }
+
+    fileprivate func evictIfEmpty(_ manager: XHTTPXMUXMultiplexerManager) {
+        guard let key = manager.registryKey else { return }
+        managers.withLock { managers in
+            guard managers[key] === manager else { return }
+            if manager.hasNoClients() {
+                managers.removeValue(forKey: key)
+            }
+        }
+    }
+}
+
+nonisolated extension XHTTPXMUXMultiplexerRegistry: TransportPool {
+    func reclaim() {
+        let allManagers: [XHTTPXMUXMultiplexerManager] = managers.withLock { managers in
+            let all = Array(managers.values)
+            managers.removeAll()
+            return all
+        }
+        for manager in allManagers { manager.closeAll() }
+    }
+}
+
+extension HTTP3Multiplexer: XHTTPXMUXMultiplexerPoolable {
+    nonisolated var isPoolClosed: Bool { isClosed }
+    nonisolated func poolClose() { close() }
+}
+
+// MARK: - Shared Multiplexing HTTP/2 Connection
+
+nonisolated final class XHTTPH2Stream: Sendable {
+    let streamId: UInt32
+    private let multiplexer: XHTTPH2Multiplexer
+
+    init(streamId: UInt32, multiplexer: XHTTPH2Multiplexer) {
+        self.streamId = streamId
+        self.multiplexer = multiplexer
+    }
+    
+    func sendData(_ data: Data, endStream: Bool) async throws {
+        try await multiplexer.sendData(streamId: streamId, data: data, offset: 0, endStream: endStream)
+    }
+
+    func receive() async throws -> Data? {
+        try await multiplexer.receive(streamId: streamId)
+    }
+
+    func drainResponse() { multiplexer.drain(streamId: streamId) }
+
+    func close() { multiplexer.removeStream(streamId) }
+}
+
+nonisolated final class XHTTPH2Multiplexer: XHTTPXMUXMultiplexerPoolable, Sendable {
+    private let transport: any ByteTransport
+    private let frameReader: H2FrameReader
+
+    struct StreamState: PhaseHolding {
+        enum Phase: PhaseTransitionable {
+            case open
+            case halfClosedLocal
+            case halfClosedRemote
+            case closed
+
+            static func canTransition(from old: Phase, to new: Phase) -> Bool {
+                switch (old, new) {
+                case (.open, .halfClosedLocal),
+                     (.open, .halfClosedRemote),
+                     (.halfClosedLocal, .closed),
+                     (.halfClosedRemote, .closed):
+                    return true
+                default:
+                    return false
+                }
+            }
+
+            var localEnded: Bool { self == .halfClosedLocal || self == .closed }
+            var remoteEnded: Bool { self == .halfClosedRemote || self == .closed }
+        }
+
+        var phase: Phase = .open
+
+        mutating func endLocal() {
+            switch phase {
+            case .open: transition(to: .halfClosedLocal)
+            case .halfClosedRemote: transition(to: .closed)
+            case .halfClosedLocal, .closed: break
+            }
+        }
+
+        mutating func endRemote() {
+            switch phase {
+            case .open: transition(to: .halfClosedRemote)
+            case .halfClosedLocal: transition(to: .closed)
+            case .halfClosedRemote, .closed: break
+            }
+        }
+
+        var receiveBuffer = Data()
+        var failure: Error?
+        var receiveWaiter: AsyncStream<Void>.Continuation?
+        var draining = false
+        var receiveConsumed = 0
+        var sendWindow: Int
+    }
+
+    private enum Phase: PhaseTransitionable {
+        case open
+        case closed
+
+        static func canTransition(from old: Phase, to new: Phase) -> Bool {
+            switch (old, new) {
+            case (.open, .closed):
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    private struct State: PhaseHolding {
+        var phase: Phase = .open
+        var streams: [UInt32: StreamState] = [:]
+        var nextStreamId: UInt32 = 1
+        var pumpTask: Task<Void, Never>?
+        var retained: [any Sendable] = []
+
+        var peerConnWindow = 65535
+        var peerInitialWindow = 65535
+        var maxFrameSize = 16384
+        var flowGate = H2FlowGate()
+
+        var connReceiveConsumed = 0
+    }
+
+    private let state = Mutex(State())
+    private static let localStreamWindow = 4_194_304
+    private static let localConnWindow: UInt32 = 1_073_741_824
+    private static let maxReadBuffer = 8_388_608
+    
+    private let headersChain = SerialSender()
+
+    private struct PumpEffect {
+        var frames: [Data] = []
+    }
+
+    init(transport: any ByteTransport) {
+        self.transport = transport
+        frameReader = H2FrameReader(maxBufferSize: Self.maxReadBuffer, receive: { try await transport.receive() })
+    }
+
+    func retain(_ object: any Sendable) {
+        state.withLock { $0.retained.append(object) }
+    }
+
+    var isPoolClosed: Bool { state.withLock { $0.phase == .closed } }
+    func poolClose() { cancel() }
+
+    // MARK: - Setup
+
+    func connect() async throws {
+        var initData = XHTTPConnection.h2Preface
+        var settings = Data()
+        settings.append(contentsOf: [0x00, 0x02, 0x00, 0x00, 0x00, 0x00]) // ENABLE_PUSH = 0
+        let win = XHTTPConnection.h2StreamWindowSize
+        settings.append(contentsOf: [0x00, 0x04,
+            UInt8((win >> 24) & 0xFF), UInt8((win >> 16) & 0xFF), UInt8((win >> 8) & 0xFF), UInt8(win & 0xFF)])
+        settings.append(contentsOf: [0x00, 0x06, 0x00, 0xA0, 0x00, 0x00]) // MAX_HEADER_LIST_SIZE
+        initData.append(frame(type: XHTTPConnection.h2FrameSettings, flags: 0, streamId: 0, payload: settings))
+        initData.append(
+            frame(
+                type: XHTTPConnection.h2FrameWindowUpdate,
+                flags: 0,
+                streamId: 0,
+                payload: uint32Data(Self.localConnWindow)
+            )
+        )
+
+        do {
+            try await transport.send(initData)
+        } catch {
+            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "shared H2 preface: \(error.localizedDescription)"))
+        }
+
+        while true {
+            let f: H2Framing.Frame
+            do {
+                f = try await frameReader.readFrame()
+            } catch {
+                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "shared H2 settings read: \(error.localizedDescription)"))
+            }
+            switch f.type {
+            case XHTTPConnection.h2FrameSettings where f.flags & XHTTPConnection.h2FlagAck == 0:
+                applySettings(f.payload)
+                try? await transport.send(frame(type: XHTTPConnection.h2FrameSettings,
+                                                flags: XHTTPConnection.h2FlagAck, streamId: 0, payload: Data()))
+                startPump()
+                return
+            case XHTTPConnection.h2FrameWindowUpdate:
+                handleConnWindowUpdate(f.payload)
+            case XHTTPConnection.h2FramePing where f.flags & XHTTPConnection.h2FlagAck == 0:
+                try? await transport.send(frame(type: XHTTPConnection.h2FramePing,
+                                                flags: XHTTPConnection.h2FlagAck, streamId: 0, payload: f.payload))
+            case XHTTPConnection.h2FrameGoaway:
+                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "shared H2: server GOAWAY"))
+            default:
+                break
+            }
+        }
+    }
+
+    // MARK: Read loop
+
+    private func startPump() {
+        let task = Task { [weak self] in
+            while true {
+                guard let self else { return }
+                let f: H2Framing.Frame
+                do {
+                    f = try await self.frameReader.readFrame()
+                } catch {
+                    if case RuleProxyError.proxy(.xhttp, .streamClosed) = error {
+                        self.failAll(nil)
+                    } else {
+                        self.failAll(RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)))
+                    }
+                    return
+                }
+                await self.routeFrame(f)
+                if self.state.withLock({ $0.phase == .closed }) { return }
+            }
+        }
+        let stored: Bool = state.withLock { state in
+            guard state.phase == .open else { return false }
+            state.pumpTask = task
+            return true
+        }
+        if !stored { task.cancel() }
+    }
+
+    private static func h2StatusError(_ block: Data) -> String? {
+        guard let first = block.first else { return nil }
+        switch first {
+        case 0x89: return "HTTP 204"; case 0x8a: return "HTTP 206"; case 0x8b: return "HTTP 304"
+        case 0x8c: return "HTTP 400"; case 0x8d: return "HTTP 404"; case 0x8e: return "HTTP 500"
+        default:   return nil
+        }
+    }
+
+    private func routeFrame(_ decodedFrame: H2Framing.Frame) async {
+        switch decodedFrame.type {
+        case XHTTPConnection.h2FrameData:
+            if let effect = handleData(streamId: decodedFrame.streamId, flags: decodedFrame.flags, payload: decodedFrame.payload) {
+                await apply(effect)
+            }
+        case XHTTPConnection.h2FrameHeaders:
+            if let effect = handleHeaders(streamId: decodedFrame.streamId, flags: decodedFrame.flags, payload: decodedFrame.payload) {
+                await apply(effect)
+            }
+        case XHTTPConnection.h2FrameWindowUpdate:
+            if decodedFrame.streamId == 0 { handleConnWindowUpdate(decodedFrame.payload) }
+            else { handleStreamWindowUpdate(streamId: decodedFrame.streamId, payload: decodedFrame.payload) }
+        case XHTTPConnection.h2FrameSettings where decodedFrame.flags & XHTTPConnection.h2FlagAck == 0:
+            applySettings(decodedFrame.payload)
+            try? await transport.send(frame(type: XHTTPConnection.h2FrameSettings, flags: XHTTPConnection.h2FlagAck, streamId: 0, payload: Data()))
+        case XHTTPConnection.h2FramePing where decodedFrame.flags & XHTTPConnection.h2FlagAck == 0:
+            try? await transport.send(frame(type: XHTTPConnection.h2FramePing, flags: XHTTPConnection.h2FlagAck, streamId: 0, payload: decodedFrame.payload))
+        case XHTTPConnection.h2FrameRstStream:
+            if let effect = handleEnd(streamId: decodedFrame.streamId, reset: true) { await apply(effect) }
+        case XHTTPConnection.h2FrameGoaway:
+            failAll(RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)))
+        default:
+            break
+        }
+    }
+
+    private func apply(_ effect: PumpEffect) async {
+        for frame in effect.frames { try? await transport.send(frame) }
+    }
+
+    private func handleData(streamId: UInt32, flags: UInt8, payload: Data) -> PumpEffect? {
+        let endStream = flags & XHTTPConnection.h2FlagEndStream != 0
+        return state.withLock { state in
+            guard var stream = state.streams[streamId] else {
+                state.connReceiveConsumed += payload.count
+                guard let windowUpdateFrame = connWindowUpdateLocked(&state) else { return nil }
+                return PumpEffect(frames: [windowUpdateFrame])
+            }
+            if stream.draining {
+                state.connReceiveConsumed += payload.count
+                stream.receiveConsumed += payload.count
+                let updates = windowUpdatesLocked(streamId, &stream, &state)
+                if endStream {
+                    stream.endRemote()
+                    if stream.phase == .closed { state.streams.removeValue(forKey: streamId) }
+                    else { state.streams[streamId] = stream }
+                } else {
+                    state.streams[streamId] = stream
+                }
+                return PumpEffect(frames: updates)
+            }
+            if !payload.isEmpty { stream.receiveBuffer.append(payload) }
+            if endStream { stream.endRemote() }
+            wakeReceiverLocked(&stream)
+            state.streams[streamId] = stream
+            return nil
+        }
+    }
+
+    private func handleHeaders(streamId: UInt32, flags: UInt8, payload: Data) -> PumpEffect? {
+        if let statusError = Self.h2StatusError(payload) {
+            return state.withLock { state in
+                guard var stream = state.streams[streamId] else { return nil }
+                if stream.failure == nil {
+                    stream.failure = RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "shared H2 stream \(streamId): \(statusError)"))
+                }
+                if flags & XHTTPConnection.h2FlagEndStream != 0 { stream.endRemote() }
+                wakeReceiverLocked(&stream)
+                if stream.draining && stream.phase == .closed {
+                    state.streams.removeValue(forKey: streamId)
+                } else {
+                    state.streams[streamId] = stream
+                }
+                return nil
+            }
+        }
+        guard flags & XHTTPConnection.h2FlagEndStream != 0 else { return nil }
+        return handleEnd(streamId: streamId)
+    }
+
+    private func handleEnd(streamId: UInt32, reset: Bool = false) -> PumpEffect? {
+        state.withLock { state in
+            guard var stream = state.streams[streamId] else { return nil }
+            if stream.draining {
+                stream.endRemote()
+                if reset || stream.phase == .closed { state.streams.removeValue(forKey: streamId) }
+                else { state.streams[streamId] = stream }
+                return nil
+            }
+            stream.endRemote()
+            wakeReceiverLocked(&stream)
+            state.streams[streamId] = stream
+            return nil
+        }
+    }
+
+    private func handleConnWindowUpdate(_ payload: Data) {
+        guard payload.count >= 4 else { return }
+        let increment = Int(readUInt32(payload) & 0x7FFFFFFF)
+        state.withLock { state in
+            state.peerConnWindow += increment
+            state.flowGate.wakeAll()
+        }
+    }
+
+    private func handleStreamWindowUpdate(streamId: UInt32, payload: Data) {
+        guard payload.count >= 4 else { return }
+        let inc = Int(readUInt32(payload) & 0x7FFFFFFF)
+        state.withLock { state in
+            state.streams[streamId]?.sendWindow += inc
+            state.flowGate.wakeAll()
+        }
+    }
+
+    private func wakeReceiverLocked(_ stream: inout StreamState) {
+        stream.receiveWaiter?.finish()
+        stream.receiveWaiter = nil
+    }
+
+    // MARK: Send
+
+    func sendData(streamId: UInt32, data: Data, offset: Int, endStream: Bool) async throws {
+        if offset >= data.count {
+            guard endStream else { return }
+            let f: Data? = state.withLock { state in
+                if state.phase == .closed { return nil }
+                state.streams[streamId]?.endLocal()
+                return frame(type: XHTTPConnection.h2FrameData, flags: XHTTPConnection.h2FlagEndStream, streamId: streamId, payload: Data())
+            }
+            guard let f else { throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)) }
+            try await transport.send(f)
+            return
+        }
+
+        enum BuildStep {
+            case closed
+            case park
+            case built(frames: Data, nextOffset: Int)
+        }
+        var currentOffset = offset
+        while currentOffset < data.count {
+            let step: BuildStep = state.withLock { state in
+                if state.phase == .closed { return .closed }
+                guard var stream = state.streams[streamId] else { return .closed }
+                let window = min(state.peerConnWindow, stream.sendWindow)
+                guard window > 0 else { return .park }
+                var frames = Data()
+                var current = currentOffset
+                var remainingWindow = window
+                while current < data.count {
+                    let chunk = min(data.count - current, min(state.maxFrameSize, remainingWindow))
+                    guard chunk > 0 else { break }
+                    let isLast = (current + chunk) >= data.count
+                    let flags: UInt8 = (isLast && endStream) ? XHTTPConnection.h2FlagEndStream : 0
+                    frames.append(frame(type: XHTTPConnection.h2FrameData, flags: flags, streamId: streamId,
+                                        payload: Data(data[data.startIndex + current ..< data.startIndex + current + chunk])))
+                    current += chunk
+                    remainingWindow -= chunk
+                }
+                let sent = window - remainingWindow
+                state.peerConnWindow -= sent
+                stream.sendWindow -= sent
+                if current >= data.count && endStream { stream.endLocal() }
+                state.streams[streamId] = stream
+                return .built(frames: frames, nextOffset: current)
+            }
+            switch step {
+            case .closed:
+                throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil))
+            case .park:
+                await parkForFlow(streamId: streamId)
+                try Task.checkCancellation()
+            case .built(let frames, let nextOffset):
+                try await transport.send(frames)
+                currentOffset = nextOffset
+            }
+        }
+    }
+
+    private func parkForFlow(streamId: UInt32) async {
+        await H2FlowGate.park {
+            state.withLock { state -> AsyncStream<Never>? in
+                if state.phase == .closed { return nil }
+                guard let stream = state.streams[streamId] else { return nil }
+                if min(state.peerConnWindow, stream.sendWindow) > 0 { return nil }
+                return state.flowGate.enroll()
+            }
+        }
+    }
+
+    func receive(streamId: UInt32) async throws -> Data? {
+        enum Outcome { case data(Data, frames: [Data]), eof, error(Error), wait(AsyncStream<Void>) }
+        while true {
+            let outcome: Outcome = state.withLock { state in
+                guard var stream = state.streams[streamId] else { return .eof }
+                if let failure = stream.failure {
+                    return .error(failure)
+                }
+                if !stream.receiveBuffer.isEmpty {
+                    let data = stream.receiveBuffer
+                    stream.receiveBuffer = Data()
+                    state.connReceiveConsumed += data.count
+                    stream.receiveConsumed += data.count
+                    let updates = windowUpdatesLocked(streamId, &stream, &state)
+                    state.streams[streamId] = stream
+                    return .data(data, frames: updates)
+                }
+                if stream.phase.remoteEnded {
+                    if stream.phase == .closed { state.streams.removeValue(forKey: streamId) }
+                    return .eof
+                }
+                if state.phase == .closed {
+                    return .error(RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)))
+                }
+                let (waitStream, continuation) = AsyncStream<Void>.makeStream()
+                stream.receiveWaiter = continuation
+                state.streams[streamId] = stream
+                return .wait(waitStream)
+            }
+            switch outcome {
+            case .data(let data, let frames):
+                if !frames.isEmpty {
+                    let transport = self.transport
+                    Task { for frame in frames { try? await transport.send(frame) } }
+                }
+                return data
+            case .eof:
+                return nil
+            case .error(let error):
+                throw error
+            case .wait(let waitStream):
+                for await _ in waitStream { break }
+                try Task.checkCancellation()
+            }
+        }
+    }
+
+    // MARK: Streams
+    
+    func openStream(headerBlock: Data, endStream: Bool) -> (stream: XHTTPH2Stream, headersSent: SerialSender.Pending) {
+        state.withLock { state in
+            let id = state.nextStreamId
+            state.nextStreamId += 2
+            var stream = StreamState(sendWindow: state.peerInitialWindow)
+            if endStream { stream.endLocal() }
+            state.streams[id] = stream
+            let flags = XHTTPConnection.h2FlagEndHeaders | (endStream ? XHTTPConnection.h2FlagEndStream : 0)
+            let headers = frame(type: XHTTPConnection.h2FrameHeaders, flags: flags, streamId: id, payload: headerBlock)
+            let transport = self.transport
+            let headersSent = headersChain.submit { try await transport.send(headers) }
+            return (XHTTPH2Stream(streamId: id, multiplexer: self), headersSent)
+        }
+    }
+
+    func drain(streamId: UInt32) {
+        state.withLock { state in
+            guard var stream = state.streams[streamId] else { return }
+            stream.draining = true
+            state.connReceiveConsumed += stream.receiveBuffer.count
+            stream.receiveBuffer = Data()
+            state.streams[streamId] = stream
+        }
+    }
+
+    func removeStream(_ streamId: UInt32) {
+        let (shouldReset, waiter, credit): (Bool, AsyncStream<Void>.Continuation?, Data?) = state.withLock { state in
+            guard let stream = state.streams.removeValue(forKey: streamId) else { return (false, nil, nil) }
+            state.connReceiveConsumed += stream.receiveBuffer.count
+            state.flowGate.wakeAll()
+            return (!stream.phase.remoteEnded && state.phase == .open, stream.receiveWaiter, connWindowUpdateLocked(&state))
+        }
+        waiter?.finish()
+        let transport = self.transport
+        if let credit {
+            Task { try? await transport.send(credit) }
+        }
+        if shouldReset {
+            var code = Data(count: 4); code[3] = 0x08 // CANCEL
+            let f = frame(type: XHTTPConnection.h2FrameRstStream, flags: 0, streamId: streamId, payload: code)
+            _ = headersChain.submit { try await transport.send(f) }
+        }
+    }
+
+    func cancel() { failAll(RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil))) }
+
+    private func failAll(_ error: Error?) {
+        let (didClose, pumpTask): (Bool, Task<Void, Never>?) = state.withLock { state in
+            guard state.transition(to: .closed) else { return (false, nil) }
+            let pumpTask = state.pumpTask
+            state.pumpTask = nil
+            for (id, var stream) in state.streams {
+                if let error {
+                    if stream.failure == nil { stream.failure = error }
+                } else {
+                    stream.endRemote()
+                }
+                wakeReceiverLocked(&stream)
+                state.streams[id] = stream
+            }
+            state.flowGate.wakeAll()
+            return (true, pumpTask)
+        }
+        guard didClose else { return }
+        pumpTask?.cancel()
+        headersChain.cancel()
+        frameReader.reset()
+        transport.cancel()
+    }
+
+    // MARK: Frame I/O
+
+    private func frame(type: UInt8, flags: UInt8, streamId: UInt32, payload: Data) -> Data {
+        H2Framing.frame(type: type, flags: flags, streamId: streamId, payload: payload)
+    }
+
+    private func applySettings(_ payload: Data) {
+        var index = payload.startIndex
+        while index + 6 <= payload.endIndex {
+            let id = (UInt16(payload[index]) << 8) | UInt16(payload[index + 1])
+            let value = (UInt32(payload[index + 2]) << 24) | (UInt32(payload[index + 3]) << 16)
+                    | (UInt32(payload[index + 4]) << 8) | UInt32(payload[index + 5])
+            state.withLock { state in
+                if id == 0x04 {
+                    let delta = Int(value) - state.peerInitialWindow
+                    state.peerInitialWindow = Int(value)
+                    for key in state.streams.keys { state.streams[key]?.sendWindow += delta }
+                } else if id == 0x05 {
+                    state.maxFrameSize = min(max(Int(value), 16_384), 16_777_215)
+                }
+            }
+            index += 6
+        }
+    }
+
+    private func connWindowUpdateLocked(_ state: inout State) -> Data? {
+        guard state.connReceiveConsumed >= Int(Self.localConnWindow) / 2 else { return nil }
+        let inc = UInt32(state.connReceiveConsumed)
+        state.connReceiveConsumed = 0
+        return frame(type: XHTTPConnection.h2FrameWindowUpdate, flags: 0, streamId: 0, payload: uint32Data(inc))
+    }
+
+    private func windowUpdatesLocked(_ streamId: UInt32, _ stream: inout StreamState, _ state: inout State) -> [Data] {
+        var out: [Data] = []
+        if let c = connWindowUpdateLocked(&state) { out.append(c) }
+        if stream.receiveConsumed >= Self.localStreamWindow / 2, !stream.phase.remoteEnded {
+            let inc = UInt32(stream.receiveConsumed)
+            stream.receiveConsumed = 0
+            out.append(
+                frame(type: XHTTPConnection.h2FrameWindowUpdate, flags: 0, streamId: streamId, payload: uint32Data(inc))
+            )
+        }
+        return out
+    }
+
+    private func readUInt32(_ d: Data) -> UInt32 { H2Framing.readUInt32(d) }
+
+    private func uint32Data(_ v: UInt32) -> Data { H2Framing.uint32Data(v) }
+}
+
+// MARK: - Pooled HTTP/1.1 Upload Connection
+
+nonisolated final class XHTTPH1Multiplexer: XHTTPXMUXMultiplexerPoolable, Sendable {
+    private let transport: any ByteTransport
+
+    private enum ParseState { case headers; case body(Int) }
+
+    private enum Phase: PhaseTransitionable {
+        case reusable
+        case poisoned
+        case closed
+
+        static func canTransition(from old: Phase, to new: Phase) -> Bool {
+            switch (old, new) {
+            case (.reusable, .poisoned), (.reusable, .closed), (.poisoned, .closed):
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    private struct State: PhaseHolding {
+        var phase: Phase = .reusable
+        var outstanding = 0
+        var retained: [any Sendable] = []
+        var parseState: ParseState = .headers
+        var parseBuffer = Data()
+        var lease: XHTTPXMUXMultiplexerLease?
+        var drainTask: Task<Void, Never>?
+    }
+
+    private let state = Mutex(State())
+
+    var lease: XHTTPXMUXMultiplexerLease? { state.withLock { $0.lease } }
+    func adoptLease(_ lease: XHTTPXMUXMultiplexerLease) { state.withLock { $0.lease = lease } }
+
+    init(transport: any ByteTransport) {
+        self.transport = transport
+        startDrain()
+    }
+
+    func retain(_ object: any Sendable) { state.withLock { $0.retained.append(object) } }
+
+    var isPoolClosed: Bool { state.withLock { $0.phase != .reusable } }
+
+    func poolClose() {
+        let (alreadyClosed, drainTask): (Bool, Task<Void, Never>?) = state.withLock { state in
+            guard state.transition(to: .closed) else { return (true, nil) }
+            let drainTask = state.drainTask
+            state.drainTask = nil
+            return (false, drainTask)
+        }
+        if alreadyClosed { return }
+        drainTask?.cancel()
+        transport.cancel()
+    }
+
+    var sessionTransport: any ByteTransport {
+        SessionTransport(multiplexer: self)
+    }
+
+    private final class SessionTransport: ByteTransport, Sendable {
+        private let multiplexer: XHTTPH1Multiplexer
+
+        init(multiplexer: XHTTPH1Multiplexer) {
+            self.multiplexer = multiplexer
+        }
+
+        var isReady: Bool { !multiplexer.isPoolClosed }
+
+        func send(_ data: Data) async throws {
+            multiplexer.state.withLock { $0.outstanding += 1 }
+            try await multiplexer.transport.send(data)
+        }
+
+        func receive() async throws -> TransportChunk { .end }
+
+        func cancel() { multiplexer.releaseToPool() }
+    }
+
+    private func releaseToPool() {
+        let lease: XHTTPXMUXMultiplexerLease? = state.withLock { state in
+            if state.outstanding != 0 || !state.parseBuffer.isEmpty { state.transition(to: .poisoned) }
+            let lease = state.lease
+            state.lease = nil
+            return lease
+        }
+        lease?.release()
+    }
+
+    // MARK: Internal drain + response parser
+
+    private func startDrain() {
+        let task = Task { [weak self] in
+            while true {
+                guard let self else { return }
+                let chunk: TransportChunk
+                do {
+                    chunk = try await self.transport.receive()
+                } catch {
+                    self.poolClose()
+                    return
+                }
+                switch chunk {
+                case .bytes(let data):
+                    if !data.isEmpty { self.consume(data) }
+                case .end:
+                    self.poolClose()
+                    return
+                }
+                if self.state.withLock({ $0.phase == .closed }) { return }
+            }
+        }
+        let stored: Bool = state.withLock { state in
+            guard state.phase != .closed else { return false }
+            state.drainTask = task
+            return true
+        }
+        if !stored { task.cancel() }
+    }
+
+    private func consume(_ data: Data) {
+        state.withLock { state in
+            guard state.phase == .reusable else { return }
+            state.parseBuffer.append(data)
+            while true {
+                switch state.parseState {
+                case .headers:
+                    guard let r = state.parseBuffer.range(of: Data([0x0D, 0x0A, 0x0D, 0x0A])) else {
+                        if state.parseBuffer.count > XHTTPConnection.maxResponseHeaderSize { state.transition(to: .poisoned) }
+                        return
+                    }
+                    let headerData = Data(state.parseBuffer[state.parseBuffer.startIndex..<r.lowerBound])
+                    state.parseBuffer = Data(state.parseBuffer[r.upperBound...])
+                    guard let header = String(data: headerData, encoding: .ascii), header.hasPrefix("HTTP/1.") else {
+                        state.transition(to: .poisoned); return
+                    }
+                    let lower = header.lowercased()
+                    if lower.contains("transfer-encoding:"), lower.contains("chunked") {
+                        state.transition(to: .poisoned); return
+                    }
+                    guard let length = Self.contentLength(in: header), length >= 0 else {
+                        state.transition(to: .poisoned); return
+                    }
+                    if length == 0 { completeResponseLocked(&state) } else { state.parseState = .body(length) }
+                case .body(let remaining):
+                    guard !state.parseBuffer.isEmpty else { return }
+                    let take = min(remaining, state.parseBuffer.count)
+                    state.parseBuffer.removeFirst(take)
+                    state.parseBuffer = state.parseBuffer.isEmpty ? Data() : Data(state.parseBuffer)
+                    let left = remaining - take
+                    if left == 0 { state.parseState = .headers; completeResponseLocked(&state) }
+                    else { state.parseState = .body(left); return }
+                }
+            }
+        }
+    }
+
+    private func completeResponseLocked(_ state: inout State) {
+        state.parseState = .headers
+        if state.outstanding <= 0 { state.transition(to: .poisoned); return }
+        state.outstanding -= 1
+    }
+
+    private static func contentLength(in header: String) -> Int? {
+        for line in header.components(separatedBy: "\r\n") {
+            let parts = line.split(separator: ":", maxSplits: 1)
+            if parts.count == 2,
+               parts[0].trimmingCharacters(in: .whitespaces).lowercased() == "content-length" {
+                return Int(parts[1].trimmingCharacters(in: .whitespaces))
+            }
+        }
+        return nil
+    }
+}

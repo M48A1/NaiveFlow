@@ -1,0 +1,420 @@
+//
+//  MITMCertificateStore.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 5/3/26.
+//
+
+import Foundation
+import CryptoKit
+import Security
+import Synchronization
+
+nonisolated final class MITMCertificateStore: Sendable {
+
+    // MARK: - Configuration
+
+    private static let accessGroup = AWCore.Identifier.appGroupSuite
+
+    private static let service = "com.argsment.RuleProxy.MITM"
+
+    private static let privateKeyTag = "\(service).caPrivateKey".data(using: .utf8)!
+    private static let certificateAccount = "\(service).caCertificate"
+    private static let serialAccount = "\(service).caSerial"
+
+    private static let caSubjectCN = "RuleProxy Root Certificate"
+    private static let caOrganization = "RuleProxy"
+
+    typealias CA = (privateKey: SecKey, certificateDER: Data)
+
+    private let cachedCA = Mutex<CA?>(nil)
+
+    // MARK: - CA Lifecycle
+
+    func loadOrCreateCA() throws -> CA {
+        try cachedCA.withLock { cache in
+            if let existing = try? loadCACachedUnlocked(&cache) {
+                return existing
+            }
+            do {
+                return try generateCAUnlocked(&cache)
+            } catch {
+                // The App Group keychain is shared with the extension (the lock is
+                // intra-process): either the other process won the race (re-read), or
+                // an orphaned key from a failed cert write hit errSecDuplicateItem (drop it).
+                if let existing = try? loadCACachedUnlocked(&cache) {
+                    return existing
+                }
+                // Non-duplicate failures leave no key, so surface the real error.
+                guard (try? readPrivateKeyUnlocked()) != nil else { throw error }
+                deletePrivateKey()
+                return try generateCAUnlocked(&cache)
+            }
+        }
+    }
+
+    func loadCA() -> CA? {
+        cachedCA.withLock { cache in try? loadCACachedUnlocked(&cache) }
+    }
+
+    func reloadCA() -> Bool {
+        cachedCA.withLock { cache in
+            let previous = cache?.certificateDER
+            cache = nil
+            return (try? loadCACachedUnlocked(&cache))?.certificateDER != previous
+        }
+    }
+
+    @discardableResult
+    func regenerate() throws -> CA {
+        try cachedCA.withLock { cache in
+            deleteUnlocked(&cache)
+            return try generateCAUnlocked(&cache)
+        }
+    }
+
+    func delete() {
+        cachedCA.withLock { cache in deleteUnlocked(&cache) }
+    }
+
+    // MARK: - Trust State
+
+    func isCATrusted() -> Bool {
+        guard let (caPrivateKey, caCertificateDER) = loadCA() else {
+            return false
+        }
+
+        let testHost = "ruleproxy-mitm-trust-check.invalid"
+        let leafKey = P256.Signing.PrivateKey()
+        let now = Date()
+
+        let leafDER: Data
+        do {
+            leafDER = try X509Builder.buildLeafCertificate(
+                leafPublicKey: leafKey.publicKey,
+                caPrivateKey: caPrivateKey,
+                caCertificateDER: caCertificateDER,
+                hostname: testHost,
+                serial: randomSerial(),
+                notBefore: now.addingTimeInterval(-60),
+                notAfter: now.addingTimeInterval(60 * 60)
+            )
+        } catch {
+            return false
+        }
+
+        guard let leafCertificate = SecCertificateCreateWithData(nil, leafDER as CFData),
+              let caCertificate = SecCertificateCreateWithData(nil, caCertificateDER as CFData) else {
+            return false
+        }
+
+        var trust: SecTrust?
+        let policy = SecPolicyCreateSSL(true, testHost as CFString)
+        let chain: [SecCertificate] = [leafCertificate, caCertificate]
+        let status = SecTrustCreateWithCertificates(chain as CFArray, policy, &trust)
+        guard status == errSecSuccess, let trust else { return false }
+        var error: CFError?
+        return SecTrustEvaluateWithError(trust, &error)
+    }
+
+    // MARK: - Export
+
+    func exportCertificateDER() -> Data? {
+        loadCA()?.certificateDER
+    }
+
+    func exportMobileConfig() -> Data? {
+        guard let (caPrivateKey, certificateDER) = loadCA() else { return nil }
+
+        let identifier = "com.argsment.RuleProxy.mitm.root"
+        let payloadIdentifier = "\(identifier).payload"
+        let payloadUUID = UUID().uuidString
+        let outerUUID = UUID().uuidString
+
+        let plist: [String: Any] = [
+            "PayloadType": "Configuration",
+            "PayloadVersion": 1,
+            "PayloadIdentifier": identifier,
+            "PayloadUUID": outerUUID,
+            "PayloadDisplayName": "RuleProxy Root Certificate",
+            "PayloadDescription": "Installs RuleProxy Root Certificate.",
+            "PayloadOrganization": "RuleProxy",
+            "PayloadContent": [
+                [
+                    "PayloadType": "com.apple.security.root",
+                    "PayloadVersion": 1,
+                    "PayloadIdentifier": payloadIdentifier,
+                    "PayloadUUID": payloadUUID,
+                    "PayloadDisplayName": "RuleProxy Root Certificate",
+                    "PayloadDescription": "The CA is used in RuleProxy app.",
+                    "PayloadCertificateFileName": "RuleProxyRootCertificate.cer",
+                    "PayloadContent": certificateDER,
+                ]
+            ]
+        ]
+
+        guard let profileData = try? PropertyListSerialization.data(
+            fromPropertyList: plist,
+            format: .xml,
+            options: 0
+        ) else {
+            return nil
+        }
+
+        return (try? signProfile(profileData, caPrivateKey: caPrivateKey, caCertificateDER: certificateDER)) ?? profileData
+    }
+
+    private func signProfile(_ profileData: Data, caPrivateKey: SecKey, caCertificateDER: Data) throws -> Data {
+        let signingKey = try makeEphemeralSigningKey()
+        let now = Date()
+        let notAfter = Calendar(identifier: .gregorian).date(byAdding: .year, value: 1, to: now)
+            ?? now.addingTimeInterval(60 * 60 * 24 * 365)
+
+        let leafDER = try X509Builder.buildSigningCertificate(
+            signingKey: signingKey,
+            caPrivateKey: caPrivateKey,
+            caCertificateDER: caCertificateDER,
+            commonName: "RuleProxy Profile Signing",
+            serial: randomSerial(),
+            notBefore: now.addingTimeInterval(-60 * 60),
+            notAfter: notAfter
+        )
+
+        return try X509Builder.buildSignedProfile(
+            profileData: profileData,
+            signerPrivateKey: signingKey,
+            signerCertificateDER: leafDER,
+            certificates: [leafDER, caCertificateDER]
+        )
+    }
+
+    private func makeEphemeralSigningKey() throws -> SecKey {
+        let attributes: [String: Any] = [
+            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrKeySizeInBits as String: 256,
+        ]
+        var error: Unmanaged<CFError>?
+        guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else {
+            let message = (error?.takeRetainedValue()).flatMap { CFErrorCopyDescription($0) as String? } ?? "unknown"
+            throw RuleProxyError.certificate(.keyGenerationFailed(detail: message))
+        }
+        return key
+    }
+
+    // MARK: - Leaf Signing Inputs
+
+    /// Returns a fresh 16-byte random serial. Randomness, not a shared counter:
+    /// two App Group processes could mint duplicates (RFC 5280 §4.1.2.2).
+    func nextSerial() -> Data {
+        randomSerial()
+    }
+
+    // MARK: - Private — CA load / generate / delete
+
+    private func loadCACachedUnlocked(_ cache: inout CA?) throws -> CA {
+        if let cache { return cache }
+        let loaded = try loadCAUnlocked()
+        cache = loaded
+        return loaded
+    }
+
+    private func loadCAUnlocked() throws -> CA {
+        let certificate = try readCertificateUnlocked()
+        let key = try readPrivateKeyUnlocked()
+        return (key, certificate)
+    }
+
+    private func generateCAUnlocked(_ cache: inout CA?) throws -> CA {
+        let privateKey = try generatePrivateKey()
+        let now = Date()
+        let notAfter = Calendar(identifier: .gregorian).date(byAdding: .year, value: 10, to: now) ?? now.addingTimeInterval(60 * 60 * 24 * 365 * 10)
+        let serial = randomSerial()
+
+        do {
+            let certificateDER = try X509Builder.buildCACertificate(
+                privateKey: privateKey,
+                subjectCN: Self.caSubjectCN,
+                organization: Self.caOrganization,
+                serial: serial,
+                notBefore: now.addingTimeInterval(-60 * 60),
+                notAfter: notAfter
+            )
+            try writeCertificateUnlocked(certificateDER)
+            let ca: CA = (privateKey: privateKey, certificateDER: certificateDER)
+            cache = ca
+            return ca
+        } catch {
+            // The key was already persisted (kSecAttrIsPermanent); delete it or
+            // the next call hits errSecDuplicateItem on the same tag.
+            deletePrivateKey()
+            throw RuleProxyError.certificate(.buildFailed(underlying: error))
+        }
+    }
+
+    private func deleteUnlocked(_ cache: inout CA?) {
+        cache = nil
+        deletePrivateKey()
+        deleteCertificate()
+        deleteSerial()
+    }
+
+    // MARK: - Private — Keychain (Private Key)
+
+    private func generatePrivateKey() throws -> SecKey {
+        if let key = tryGenerateSecureEnclaveKey() {
+            return key
+        }
+        return try generateSoftwareKey()
+    }
+
+    private func tryGenerateSecureEnclaveKey() -> SecKey? {
+        var error: Unmanaged<CFError>?
+        guard let access = SecAccessControlCreateWithFlags(
+            nil,
+            kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            .privateKeyUsage,
+            &error
+        ) else {
+            _ = error?.takeRetainedValue()
+            return nil
+        }
+        let attributes: [String: Any] = [
+            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrKeySizeInBits as String: 256,
+            kSecAttrTokenID as String: kSecAttrTokenIDSecureEnclave,
+            kSecPrivateKeyAttrs as String: [
+                kSecAttrIsPermanent as String: true,
+                kSecAttrAccessControl as String: access,
+                kSecAttrApplicationTag as String: Self.privateKeyTag,
+                kSecAttrAccessGroup as String: Self.accessGroup,
+            ]
+        ]
+        var keyError: Unmanaged<CFError>?
+        let key = SecKeyCreateRandomKey(attributes as CFDictionary, &keyError)
+        if key == nil { _ = keyError?.takeRetainedValue() }
+        return key
+    }
+
+    private func generateSoftwareKey() throws -> SecKey {
+        // Fallback when the Secure Enclave is unavailable (simulator, older devices).
+        // Non-extractable, non-synchronizable, ThisDeviceOnly: the CA key signs every
+        // MITM leaf, so it must never leave the device.
+        let attributes: [String: Any] = [
+            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrKeySizeInBits as String: 256,
+            kSecPrivateKeyAttrs as String: [
+                kSecAttrIsPermanent as String: true,
+                kSecAttrIsExtractable as String: false,
+                kSecAttrSynchronizable as String: false,
+                kSecAttrApplicationTag as String: Self.privateKeyTag,
+                kSecAttrAccessGroup as String: Self.accessGroup,
+                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            ]
+        ]
+        var error: Unmanaged<CFError>?
+        guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else {
+            let message = (error?.takeRetainedValue()).flatMap { CFErrorCopyDescription($0) as String? } ?? "unknown"
+            throw RuleProxyError.certificate(.keyGenerationFailed(detail: message))
+        }
+        return key
+    }
+
+    private func readPrivateKeyUnlocked() throws -> SecKey {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassKey,
+            kSecAttrApplicationTag as String: Self.privateKeyTag,
+            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecReturnRef as String: true,
+            kSecAttrAccessGroup as String: Self.accessGroup,
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let item, CFGetTypeID(item) == SecKeyGetTypeID() else {
+            throw RuleProxyError.certificate(.keychainReadFailed(status: status))
+        }
+        return item as! SecKey
+    }
+
+    private func deletePrivateKey() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassKey,
+            kSecAttrApplicationTag as String: Self.privateKeyTag,
+            kSecAttrAccessGroup as String: Self.accessGroup,
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    // MARK: - Private — Keychain (Certificate)
+
+    private func writeCertificateUnlocked(_ data: Data) throws {
+        deleteCertificate()
+        let attributes: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.service,
+            kSecAttrAccount as String: Self.certificateAccount,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecAttrAccessGroup as String: Self.accessGroup,
+        ]
+        let status = SecItemAdd(attributes as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw RuleProxyError.certificate(.keychainWriteFailed(status: status))
+        }
+    }
+
+    private func readCertificateUnlocked() throws -> Data {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.service,
+            kSecAttrAccount as String: Self.certificateAccount,
+            kSecReturnData as String: true,
+            kSecAttrAccessGroup as String: Self.accessGroup,
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else {
+            throw RuleProxyError.certificate(.keychainReadFailed(status: status))
+        }
+        return data
+    }
+
+    private func deleteCertificate() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.service,
+            kSecAttrAccount as String: Self.certificateAccount,
+            kSecAttrAccessGroup as String: Self.accessGroup,
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    // MARK: - Private — Keychain (Legacy serial item)
+
+    /// Purges the legacy monotonic-counter serial item left behind by old installs; serials are now random.
+    private func deleteSerial() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.service,
+            kSecAttrAccount as String: Self.serialAccount,
+            kSecAttrAccessGroup as String: Self.accessGroup,
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    // MARK: - Helpers
+
+    private func randomSerial() -> Data {
+        for _ in 0..<3 {
+            var bytes = Data(count: 16)
+            let status = bytes.withUnsafeMutableBytes { pointer in
+                SecRandomCopyBytes(kSecRandomDefault, 16, pointer.baseAddress!)
+            }
+            if status == errSecSuccess {
+                return bytes
+            }
+        }
+        // SecRandomCopyBytes failed repeatedly (extremely rare); a zero buffer would
+        // collapse every serial to 1. A v4 UUID gives 122 random bits, never all-zero.
+        return withUnsafeBytes(of: UUID().uuid) { Data($0) }
+    }
+}

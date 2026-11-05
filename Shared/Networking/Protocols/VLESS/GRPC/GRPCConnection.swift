@@ -1,0 +1,1324 @@
+//
+//  GRPCConnection.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 4/23/26.
+//
+
+import Foundation
+import Synchronization
+
+nonisolated final class GRPCConnection: Sendable {
+
+    // MARK: Transport
+
+    private let transport: any ByteTransport
+
+    // MARK: Configuration
+
+    private let configuration: GRPCConfiguration
+    private let authority: String
+
+    // MARK: State
+
+    enum Phase: PhaseTransitionable {
+        case live
+        case halfClosed
+        case cancelled
+
+        static func canTransition(from old: Phase, to new: Phase) -> Bool {
+            switch (old, new) {
+            case (.live, .halfClosed):
+                return true
+            case (_, .cancelled):
+                return old != .cancelled
+            default:
+                return false
+            }
+        }
+    }
+
+    private struct State: PhaseHolding {
+        var phase: Phase = .live
+
+        var h2ReadBuffer = Data()
+        var grpcFrameBuffer = Data()
+        var decodedBuffer = Data()
+
+        var h2ResponseReceived = false
+
+        var h2PeerConnectionWindow: Int = 65535
+        var h2PeerStreamSendWindow: Int = 65535
+        var h2PeerInitialWindowSize: Int = 65535
+
+        var h2LocalWindowSize: Int = 4_194_304
+
+        var h2MaxFrameSize: Int = 16384
+
+        var h2ConnectionReceiveConsumed: Int = 0
+        var h2StreamReceiveConsumed: Int = 0
+
+        var h2FlowGate = H2FlowGate()
+
+        var keepaliveDeadline: DeadlineToken?
+    }
+
+    private let state: Mutex<State>
+
+    private static let streamId: UInt32 = 1
+
+    private static let maxH2ReadBufferSize = 2_097_152
+    private static let maxGRPCFrameBufferSize = 16_777_216
+
+    var isConnected: Bool {
+        state.withLock { $0.phase != .cancelled }
+    }
+
+    // MARK: - Initializers
+
+    init(transport: any ByteTransport, configuration: GRPCConfiguration, authority: String) {
+        self.configuration = configuration
+        self.authority = authority
+        self.transport = transport
+
+        var initialState = State()
+        if configuration.initialWindowsSize > 0 {
+            initialState.h2LocalWindowSize = min(configuration.initialWindowsSize, 0x7FFF_FFFF)
+        }
+        self.state = Mutex(initialState)
+    }
+
+    convenience init(tlsConnection: TLSRecordConnection, configuration: GRPCConfiguration, authority: String) {
+        self.init(transport: TLSByteTransport(tlsConnection), configuration: configuration, authority: authority)
+    }
+
+    convenience init(tunnel: ProxyConnection, configuration: GRPCConfiguration, authority: String) {
+        self.init(transport: TunneledTransport(tunnel: tunnel), configuration: configuration, authority: authority)
+    }
+
+    // MARK: - Setup
+
+    func performSetup() async throws {
+        var initData = Data()
+
+        initData.append(Self.h2Preface)
+
+        var settingsPayload = Data()
+        settingsPayload.append(contentsOf: [0x00, 0x02, 0x00, 0x00, 0x00, 0x00])
+        let windowSize = UInt32(state.withLock { $0.h2LocalWindowSize })
+        settingsPayload.append(contentsOf: [
+            0x00, 0x04,
+            UInt8((windowSize >> 24) & 0xFF), UInt8((windowSize >> 16) & 0xFF),
+            UInt8((windowSize >> 8) & 0xFF), UInt8(windowSize & 0xFF),
+        ])
+        settingsPayload.append(contentsOf: [0x00, 0x06, 0x00, 0xA0, 0x00, 0x00])
+        initData.append(buildH2Frame(type: Self.h2FrameSettings, flags: 0, streamId: 0, payload: settingsPayload))
+
+        let connWindowInc = Self.h2ConnectionWindowSize
+        var windowUpdatePayload = Data(count: 4)
+        windowUpdatePayload[0] = UInt8((connWindowInc >> 24) & 0xFF)
+        windowUpdatePayload[1] = UInt8((connWindowInc >> 16) & 0xFF)
+        windowUpdatePayload[2] = UInt8((connWindowInc >> 8) & 0xFF)
+        windowUpdatePayload[3] = UInt8(connWindowInc & 0xFF)
+        initData.append(buildH2Frame(type: Self.h2FrameWindowUpdate, flags: 0, streamId: 0, payload: windowUpdatePayload))
+
+        let headerBlock = encodeGRPCRequestHeaders()
+        initData.append(buildH2Frame(
+            type: Self.h2FrameHeaders,
+            flags: Self.h2FlagEndHeaders,
+            streamId: Self.streamId,
+            payload: headerBlock
+        ))
+
+        do {
+            try await transport.send(initData)
+        } catch {
+            throw RuleProxyError.capture(error, context: "gRPC preface/HEADERS write")
+        }
+        try await processInitialServerFrames()
+    }
+
+    private func processInitialServerFrames() async throws {
+        while true {
+            let frame: (type: UInt8, flags: UInt8, streamId: UInt32, payload: Data)
+            do {
+                frame = try await readH2Frame()
+            } catch {
+                throw RuleProxyError.capture(error, context: "gRPC SETTINGS read")
+            }
+
+            switch frame.type {
+            case Self.h2FrameSettings:
+                if frame.flags & Self.h2FlagAck == 0 {
+                    parseH2Settings(frame.payload)
+                    let ack = buildH2Frame(type: Self.h2FrameSettings, flags: Self.h2FlagAck, streamId: 0, payload: Data())
+                    try? await transport.send(ack)
+                    startKeepaliveIfNeeded()
+                    return
+                }
+                continue
+
+            case Self.h2FrameHeaders:
+                if frame.streamId == Self.streamId {
+                    if let rejection = checkH2ResponseStatus(frame.payload) {
+                        throw RuleProxyError.proxy(.grpc, .handshakeFailed(detail: "gRPC response rejected: \(rejection)"))
+                    }
+                    if frame.flags & Self.h2FlagEndStream != 0 {
+                        if let grpcError = Self.parseGRPCTrailer(frame.payload) {
+                            markClosed()
+                            throw RuleProxyError.proxy(.grpc, .handshakeFailed(detail: grpcError.localizedDescription))
+                        }
+                    }
+                    state.withLock { $0.h2ResponseReceived = true }
+                }
+                startKeepaliveIfNeeded()
+                return
+
+            case Self.h2FrameWindowUpdate:
+                handleWindowUpdate(frame: frame)
+                continue
+
+            case Self.h2FramePing:
+                if frame.flags & Self.h2FlagAck == 0 {
+                    let pong = buildH2Frame(type: Self.h2FramePing, flags: Self.h2FlagAck, streamId: 0, payload: frame.payload)
+                    try? await transport.send(pong)
+                }
+                continue
+
+            case Self.h2FrameGoaway:
+                let reason = Self.describeGoawayPayload(frame.payload)
+                throw RuleProxyError.proxy(.grpc, .handshakeFailed(detail: "Server sent GOAWAY during setup (\(reason))"))
+
+            case Self.h2FrameRstStream:
+                if frame.streamId == Self.streamId {
+                    let reason = Self.describeRstStreamPayload(frame.payload)
+                    throw RuleProxyError.proxy(.grpc, .handshakeFailed(detail: "Server reset the stream during setup (\(reason))"))
+                }
+                continue
+
+            default:
+                continue
+            }
+        }
+    }
+
+    // MARK: - Public send / receive
+
+    func send(_ data: Data) async throws {
+        let message = Self.encodeHunk(data)
+        let framed = Self.wrapGRPCMessage(message)
+        try await sendH2Data(framed)
+    }
+
+    func receive() async throws -> Data? {
+        enum Ready { case data(Data); case eof; case read }
+        let ready: Ready = state.withLock { state in
+            if !state.decodedBuffer.isEmpty {
+                let out = state.decodedBuffer
+                state.decodedBuffer.removeAll(keepingCapacity: true)
+                return .data(out)
+            }
+            if state.phase != .live { return .eof }
+            return .read
+        }
+        switch ready {
+        case .data(let out): return out
+        case .eof: return nil
+        case .read: return try await readAndDecode()
+        }
+    }
+
+    // MARK: - Cancel
+
+    func cancel() {
+        let keepalive: DeadlineToken? = state.withLock { state in
+            state.transition(to: .cancelled)
+            state.h2ReadBuffer.removeAll()
+            state.grpcFrameBuffer.removeAll()
+            state.decodedBuffer.removeAll()
+            let keepalive = state.keepaliveDeadline
+            state.keepaliveDeadline = nil
+            state.h2FlowGate.wakeAll()
+            return keepalive
+        }
+        keepalive?.cancel()
+        transport.cancel()
+    }
+
+    deinit {
+        state.withLock { $0.keepaliveDeadline?.cancel() }
+    }
+}
+
+// MARK: - HTTP/2 constants
+
+nonisolated extension GRPCConnection {
+    static let h2Preface = Data("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".utf8)
+
+    static let h2FrameHeaderSize = 9
+
+    static let h2FrameData: UInt8 = 0x00
+    static let h2FrameHeaders: UInt8 = 0x01
+    static let h2FrameRstStream: UInt8 = 0x03
+    static let h2FrameSettings: UInt8 = 0x04
+    static let h2FramePing: UInt8 = 0x06
+    static let h2FrameGoaway: UInt8 = 0x07
+    static let h2FrameWindowUpdate: UInt8 = 0x08
+
+    static let h2FlagEndStream: UInt8 = 0x01
+    static let h2FlagEndHeaders: UInt8 = 0x04
+    static let h2FlagAck: UInt8 = 0x01
+
+    static let h2ConnectionWindowSize: UInt32 = 1_073_741_824 // 1 GB
+}
+
+// MARK: - Frame I/O
+
+nonisolated extension GRPCConnection {
+    fileprivate func buildH2Frame(type: UInt8, flags: UInt8, streamId: UInt32, payload: Data) -> Data {
+        var frame = Data(capacity: Self.h2FrameHeaderSize + payload.count)
+        let length = UInt32(payload.count)
+        frame.append(UInt8((length >> 16) & 0xFF))
+        frame.append(UInt8((length >> 8) & 0xFF))
+        frame.append(UInt8(length & 0xFF))
+        frame.append(type)
+        frame.append(flags)
+        let sid = streamId & 0x7FFFFFFF
+        frame.append(UInt8((sid >> 24) & 0xFF))
+        frame.append(UInt8((sid >> 16) & 0xFF))
+        frame.append(UInt8((sid >> 8) & 0xFF))
+        frame.append(UInt8(sid & 0xFF))
+        frame.append(payload)
+        return frame
+    }
+
+    private func parseH2Frame(_ state: inout State) -> (type: UInt8, flags: UInt8, streamId: UInt32, payload: Data)? {
+        guard state.h2ReadBuffer.count >= Self.h2FrameHeaderSize else { return nil }
+
+        let buffer = state.h2ReadBuffer
+        let length = (UInt32(buffer[buffer.startIndex]) << 16)
+            | (UInt32(buffer[buffer.startIndex + 1]) << 8)
+            | UInt32(buffer[buffer.startIndex + 2])
+        let type = buffer[buffer.startIndex + 3]
+        let flags = buffer[buffer.startIndex + 4]
+        let streamId = (UInt32(buffer[buffer.startIndex + 5]) << 24)
+            | (UInt32(buffer[buffer.startIndex + 6]) << 16)
+            | (UInt32(buffer[buffer.startIndex + 7]) << 8)
+            | UInt32(buffer[buffer.startIndex + 8])
+        let sid = streamId & 0x7FFFFFFF
+
+        let totalSize = Self.h2FrameHeaderSize + Int(length)
+        guard state.h2ReadBuffer.count >= totalSize else { return nil }
+
+        let payload = state.h2ReadBuffer.subdata(
+            in: state.h2ReadBuffer.startIndex + Self.h2FrameHeaderSize ..< state.h2ReadBuffer.startIndex + totalSize
+        )
+        state.h2ReadBuffer.removeFirst(totalSize)
+        if state.h2ReadBuffer.isEmpty {
+            state.h2ReadBuffer = Data()
+        } else {
+            state.h2ReadBuffer = Data(state.h2ReadBuffer)
+        }
+
+        return (type, flags, sid, payload)
+    }
+
+    fileprivate func readH2Frame() async throws -> (type: UInt8, flags: UInt8, streamId: UInt32, payload: Data) {
+        while true {
+            if let frame = state.withLock({ parseH2Frame(&$0) }) {
+                return frame
+            }
+
+            let chunk = try await transport.receive()
+            guard case .bytes(let data) = chunk, !data.isEmpty else {
+                throw RuleProxyError.proxy(.grpc, .streamClosed)
+            }
+
+            let overflow: Bool = state.withLock { state in
+                state.h2ReadBuffer.append(data)
+                if state.h2ReadBuffer.count > Self.maxH2ReadBufferSize {
+                    state.h2ReadBuffer.removeAll()
+                    return true
+                }
+                return false
+            }
+            if overflow {
+                throw RuleProxyError.proxy(.grpc, .connectionClosed(detail: nil))
+            }
+        }
+    }
+
+    fileprivate func parseH2Settings(_ payload: Data) {
+        var offset = payload.startIndex
+        while offset + 6 <= payload.endIndex {
+            let id = (UInt16(payload[offset]) << 8) | UInt16(payload[offset + 1])
+            let value = (UInt32(payload[offset + 2]) << 24)
+                | (UInt32(payload[offset + 3]) << 16)
+                | (UInt32(payload[offset + 4]) << 8)
+                | UInt32(payload[offset + 5])
+            offset += 6
+
+            switch id {
+            case 0x04:
+                state.withLock { state in
+                    let delta = Int(value) - state.h2PeerInitialWindowSize
+                    state.h2PeerInitialWindowSize = Int(value)
+                    state.h2PeerStreamSendWindow += delta
+                }
+            case 0x05:
+                state.withLock { $0.h2MaxFrameSize = min(max(Int(value), 16_384), 16_777_215) }
+            default:
+                break
+            }
+        }
+    }
+
+    fileprivate func handleWindowUpdate(frame: (type: UInt8, flags: UInt8, streamId: UInt32, payload: Data)) {
+        state.withLock { state in
+            if frame.payload.count >= 4 {
+                let raw = H2Framing.readUInt32(frame.payload)
+                let increment = Int(raw & 0x7FFFFFFF)
+                if frame.streamId == 0 {
+                    state.h2PeerConnectionWindow += increment
+                } else if frame.streamId == Self.streamId {
+                    state.h2PeerStreamSendWindow += increment
+                }
+            }
+            state.h2FlowGate.wakeAll()
+        }
+    }
+}
+
+// MARK: - HPACK encoding for request HEADERS
+
+nonisolated extension GRPCConnection {
+    fileprivate func encodeGRPCRequestHeaders() -> Data {
+        var block = Data()
+
+        var authBytes = Self.hpackEncodeInteger(1, prefixBits: 6)
+        authBytes[0] |= 0x40
+        block.append(contentsOf: authBytes)
+        block.append(contentsOf: Self.hpackEncodeString(authority))
+
+        block.append(0x83)
+
+        let path = configuration.resolvedPath()
+        var pathBytes = Self.hpackEncodeInteger(4, prefixBits: 6)
+        pathBytes[0] |= 0x40
+        block.append(contentsOf: pathBytes)
+        block.append(contentsOf: Self.hpackEncodeString(path))
+
+        block.append(0x87)
+
+        var ctBytes = Self.hpackEncodeInteger(31, prefixBits: 6)
+        ctBytes[0] |= 0x40
+        block.append(contentsOf: ctBytes)
+        block.append(contentsOf: Self.hpackEncodeString("application/grpc"))
+
+        block.append(0x40)
+        block.append(contentsOf: Self.hpackEncodeString("te"))
+        block.append(contentsOf: Self.hpackEncodeString("trailers"))
+
+        block.append(0x40)
+        block.append(contentsOf: Self.hpackEncodeString("grpc-encoding"))
+        block.append(contentsOf: Self.hpackEncodeString("identity"))
+
+        block.append(0x40)
+        block.append(contentsOf: Self.hpackEncodeString("grpc-accept-encoding"))
+        block.append(contentsOf: Self.hpackEncodeString("identity"))
+
+        let ua = configuration.userAgent.isEmpty ? ProxyUserAgent.default : configuration.userAgent
+        var uaBytes = Self.hpackEncodeInteger(58, prefixBits: 6)
+        uaBytes[0] |= 0x40
+        block.append(contentsOf: uaBytes)
+        block.append(contentsOf: Self.hpackEncodeString(ua))
+
+        return block
+    }
+
+    fileprivate static func hpackEncodeInteger(_ value: Int, prefixBits: Int) -> [UInt8] {
+        let maxPrefix = (1 << prefixBits) - 1
+        if value < maxPrefix {
+            return [UInt8(value)]
+        }
+        var bytes: [UInt8] = [UInt8(maxPrefix)]
+        var remaining = value - maxPrefix
+        while remaining >= 128 {
+            bytes.append(UInt8(remaining & 0x7F) | 0x80)
+            remaining >>= 7
+        }
+        bytes.append(UInt8(remaining))
+        return bytes
+    }
+
+    fileprivate static func hpackEncodeString(_ string: String) -> [UInt8] {
+        let bytes = Array(string.utf8)
+        var result = hpackEncodeInteger(bytes.count, prefixBits: 7)
+        result[0] &= 0x7F
+        result.append(contentsOf: bytes)
+        return result
+    }
+}
+
+// MARK: - HPACK decoding for response :status
+
+nonisolated extension GRPCConnection {
+    fileprivate func checkH2ResponseStatus(_ headerBlock: Data) -> String? {
+        guard !headerBlock.isEmpty else { return "empty header block" }
+
+        var offset = headerBlock.startIndex
+        while offset < headerBlock.endIndex, headerBlock[offset] & 0xE0 == 0x20 {
+            let initial = headerBlock[offset] & 0x1F
+            offset += 1
+            if initial == 0x1F {
+                while offset < headerBlock.endIndex, headerBlock[offset] & 0x80 != 0 {
+                    offset += 1
+                }
+                offset += 1
+            }
+        }
+        guard offset < headerBlock.endIndex else { return "empty header block (only table-size updates)" }
+
+        let first = headerBlock[offset]
+        let remaining = headerBlock[offset...]
+
+        if first & 0x80 != 0 {
+            if first == 0x88 { return nil }
+            let indexedStatus: [UInt8: String] = [
+                0x89: "204", 0x8a: "206", 0x8b: "304",
+                0x8c: "400", 0x8d: "404", 0x8e: "500",
+            ]
+            if let status = indexedStatus[first] { return "status \(status)" }
+            return "status (indexed \(first & 0x7F))"
+        }
+
+        let nameIndex: UInt8
+        if first & 0xF0 == 0x00 {
+            nameIndex = first & 0x0F
+        } else if first & 0xF0 == 0x10 {
+            nameIndex = first & 0x0F
+        } else if first & 0xC0 == 0x40 {
+            nameIndex = first & 0x3F
+        } else {
+            return "unknown header representation"
+        }
+
+        guard (8...14).contains(nameIndex), remaining.count >= 2 else {
+            return "unknown :status header"
+        }
+
+        let valueMeta = remaining[remaining.startIndex + 1]
+        let isHuffman = (valueMeta & 0x80) != 0
+        let valueLen = Int(valueMeta & 0x7F)
+        let valueStart = remaining.startIndex + 2
+
+        guard remaining.count >= 2 + valueLen, valueLen > 0 else { return "status (?)" }
+
+        let valueData = Data(remaining[valueStart..<(valueStart + valueLen)])
+        if !isHuffman {
+            let status = String(data: valueData, encoding: .ascii) ?? "?"
+            return status == "200" ? nil : "status \(status)"
+        }
+        let status = Self.huffmanDecodeDigits(valueData)
+        if status.isEmpty { return "status (huffman)" }
+        return status == "200" ? nil : "status \(status)"
+    }
+
+    private static func huffmanDecodeDigits(_ data: Data) -> String {
+        var result = ""
+        var bits: UInt32 = 0
+        var numBits = 0
+        for byte in data {
+            bits = (bits << 8) | UInt32(byte)
+            numBits += 8
+        }
+        while numBits >= 5 {
+            let top5 = Int((bits >> (numBits - 5)) & 0x1F)
+            if top5 <= 0x02 {
+                result.append(Character(UnicodeScalar(48 + top5)!))
+                numBits -= 5
+                continue
+            }
+            guard numBits >= 6 else { break }
+            let top6 = Int((bits >> (numBits - 6)) & 0x3F)
+            if top6 >= 0x19 && top6 <= 0x1F {
+                let digit = top6 - 0x19 + 3
+                result.append(Character(UnicodeScalar(48 + digit)!))
+                numBits -= 6
+                continue
+            }
+            break
+        }
+        return result
+    }
+}
+
+// MARK: - gRPC / protobuf framing
+
+nonisolated extension GRPCConnection {
+    fileprivate static func encodeHunk(_ data: Data) -> Data {
+        var out = Data(capacity: 1 + 10 + data.count)
+        out.append(0x0A) // (field 1 << 3) | wire type 2 (length-delimited)
+        out.append(varintEncode(UInt64(data.count)))
+        out.append(data)
+        return out
+    }
+
+    fileprivate static func wrapGRPCMessage(_ message: Data) -> Data {
+        var out = Data(capacity: 5 + message.count)
+        out.append(0x00)
+        let length = UInt32(message.count)
+        out.append(UInt8((length >> 24) & 0xFF))
+        out.append(UInt8((length >> 16) & 0xFF))
+        out.append(UInt8((length >> 8) & 0xFF))
+        out.append(UInt8(length & 0xFF))
+        out.append(message)
+        return out
+    }
+
+    private static func varintEncode(_ value: UInt64) -> Data {
+        var out = Data()
+        var v = value
+        while v >= 0x80 {
+            out.append(UInt8((v & 0x7F) | 0x80))
+            v >>= 7
+        }
+        out.append(UInt8(v))
+        return out
+    }
+
+    fileprivate static func varintDecode(_ data: Data, at startOffset: Int) -> (value: UInt64, consumed: Int)? {
+        var value: UInt64 = 0
+        var shift: UInt64 = 0
+        var offset = startOffset
+        while offset < data.count {
+            let b = data[data.startIndex + offset]
+            value |= UInt64(b & 0x7F) << shift
+            offset += 1
+            if b & 0x80 == 0 {
+                return (value, offset - startOffset)
+            }
+            shift += 7
+            if shift >= 64 { return nil }
+        }
+        return nil
+    }
+
+    fileprivate static func decodeHunkPayload(_ message: Data) throws -> Data {
+        var out = Data()
+        var offset = 0
+        while offset < message.count {
+            guard let (tag, tagConsumed) = varintDecode(message, at: offset) else {
+                throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "truncated protobuf tag"))
+            }
+            offset += tagConsumed
+            let fieldNumber = Int(tag >> 3)
+            let wireType = Int(tag & 0x07)
+
+            switch wireType {
+            case 2:
+                guard let (length, lenConsumed) = varintDecode(message, at: offset) else {
+                    throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "truncated protobuf length"))
+                }
+                offset += lenConsumed
+                guard length <= UInt64(message.count - offset) else {
+                    throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "truncated protobuf value"))
+                }
+                let lenInt = Int(length)
+                if fieldNumber == 1 {
+                    out.append(message.subdata(in: message.startIndex + offset ..< message.startIndex + offset + lenInt))
+                }
+                offset += lenInt
+            case 0:
+                guard let (_, vConsumed) = varintDecode(message, at: offset) else {
+                    throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "truncated varint field"))
+                }
+                offset += vConsumed
+            case 5:
+                guard offset + 4 <= message.count else {
+                    throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "truncated fixed32 field"))
+                }
+                offset += 4
+            case 1:
+                guard offset + 8 <= message.count else {
+                    throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "truncated fixed64 field"))
+                }
+                offset += 8
+            default:
+                throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "unknown protobuf wire type \(wireType)"))
+            }
+        }
+        return out
+    }
+}
+
+// MARK: - HTTP/2 DATA send
+
+nonisolated extension GRPCConnection {
+    fileprivate func sendH2Data(_ data: Data) async throws {
+        enum BuildStep {
+            case closed
+            case park
+            case built(frames: Data, nextOffset: Int)
+        }
+
+        var offset = 0
+        while offset < data.count {
+            let step: BuildStep = state.withLock { state in
+                if state.phase != .live { return .closed }
+                let maxSize = state.h2MaxFrameSize
+                let window = min(state.h2PeerConnectionWindow, state.h2PeerStreamSendWindow)
+                guard window > 0 else { return .park }
+
+                var frames = Data()
+                var currentOffset = offset
+                var windowRemaining = window
+                while currentOffset < data.count {
+                    let remaining = data.count - currentOffset
+                    let chunkSize = min(remaining, min(maxSize, windowRemaining))
+                    guard chunkSize > 0 else { break }
+
+                    let chunk = Data(data[data.startIndex + currentOffset ..< data.startIndex + currentOffset + chunkSize])
+                    frames.append(buildH2Frame(type: Self.h2FrameData, flags: 0, streamId: Self.streamId, payload: chunk))
+                    currentOffset += chunkSize
+                    windowRemaining -= chunkSize
+                }
+                let totalSent = window - windowRemaining
+                state.h2PeerConnectionWindow -= totalSent
+                state.h2PeerStreamSendWindow -= totalSent
+                return .built(frames: frames, nextOffset: currentOffset)
+            }
+
+            switch step {
+            case .closed:
+                throw RuleProxyError.proxy(.grpc, .connectionClosed(detail: nil))
+            case .park:
+                await parkForFlowWindow()
+                try Task.checkCancellation()
+            case .built(let frames, let nextOffset):
+                do {
+                    try await transport.send(frames)
+                } catch {
+                    markClosed()
+                    throw error
+                }
+                offset = nextOffset
+            }
+        }
+    }
+
+    private func parkForFlowWindow() async {
+        await H2FlowGate.park {
+            state.withLock { state -> AsyncStream<Never>? in
+                if state.phase != .live { return nil }
+                if min(state.h2PeerConnectionWindow, state.h2PeerStreamSendWindow) > 0 { return nil }
+                return state.h2FlowGate.enroll()
+            }
+        }
+    }
+
+    private func markClosed() {
+        state.withLock { state in
+            state.transition(to: .halfClosed)
+            state.h2FlowGate.wakeAll()
+        }
+    }
+
+    private func drainFlowResumptions() {
+        state.withLock { $0.h2FlowGate.wakeAll() }
+    }
+}
+
+// MARK: - Receive pipeline
+
+nonisolated extension GRPCConnection {
+    private enum FrameOutcome {
+        case deliver(Data?)
+        case keepReading
+    }
+
+    fileprivate func readAndDecode() async throws -> Data? {
+        while true {
+            let frame: (type: UInt8, flags: UInt8, streamId: UInt32, payload: Data)
+            do {
+                frame = try await readH2Frame()
+            } catch {
+                if case RuleProxyError.proxy(.grpc, .streamClosed) = error {
+                    let leftover: Data = state.withLock { state in
+                        state.transition(to: .halfClosed)
+                        let leftover = state.decodedBuffer
+                        state.decodedBuffer.removeAll(keepingCapacity: true)
+                        return leftover
+                    }
+                    drainFlowResumptions()
+                    return leftover.isEmpty ? nil : leftover
+                }
+                throw error
+            }
+
+            let isOurStream = frame.streamId == Self.streamId
+            let outcome: FrameOutcome
+
+            switch frame.type {
+            case Self.h2FrameData:
+                outcome = try await handleDataFrame(frame: frame, isOurStream: isOurStream)
+
+            case Self.h2FrameHeaders:
+                if isOurStream {
+                    let endOfStream = (frame.flags & Self.h2FlagEndStream) != 0
+                    try markResponseReceivedIfNeeded(frame.payload)
+                    if endOfStream {
+                        let grpcError = Self.parseGRPCTrailer(frame.payload)
+                        let leftover: Data = state.withLock { state in
+                            state.transition(to: .halfClosed)
+                            let leftover = state.decodedBuffer
+                            state.decodedBuffer.removeAll(keepingCapacity: true)
+                            return leftover
+                        }
+                        drainFlowResumptions()
+                        if let grpcError { throw grpcError }
+                        outcome = .deliver(leftover.isEmpty ? nil : leftover)
+                    } else {
+                        outcome = .keepReading
+                    }
+                } else {
+                    outcome = .keepReading
+                }
+
+            case Self.h2FrameSettings:
+                if frame.flags & Self.h2FlagAck == 0 {
+                    parseH2Settings(frame.payload)
+                    let ack = buildH2Frame(type: Self.h2FrameSettings, flags: Self.h2FlagAck, streamId: 0, payload: Data())
+                    try? await transport.send(ack)
+                }
+                outcome = .keepReading
+
+            case Self.h2FrameWindowUpdate:
+                handleWindowUpdate(frame: frame)
+                outcome = .keepReading
+
+            case Self.h2FramePing:
+                if frame.flags & Self.h2FlagAck == 0 {
+                    let pong = buildH2Frame(type: Self.h2FramePing, flags: Self.h2FlagAck, streamId: 0, payload: frame.payload)
+                    try? await transport.send(pong)
+                }
+                outcome = .keepReading
+
+            case Self.h2FrameGoaway:
+                let leftover: Data = state.withLock { state in
+                    state.transition(to: .halfClosed)
+                    let leftover = state.decodedBuffer
+                    state.decodedBuffer.removeAll(keepingCapacity: true)
+                    return leftover
+                }
+                drainFlowResumptions()
+                outcome = .deliver(leftover.isEmpty ? nil : leftover)
+
+            case Self.h2FrameRstStream:
+                if isOurStream {
+                    let leftover: Data = state.withLock { state in
+                        state.transition(to: .halfClosed)
+                        let leftover = state.decodedBuffer
+                        state.decodedBuffer.removeAll(keepingCapacity: true)
+                        return leftover
+                    }
+                    drainFlowResumptions()
+                    outcome = .deliver(leftover.isEmpty ? nil : leftover)
+                } else {
+                    outcome = .keepReading
+                }
+
+            default:
+                outcome = .keepReading
+            }
+
+            switch outcome {
+            case .deliver(let payload): return payload
+            case .keepReading: continue
+            }
+        }
+    }
+
+    private func markResponseReceivedIfNeeded(_ payload: Data) throws {
+        if state.withLock({ $0.h2ResponseReceived }) { return }
+
+        if let rejection = checkH2ResponseStatus(payload) {
+            markClosed()
+            throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "gRPC response rejected: \(rejection)"))
+        }
+        state.withLock { $0.h2ResponseReceived = true }
+    }
+
+    private func handleDataFrame(
+        frame: (type: UInt8, flags: UInt8, streamId: UInt32, payload: Data),
+        isOurStream: Bool
+    ) async throws -> FrameOutcome {
+        let endOfStream = (frame.flags & Self.h2FlagEndStream) != 0
+
+        await emitWindowUpdatesIfNeeded(receivedBytes: frame.payload.count, onOurStream: isOurStream)
+
+        guard isOurStream else { return .keepReading }
+
+        enum DecodeResult {
+            case overflow
+            case parsed(decoded: Data, streamClosed: Bool, decodeError: Error?)
+        }
+
+        let result: DecodeResult = state.withLock { state in
+            if !frame.payload.isEmpty {
+                state.grpcFrameBuffer.append(frame.payload)
+                if state.grpcFrameBuffer.count > Self.maxGRPCFrameBufferSize {
+                    state.grpcFrameBuffer.removeAll()
+                    return .overflow
+                }
+            }
+
+            var decoded = Data()
+            var decodeError: Error?
+
+            while state.grpcFrameBuffer.count >= 5 {
+                let compressed = state.grpcFrameBuffer[state.grpcFrameBuffer.startIndex]
+                let length = (UInt32(state.grpcFrameBuffer[state.grpcFrameBuffer.startIndex + 1]) << 24)
+                    | (UInt32(state.grpcFrameBuffer[state.grpcFrameBuffer.startIndex + 2]) << 16)
+                    | (UInt32(state.grpcFrameBuffer[state.grpcFrameBuffer.startIndex + 3]) << 8)
+                    | UInt32(state.grpcFrameBuffer[state.grpcFrameBuffer.startIndex + 4])
+                let total = 5 + Int(length)
+                guard state.grpcFrameBuffer.count >= total else { break }
+
+                let messageData = state.grpcFrameBuffer.subdata(
+                    in: state.grpcFrameBuffer.startIndex + 5 ..< state.grpcFrameBuffer.startIndex + total
+                )
+                state.grpcFrameBuffer.removeFirst(total)
+                if state.grpcFrameBuffer.isEmpty {
+                    state.grpcFrameBuffer = Data()
+                } else {
+                    state.grpcFrameBuffer = Data(state.grpcFrameBuffer)
+                }
+
+                if compressed != 0 {
+                    decodeError = RuleProxyError.proxy(.grpc, .unsupported(feature: "compressed messages"))
+                    break
+                }
+                do {
+                    let payload = try Self.decodeHunkPayload(messageData)
+                    if !payload.isEmpty {
+                        decoded.append(payload)
+                    }
+                } catch {
+                    decodeError = error
+                    break
+                }
+            }
+
+            var streamClosed = false
+            if endOfStream {
+                state.transition(to: .halfClosed)
+                streamClosed = true
+            }
+            return .parsed(decoded: decoded, streamClosed: streamClosed, decodeError: decodeError)
+        }
+        if endOfStream { drainFlowResumptions() }
+
+        switch result {
+        case .overflow:
+            throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "gRPC frame buffer overflow"))
+        case .parsed(let decoded, let streamClosed, let decodeError):
+            if let decodeError { throw decodeError }
+            if decoded.isEmpty {
+                return streamClosed ? .deliver(nil) : .keepReading
+            }
+            return .deliver(decoded)
+        }
+    }
+
+    private func emitWindowUpdatesIfNeeded(receivedBytes: Int, onOurStream: Bool) async {
+        guard receivedBytes > 0 else { return }
+
+        let updates: Data? = state.withLock { state in
+            state.h2ConnectionReceiveConsumed += receivedBytes
+            if onOurStream {
+                state.h2StreamReceiveConsumed += receivedBytes
+            }
+            let windowSize = state.h2LocalWindowSize
+            let threshold = windowSize / 2
+            let connConsumed = state.h2ConnectionReceiveConsumed
+            let streamConsumed = state.h2StreamReceiveConsumed
+            if connConsumed >= threshold { state.h2ConnectionReceiveConsumed = 0 }
+            if onOurStream, streamConsumed >= threshold { state.h2StreamReceiveConsumed = 0 }
+
+            var updates = Data()
+            if connConsumed >= threshold {
+                let increment = UInt32(connConsumed)
+                var payload = Data(count: 4)
+                payload[0] = UInt8((increment >> 24) & 0xFF); payload[1] = UInt8((increment >> 16) & 0xFF)
+                payload[2] = UInt8((increment >> 8) & 0xFF); payload[3] = UInt8(increment & 0xFF)
+                updates.append(buildH2Frame(type: Self.h2FrameWindowUpdate, flags: 0, streamId: 0, payload: payload))
+            }
+            if onOurStream, streamConsumed >= threshold {
+                let increment = UInt32(streamConsumed)
+                var payload = Data(count: 4)
+                payload[0] = UInt8((increment >> 24) & 0xFF); payload[1] = UInt8((increment >> 16) & 0xFF)
+                payload[2] = UInt8((increment >> 8) & 0xFF); payload[3] = UInt8(increment & 0xFF)
+                updates.append(buildH2Frame(type: Self.h2FrameWindowUpdate, flags: 0, streamId: Self.streamId, payload: payload))
+            }
+            return updates.isEmpty ? nil : updates
+        }
+
+        if let updates {
+            try? await transport.send(updates)
+        }
+    }
+}
+
+// MARK: - Keepalive
+
+nonisolated extension GRPCConnection {
+    fileprivate func startKeepaliveIfNeeded() {
+        let interval = configuration.idleTimeout
+        guard interval > 0 else { return }
+
+        state.withLock { state in
+            guard state.phase == .live, state.keepaliveDeadline == nil else { return }
+            state.keepaliveDeadline = scheduleKeepalive(after: interval)
+        }
+    }
+
+    private func scheduleKeepalive(after interval: Int) -> DeadlineToken {
+        TickScheduler.shared.schedule(in: .seconds(interval), precision: .relaxed) { [weak self] in
+            guard let self else { return }
+            Task { await self.keepaliveFired(interval: interval) }
+        }
+    }
+
+    private func keepaliveFired(interval: Int) async {
+        guard state.withLock({ $0.phase == .live }) else { return }
+        await sendKeepalivePing()
+        state.withLock { state in
+            guard state.phase == .live, state.keepaliveDeadline != nil else { return }
+            state.keepaliveDeadline = scheduleKeepalive(after: interval)
+        }
+    }
+
+    private func sendKeepalivePing() async {
+        if state.withLock({ $0.phase != .live }) { return }
+        let payload = Data([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+        let ping = buildH2Frame(type: Self.h2FramePing, flags: 0, streamId: 0, payload: payload)
+        try? await transport.send(ping)
+    }
+}
+
+// MARK: - Error-code descriptions
+
+nonisolated extension GRPCConnection {
+    fileprivate static func h2ErrorCodeName(_ code: UInt32) -> String {
+        switch code {
+        case 0x00: return "NO_ERROR"
+        case 0x01: return "PROTOCOL_ERROR"
+        case 0x02: return "INTERNAL_ERROR"
+        case 0x03: return "FLOW_CONTROL_ERROR"
+        case 0x04: return "SETTINGS_TIMEOUT"
+        case 0x05: return "STREAM_CLOSED"
+        case 0x06: return "FRAME_SIZE_ERROR"
+        case 0x07: return "REFUSED_STREAM"
+        case 0x08: return "CANCEL"
+        case 0x09: return "COMPRESSION_ERROR"
+        case 0x0A: return "CONNECT_ERROR"
+        case 0x0B: return "ENHANCE_YOUR_CALM"
+        case 0x0C: return "INADEQUATE_SECURITY"
+        case 0x0D: return "HTTP_1_1_REQUIRED"
+        default:   return "UNKNOWN(\(code))"
+        }
+    }
+
+    fileprivate static func describeGoawayPayload(_ payload: Data) -> String {
+        guard payload.count >= 8 else { return "truncated GOAWAY payload" }
+        let base = payload.startIndex
+        let lastStreamId = (UInt32(payload[base]) << 24)
+            | (UInt32(payload[base + 1]) << 16)
+            | (UInt32(payload[base + 2]) << 8)
+            | UInt32(payload[base + 3])
+        let errorCode = (UInt32(payload[base + 4]) << 24)
+            | (UInt32(payload[base + 5]) << 16)
+            | (UInt32(payload[base + 6]) << 8)
+            | UInt32(payload[base + 7])
+        let name = h2ErrorCodeName(errorCode)
+        let debug: String
+        if payload.count > 8, let ascii = String(data: payload.subdata(in: base + 8 ..< payload.endIndex), encoding: .utf8) {
+            debug = ", debug=\(ascii)"
+        } else {
+            debug = ""
+        }
+        return "\(name), lastStreamId=\(lastStreamId & 0x7FFFFFFF)\(debug)"
+    }
+
+    fileprivate static func describeRstStreamPayload(_ payload: Data) -> String {
+        guard payload.count >= 4 else { return "truncated RST_STREAM payload" }
+        let base = payload.startIndex
+        let errorCode = (UInt32(payload[base]) << 24)
+            | (UInt32(payload[base + 1]) << 16)
+            | (UInt32(payload[base + 2]) << 8)
+            | UInt32(payload[base + 3])
+        return h2ErrorCodeName(errorCode)
+    }
+}
+
+// MARK: - gRPC trailer parsing
+
+nonisolated extension GRPCConnection {
+    fileprivate static func parseGRPCTrailer(_ payload: Data) -> RuleProxyError? {
+        let headers = decodeHPACKHeaders(payload)
+        guard let statusStr = headers["grpc-status"], let status = Int(statusStr), status != 0 else {
+            return nil
+        }
+        let message = headers["grpc-message"]
+        return .proxy(.grpc, .rpcFailed(status: status, method: grpcStatusName(status), message: message))
+    }
+
+    fileprivate static func grpcStatusName(_ code: Int) -> String {
+        switch code {
+        case 0:  return "OK"
+        case 1:  return "CANCELLED"
+        case 2:  return "UNKNOWN"
+        case 3:  return "INVALID_ARGUMENT"
+        case 4:  return "DEADLINE_EXCEEDED"
+        case 5:  return "NOT_FOUND"
+        case 6:  return "ALREADY_EXISTS"
+        case 7:  return "PERMISSION_DENIED"
+        case 8:  return "RESOURCE_EXHAUSTED"
+        case 9:  return "FAILED_PRECONDITION"
+        case 10: return "ABORTED"
+        case 11: return "OUT_OF_RANGE"
+        case 12: return "UNIMPLEMENTED"
+        case 13: return "INTERNAL"
+        case 14: return "UNAVAILABLE"
+        case 15: return "DATA_LOSS"
+        case 16: return "UNAUTHENTICATED"
+        default: return "UNKNOWN(\(code))"
+        }
+    }
+
+    fileprivate static func decodeHPACKHeaders(_ payload: Data) -> [String: String] {
+        var headers: [String: String] = [:]
+        var offset = payload.startIndex
+
+        while offset < payload.endIndex {
+            let b = payload[offset]
+
+            if b & 0x80 != 0 {
+                let (idx, consumed) = decodeHPACKInteger(payload, at: offset, prefixBits: 7)
+                offset += consumed
+                if let entry = staticTableEntry(at: idx), let value = entry.value {
+                    headers[entry.name] = value
+                }
+                continue
+            }
+
+            if b & 0xC0 == 0x40 {
+                let (nameIdx, nameConsumed) = decodeHPACKInteger(payload, at: offset, prefixBits: 6)
+                offset += nameConsumed
+                let name: String
+                if nameIdx == 0 {
+                    guard let (n, c) = decodeHPACKString(payload, at: offset) else { return headers }
+                    name = n
+                    offset += c
+                } else {
+                    name = staticTableEntry(at: nameIdx)?.name ?? ""
+                }
+                guard let (value, vc) = decodeHPACKString(payload, at: offset) else { return headers }
+                offset += vc
+                if !name.isEmpty { headers[name.lowercased()] = value }
+                continue
+            }
+
+            if b & 0xE0 == 0x20 {
+                let (_, consumed) = decodeHPACKInteger(payload, at: offset, prefixBits: 5)
+                offset += consumed
+                continue
+            }
+
+            if b & 0xF0 == 0x00 || b & 0xF0 == 0x10 {
+                let (nameIdx, nameConsumed) = decodeHPACKInteger(payload, at: offset, prefixBits: 4)
+                offset += nameConsumed
+                let name: String
+                if nameIdx == 0 {
+                    guard let (n, c) = decodeHPACKString(payload, at: offset) else { return headers }
+                    name = n
+                    offset += c
+                } else {
+                    name = staticTableEntry(at: nameIdx)?.name ?? ""
+                }
+                guard let (value, vc) = decodeHPACKString(payload, at: offset) else { return headers }
+                offset += vc
+                if !name.isEmpty { headers[name.lowercased()] = value }
+                continue
+            }
+
+            return headers
+        }
+        return headers
+    }
+
+    private static func decodeHPACKInteger(_ data: Data, at start: Int, prefixBits: Int) -> (Int, Int) {
+        guard start < data.endIndex else { return (0, 0) }
+        var offset = start
+        guard let value = HPACKEncoder.decodeInteger(from: data, at: &offset, prefixBits: prefixBits) else {
+            return (0, data.endIndex - start)
+        }
+        return (value, offset - start)
+    }
+
+    private static func decodeHPACKString(_ data: Data, at start: Int) -> (String, Int)? {
+        guard start < data.endIndex else { return nil }
+        let meta = data[start]
+        let isHuffman = (meta & 0x80) != 0
+        let (length, lenConsumed) = decodeHPACKInteger(data, at: start, prefixBits: 7)
+        let bytesStart = start + lenConsumed
+        guard length >= 0, length <= data.endIndex - bytesStart else { return nil }
+        let bytes = data.subdata(in: bytesStart ..< bytesStart + length)
+        let string: String
+        if isHuffman {
+            string = huffmanDecode(bytes) ?? ""
+        } else {
+            string = String(data: bytes, encoding: .utf8) ?? ""
+        }
+        return (string, lenConsumed + length)
+    }
+
+    private static func staticTableEntry(at index: Int) -> (name: String, value: String?)? {
+        switch index {
+        case 1:  return (":authority", nil)
+        case 2:  return (":method", "GET")
+        case 3:  return (":method", "POST")
+        case 4:  return (":path", "/")
+        case 5:  return (":path", "/index.html")
+        case 6:  return (":scheme", "http")
+        case 7:  return (":scheme", "https")
+        case 8:  return (":status", "200")
+        case 9:  return (":status", "204")
+        case 10: return (":status", "206")
+        case 11: return (":status", "304")
+        case 12: return (":status", "400")
+        case 13: return (":status", "404")
+        case 14: return (":status", "500")
+        case 31: return ("content-type", nil)
+        case 28: return ("content-length", nil)
+        case 58: return ("user-agent", nil)
+        default: return nil
+        }
+    }
+
+    private static func huffmanDecode(_ data: Data) -> String? {
+        var result = [UInt8]()
+        var code: UInt32 = 0
+        var bits = 0
+
+        for byte in data {
+            code = (code << 8) | UInt32(byte)
+            bits += 8
+            while bits >= 5 {
+                var matched = false
+                for length in 5...min(bits, 30) {
+                    let candidate = (code >> (bits - length)) & ((1 << length) - 1)
+                    if let symbol = huffmanLookup(code: candidate, length: length) {
+                        if symbol == 256 { return String(bytes: result, encoding: .utf8) }
+                        result.append(UInt8(symbol & 0xFF))
+                        bits -= length
+                        matched = true
+                        break
+                    }
+                }
+                if !matched { break }
+            }
+        }
+
+        if bits > 0 {
+            let trailing = code & ((1 << bits) - 1)
+            let allOnes: UInt32 = (1 << bits) - 1
+            if trailing != allOnes { return nil }
+        }
+
+        return String(bytes: result, encoding: .utf8)
+    }
+
+    private static func huffmanLookup(code: UInt32, length: Int) -> Int? {
+        return huffmanTable[HuffmanKey(code: code, length: length)]
+    }
+
+    private struct HuffmanKey: Hashable { let code: UInt32; let length: Int }
+
+    private static let huffmanTable: [HuffmanKey: Int] = {
+        let entries: [(code: UInt32, length: Int, symbol: Int)] = [
+            (0x1ff8, 13, 0), (0x7fffd8, 23, 1), (0xfffffe2, 28, 2), (0xfffffe3, 28, 3),
+            (0xfffffe4, 28, 4), (0xfffffe5, 28, 5), (0xfffffe6, 28, 6), (0xfffffe7, 28, 7),
+            (0xfffffe8, 28, 8), (0xffffea, 24, 9), (0x3ffffffc, 30, 10), (0xfffffe9, 28, 11),
+            (0xfffffea, 28, 12), (0x3ffffffd, 30, 13), (0xfffffeb, 28, 14), (0xfffffec, 28, 15),
+            (0xfffffed, 28, 16), (0xfffffee, 28, 17), (0xfffffef, 28, 18), (0xffffff0, 28, 19),
+            (0xffffff1, 28, 20), (0xffffff2, 28, 21), (0x3ffffffe, 30, 22), (0xffffff3, 28, 23),
+            (0xffffff4, 28, 24), (0xffffff5, 28, 25), (0xffffff6, 28, 26), (0xffffff7, 28, 27),
+            (0xffffff8, 28, 28), (0xffffff9, 28, 29), (0xffffffa, 28, 30), (0xffffffb, 28, 31),
+            (0x14, 6, 32), (0x3f8, 10, 33), (0x3f9, 10, 34), (0xffa, 12, 35),
+            (0x1ff9, 13, 36), (0x15, 6, 37), (0xf8, 8, 38), (0x7fa, 11, 39),
+            (0x3fa, 10, 40), (0x3fb, 10, 41), (0xf9, 8, 42), (0x7fb, 11, 43),
+            (0xfa, 8, 44), (0x16, 6, 45), (0x17, 6, 46), (0x18, 6, 47),
+            (0x0, 5, 48), (0x1, 5, 49), (0x2, 5, 50), (0x19, 6, 51),
+            (0x1a, 6, 52), (0x1b, 6, 53), (0x1c, 6, 54), (0x1d, 6, 55),
+            (0x1e, 6, 56), (0x1f, 6, 57), (0x5c, 7, 58), (0xfb, 8, 59),
+            (0x7ffc, 15, 60), (0x20, 6, 61), (0xffb, 12, 62), (0x3fc, 10, 63),
+            (0x1ffa, 13, 64), (0x21, 6, 65), (0x5d, 7, 66), (0x5e, 7, 67),
+            (0x5f, 7, 68), (0x60, 7, 69), (0x61, 7, 70), (0x62, 7, 71),
+            (0x63, 7, 72), (0x64, 7, 73), (0x65, 7, 74), (0x66, 7, 75),
+            (0x67, 7, 76), (0x68, 7, 77), (0x69, 7, 78), (0x6a, 7, 79),
+            (0x6b, 7, 80), (0x6c, 7, 81), (0x6d, 7, 82), (0x6e, 7, 83),
+            (0x6f, 7, 84), (0x70, 7, 85), (0x71, 7, 86), (0x72, 7, 87),
+            (0xfc, 8, 88), (0x73, 7, 89), (0xfd, 8, 90), (0x1ffb, 13, 91),
+            (0x7fff0, 19, 92), (0x1ffc, 13, 93), (0x3ffc, 14, 94), (0x22, 6, 95),
+            (0x7ffd, 15, 96), (0x3, 5, 97), (0x23, 6, 98), (0x4, 5, 99),
+            (0x24, 6, 100), (0x5, 5, 101), (0x25, 6, 102), (0x26, 6, 103),
+            (0x27, 6, 104), (0x6, 5, 105), (0x74, 7, 106), (0x75, 7, 107),
+            (0x28, 6, 108), (0x29, 6, 109), (0x2a, 6, 110), (0x7, 5, 111),
+            (0x2b, 6, 112), (0x76, 7, 113), (0x2c, 6, 114), (0x8, 5, 115),
+            (0x9, 5, 116), (0x2d, 6, 117), (0x77, 7, 118), (0x78, 7, 119),
+            (0x79, 7, 120), (0x7a, 7, 121), (0x7b, 7, 122), (0x7ffe, 15, 123),
+            (0x7fc, 11, 124), (0x3ffd, 14, 125), (0x1ffd, 13, 126), (0xffffffc, 28, 127),
+            (0xfffe6, 20, 128), (0x3fffd2, 22, 129), (0xfffe7, 20, 130), (0xfffe8, 20, 131),
+            (0x3fffd3, 22, 132), (0x3fffd4, 22, 133), (0x3fffd5, 22, 134), (0x7fffd9, 23, 135),
+            (0x3fffd6, 22, 136), (0x7fffda, 23, 137), (0x7fffdb, 23, 138), (0x7fffdc, 23, 139),
+            (0x7fffdd, 23, 140), (0x7fffde, 23, 141), (0xffffeb, 24, 142), (0x7fffdf, 23, 143),
+            (0xffffec, 24, 144), (0xffffed, 24, 145), (0x3fffd7, 22, 146), (0x7fffe0, 23, 147),
+            (0xffffee, 24, 148), (0x7fffe1, 23, 149), (0x7fffe2, 23, 150), (0x7fffe3, 23, 151),
+            (0x7fffe4, 23, 152), (0x1fffdc, 21, 153), (0x3fffd8, 22, 154), (0x7fffe5, 23, 155),
+            (0x3fffd9, 22, 156), (0x7fffe6, 23, 157), (0x7fffe7, 23, 158), (0xffffef, 24, 159),
+            (0x3fffda, 22, 160), (0x1fffdd, 21, 161), (0xfffe9, 20, 162), (0x3fffdb, 22, 163),
+            (0x3fffdc, 22, 164), (0x7fffe8, 23, 165), (0x7fffe9, 23, 166), (0x1fffde, 21, 167),
+            (0x7fffea, 23, 168), (0x3fffdd, 22, 169), (0x3fffde, 22, 170), (0xfffff0, 24, 171),
+            (0x1fffdf, 21, 172), (0x3fffdf, 22, 173), (0x7fffeb, 23, 174), (0x7fffec, 23, 175),
+            (0x1fffe0, 21, 176), (0x1fffe1, 21, 177), (0x3fffe0, 22, 178), (0x1fffe2, 21, 179),
+            (0x7fffed, 23, 180), (0x3fffe1, 22, 181), (0x7fffee, 23, 182), (0x7fffef, 23, 183),
+            (0xfffea, 20, 184), (0x3fffe2, 22, 185), (0x3fffe3, 22, 186), (0x3fffe4, 22, 187),
+            (0x7ffff0, 23, 188), (0x3fffe5, 22, 189), (0x3fffe6, 22, 190), (0x7ffff1, 23, 191),
+            (0x3ffffe0, 26, 192), (0x3ffffe1, 26, 193), (0xfffeb, 20, 194), (0x7fff1, 19, 195),
+            (0x3fffe7, 22, 196), (0x7ffff2, 23, 197), (0x3fffe8, 22, 198), (0x1ffffec, 25, 199),
+            (0x3ffffe2, 26, 200), (0x3ffffe3, 26, 201), (0x3ffffe4, 26, 202), (0x7ffffde, 27, 203),
+            (0x7ffffdf, 27, 204), (0x3ffffe5, 26, 205), (0xfffff1, 24, 206), (0x1ffffed, 25, 207),
+            (0x7fff2, 19, 208), (0x1fffe3, 21, 209), (0x3ffffe6, 26, 210), (0x7ffffe0, 27, 211),
+            (0x7ffffe1, 27, 212), (0x3ffffe7, 26, 213), (0x7ffffe2, 27, 214), (0xfffff2, 24, 215),
+            (0x1fffe4, 21, 216), (0x1fffe5, 21, 217), (0x3ffffe8, 26, 218), (0x3ffffe9, 26, 219),
+            (0xffffffd, 28, 220), (0x7ffffe3, 27, 221), (0x7ffffe4, 27, 222), (0x7ffffe5, 27, 223),
+            (0xfffec, 20, 224), (0xfffff3, 24, 225), (0xfffed, 20, 226), (0x1fffe6, 21, 227),
+            (0x3fffe9, 22, 228), (0x1fffe7, 21, 229), (0x1fffe8, 21, 230), (0x7ffff3, 23, 231),
+            (0x3fffea, 22, 232), (0x3fffeb, 22, 233), (0x1ffffee, 25, 234), (0x1ffffef, 25, 235),
+            (0xfffff4, 24, 236), (0xfffff5, 24, 237), (0x3ffffea, 26, 238), (0x7ffff4, 23, 239),
+            (0x3ffffeb, 26, 240), (0x7ffffe6, 27, 241), (0x3ffffec, 26, 242), (0x3ffffed, 26, 243),
+            (0x7ffffe7, 27, 244), (0x7ffffe8, 27, 245), (0x7ffffe9, 27, 246), (0x7ffffea, 27, 247),
+            (0x7ffffeb, 27, 248), (0xffffffe, 28, 249), (0x7ffffec, 27, 250), (0x7ffffed, 27, 251),
+            (0x7ffffee, 27, 252), (0x7ffffef, 27, 253), (0x7fffff0, 27, 254), (0x3ffffee, 26, 255),
+            (0x3fffffff, 30, 256),
+        ]
+        var table: [HuffmanKey: Int] = [:]
+        table.reserveCapacity(entries.count)
+        for entry in entries {
+            table[HuffmanKey(code: entry.code, length: entry.length)] = entry.symbol
+        }
+        return table
+    }()
+}

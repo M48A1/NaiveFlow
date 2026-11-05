@@ -1,0 +1,25 @@
+//
+//  VLESSVisionUDPGlobalID.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 3/1/26.
+//
+
+import Foundation
+import Security
+import BLAKE
+
+nonisolated enum VLESSVisionUDPGlobalID {
+    private static let baseKey: [UInt8] = {
+        var key = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, 32, &key)
+        return key
+    }()
+
+    /// Source address format: "udp:host:port"
+    static func generateGlobalID(sourceAddress: String) -> Data {
+        var hasher = BLAKE3(key: baseKey)
+        hasher.update(data: Array(sourceAddress.utf8))
+        return Data(hasher.finalize(outputByteCount: 8))
+    }
+}

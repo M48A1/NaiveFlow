@@ -1,0 +1,223 @@
+//
+//  HysteriaObfuscator.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 6/23/26.
+//
+
+import Foundation
+import Security
+import Synchronization
+import BLAKE
+
+// MARK: - Salamander
+
+nonisolated final class SalamanderObfuscator: QUICPacketObfuscator {
+    static let saltLength = 8
+    private static let keyLength = 32  // BLAKE2b-256 digest
+
+    private let passwordHasher: BLAKE2b
+
+    init(password: String) {
+        var hasher = BLAKE2b(digestByteCount: Self.keyLength)
+        hasher.update(data: Array(password.utf8))
+        self.passwordHasher = hasher
+    }
+
+    private func keystream(salt: UnsafeRawBufferPointer) -> [UInt8] {
+        var hasher = passwordHasher
+        hasher.update(bufferPointer: salt)
+        return hasher.finalize()
+    }
+
+    func seal(_ packet: UnsafeRawBufferPointer) -> [Data] {
+        var out = Data(count: Self.saltLength + packet.count)
+        out.withUnsafeMutableBytes { raw in
+            _ = SecRandomCopyBytes(kSecRandomDefault, Self.saltLength, raw.baseAddress!)
+            let key = keystream(salt: UnsafeRawBufferPointer(rebasing: raw[..<Self.saltLength]))
+            Self.apply(key, to: packet, into: UnsafeMutableRawBufferPointer(rebasing: raw[Self.saltLength...]))
+        }
+        return [out]
+    }
+
+    func open(_ datagram: Data) -> Data? {
+        let count = datagram.count
+        guard count > Self.saltLength else { return datagram }
+        return datagram.withUnsafeBytes { raw -> Data in
+            let key = keystream(salt: UnsafeRawBufferPointer(rebasing: raw[..<Self.saltLength]))
+            var out = Data(count: count - Self.saltLength)
+            out.withUnsafeMutableBytes { output in
+                Self.apply(key, to: UnsafeRawBufferPointer(rebasing: raw[Self.saltLength...]), into: output)
+            }
+            return out
+        }
+    }
+
+    private static func apply(_ key: [UInt8], to input: UnsafeRawBufferPointer, into output: UnsafeMutableRawBufferPointer) {
+        key.withUnsafeBytes { key in
+            let k0 = key.loadUnaligned(fromByteOffset: 0, as: UInt64.self)
+            let k1 = key.loadUnaligned(fromByteOffset: 8, as: UInt64.self)
+            let k2 = key.loadUnaligned(fromByteOffset: 16, as: UInt64.self)
+            let k3 = key.loadUnaligned(fromByteOffset: 24, as: UInt64.self)
+            let count = input.count
+            var index = 0
+            while index + keyLength <= count {
+                output.storeBytes(of: input.loadUnaligned(fromByteOffset: index, as: UInt64.self) ^ k0, toByteOffset: index, as: UInt64.self)
+                output.storeBytes(of: input.loadUnaligned(fromByteOffset: index + 8, as: UInt64.self) ^ k1, toByteOffset: index + 8, as: UInt64.self)
+                output.storeBytes(of: input.loadUnaligned(fromByteOffset: index + 16, as: UInt64.self) ^ k2, toByteOffset: index + 16, as: UInt64.self)
+                output.storeBytes(of: input.loadUnaligned(fromByteOffset: index + 24, as: UInt64.self) ^ k3, toByteOffset: index + 24, as: UInt64.self)
+                index += keyLength
+            }
+            while index < count {
+                output[index] = input[index] ^ key[index % keyLength]
+                index += 1
+            }
+        }
+    }
+}
+
+// MARK: - Gecko
+
+nonisolated final class GeckoObfuscator: QUICPacketObfuscator {
+    private static let fragmentFlag: UInt8 = 0x80
+    private static let headerLength = 5
+    private static let minChunks = 2
+    private static let maxChunks = 8
+    private static let reassemblyTTLNanos: UInt64 = 8 * 1_000_000_000
+    private static let sweepIntervalNanos: UInt64 = 4 * 1_000_000_000
+    private static let maxReassembly = 64
+
+    private let inner: SalamanderObfuscator
+    private let minPacketSize: Int
+    private let maxPacketSize: Int
+    private let msgIDCounter = Atomic<UInt8>(0)
+
+    private final class Reassembly {
+        var chunks: [[UInt8]?]
+        var received = 0
+        let total: Int
+        let deadline: UInt64
+        init(total: Int, deadline: UInt64) {
+            self.chunks = Array(repeating: nil, count: total)
+            self.total = total
+            self.deadline = deadline
+        }
+    }
+
+    private struct ReassemblyTable {
+        var entries: [UInt8: Reassembly] = [:]
+        var lastSweep: UInt64
+    }
+    private let table: Mutex<ReassemblyTable>
+
+    init(password: String, minPacketSize: Int, maxPacketSize: Int) {
+        self.inner = SalamanderObfuscator(password: password)
+        let sizes = HysteriaObfuscation.normalizedGeckoSizes(min: minPacketSize, max: maxPacketSize)
+        self.minPacketSize = sizes.min
+        self.maxPacketSize = sizes.max
+        self.table = Mutex(ReassemblyTable(lastSweep: MonotonicClock.nanoseconds))
+    }
+
+    // MARK: Seal
+
+    func seal(_ packet: UnsafeRawBufferPointer) -> [Data] {
+        guard !packet.isEmpty else { return [] }
+        guard packet[0] & Self.fragmentFlag != 0 else { return inner.seal(packet) }
+
+        let chunks = Int.random(in: Self.minChunks...Self.maxChunks)
+        let chunkSize = packet.count / chunks
+        let msgID = msgIDCounter.wrappingAdd(1, ordering: .relaxed).newValue
+
+        var result: [Data] = []
+        result.reserveCapacity(chunks)
+        for index in 0..<chunks {
+            let start = index * chunkSize
+            let end = (index < chunks - 1) ? start + chunkSize : packet.count
+            let chunkLength = end - start
+            let padLength = randomPadLength(chunkLength: chunkLength)
+
+            var frame = [UInt8]()
+            frame.reserveCapacity(Self.headerLength + Int(padLength) + chunkLength)
+            frame.append(Self.fragmentFlag)
+            frame.append(msgID)
+            frame.append(UInt8(index) << 4 | (UInt8(chunks) & 0x0f))
+            frame.append(UInt8(padLength >> 8))
+            frame.append(UInt8(padLength & 0xff))
+            if padLength > 0 {
+                var pad = [UInt8](repeating: 0, count: Int(padLength))
+                _ = SecRandomCopyBytes(kSecRandomDefault, pad.count, &pad)
+                frame.append(contentsOf: pad)
+            }
+            for offset in start..<end { frame.append(packet[offset]) }
+
+            frame.withUnsafeBytes { result.append(contentsOf: inner.seal($0)) }
+        }
+        return result
+    }
+    
+    private func randomPadLength(chunkLength: Int) -> UInt16 {
+        let base = SalamanderObfuscator.saltLength + Self.headerLength + chunkLength
+        let lo = Swift.max(minPacketSize, base)
+        guard lo <= maxPacketSize else { return 0 }
+        return UInt16(lo - base + Int.random(in: 0...(maxPacketSize - lo)))
+    }
+
+    // MARK: Open
+
+    func open(_ datagram: Data) -> Data? {
+        guard let opened = inner.open(datagram), let first = opened.first else { return nil }
+        guard first & Self.fragmentFlag != 0 else { return opened }
+
+        let bytes = [UInt8](opened)
+        guard bytes.count >= Self.headerLength else { return nil }
+        let msgID = bytes[1]
+        let chunkIdx = Int(bytes[2] >> 4)
+        let totalChunks = Int(bytes[2] & 0x0f)
+        let padLength = Int(bytes[3]) << 8 | Int(bytes[4])
+        guard totalChunks >= Self.minChunks, totalChunks <= Self.maxChunks,
+              chunkIdx < totalChunks else { return nil }
+        let payloadStart = Self.headerLength + padLength
+        guard payloadStart <= bytes.count else { return nil }
+
+        let payload = Array(bytes[payloadStart...])
+        return acceptChunk(msgID: msgID, chunkIdx: chunkIdx, totalChunks: totalChunks, payload: payload)
+    }
+    
+    private func acceptChunk(msgID: UInt8, chunkIdx: Int, totalChunks: Int, payload: [UInt8]) -> Data? {
+        table.withLock { table in
+            let now = MonotonicClock.nanoseconds
+            if now &- table.lastSweep >= Self.sweepIntervalNanos {
+                table.entries = table.entries.filter { $0.value.deadline >= now }
+                table.lastSweep = now
+            }
+
+            var entry = table.entries[msgID]
+            if let existing = entry, existing.total != totalChunks {
+                table.entries[msgID] = nil
+                entry = nil
+            }
+
+            let active: Reassembly
+            if let entry {
+                active = entry
+            } else {
+                if table.entries.count >= Self.maxReassembly,
+                   let oldest = table.entries.min(by: { $0.value.deadline < $1.value.deadline })?.key {
+                    table.entries[oldest] = nil
+                }
+                active = Reassembly(total: totalChunks, deadline: now &+ Self.reassemblyTTLNanos)
+                table.entries[msgID] = active
+            }
+
+            guard chunkIdx < active.chunks.count, active.chunks[chunkIdx] == nil else { return nil }
+            active.chunks[chunkIdx] = payload
+            active.received += 1
+            guard active.received >= active.total else { return nil }
+
+            table.entries[msgID] = nil
+            var out = [UInt8]()
+            for chunk in active.chunks where chunk != nil { out.append(contentsOf: chunk!) }
+            return Data(out)
+        }
+    }
+}

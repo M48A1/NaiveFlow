@@ -1,0 +1,53 @@
+//
+//  TunnelStack+DNS.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 3/30/26.
+//
+
+import Foundation
+
+extension TunnelStack {
+
+    // MARK: - DNS Interception (Synthetic Address)
+
+    enum DNSDestination {
+        case ruleproxyResolver
+        case publicResolver
+    }
+    
+    static let interceptedDNSServers: [String: DNSDestination] = [
+        TunnelAddress.ipv4: .ruleproxyResolver,
+        "8.8.8.8": .publicResolver,
+        "8.8.4.4": .publicResolver,
+        "2001:4860:4860::8888": .publicResolver,
+        "2001:4860:4860::8844": .publicResolver,
+    ]
+    
+    static func interceptExemptDNSServers() -> Set<String> {
+        let upstreams = [
+            AWCore.getSubscriptionDNSUpstream(),
+            AWCore.getLocalRequestDNSUpstream(),
+            AWCore.getProxyDNSUpstream(),
+            AWCore.getECHDNSUpstream(),
+            AWCore.getFallbackDNSUpstream()
+        ]
+        var addresses: Set<String> = []
+        for case .plain(let host, _) in upstreams
+        where interceptedDNSServers[host] == .publicResolver {
+            addresses.insert(host)
+        }
+        return addresses
+    }
+    
+    static func dnsDestination(for dstIP: String, exempting exempt: Set<String>) -> DNSDestination? {
+        switch interceptedDNSServers[dstIP] {
+        case .ruleproxyResolver:
+            return .ruleproxyResolver
+        case .publicResolver:
+            return exempt.contains(dstIP) ? nil : .publicResolver
+        case nil:
+            return nil
+        }
+    }
+}

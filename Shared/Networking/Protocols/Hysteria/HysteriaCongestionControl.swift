@@ -1,0 +1,40 @@
+//
+//  HysteriaCongestionControl.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 5/21/26.
+//
+
+import Foundation
+
+/// `brutal` paces each direction at a fixed user-configured rate; `bbr` adapts
+/// and asks the server to run its own bandwidth detection.
+nonisolated enum HysteriaCongestionControl: String, Codable, Hashable, CaseIterable {
+    case brutal
+    case bbr
+
+    var displayName: String {
+        switch self {
+        case .brutal: return "Brutal"
+        case .bbr: return "BBR"
+        }
+    }
+
+    // MARK: - Brutal bandwidth knobs
+    //
+    // Clamped at every construction boundary (URL, dict, Clash, Codable) so
+    // `Outbound.hysteria` values are always in range regardless of source.
+
+    static let uploadMbpsRange: ClosedRange<Int> = 0...1000
+    static let uploadMbpsDefault: Int = 20
+    static let downloadMbpsRange: ClosedRange<Int> = 0...1000
+    static let downloadMbpsDefault: Int = 50
+
+    static func clampUploadMbps(_ raw: Int) -> Int {
+        max(uploadMbpsRange.lowerBound, min(uploadMbpsRange.upperBound, raw))
+    }
+
+    static func clampDownloadMbps(_ raw: Int) -> Int {
+        max(downloadMbpsRange.lowerBound, min(downloadMbpsRange.upperBound, raw))
+    }
+}

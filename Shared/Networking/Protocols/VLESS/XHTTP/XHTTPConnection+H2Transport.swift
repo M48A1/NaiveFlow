@@ -1,0 +1,575 @@
+//
+//  XHTTPConnection+H2Transport.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 3/30/26.
+//
+
+import Foundation
+import Synchronization
+
+extension XHTTPConnection {
+
+    // MARK: HTTP/2 Setup
+
+    func performH2Setup() async throws {
+        var initData = h2ClientPreface()
+
+        switch role {
+        case .uploadOnly:
+            configureH2StreamIDs(upload: 1, download: .max)
+            if mode == .streamUp {
+                let uploadHeaders = encodeH2UploadHeaders(seq: nil)
+                initData.append(buildH2Frame(type: Self.h2FrameHeaders, flags: Self.h2FlagEndHeaders, streamId: h2UploadStreamId, payload: uploadHeaders))
+            }
+            do {
+                try await download.send(initData)
+            } catch {
+                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H2 upload setup send failed: \(error.localizedDescription)"))
+            }
+            try await processInitialServerFrames()
+            startH2UploadPump()
+
+        case .downloadOnly:
+            let headerBlock = encodeH2RequestHeaders(method: "GET", includeMeta: true)
+            initData.append(buildH2Frame(type: Self.h2FrameHeaders, flags: Self.h2FlagEndHeaders | Self.h2FlagEndStream, streamId: 1, payload: headerBlock))
+            do {
+                try await download.send(initData)
+            } catch {
+                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H2 download setup send failed: \(error.localizedDescription)"))
+            }
+            try await processInitialServerFrames()
+
+        case .combined:
+            if mode == .streamOne {
+                let headerBlock = encodeH2RequestHeaders(method: "POST", includeMeta: false)
+                initData.append(buildH2Frame(type: Self.h2FrameHeaders, flags: Self.h2FlagEndHeaders, streamId: 1, payload: headerBlock))
+            } else {
+                let headerBlock = encodeH2RequestHeaders(method: "GET", includeMeta: true)
+                initData.append(buildH2Frame(type: Self.h2FrameHeaders, flags: Self.h2FlagEndHeaders | Self.h2FlagEndStream, streamId: 1, payload: headerBlock))
+            }
+            if mode == .streamUp {
+                let uploadHeaders = encodeH2UploadHeaders(seq: nil)
+                initData.append(buildH2Frame(type: Self.h2FrameHeaders, flags: Self.h2FlagEndHeaders, streamId: h2UploadStreamId, payload: uploadHeaders))
+            }
+            do {
+                try await download.send(initData)
+            } catch {
+                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H2 setup send failed: \(error.localizedDescription)"))
+            }
+            try await processInitialServerFrames()
+        }
+    }
+
+    private func h2ClientPreface() -> Data {
+        var initData = Data()
+        initData.append(Self.h2Preface)
+
+        var settingsPayload = Data()
+        settingsPayload.append(contentsOf: [0x00, 0x02, 0x00, 0x00, 0x00, 0x00])
+        let winSize = Self.h2StreamWindowSize
+        settingsPayload.append(
+            contentsOf: [
+                0x00, 0x04,
+                UInt8((winSize >> 24) & 0xFF), UInt8((winSize >> 16) & 0xFF),
+                UInt8((winSize >> 8) & 0xFF), UInt8(winSize & 0xFF)
+            ]
+        )
+        settingsPayload.append(contentsOf: [0x00, 0x06, 0x00, 0xA0, 0x00, 0x00])
+        initData.append(buildH2Frame(type: Self.h2FrameSettings, flags: 0, streamId: 0, payload: settingsPayload))
+
+        let windowIncrement = Self.h2ConnectionWindowSize
+        var wuPayload = Data(count: 4)
+        wuPayload[0] = UInt8((windowIncrement >> 24) & 0xFF)
+        wuPayload[1] = UInt8((windowIncrement >> 16) & 0xFF)
+        wuPayload[2] = UInt8((windowIncrement >> 8) & 0xFF)
+        wuPayload[3] = UInt8(windowIncrement & 0xFF)
+        initData.append(buildH2Frame(type: Self.h2FrameWindowUpdate, flags: 0, streamId: 0, payload: wuPayload))
+        return initData
+    }
+
+    func startH2UploadPump() {
+        Task { [weak self] in
+            while true {
+                guard let self else { return }
+                let data: Data?
+                do {
+                    data = try await self.receiveH2Data()
+                } catch {
+                    self.markH2Closed()
+                    return
+                }
+                if data == nil { self.markH2Closed(); return }
+            }
+        }
+    }
+
+    private func processInitialServerFrames() async throws {
+        let downloadStreamId = h2DownloadStreamId
+        while true {
+            let frame: H2Framing.Frame
+            do {
+                frame = try await h2FrameReader.readFrame()
+            } catch {
+                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H2 setup read failed: \(error.localizedDescription)"))
+            }
+
+            switch frame.type {
+            case Self.h2FrameSettings:
+                if frame.flags & Self.h2FlagAck == 0 {
+                    parseH2Settings(frame.payload)
+                    let ack = buildH2Frame(type: Self.h2FrameSettings, flags: Self.h2FlagAck, streamId: 0, payload: Data())
+                    try? await download.send(ack)
+                    return
+                }
+                continue
+
+            case Self.h2FrameHeaders:
+                let isDownload = frame.streamId == 0 || frame.streamId == downloadStreamId
+                if isDownload {
+                    if let rejection = checkH2ResponseStatus(frame.payload) {
+                        throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H2 response rejected: \(rejection)"))
+                    }
+                    state.withLock { $0.h2ResponseReceived = true }
+                }
+                return
+
+            case Self.h2FrameWindowUpdate:
+                state.withLock { state in
+                    if frame.payload.count >= 4 {
+                        let windowIncrementRaw = H2Framing.readUInt32(frame.payload)
+                        let increment = Int(windowIncrementRaw & 0x7FFFFFFF)
+                        if frame.streamId == 0 {
+                            state.h2PeerConnectionWindow += increment
+                        } else if state.h2PacketStreamWindows[frame.streamId] != nil {
+                            state.h2PacketStreamWindows[frame.streamId]! += increment
+                        } else {
+                            state.h2PeerStreamSendWindow += increment
+                        }
+                    }
+                    state.h2FlowGate.wakeAll()
+                }
+                continue
+
+            case Self.h2FramePing:
+                let pong = buildH2Frame(type: Self.h2FramePing, flags: Self.h2FlagAck, streamId: 0, payload: frame.payload)
+                try? await download.send(pong)
+                continue
+
+            case Self.h2FrameGoaway:
+                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "Server sent GOAWAY"))
+
+            default:
+                continue
+            }
+        }
+    }
+
+    // MARK: HTTP/2 Send
+
+    func markH2Closed() {
+        state.withLock { state in
+            state.transition(to: .halfClosed)
+            state.h2FlowGate.wakeAll()
+        }
+    }
+
+    private func parkForH2Flow(hasWindow: (inout State) -> Bool) async {
+        await H2FlowGate.park {
+            state.withLock { state -> AsyncStream<Never>? in
+                if state.phase != .live { return nil }
+                if hasWindow(&state) { return nil }
+                return state.h2FlowGate.enroll()
+            }
+        }
+    }
+
+    func sendH2Data(data: Data, streamId: UInt32, offset: Int = 0) async throws {
+        enum BuildStep {
+            case closed
+            case park
+            case built(frames: Data, nextOffset: Int)
+        }
+        var currentOffset = offset
+        while currentOffset < data.count {
+            let step: BuildStep = state.withLock { state in
+                if state.phase != .live { return .closed }
+                let maxSize = state.h2MaxFrameSize
+                let window = min(state.h2PeerConnectionWindow, state.h2PeerStreamSendWindow)
+                guard window > 0 else { return .park }
+
+                var frames = Data()
+                var current = currentOffset
+                var windowRemaining = window
+                while current < data.count {
+                    let remaining = data.count - current
+                    let chunkSize = min(remaining, min(maxSize, windowRemaining))
+                    guard chunkSize > 0 else { break }
+                    let chunk = Data(data[data.startIndex + current ..< data.startIndex + current + chunkSize])
+                    frames.append(buildH2Frame(type: Self.h2FrameData, flags: 0, streamId: streamId, payload: chunk))
+                    current += chunkSize
+                    windowRemaining -= chunkSize
+                }
+                let totalSent = window - windowRemaining
+                state.h2PeerConnectionWindow -= totalSent
+                state.h2PeerStreamSendWindow -= totalSent
+                return .built(frames: frames, nextOffset: current)
+            }
+
+            switch step {
+            case .closed:
+                throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil))
+            case .park:
+                await parkForH2Flow { state in min(state.h2PeerConnectionWindow, state.h2PeerStreamSendWindow) > 0 }
+                try Task.checkCancellation()
+            case .built(let frames, let nextOffset):
+                do {
+                    try await download.send(frames)
+                } catch {
+                    markH2Closed()
+                    throw error
+                }
+                currentOffset = nextOffset
+            }
+        }
+    }
+
+    func sendH2PacketUp(data: Data) async throws {
+        enum Build {
+            case closed
+            case headersOnly(Data)
+            case withBody(outbound: Data, streamId: UInt32, nextOffset: Int, maxSize: Int, streamWindow: Int)
+        }
+        let build: Build = state.withLock { state in
+            if state.phase != .live { return .closed }
+            let streamId = state.h2NextPacketStreamId
+            state.h2NextPacketStreamId += 2
+            let seq = state.nextSeq
+            state.nextSeq += 1
+            let maxSize = state.h2MaxFrameSize
+            let streamWindow = state.h2PeerInitialWindowSize
+            let connectionWindow = state.h2PeerConnectionWindow
+
+            let dataFields = uplinkDataFields(for: data)
+            let bodyInHeaders = !dataFields.isEmpty
+            let bodyLength = bodyInHeaders ? 0 : data.count
+            let headerBlock = encodeH2UploadHeaders(seq: seq, contentLength: bodyLength, uplinkData: dataFields)
+            let sendsBody = !bodyInHeaders && !data.isEmpty
+            let headerFlags: UInt8 = sendsBody
+                ? Self.h2FlagEndHeaders
+                : (Self.h2FlagEndHeaders | Self.h2FlagEndStream)
+            var outbound = buildH2Frame(type: Self.h2FrameHeaders, flags: headerFlags, streamId: streamId, payload: headerBlock)
+
+            guard sendsBody else { return .headersOnly(outbound) }
+
+            let window = min(connectionWindow, streamWindow)
+            var currentOffset = 0
+            var windowRemaining = window
+            while currentOffset < data.count {
+                let remaining = data.count - currentOffset
+                let chunkSize = min(remaining, min(maxSize, windowRemaining))
+                guard chunkSize > 0 else { break }
+                let isLast = (currentOffset + chunkSize) >= data.count
+                let flags: UInt8 = isLast ? Self.h2FlagEndStream : 0
+                let chunk = Data(data[data.startIndex + currentOffset ..< data.startIndex + currentOffset + chunkSize])
+                outbound.append(buildH2Frame(type: Self.h2FrameData, flags: flags, streamId: streamId, payload: chunk))
+                currentOffset += chunkSize
+                windowRemaining -= chunkSize
+            }
+            let totalSent = window - windowRemaining
+            state.h2PeerConnectionWindow -= totalSent
+            let perStreamRemaining = streamWindow - totalSent
+            if currentOffset < data.count { state.h2PacketStreamWindows[streamId] = perStreamRemaining }
+            return .withBody(outbound: outbound, streamId: streamId, nextOffset: currentOffset, maxSize: maxSize, streamWindow: perStreamRemaining)
+        }
+
+        switch build {
+        case .closed:
+            throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil))
+        case .headersOnly(let outbound):
+            do {
+                try await download.send(outbound)
+            } catch {
+                markH2Closed()
+                throw error
+            }
+        case .withBody(let outbound, let streamId, let nextOffset, let maxSize, let streamWindow):
+            do {
+                try await download.send(outbound)
+            } catch {
+                markH2Closed()
+                throw error
+            }
+            if nextOffset < data.count {
+                do {
+                    try await sendH2PacketUpData(data: data, streamId: streamId, offset: nextOffset, maxSize: maxSize, streamWindow: streamWindow)
+                } catch {
+                    markH2Closed()
+                    throw error
+                }
+            }
+        }
+    }
+
+    private func sendH2PacketUpData(data: Data, streamId: UInt32, offset: Int = 0, maxSize: Int, streamWindow: Int) async throws {
+        enum BuildStep {
+            case closed
+            case park
+            case built(frames: Data, nextOffset: Int, streamWindow: Int)
+        }
+        var currentOffset = offset
+        var currentStreamWindow = streamWindow
+        defer { state.withLock { _ = $0.h2PacketStreamWindows.removeValue(forKey: streamId) } }
+        while currentOffset < data.count {
+            let step: BuildStep = state.withLock { state in
+                if state.phase != .live { return .closed }
+                let effectiveStreamWindow = state.h2PacketStreamWindows[streamId] ?? currentStreamWindow
+                let window = min(state.h2PeerConnectionWindow, effectiveStreamWindow)
+                guard window > 0 else {
+                    state.h2PacketStreamWindows[streamId] = effectiveStreamWindow
+                    return .park
+                }
+                var frames = Data()
+                var current = currentOffset
+                var windowRemaining = window
+                while current < data.count {
+                    let remaining = data.count - current
+                    let chunkSize = min(remaining, min(maxSize, windowRemaining))
+                    guard chunkSize > 0 else { break }
+                    let isLast = (current + chunkSize) >= data.count
+                    let flags: UInt8 = isLast ? Self.h2FlagEndStream : 0
+                    let chunk = Data(data[data.startIndex + current ..< data.startIndex + current + chunkSize])
+                    frames.append(buildH2Frame(type: Self.h2FrameData, flags: flags, streamId: streamId, payload: chunk))
+                    current += chunkSize
+                    windowRemaining -= chunkSize
+                }
+                let totalSent = window - windowRemaining
+                state.h2PeerConnectionWindow -= totalSent
+                let newStreamWindow = effectiveStreamWindow - totalSent
+                state.h2PacketStreamWindows[streamId] = newStreamWindow
+                return .built(frames: frames, nextOffset: current, streamWindow: newStreamWindow)
+            }
+
+            switch step {
+            case .closed:
+                throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil))
+            case .park:
+                await parkForH2Flow { state in min(state.h2PeerConnectionWindow, state.h2PacketStreamWindows[streamId] ?? currentStreamWindow) > 0 }
+                try Task.checkCancellation()
+            case .built(let frames, let nextOffset, let newStreamWindow):
+                do {
+                    try await download.send(frames)
+                } catch {
+                    markH2Closed()
+                    throw error
+                }
+                currentOffset = nextOffset
+                currentStreamWindow = newStreamWindow
+            }
+        }
+    }
+
+    // MARK: HTTP/2 Receive
+
+    func receiveH2Data() async throws -> Data? {
+        let buffered: Data? = state.withLock { state in
+            if !state.h2DataBuffer.isEmpty {
+                let data = state.h2DataBuffer
+                state.h2DataBuffer.removeAll()
+                return data
+            }
+            return nil
+        }
+        if let buffered { return buffered }
+        if state.withLock({ $0.phase != .live }) { return nil }
+
+        let downloadStreamId = h2DownloadStreamId
+        while true {
+            let frame: H2Framing.Frame
+            do {
+                frame = try await h2FrameReader.readFrame()
+            } catch {
+                if case RuleProxyError.proxy(.xhttp, .streamClosed) = error {
+                    markH2Closed()
+                    return nil
+                }
+                throw error
+            }
+
+            let isDownloadStream = frame.streamId == 0 || frame.streamId == downloadStreamId
+
+            switch frame.type {
+            case Self.h2FrameData:
+                if !frame.payload.isEmpty {
+                    let updates: Data = state.withLock { state in
+                        state.h2ConnectionReceiveConsumed += frame.payload.count
+                        if isDownloadStream {
+                            state.h2StreamReceiveConsumed += frame.payload.count
+                        }
+                        let windowSize = state.h2LocalWindowSize
+                        let connConsumed = state.h2ConnectionReceiveConsumed
+                        let streamConsumed = state.h2StreamReceiveConsumed
+                        let threshold = windowSize / 2
+                        if connConsumed >= threshold { state.h2ConnectionReceiveConsumed = 0 }
+                        if streamConsumed >= threshold { state.h2StreamReceiveConsumed = 0 }
+
+                        var updates = Data()
+                        if connConsumed >= threshold {
+                            let increment = UInt32(connConsumed)
+                            var windowUpdatePayload = Data(count: 4)
+                            windowUpdatePayload[0] = UInt8((increment >> 24) & 0xFF); windowUpdatePayload[1] = UInt8((increment >> 16) & 0xFF)
+                            windowUpdatePayload[2] = UInt8((increment >> 8) & 0xFF); windowUpdatePayload[3] = UInt8(increment & 0xFF)
+                            updates.append(buildH2Frame(type: Self.h2FrameWindowUpdate, flags: 0, streamId: 0, payload: windowUpdatePayload))
+                        }
+                        if isDownloadStream && streamConsumed >= threshold {
+                            let increment = UInt32(streamConsumed)
+                            var windowUpdatePayload = Data(count: 4)
+                            windowUpdatePayload[0] = UInt8((increment >> 24) & 0xFF); windowUpdatePayload[1] = UInt8((increment >> 16) & 0xFF)
+                            windowUpdatePayload[2] = UInt8((increment >> 8) & 0xFF); windowUpdatePayload[3] = UInt8(increment & 0xFF)
+                            updates.append(buildH2Frame(type: Self.h2FrameWindowUpdate, flags: 0, streamId: frame.streamId, payload: windowUpdatePayload))
+                        }
+                        return updates
+                    }
+                    if !updates.isEmpty {
+                        try? await download.send(updates)
+                    }
+                }
+
+                if isDownloadStream {
+                    if frame.flags & Self.h2FlagEndStream != 0 {
+                        markH2Closed()
+                    }
+                    if frame.payload.isEmpty {
+                        if frame.flags & Self.h2FlagEndStream != 0 { return nil }
+                    } else {
+                        return frame.payload
+                    }
+                }
+
+            case Self.h2FrameHeaders:
+                if isDownloadStream {
+                    if frame.flags & Self.h2FlagEndStream != 0 {
+                        markH2Closed()
+                        return nil
+                    } else if !state.withLock({ $0.h2ResponseReceived }) {
+                        if checkH2ResponseStatus(frame.payload) == nil {
+                            state.withLock { $0.h2ResponseReceived = true }
+                        }
+                    }
+                }
+
+            case Self.h2FrameSettings:
+                if frame.flags & Self.h2FlagAck == 0 {
+                    parseH2Settings(frame.payload)
+                    let ack = buildH2Frame(type: Self.h2FrameSettings, flags: Self.h2FlagAck, streamId: 0, payload: Data())
+                    try? await download.send(ack)
+                }
+
+            case Self.h2FrameWindowUpdate:
+                state.withLock { state in
+                    if frame.payload.count >= 4 {
+                        let raw = H2Framing.readUInt32(frame.payload)
+                        let increment = Int(raw & 0x7FFFFFFF)
+                        if frame.streamId == 0 {
+                            state.h2PeerConnectionWindow += increment
+                        } else if state.h2PacketStreamWindows[frame.streamId] != nil {
+                            state.h2PacketStreamWindows[frame.streamId]! += increment
+                        } else {
+                            state.h2PeerStreamSendWindow += increment
+                        }
+                    }
+                    state.h2FlowGate.wakeAll()
+                }
+
+            case Self.h2FramePing:
+                let pong = buildH2Frame(type: Self.h2FramePing, flags: Self.h2FlagAck, streamId: 0, payload: frame.payload)
+                try? await download.send(pong)
+
+            case Self.h2FrameGoaway:
+                markH2Closed()
+                return nil
+
+            case Self.h2FrameRstStream:
+                if isDownloadStream {
+                    markH2Closed()
+                    return nil
+                }
+
+            default:
+                break
+            }
+        }
+    }
+
+    // MARK: Shared-H2 (xmux) session setup & send
+
+    func performSharedH2Setup() async throws {
+        guard let shared = sharedH2 else {
+            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "no shared H2 connection"))
+        }
+        switch role {
+        case .downloadOnly:
+            try await setupSharedH2Download(shared)
+        case .uploadOnly:
+            if mode == .streamUp {
+                try await openSharedH2Upload(shared)
+            }
+        case .combined:
+            switch mode {
+            case .streamOne:
+                let headers = encodeH2RequestHeaders(method: "POST", includeMeta: false)
+                let (stream, headersSent) = shared.openStream(headerBlock: headers, endStream: false)
+                state.withLock { $0.sharedH2Download = stream }
+                xmuxLease?.noteRequest()
+                try await headersSent.value()
+            case .streamUp:
+                try await setupSharedH2Download(shared)
+                guard let shared = sharedH2 else { throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)) }
+                try await openSharedH2Upload(shared)
+            default:
+                try await setupSharedH2Download(shared)
+            }
+        }
+    }
+
+    private func setupSharedH2Download(_ shared: XHTTPH2Multiplexer) async throws {
+        let headers = encodeH2RequestHeaders(method: "GET", includeMeta: true)
+        let (stream, headersSent) = shared.openStream(headerBlock: headers, endStream: true)
+        state.withLock { $0.sharedH2Download = stream }
+        xmuxLease?.noteRequest()
+        try await headersSent.value()
+    }
+
+    private func openSharedH2Upload(_ shared: XHTTPH2Multiplexer) async throws {
+        let headers = encodeH2UploadHeaders(seq: nil)
+        let (stream, headersSent) = shared.openStream(headerBlock: headers, endStream: false)
+        state.withLock { $0.sharedH2Upload = stream }
+        xmuxLease?.noteRequest()
+        try await headersSent.value()
+        stream.drainResponse()
+    }
+
+    func sendSharedH2PacketUp(data: Data) async throws {
+        guard let shared = sharedH2 else { throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)) }
+        let seq = state.withLock { state -> Int64 in let s = state.nextSeq; state.nextSeq += 1; return s }
+        xmuxLease?.noteRequest()
+
+        let dataFields = uplinkDataFields(for: data)
+        let bodyInHeaders = !dataFields.isEmpty
+        let bodyLength = bodyInHeaders ? 0 : data.count
+        let headers = encodeH2UploadHeaders(seq: seq, contentLength: bodyLength, uplinkData: dataFields)
+        let headersOnly = bodyInHeaders || data.isEmpty
+        let (stream, headersSent) = shared.openStream(headerBlock: headers, endStream: headersOnly)
+
+        do {
+            try await headersSent.value()
+            if !headersOnly {
+                try await stream.sendData(data, endStream: true)
+            }
+        } catch {
+            stream.close()
+            throw error
+        }
+        stream.drainResponse()
+    }
+}

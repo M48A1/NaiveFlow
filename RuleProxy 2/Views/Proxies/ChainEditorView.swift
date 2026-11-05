@@ -1,0 +1,208 @@
+//
+//  ChainEditorView.swift
+//  RuleProxy
+//
+//  Created by NodePassProject on 3/8/26.
+//
+
+import SwiftUI
+
+struct ChainEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(ConfigurationStore.self) private var configStore
+    @Environment(SubscriptionStore.self) private var subscriptionStore
+
+    var chain: ProxyChain?
+    var onSave: (ProxyChain) -> Void
+
+    @State private var name: String = ""
+    @State private var selectedProxyIds: [UUID] = []
+    @State private var showingProxyPicker = false
+
+    private var isEditing: Bool { chain != nil }
+
+    private var selectedProxies: [ProxyConfiguration] {
+        selectedProxyIds.compactMap { id in
+            configStore.configurations.first(where: { $0.id == id })
+        }
+    }
+
+    private var canSave: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty && selectedProxies.count >= 2
+    }
+    
+    private var pickerSections: [MultiSelectPickerView.ItemSection] {
+        let excluded = Set(selectedProxyIds)
+        var sections: [MultiSelectPickerView.ItemSection] = []
+        let standalone = configStore.configurations.filter { $0.subscriptionId == nil && !excluded.contains($0.id) && !$0.isDirect }
+        if !standalone.isEmpty {
+            sections.append(MultiSelectPickerView.ItemSection(id: "standalone", header: nil, items: standalone.map(pickerItem)))
+        }
+        for subscription in subscriptionStore.subscriptions {
+            let configurations = configStore.configurations(for: subscription).filter { !excluded.contains($0.id) && !$0.isDirect }
+            if !configurations.isEmpty {
+                sections.append(MultiSelectPickerView.ItemSection(id: subscription.id.uuidString, header: subscription.name, items: configurations.map(pickerItem)))
+            }
+        }
+        return sections
+    }
+
+    private func pickerItem(_ configuration: ProxyConfiguration) -> MultiSelectPickerView.Item {
+        MultiSelectPickerView.Item(
+            id: configuration.id,
+            title: configuration.name
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent {
+                        TextField("Name", text: $name)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .multilineTextAlignment(.trailing)
+                    } label: {
+                        TextWithColorfulIcon(title: "Name", systemName: "tag.fill", foregroundStyle: .white, backgroundStyle: .gray.gradient)
+                    }
+                }
+
+                Section {
+                    ForEach(Array(selectedProxies.enumerated()), id: \.element.id) { index, proxy in
+                        HStack(spacing: 12) {
+                            Text("\(index + 1)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 22, height: 22)
+                                .background(
+                                    Circle()
+                                        .fill(index == 0 ? Color.blue : index == selectedProxies.count - 1 ? Color.green : Color.secondary)
+                                )
+
+                            VStack(alignment: .leading) {
+                                Text(proxy.name)
+                                    .font(.body)
+                                Text("\(proxy.serverAddress):\(proxy.serverPort, format: .number.grouping(.never))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            if index == 0 {
+                                Text("Entry")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            } else if index == selectedProxies.count - 1 {
+                                Text("Exit")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .onMove(perform: moveProxy)
+                    .onDelete(perform: deleteProxy)
+
+                    Button {
+                        showingProxyPicker = true
+                    } label: {
+                        Label("Add Proxy", systemImage: "plus")
+                    }
+                    .disabled(pickerSections.isEmpty)
+                } header: {
+                    Text("Proxies")
+                } footer: {
+                    if selectedProxies.count < 2 {
+                        Text("Add at least 2 proxies to form a chain.")
+                    }
+                }
+
+                if selectedProxies.count >= 2 {
+                    Section("Route Preview") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                Text("You")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.secondary)
+
+                                ForEach(selectedProxies) { proxy in
+                                    Image(systemName: "arrow.right")
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                    Text(proxy.name)
+                                        .font(.caption.weight(.medium))
+                                        .lineLimit(1)
+                                }
+
+                                Image(systemName: "arrow.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                Text("Target")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+            }
+            .navigationTitle(isEditing ? "Edit Chain" : "New Chain")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    if #available(iOS 26.0, *) {
+                        Button(role: .cancel) {
+                            dismiss()
+                        } label: {
+                            Label("Cancel", systemImage: "xmark")
+                        }
+                    } else {
+                        Button("Cancel") { dismiss() }
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if #available(iOS 26.0, *) {
+                        Button {
+                            save()
+                        } label: {
+                            Label("Save", systemImage: "checkmark")
+                        }
+                        .disabled(!canSave)
+                    } else {
+                        Button("Save") { save() }
+                            .disabled(!canSave)
+                    }
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .sheet(isPresented: $showingProxyPicker) {
+                MultiSelectPickerView(sections: pickerSections) { selected in
+                    selectedProxyIds.append(contentsOf: selected)
+                }
+            }
+            .onAppear {
+                if let chain {
+                    name = chain.name
+                    selectedProxyIds = chain.proxyIds
+                }
+            }
+        }
+    }
+
+    private func moveProxy(from source: IndexSet, to destination: Int) {
+        selectedProxyIds.move(fromOffsets: source, toOffset: destination)
+    }
+
+    private func deleteProxy(at offsets: IndexSet) {
+        selectedProxyIds.remove(atOffsets: offsets)
+    }
+
+    private func save() {
+        var result = chain ?? ProxyChain(name: name)
+        result.name = name.trimmingCharacters(in: .whitespaces)
+        result.proxyIds = selectedProxyIds
+        onSave(result)
+        dismiss()
+    }
+}
