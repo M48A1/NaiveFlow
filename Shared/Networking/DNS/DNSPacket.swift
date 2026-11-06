@@ -12,7 +12,7 @@ nonisolated enum DNSPacket {
         guard data.count >= 12 else { return nil }
 
         let qdcount = UInt16(data[4]) << 8 | UInt16(data[5])
-        guard qdcount > 0 else { return nil }
+        guard qdcount == 1, data[2] & 0xF8 == 0, data[3] & 0x0F == 0 else { return nil }
 
         var offset = 12
         var domainBytes = [UInt8]()
@@ -37,20 +37,38 @@ nonisolated enum DNSPacket {
 
         guard labelCount > 0 else { return nil }
         
-        guard offset + 2 <= data.count else { return nil }
+        guard offset + 4 <= data.count, data[offset + 2] == 0, data[offset + 3] == 1 else { return nil }
         let qtype = UInt16(data[offset]) << 8 | UInt16(data[offset + 1])
 
         let domain = String(bytes: domainBytes, encoding: .ascii) ?? ""
+        guard !domain.isEmpty else { return nil }
         return (domain, qtype)
     }
     
+    static func truncatedResponse(_ query: Data) -> Data? {
+        var response = errorResponse(query, code: 0)
+        if response != nil { response![2] |= 0x02 }
+        return response
+    }
+
+    static func errorResponse(_ query: Data, code: UInt8) -> Data? {
+        var response = query.withUnsafeBytes { bytes -> Data? in
+            let buffer = bytes.bindMemory(to: UInt8.self)
+            guard let parsed = parseQuery(buffer) else { return nil }
+            return generateResponse(query: buffer, answerIP: nil, qtype: parsed.qtype)
+        }
+        if response != nil { response![3] = 0x80 | (code & 0x0F) }
+        return response
+    }
+
     static func generateResponse(
         query queryData: UnsafeBufferPointer<UInt8>,
         answerIP: [UInt8]?,
         qtype: UInt16,
-        ttl: UInt32 = TunnelConstants.dnsSyntheticAddressAnswerTTL
+        ttl: UInt32 = 300
     ) -> Data? {
-        guard queryData.count >= 12 else { return nil }
+        guard let parsed = parseQuery(queryData), parsed.qtype == qtype,
+              answerIP == nil || (qtype == 1 && answerIP?.count == 4) else { return nil }
 
         var offset = 12
         while offset < queryData.count {
@@ -85,7 +103,7 @@ nonisolated enum DNSPacket {
 
                 memcpy(p, source, questionEnd)
                 
-                p[2] = 0x85
+                p[2] = 0x80 | (source[2] & 0x01)
                 p[3] = 0x80
                 p[4] = 0x00
                 p[5] = 0x01
@@ -118,7 +136,7 @@ nonisolated enum DNSPacket {
                 guard let p = pointer.bindMemory(to: UInt8.self).baseAddress,
                       let source = queryData.baseAddress else { return }
                 memcpy(p, source, questionEnd)
-                p[2] = 0x85; p[3] = 0x80
+                p[2] = 0x80 | (source[2] & 0x01); p[3] = 0x80
                 p[4] = 0x00; p[5] = 0x01
                 p[6] = 0x00; p[7] = 0x00
                 p[8] = 0x00; p[9] = 0x00; p[10] = 0x00; p[11] = 0x00

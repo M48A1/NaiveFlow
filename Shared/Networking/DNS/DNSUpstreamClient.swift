@@ -73,6 +73,92 @@ nonisolated enum DNSUpstreamClient {
         }
     }
 
+    /// Forward one complete message, retaining transaction and question identity.
+    static func exchange(_ query: Data, via upstream: DNSUpstream, preferTCP: Bool = false) async throws -> Data {
+        guard query.count >= 12, query.count <= 65535 else { throw RuleProxyError.dns(.malformedResponse) }
+        switch upstream {
+        case .plain(let host, let port):
+            if preferTCP { return try await exchangeTCP(query, host: host, port: port) }
+            let transport = UDPTransport(host: host, port: port)
+            defer { transport.cancel() }
+            let reply = try await withDialDeadline(queryTimeout) {
+                transport.cancel()
+            } error: {
+                RuleProxyError.dns(.timedOut(host: host))
+            } operation: {
+                try await transport.connect()
+                try await transport.send(query)
+                while true {
+                    let reply = try await transport.receive()
+                    if matchesReply(reply, query: query) { return reply }
+                }
+            }
+            if reply[2] & 0x02 != 0 { return try await exchangeTCP(query, host: host, port: port) }
+            return reply
+        case .doh(let url):
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.httpBody = query
+            request.setValue("application/dns-message", forHTTPHeaderField: "Content-Type")
+            request.setValue("application/dns-message", forHTTPHeaderField: "Accept")
+            let reply = try await sendDoH(request, bootstrap: AWCore.getBootstrapDNS())
+            guard matchesReply(reply, query: query), reply[2] & 0x02 == 0 else {
+                throw RuleProxyError.dns(.malformedResponse)
+            }
+            return reply
+        case .system:
+            return try await exchange(query, via: .defaultPlain, preferTCP: preferTCP)
+        }
+    }
+
+    static func matchesReply(_ reply: Data, query: Data) -> Bool {
+        guard query.count >= 12, reply.count >= 12, reply[0] == query[0], reply[1] == query[1],
+              reply[2] & 0xF8 == 0x80, reply[4] == 0, reply[5] == 1 else { return false }
+        var end = 12
+        while end < query.count {
+            let size = Int(query[end])
+            end += 1
+            if size == 0 { break }
+            guard size <= 63, end + size <= query.count else { return false }
+            end += size
+        }
+        end += 4
+        return end <= query.count && end <= reply.count && reply[12..<end] == query[12..<end]
+    }
+
+    private static func exchangeTCP(_ query: Data, host: String, port: UInt16) async throws -> Data {
+        let transport = TCPTransport(host: host, port: port)
+        let connection = DirectProxyConnection(transport: transport)
+        defer { transport.cancel() }
+        return try await withDialDeadline(queryTimeout) {
+            transport.cancel()
+        } error: {
+            RuleProxyError.dns(.timedOut(host: host))
+        } operation: {
+            try await transport.connect()
+            var request = Data([UInt8(query.count >> 8), UInt8(query.count & 255)])
+            request.append(query)
+            try await connection.send(request)
+            var buffer = Data()
+            while let chunk = try await connection.receive() {
+                guard buffer.count + chunk.count <= 131_074 else { throw RuleProxyError.dns(.malformedResponse) }
+                buffer.append(chunk)
+                if buffer.count >= 2 {
+                    let length = Int(buffer[0]) << 8 | Int(buffer[1])
+                    guard length >= 12 else { throw RuleProxyError.dns(.malformedResponse) }
+                    if buffer.count >= length + 2 {
+                        let reply = Data(buffer[2..<(length + 2)])
+                        guard matchesReply(reply, query: query), reply[2] & 0x02 == 0 else {
+                            throw RuleProxyError.dns(.malformedResponse)
+                        }
+                        return reply
+                    }
+                }
+            }
+            throw RuleProxyError.dns(.malformedResponse)
+        }
+    }
+
     // MARK: - Internal
     
     private static func queryAll(

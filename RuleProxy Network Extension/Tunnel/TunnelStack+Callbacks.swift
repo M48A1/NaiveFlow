@@ -36,7 +36,10 @@ extension TunnelStack {
             },
             synFilter: { [weak self] _, destination in
                 guard let self else { return .drop }
-                guard !self.isRejectMarked(destination.address), self.ipStackSynVerdict() else {
+                let isDNS = destination.port == 53 && Self.dnsDestination(
+                    for: destination.address.description, exempting: self.udpConfig().interceptExemptDNSServers
+                ) != nil
+                guard (isDNS || !self.isRejectMarked(destination.address)), self.ipStackSynVerdict() else {
                     self.recordRejectedSYN(to: destination)
                     return .drop
                 }
@@ -97,6 +100,15 @@ extension TunnelStack {
         }
         let dstIPString = pending.destination.address.description
         let dstPort = pending.destination.port
+        if dstPort == 53, Self.dnsDestination(for: dstIPString, exempting: udpConfig().interceptExemptDNSServers) != nil {
+            guard let nativeConnection = pending.accept() else { return nil }
+            let delegate = TCPConnection(stack: self, connection: nativeConnection,
+                dstHost: dstIPString, dstPort: dstPort, configuration: defaultConfiguration,
+                routeTarget: .direct, interceptDNS: true,
+                sourceIP: pending.source.address.description, sourcePort: pending.source.port)
+            tcpConnections.withLock { $0.insert(delegate) }
+            return delegate
+        }
         let decision = connectionRouter.decision(forIP: dstIPString, sourceIP: pending.source.address.description,
             sourcePort: pending.source.port, destinationPort: dstPort, protocolName: "TCP")
 

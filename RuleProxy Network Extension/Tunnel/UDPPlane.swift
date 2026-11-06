@@ -196,10 +196,10 @@ actor UDPPlane {
         let udpConfig = stack.udpConfig()
 
         if dstPort == 53 {
-            if let destination = TunnelStack.dnsDestination(
+            if TunnelStack.dnsDestination(
                 for: dstAddress.description, exempting: udpConfig.interceptExemptDNSServers
-            ) {
-                if await handleDNSQuery(datagram, destination: destination, udpConfig: udpConfig) {
+            ) != nil {
+                if await handleDNSQuery(datagram) {
                     return
                 }
             }
@@ -628,186 +628,54 @@ actor UDPPlane {
         for session in all { session.cancel() }
     }
 
+    private var dnsQueries: [UUID: Task<Void, Never>] = [:]
+
     // MARK: - DNS interception (synthetic address)
 
     private func handleDNSQuery(
-        _ datagram: InboundDatagram,
-        destination: TunnelStack.DNSDestination,
-        udpConfig: TunnelStack.UDPConfig
+        _ datagram: InboundDatagram
     ) async -> Bool {
-        let payload = datagram.payload
-        guard let parsed = payload.withUnsafeBytes({ ptr -> (domain: String, qtype: UInt16)? in
-            guard let base = ptr.bindMemory(to: UInt8.self).baseAddress else { return nil }
-            return DNSPacket.parseQuery(UnsafeBufferPointer(start: base, count: ptr.count))
-        }) else { return false }
-
-        let domain = parsed.domain.lowercased()
-        let qtype = parsed.qtype
-
-        if domain == "_dns.resolver.arpa" {
-            return sendNODATA(answering: datagram, qtype: qtype)
+        let query = datagram.payload
+        guard query.withUnsafeBytes({ DNSPacket.parseQuery($0.bindMemory(to: UInt8.self)) }) != nil else {
+            // Selected DNS traffic never falls through to the ordinary UDP router.
+            return true
         }
-
-        if qtype == 65 || qtype == 28 {
-            return sendNODATA(answering: datagram, qtype: qtype)
+        if let response = stack.syntheticDNSResponse(query) {
+            stack.writeOutboundUDP(response, from: datagram.destination, to: datagram.source)
+            return true
         }
-
-        let (ruleMatch, rulesVersion) = stack.connectionRouter.dnsVerdict(forDomain: domain)
-        if let ruleMatch, case .reject = ruleMatch.action {
-            if stack.connectionRouter.shouldLogDNSReject(domain: domain) {
-                stack.requestLog.record(
-                    protocol: .unknown,
-                    host: domain,
-                    port: 53,
-                    routeTarget: .reject,
-                    ruleSetName: ruleMatch.ruleSetName
-                )
+        guard dnsQueries.count < 64 else {
+            if let response = DNSPacket.errorResponse(query, code: 2) {
+                stack.writeOutboundUDP(response, from: datagram.destination, to: datagram.source)
             }
-            guard qtype == 1 else {
-                return sendNODATA(answering: datagram, qtype: qtype)
-            }
-            let zeroIP = [UInt8](repeating: 0, count: 4)
-            return sendAddressAnswer(
-                answering: datagram,
-                ip: zeroIP,
-                qtype: qtype,
-                ttl: TunnelConstants.dnsBlockedAnswerTTL
-            )
+            return true
         }
-
-        guard qtype == 1 else {
-            if destination == .ruleproxyResolver {
-                if await forwardToUpstreamResolver(datagram) {
-                    return true
-                }
-                return sendNODATA(answering: datagram, qtype: qtype)
-            }
-            return false
+        let id = UUID()
+        let generation = stack.dataPlaneGeneration.load(ordering: .acquiring)
+        let upstream = AWCore.getFallbackDNSUpstream()
+        dnsQueries[id] = Task { [weak self] in
+            let response = (try? await DNSUpstreamClient.exchange(query, via: upstream))
+                ?? DNSPacket.errorResponse(query, code: 2)
+            await self?.completeDNS(id: id, generation: generation, query: query, response: response, datagram: datagram)
         }
-
-        if udpConfig.syntheticAddressExcludedDomains.contains(domain) {
-            if destination == .ruleproxyResolver {
-                if await forwardToUpstreamResolver(datagram) {
-                    return true
-                }
-                return sendNODATA(answering: datagram, qtype: qtype)
-            }
-            return false
-        }
-
-        let offset = stack.syntheticAddressPool.allocate(domain: domain, verdict: ruleMatch, verdictVersion: rulesVersion)
-        let ipv4 = SyntheticAddressPool.ipv4Bytes(offset: offset)
-        return sendAddressAnswer(
-            answering: datagram,
-            ip: [ipv4.0, ipv4.1, ipv4.2, ipv4.3],
-            qtype: qtype,
-            ttl: TunnelConstants.dnsSyntheticAddressAnswerTTL
-        )
-    }
-
-    private func forwardToUpstreamResolver(_ datagram: InboundDatagram) async -> Bool {
-        let udpConfig = stack.udpConfig()
-        guard let defaultConfiguration = udpConfig.configuration else { return false }
-
-        let upstream = DNSUpstream.forwardingServers(
-            preferring: AWCore.getFallbackDNSUpstream()
-        ).first ?? DNSUpstream.defaultPlainServer
-        let payload = datagram.payload
-        let dstPort = datagram.destination.port
-
-        let flowKey = TunnelStack.UDPFlowKey(datagram)
-        if let existing = flows[flowKey] {
-            if !existing.isClosed {
-                await existing.handleReceivedData([payload])
-                return true
-            }
-            flows.removeValue(forKey: flowKey)
-        }
-
-        let decision = stack.connectionRouter.decision(forIP: upstream, sourceIP: datagram.source.address.description,
-            sourcePort: datagram.source.port, destinationPort: 53, protocolName: "UDP")
-
-        var flowConfiguration = defaultConfiguration
-        var routeTarget: RouteTarget = .default
-        var ruleSetName: String? = nil
-
-        switch decision.action {
-        case .route(let target, let ruleConfiguration, let matchedRuleSet):
-            routeTarget = target
-            ruleSetName = matchedRuleSet
-            if let ruleConfiguration { flowConfiguration = ruleConfiguration }
-        case .reject(let matchedRuleSet):
-            stack.requestLog.record(
-                protocol: .udp, host: upstream, port: dstPort,
-                routeTarget: .reject,
-                ruleSetName: matchedRuleSet
-            )
-            return false
-        case .unreachable:
-            return false
-        }
-
-        guard makeRoomForNewFlow() else { return true }
-
-        stack.requestLog.record(
-            protocol: .udp, host: upstream, port: dstPort,
-            routeTarget: routeTarget, ruleSetName: ruleSetName
-        )
-
-        let flow = UDPFlow(
-            stack: stack,
-            plane: self,
-            ledger: bufferLedger,
-            flowKey: flowKey,
-            dstHost: upstream,
-            configuration: flowConfiguration,
-            routeTarget: routeTarget,
-            ruleSetName: ruleSetName
-        )
-        insert(flow)
-        await flow.handleReceivedData([payload])
         return true
     }
 
-    private func sendNODATA(answering datagram: InboundDatagram, qtype: UInt16) -> Bool {
-        guard let responseData = datagram.payload.withUnsafeBytes({ ptr -> Data? in
-            guard let base = ptr.bindMemory(to: UInt8.self).baseAddress else { return nil }
-            return DNSPacket.generateResponse(
-                query: UnsafeBufferPointer(start: base, count: ptr.count),
-                answerIP: nil,
-                qtype: qtype
-            )
-        }) else { return false }
-
-        stack.writeOutboundUDP(responseData, from: datagram.destination, to: datagram.source)
-
-        return true
-    }
-
-    private func sendAddressAnswer(
-        answering datagram: InboundDatagram,
-        ip: [UInt8],
-        qtype: UInt16,
-        ttl: UInt32
-    ) -> Bool {
-        guard let responseData = datagram.payload.withUnsafeBytes({ ptr -> Data? in
-            guard let base = ptr.bindMemory(to: UInt8.self).baseAddress else { return nil }
-            return DNSPacket.generateResponse(
-                query: UnsafeBufferPointer(start: base, count: ptr.count),
-                answerIP: ip,
-                qtype: qtype,
-                ttl: ttl
-            )
-        }) else { return false }
-
-        stack.writeOutboundUDP(responseData, from: datagram.destination, to: datagram.source)
-
-        return true
+    private func completeDNS(id: UUID, generation: UInt64, query: Data, response: Data?, datagram: InboundDatagram) {
+        guard dnsQueries.removeValue(forKey: id) != nil, !Task.isCancelled,
+              generation == stack.dataPlaneGeneration.load(ordering: .acquiring),
+              stack.publishedPhase.load(ordering: .relaxed) == .running,
+              !stack.configurationTransition.load(ordering: .acquiring), let response else { return }
+        // Conservative 512-byte UDP limit; larger answers retry over TCP even with EDNS.
+        let bounded = response.count <= 512 ? response : DNSPacket.truncatedResponse(query)
+        if let bounded { stack.writeOutboundUDP(bounded, from: datagram.destination, to: datagram.source) }
     }
 
     // MARK: - Reclaim
 
     private func reclaim() {
+        for task in dnsQueries.values { task.cancel() }
+        dnsQueries.removeAll()
         multiplexerPoolStorage?.closeAll()
         multiplexerPoolStorage = nil
         purgeShadowsocksUDPSessions()

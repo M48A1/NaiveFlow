@@ -58,3 +58,13 @@ Bootstrap 保存于完整运行版本中，参与切换和回滚；旧版本缺�
 新增测试覆盖配置段、别名、模式选择、错误与重复字段、种子校验及顺序、IP-literal 跳过、失败不回退、HTTP 响应分帧/大小/错误、旧版本读取和整包回滚。当前环境没有 Swift/Xcode，未运行构建、测试或真实 DNS/TLS 验收。
 
 参考系统 TLS API：[sec_protocol_options_set_tls_server_name](https://developer.apple.com/documentation/security/sec_protocol_options_set_tls_server_name(_:_:))。
+
+## TUN 内普通 DNS 接管
+
+进入 TUN 的 IPv4 UDP/53 和 TCP/53 共用 DNS 规则与 Fake-IP 处理。内置 DNS 地址始终接管；其他 IPv4 地址默认接管。为避免上游递归，当前配置的明文 DNS 上游及 bootstrap 地址免接管（地址级豁免，不是应用身份识别），因此并非不可绕过的 DNS 防泄漏策略。未进入 TUN 的系统例外流量不在此范围内。
+
+单问题、IN 类、标准 QUERY 才受理。畸形 UDP 查询丢弃，畸形 TCP 查询关闭连接，不进入普通路由。规则拒绝、AAAA/HTTPS 查询抑制和 Fake-IP 回答在两种传输保持一致。Fake-IP 排除域名和其他记录类型交给 `fallback-dns-*` 对应上游；system 模式使用内置 `1.1.1.1:53`。这条解析通道直接访问配置上游，不经过业务代理规则；配置 DoH 时保留 TLS 校验和 bootstrap 策略。此变化也修正原 UDP 转发忽略 DoH 和自定义端口的问题。
+
+TCP 支持两字节长度前缀、拆包、粘包和连续请求，单连接按序处理。每条 TCP 连接缓冲最多 131,074 字节，纳入 TCP 缓冲账本；UDP 上游查询最多同时 64 个，超额返回 SERVFAIL，异步查询不阻塞普通 UDP。上游 UDP 截断时重试 TCP；返回客户端的 UDP 答案保守限制为 512 字节，超过则返回 TC 供客户端用 TCP 重试（暂不按 EDNS 增大 UDP 限额）。上游事务 ID 和完整 question 必须吻合；失败返回 SERVFAIL。热更新取消待处理 UDP 查询，并拒绝跨数据平面代次的回答。
+
+应用内 DoH 的 MITM 解密接管、DoT/DoQ 接管、用户自定义接管/豁免列表尚未包含。以上代码仍需 Xcode 构建、测试和真机流量验收。

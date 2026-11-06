@@ -22,6 +22,7 @@ actor TCPConnection: MITMSessionHost {
 
     private let connection: RuleProxyIP.Stream
     private let stackGeneration: UInt64
+    private let interceptDNS: Bool
     let dstPort: UInt16
 
     let sessionContext = SessionExecutionContext(label: "RuleProxy.TCP.Session")
@@ -158,9 +159,11 @@ actor TCPConnection: MITMSessionHost {
         routeTarget: RouteTarget,
         ruleSetName: String? = nil,
         sniffSNI: Bool = false,
+        interceptDNS: Bool = false,
         hostIsResolvedDomain: Bool = false,
         sourceIP: String? = nil, sourcePort: UInt16? = nil
     ) {
+        self.interceptDNS = interceptDNS
         self.sourceIP = sourceIP
         self.sourcePort = sourcePort
         self.stack = stack
@@ -192,7 +195,52 @@ actor TCPConnection: MITMSessionHost {
 
     func start() {
         guard connection.isAttached else { finish(.stackError); return }
-        rootTask = Task { await self.run() }
+        rootTask = Task {
+            if self.interceptDNS { await self.runDNS() }
+            else { await self.run() }
+        }
+    }
+
+    private func runDNS() async {
+        guard transition(to: .relaying) else { return }
+        armIdleTimeout(TunnelConstants.connectionIdleTimeout)
+        do {
+            while let chunk = try await connection.receive() {
+                guard phase != .closed, let stack,
+                      !stack.configurationTransition.load(ordering: .acquiring),
+                      stack.dataPlaneGeneration.load(ordering: .acquiring) == stackGeneration else { break }
+                markActivity()
+                guard pendingData.count + chunk.count <= 131_074 else { abort(); return }
+                pendingData.append(chunk)
+                while pendingData.count >= 2 {
+                    let length = Int(pendingData[0]) << 8 | Int(pendingData[1])
+                    guard length >= 12 else { abort(); return }
+                    guard pendingData.count >= length + 2 else { break }
+                    let query = Data(pendingData[2..<(length + 2)])
+                    pendingData = Data(pendingData.dropFirst(length + 2))
+                    acknowledgeReceivedBytes(length + 2)
+                    guard query.withUnsafeBytes({ DNSPacket.parseQuery($0.bindMemory(to: UInt8.self)) }) != nil else {
+                        abort(); return
+                    }
+                    var response = stack.syntheticDNSResponse(query)
+                    if response == nil {
+                        response = try? await DNSUpstreamClient.exchange(query, via: AWCore.getFallbackDNSUpstream(), preferTCP: true)
+                    }
+                    guard phase != .closed,
+                          stack.dataPlaneGeneration.load(ordering: .acquiring) == stackGeneration,
+                          !stack.configurationTransition.load(ordering: .acquiring) else { return }
+                    guard let response = response ?? DNSPacket.errorResponse(query, code: 2), response.count <= 65535 else {
+                        abort(); return
+                    }
+                    var framed = Data([UInt8(response.count >> 8), UInt8(response.count & 255)])
+                    framed.append(response)
+                    try await connection.send(framed)
+                    stack.addBytesIn(Int64(framed.count), target: routeTarget)
+                    activityRecord.addBytesIn(framed.count)
+                }
+            }
+            close()
+        } catch { abort() }
     }
 
     private func run() async {
