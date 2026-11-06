@@ -1,6 +1,6 @@
 //
 //  PathMonitorConcurrencyBridge.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/17/26.
 //
@@ -13,7 +13,7 @@ nonisolated final class PathMonitorConcurrencyBridge: Sendable {
     private let queue: DispatchQueue
 
     init() {
-        self.queue = DispatchQueue(label: "com.argsment.RuleProxy.PathMonitorConcurrencyBridge")
+        self.queue = DispatchQueue(label: "com.argsment.NaiveFlow.PathMonitorConcurrencyBridge")
     }
     
     func paths() -> AsyncStream<Network.NWPath> {

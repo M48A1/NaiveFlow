@@ -1,10 +1,10 @@
 # AJSON Subscriptions — Developer Guide
 
-AJSON is RuleProxy's own subscription format: one JSON document that carries
+AJSON is NaiveFlow's own subscription format: one JSON document that carries
 the subscription's name, icon, and usage together with its proxies, written in
-RuleProxy's model rather than another client's. Compared with a Clash YAML
+NaiveFlow's model rather than another client's. Compared with a Clash YAML
 `proxies:` list it has unambiguous types, one shape for TLS and transports
-across every protocol, every RuleProxy-specific option (Nowhere, Sudoku, XHTTP),
+across every protocol, every NaiveFlow-specific option (Nowhere, Sudoku, XHTTP),
 reusable templates, and stable proxy identities that survive renames. This
 guide covers how a subscription is recognized, the document format, and how a
 refresh treats the proxies it contains.
@@ -29,12 +29,12 @@ refresh treats the proxies it contains.
 Every subscription request carries
 
 ```
-User-Agent: RuleProxy
-X-RuleProxy-Format: ajson/1
+User-Agent: NaiveFlow
+X-NaiveFlow-Format: ajson/1
 ```
 
-A server that sees `X-RuleProxy-Format` may answer with an AJSON document;
-older versions of RuleProxy do not send the header and should keep receiving a
+A server that sees `X-NaiveFlow-Format` may answer with an AJSON document;
+older versions of NaiveFlow do not send the header and should keep receiving a
 format they understand.
 
 A response is treated as AJSON when its body is UTF-8 and its first token,
@@ -59,7 +59,7 @@ ignored everywhere, so a server may add fields that a later version will read.
 
 ```jsonc
 {
-  "ruleproxy": 1,
+  "naiveflow": 1,
   "name": "Example Cloud",
   "icon": { "light": "iVBORw0KGgo…", "dark": "iVBORw0KGgo…" },
   "usage": { "upload": 0, "download": 1073741824, "total": 107374182400, "expire": 1798675200 },
@@ -70,7 +70,7 @@ ignored everywhere, so a server may add fields that a later version will read.
 
 | Key         | Type    | Meaning |
 | ----------- | ------- | ------- |
-| `ruleproxy`  | integer | **Required.** Format version, currently `1`. A higher version is rejected with a request to update RuleProxy. |
+| `naiveflow`  | integer | **Required.** Format version, currently `1`. A higher version is rejected with a request to update NaiveFlow. |
 | `proxies`   | array   | **Required.** The subscription's proxies, in display order. See [Proxies](#proxies). |
 | `name`      | string  | Subscription name. |
 | `icon`      | object  | `light` and `dark`, each a base64 image of at most **256 KB** decoded. |
@@ -277,9 +277,9 @@ routing rule set assigned to it, even when the server renames or reorders it.
 ## Worked example
 
 ```jsonc
-// Example Cloud — served when the request carries X-RuleProxy-Format: ajson/1
+// Example Cloud — served when the request carries X-NaiveFlow-Format: ajson/1
 {
-  "ruleproxy": 1,
+  "naiveflow": 1,
   "name": "Example Cloud",
   "usage": { "download": 1073741824, "total": 107374182400, "expire": 1798675200 },
 
@@ -326,7 +326,7 @@ leaves it selected on every device that had chosen it.
 - **Detected by content.** A UTF-8 body that opens with `{` is AJSON; the URL
   and `Content-Type` play no part.
 - **Whole-document errors fail the request.** Syntax errors, a missing or
-  unsupported `ruleproxy` version, a missing `proxies` array, or no valid proxy
+  unsupported `naiveflow` version, a missing `proxies` array, or no valid proxy
   at all leave the stored subscription unchanged.
 - **Proxy errors skip the proxy.** A missing required key, an unknown
   `protocol`, a value outside its allowed set, or a value of the wrong type

@@ -1,6 +1,6 @@
 //
 //  QUICConnectionCore.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/11/26.
 //
@@ -8,9 +8,9 @@
 import Foundation
 import Synchronization
 import Network
-import RuleProxyQUIC
+import NaiveFlowQUIC
 
-nonisolated private let logger = RuleProxyLogger(category: "QUICConnection")
+nonisolated private let logger = NaiveFlowLogger(category: "QUICConnection")
 
 // MARK: - QUICPacketObfuscator
 
@@ -87,7 +87,7 @@ nonisolated final class QUICConnectionCore: QUICPublishingState {
         return true
     }
 
-    var engine: RuleProxyQUIC.QUICConnection?
+    var engine: NaiveFlowQUIC.QUICConnection?
 
     var eventBuffer: [QUICEvent] = []
 

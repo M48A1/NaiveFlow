@@ -1,7 +1,7 @@
 import Foundation
 import Synchronization
 import Testing
-@testable import RuleProxy
+@testable import NaiveFlow
 
 nonisolated private final class BootstrapCalls: Sendable {
     let entries = Mutex<[(String, String)]>([])

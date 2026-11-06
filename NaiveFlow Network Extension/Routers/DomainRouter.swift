@@ -1,6 +1,6 @@
 //
 //  DomainRouter.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 
-nonisolated private let logger = RuleProxyLogger(category: "DomainRouter")
+nonisolated private let logger = NaiveFlowLogger(category: "DomainRouter")
 
 nonisolated final class DomainRouter: Sendable {
 
@@ -48,9 +48,9 @@ nonisolated final class DomainRouter: Sendable {
 
         // MARK: Streaming ingestion
 
-        mutating func ingestConfigurations(_ slice: Data) throws(RuleProxyError) {
+        mutating func ingestConfigurations(_ slice: Data) throws(NaiveFlowError) {
             guard let configurations = try? JSONDecoder().decode([String: ProxyConfiguration].self, from: slice) else {
-                throw RuleProxyError.routing(.payloadCorrupted(.malformed))
+                throw NaiveFlowError.routing(.payloadCorrupted(.malformed))
             }
             for (key, configuration) in configurations {
                 guard let configurationId = UUID(uuidString: key) else { continue }
@@ -156,7 +156,7 @@ nonisolated final class DomainRouter: Sendable {
             self.data = data
         }
 
-        mutating func run(state: inout RoutingState) throws(RuleProxyError) {
+        mutating func run(state: inout RoutingState) throws(NaiveFlowError) {
             version = try readMagic()
             if version == .v1 {
                 legacyDefaultTargetId = AWCore.getSelectedChainId() ?? AWCore.getSelectedConfigurationId()
@@ -181,21 +181,21 @@ nonisolated final class DomainRouter: Sendable {
             }
         }
 
-        private mutating func readNames(expectedCount: UInt32) throws(RuleProxyError) -> [String] {
+        private mutating func readNames(expectedCount: UInt32) throws(NaiveFlowError) -> [String] {
             let nameCount = try u32()
-            guard nameCount == expectedCount else { throw RuleProxyError.routing(.payloadCorrupted(.malformed)) }
+            guard nameCount == expectedCount else { throw NaiveFlowError.routing(.payloadCorrupted(.malformed)) }
             var names: [String] = []
             names.reserveCapacity(Int(nameCount))
             for _ in 0..<nameCount {
                 let length = Int(try u16())
-                guard cursor + length <= count else { throw RuleProxyError.routing(.payloadCorrupted(.truncated)) }
+                guard cursor + length <= count else { throw NaiveFlowError.routing(.payloadCorrupted(.truncated)) }
                 names.append(String(decoding: bytes[cursor..<cursor + length], as: UTF8.self))
                 cursor += length
             }
             return names
         }
 
-        private mutating func readEntry(state: inout RoutingState, entryIndex: UInt16) throws(RuleProxyError) {
+        private mutating func readEntry(state: inout RoutingState, entryIndex: UInt16) throws(NaiveFlowError) {
             let tier = try readTier()
             let action = try readAction(configurations: state.configurationMap)
             if case .proxy(let id) = action, state.configurationMap[id] == nil {
@@ -213,7 +213,7 @@ nonisolated final class DomainRouter: Sendable {
                 try advance(length)
                 // Type 1 was the removed address-family rule. Reject old
                 // payloads containing it rather than silently dropping policy.
-                guard typeByte != 1 else { throw RuleProxyError.routing(.payloadCorrupted(.malformed)) }
+                guard typeByte != 1 else { throw NaiveFlowError.routing(.payloadCorrupted(.malformed)) }
                 if let type = RoutingRuleType(rawValue: Int(typeByte)) {
                     if type == .ipCIDR, !reservedV4 {
                         state.reserveCIDRv4(tierIndex: Int(tier.rawValue), additionalPrefixes: reserveHint)
@@ -226,37 +226,37 @@ nonisolated final class DomainRouter: Sendable {
             }
         }
 
-        private mutating func readTier() throws(RuleProxyError) -> RoutingBinaryFormat.Tier {
+        private mutating func readTier() throws(NaiveFlowError) -> RoutingBinaryFormat.Tier {
             let raw = try u8()
             let tier: RoutingBinaryFormat.Tier? = switch version {
             case .v1: RoutingBinaryFormat.LegacyTier(rawValue: raw)?.current
             case .v2: RoutingBinaryFormat.Tier(rawValue: raw)
             }
-            guard let tier else { throw RuleProxyError.routing(.payloadCorrupted(.malformed)) }
+            guard let tier else { throw NaiveFlowError.routing(.payloadCorrupted(.malformed)) }
             return tier
         }
 
-        private mutating func readAction(configurations: [UUID: ProxyConfiguration]) throws(RuleProxyError) -> RouteTarget {
+        private mutating func readAction(configurations: [UUID: ProxyConfiguration]) throws(NaiveFlowError) -> RouteTarget {
             switch version {
             case .v1: return try readLegacyAction(configurations: configurations)
             case .v2: return try readCurrentAction()
             }
         }
 
-        private mutating func readCurrentAction() throws(RuleProxyError) -> RouteTarget {
+        private mutating func readCurrentAction() throws(NaiveFlowError) -> RouteTarget {
             switch RoutingBinaryFormat.Action(rawValue: try u8()) {
             case .fallback: return .default
             case .defaultProxy: return .defaultProxy
             case .direct: return .direct
             case .reject: return .reject
             case .proxy: return .proxy(try readUUID())
-            case nil: throw RuleProxyError.routing(.payloadCorrupted(.malformed))
+            case nil: throw NaiveFlowError.routing(.payloadCorrupted(.malformed))
             }
         }
         
-        private mutating func readLegacyAction(configurations: [UUID: ProxyConfiguration]) throws(RuleProxyError) -> RouteTarget {
+        private mutating func readLegacyAction(configurations: [UUID: ProxyConfiguration]) throws(NaiveFlowError) -> RouteTarget {
             guard let action = RoutingBinaryFormat.LegacyAction(rawValue: try u8()) else {
-                throw RuleProxyError.routing(.payloadCorrupted(.malformed))
+                throw NaiveFlowError.routing(.payloadCorrupted(.malformed))
             }
             switch action {
             case .direct: return .direct
@@ -270,9 +270,9 @@ nonisolated final class DomainRouter: Sendable {
 
         // MARK: Primitives
 
-        private mutating func readMagic() throws(RuleProxyError) -> RoutingBinaryFormat.Version {
+        private mutating func readMagic() throws(NaiveFlowError) -> RoutingBinaryFormat.Version {
             let magic = RoutingBinaryFormat.magic
-            guard cursor + magic.count <= count else { throw RuleProxyError.routing(.payloadCorrupted(.truncated)) }
+            guard cursor + magic.count <= count else { throw NaiveFlowError.routing(.payloadCorrupted(.truncated)) }
             let head = bytes[cursor..<cursor + magic.count]
             let version: RoutingBinaryFormat.Version
             if head.elementsEqual(magic) {
@@ -280,37 +280,37 @@ nonisolated final class DomainRouter: Sendable {
             } else if head.elementsEqual(RoutingBinaryFormat.legacyMagic) {
                 version = .v1
             } else {
-                throw RuleProxyError.routing(.payloadCorrupted(.badMagic))
+                throw NaiveFlowError.routing(.payloadCorrupted(.badMagic))
             }
             cursor += magic.count
             return version
         }
 
-        private mutating func u8() throws(RuleProxyError) -> UInt8 {
-            guard cursor < count else { throw RuleProxyError.routing(.payloadCorrupted(.truncated)) }
+        private mutating func u8() throws(NaiveFlowError) -> UInt8 {
+            guard cursor < count else { throw NaiveFlowError.routing(.payloadCorrupted(.truncated)) }
             defer { cursor += 1 }
             return bytes[cursor]
         }
 
-        private mutating func u16() throws(RuleProxyError) -> UInt16 {
-            guard cursor + 2 <= count else { throw RuleProxyError.routing(.payloadCorrupted(.truncated)) }
+        private mutating func u16() throws(NaiveFlowError) -> UInt16 {
+            guard cursor + 2 <= count else { throw NaiveFlowError.routing(.payloadCorrupted(.truncated)) }
             defer { cursor += 2 }
             return UInt16(bytes[cursor]) | (UInt16(bytes[cursor + 1]) << 8)
         }
 
-        private mutating func u32() throws(RuleProxyError) -> UInt32 {
-            guard cursor + 4 <= count else { throw RuleProxyError.routing(.payloadCorrupted(.truncated)) }
+        private mutating func u32() throws(NaiveFlowError) -> UInt32 {
+            guard cursor + 4 <= count else { throw NaiveFlowError.routing(.payloadCorrupted(.truncated)) }
             defer { cursor += 4 }
             return UInt32(bytes[cursor]) | (UInt32(bytes[cursor + 1]) << 8) | (UInt32(bytes[cursor + 2]) << 16) | (UInt32(bytes[cursor + 3]) << 24)
         }
 
-        private mutating func advance(_ n: Int) throws(RuleProxyError) {
-            guard n >= 0, cursor + n <= count else { throw RuleProxyError.routing(.payloadCorrupted(.truncated)) }
+        private mutating func advance(_ n: Int) throws(NaiveFlowError) {
+            guard n >= 0, cursor + n <= count else { throw NaiveFlowError.routing(.payloadCorrupted(.truncated)) }
             cursor += n
         }
 
-        private mutating func readUUID() throws(RuleProxyError) -> UUID {
-            guard cursor + 16 <= count else { throw RuleProxyError.routing(.payloadCorrupted(.truncated)) }
+        private mutating func readUUID() throws(NaiveFlowError) -> UUID {
+            guard cursor + 16 <= count else { throw NaiveFlowError.routing(.payloadCorrupted(.truncated)) }
             let uuid = UUID(uuid: (
                 bytes[cursor], bytes[cursor + 1], bytes[cursor + 2], bytes[cursor + 3],
                 bytes[cursor + 4], bytes[cursor + 5], bytes[cursor + 6], bytes[cursor + 7],

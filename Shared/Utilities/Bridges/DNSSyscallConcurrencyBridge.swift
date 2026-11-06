@@ -1,6 +1,6 @@
 //
 //  DNSSyscallConcurrencyBridge.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/17/26.
 //
@@ -14,7 +14,7 @@ nonisolated final class DNSSyscallConcurrencyBridge: Sendable {
     private static let maxConcurrentCalls = 16
 
     private let queue: DispatchQueue = DispatchQueue(
-        label: "com.argsment.RuleProxy.DNSSyscallConcurrencyBridge",
+        label: "com.argsment.NaiveFlow.DNSSyscallConcurrencyBridge",
         qos: .userInitiated,
         attributes: .concurrent
     )

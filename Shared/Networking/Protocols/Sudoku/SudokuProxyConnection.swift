@@ -1,6 +1,6 @@
 //
 //  SudokuProxyConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by saba-futai on 4/23/26.
 //
@@ -21,7 +21,7 @@ nonisolated final class SudokuTCPProxyConnection:
     var isConnected: Bool { phase.withLock { $0 == .open } }
 
     func sendRaw(_ data: Data) async throws {
-        if phase.withLock({ $0 == .closed }) { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil)) }
+        if phase.withLock({ $0 == .closed }) { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil)) }
         try await stream.send(data)
     }
 
@@ -29,7 +29,7 @@ nonisolated final class SudokuTCPProxyConnection:
         if phase.withLock({ $0 == .closed }) { return nil }
         do {
             return try await stream.receive(max: sudokuTCPReceiveChunkSize).zeroBasedData()
-        } catch RuleProxyError.proxy(.sudoku, .connectionClosed) {
+        } catch NaiveFlowError.proxy(.sudoku, .connectionClosed) {
             return nil
         }
     }
@@ -86,7 +86,7 @@ nonisolated final class SudokuMuxTCPProxyConnection:
     var isConnected: Bool { !state.withLock { $0.phase == .closed } && !client.isClosed }
 
     func sendRaw(_ data: Data) async throws {
-        if state.withLock({ $0.phase == .closed }) { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil)) }
+        if state.withLock({ $0.phase == .closed }) { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil)) }
         do {
             try await stream.send(data)
         } catch {
@@ -141,10 +141,10 @@ nonisolated final class SudokuUDPProxyConnection: ProxyConnection, Sendable {
     var isConnected: Bool { phase.withLock { $0 == .open } }
 
     func sendRaw(_ data: Data) async throws {
-        if phase.withLock({ $0 == .closed }) { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil)) }
+        if phase.withLock({ $0 == .closed }) { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil)) }
         let address = try SudokuAddress.encode(host: destinationHost, port: destinationPort)
-        guard address.count <= UInt16.max else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "UoT address too large")) }
-        guard data.count <= UInt16.max else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "UoT payload too large")) }
+        guard address.count <= UInt16.max else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "UoT address too large")) }
+        guard data.count <= UInt16.max else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "UoT payload too large")) }
         var frame = Data([UInt8(address.count >> 8), UInt8(address.count & 0xff), UInt8(data.count >> 8), UInt8(data.count & 0xff)])
         frame.append(address)
         frame.append(data)
@@ -157,11 +157,11 @@ nonisolated final class SudokuUDPProxyConnection: ProxyConnection, Sendable {
             let header = try await stream.readExact(4)
             let addrLen = Int(UInt16(header.uint8(at: 0)) << 8 | UInt16(header.uint8(at: 1)))
             let payloadLen = Int(UInt16(header.uint8(at: 2)) << 8 | UInt16(header.uint8(at: 3)))
-            guard addrLen > 0 && addrLen <= 64 * 1024 else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "bad UoT address length")) }
-            guard payloadLen <= 64 * 1024 else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "bad UoT payload length")) }
+            guard addrLen > 0 && addrLen <= 64 * 1024 else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "bad UoT address length")) }
+            guard payloadLen <= 64 * 1024 else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "bad UoT payload length")) }
             _ = try await stream.readExact(addrLen)
             return try await stream.readExact(payloadLen).zeroBasedData()
-        } catch RuleProxyError.proxy(.sudoku, .connectionClosed) {
+        } catch NaiveFlowError.proxy(.sudoku, .connectionClosed) {
             return nil
         }
     }

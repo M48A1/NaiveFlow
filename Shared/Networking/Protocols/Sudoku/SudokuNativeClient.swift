@@ -1,6 +1,6 @@
 //
 //  SudokuNativeClient.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by saba-futai on 10/18/26.
 //
@@ -139,7 +139,7 @@ nonisolated final class SudokuNativeClient {
         let recordData = try decodeEarlyObfs(response)
         let plain = try decodeEarlyRecord(recordData, base: SudokuNativeCrypto.pskBases(config.key).s2c)
         let message = try parseKIP(plain)
-        guard message.type == 0x02 else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "bad early KIP server hello")) }
+        guard message.type == 0x02 else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "bad early KIP server hello")) }
         return try finishKIP(state: state, message: message)
     }
 
@@ -186,7 +186,7 @@ nonisolated final class SudokuNativeClient {
         while offset + 2 <= data.count {
             let bodyLen = Int(UInt16(data.uint8(at: offset)) << 8 | UInt16(data.uint8(at: offset + 1)))
             guard bodyLen >= 12 && offset + 2 + bodyLen <= data.count else {
-                if out.isEmpty { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "bad early record length")) }
+                if out.isEmpty { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "bad early record length")) }
                 break
             }
             let bodyOffset = offset + 2
@@ -201,7 +201,7 @@ nonisolated final class SudokuNativeClient {
                 if out.count >= 6 + kipLen { break }
             }
         }
-        guard !out.isEmpty else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "short early record")) }
+        guard !out.isEmpty else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "short early record")) }
         return out
     }
 
@@ -270,8 +270,8 @@ nonisolated final class SudokuNativeClient {
     }
 
     private func finishKIP(state: SudokuKIPClientState, message msg: (type: UInt8, payload: Data)) throws -> (c2s: Data, s2c: Data) {
-        guard msg.type == 0x02, msg.payload.count == 52 else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "bad KIP server hello")) }
-        guard msg.payload.prefixData(16) == state.nonce else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "KIP nonce mismatch")) }
+        guard msg.type == 0x02, msg.payload.count == 52 else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "bad KIP server hello")) }
+        guard msg.payload.prefixData(16) == state.nonce else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "KIP nonce mismatch")) }
         let serverPub = msg.payload.rangeData(offset: 16, count: 32)
         let shared = try state.privateKey.sharedSecretFromKeyAgreement(with: Curve25519.KeyAgreement.PublicKey(rawRepresentation: serverPub)).withUnsafeBytes { Data($0) }
         return SudokuNativeCrypto.sessionBases(psk: config.key, shared: shared, nonce: state.nonce)
@@ -291,23 +291,23 @@ nonisolated final class SudokuNativeClient {
         let header: Data
         do {
             header = try await record.readExact(6)
-        } catch RuleProxyError.proxy(.sudoku, .connectionClosed) {
-            throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "truncated KIP header"))
+        } catch NaiveFlowError.proxy(.sudoku, .connectionClosed) {
+            throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "truncated KIP header"))
         }
-        guard header.uint8(at: 0) == 0x6b, header.uint8(at: 1) == 0x69, header.uint8(at: 2) == 0x70 else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "bad KIP magic")) }
+        guard header.uint8(at: 0) == 0x6b, header.uint8(at: 1) == 0x69, header.uint8(at: 2) == 0x70 else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "bad KIP magic")) }
         let length = Int(UInt16(header.uint8(at: 4)) << 8 | UInt16(header.uint8(at: 5)))
         do {
             return (header.uint8(at: 3), try await record.readExact(length))
-        } catch RuleProxyError.proxy(.sudoku, .connectionClosed) {
-            throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "truncated KIP payload"))
+        } catch NaiveFlowError.proxy(.sudoku, .connectionClosed) {
+            throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "truncated KIP payload"))
         }
     }
 
     private func parseKIP(_ data: Data) throws -> (type: UInt8, payload: Data) {
-        guard data.count >= 6 else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "short KIP frame")) }
-        guard data.uint8(at: 0) == 0x6b, data.uint8(at: 1) == 0x69, data.uint8(at: 2) == 0x70 else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "bad KIP magic")) }
+        guard data.count >= 6 else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "short KIP frame")) }
+        guard data.uint8(at: 0) == 0x6b, data.uint8(at: 1) == 0x69, data.uint8(at: 2) == 0x70 else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "bad KIP magic")) }
         let length = Int(UInt16(data.uint8(at: 4)) << 8 | UInt16(data.uint8(at: 5)))
-        guard data.count >= 6 + length else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "truncated KIP frame \(data.count)/\(6 + length)")) }
+        guard data.count >= 6 + length else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "truncated KIP frame \(data.count)/\(6 + length)")) }
         return (data.uint8(at: 3), data.rangeData(offset: 6, count: length))
     }
 }

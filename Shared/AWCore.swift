@@ -1,13 +1,13 @@
 //
 //  AWCore.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
 
 import Foundation
 
-nonisolated private let logger = RuleProxyLogger(category: "AWCore")
+nonisolated private let logger = NaiveFlowLogger(category: "AWCore")
 
 nonisolated final class AWCore {
     
@@ -15,7 +15,7 @@ nonisolated final class AWCore {
 
     enum Identifier {
         static let appGroupSuite = "group.\(bundle)"
-        static let bundle = "com.argsment.RuleProxy"
+        static let bundle = "com.argsment.NaiveFlow"
         static let errorDomain = bundle
         static let iCloudContainer = "iCloud.\(bundle)"
     }
@@ -133,6 +133,7 @@ nonisolated final class AWCore {
         static let subscriptionDNSMode = "subscriptionDNSMode"
         static let subscriptionDNSPlainServer = "subscriptionDNSPlainServer"
         static let syntheticAddressExcludedDomainSuffixes = "syntheticAddressExcludedDomainSuffixes"
+        static let dnsExemptServers = "dnsExemptServers"
         static let trustedCertificateSHA256s = "trustedCertificateSHA256s"
         static let trustedSSIDs = "trustedSSIDs"
         static let tunnelExcludeAPNs = "tunnelExcludeAPNs"
@@ -346,6 +347,17 @@ nonisolated final class AWCore {
 
     static func setSyntheticAddressExcludedDomainSuffixes(_ suffixes: [String]) {
         userDefaults.set(suffixes, forKey: UserDefaultsKey.syntheticAddressExcludedDomainSuffixes)
+    }
+
+    /// User-configured IPv4 addresses that the ordinary DNS interception must
+    /// leave alone (on top of the automatically exempted plain upstreams and
+    /// bootstrap seeds).
+    static func getDNSExemptServers() -> [String] {
+        userDefaults.stringArray(forKey: UserDefaultsKey.dnsExemptServers) ?? []
+    }
+
+    static func setDNSExemptServers(_ servers: [String]) {
+        userDefaults.set(servers, forKey: UserDefaultsKey.dnsExemptServers)
     }
     
     static func getBlockUDP() -> Bool {
@@ -692,7 +704,7 @@ nonisolated final class AWCore {
             // Drop the obsolete UserDefaults copy now that routing lives in a file.
             userDefaults.removeObject(forKey: "routingData")
         } catch {
-            logger.report(RuleProxyError.store(.saveFailed(.routingPayload, underlying: error)))
+            logger.report(NaiveFlowError.store(.saveFailed(.routingPayload, underlying: error)))
         }
     }
 
@@ -709,7 +721,7 @@ nonisolated final class AWCore {
         do {
             try data.write(to: mitmDataURL, options: [.atomic, .noFileProtection])
         } catch {
-            logger.report(RuleProxyError.store(.saveFailed(.mitmPayload, underlying: error)))
+            logger.report(NaiveFlowError.store(.saveFailed(.mitmPayload, underlying: error)))
         }
     }
     

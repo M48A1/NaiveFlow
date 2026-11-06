@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "RuleProxyQUIC",
+    name: "NaiveFlowQUIC",
     platforms: [
         .iOS(.v18),
         .macOS(.v15),
@@ -11,13 +11,13 @@ let package = Package(
     ],
     products: [
         .library(
-            name: "RuleProxyQUIC",
-            targets: ["RuleProxyQUIC"]
+            name: "NaiveFlowQUIC",
+            targets: ["NaiveFlowQUIC"]
         )
     ],
     targets: [
         .target(
-            name: "RuleProxyQUIC"
+            name: "NaiveFlowQUIC"
         ),
     ]
 )

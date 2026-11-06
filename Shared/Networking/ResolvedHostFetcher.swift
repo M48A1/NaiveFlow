@@ -1,6 +1,6 @@
 //
 //  ResolvedHostFetcher.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/24/26.
 //
@@ -22,17 +22,17 @@ nonisolated enum ResolvedHostFetcher {
 
         while true {
             guard let url = request.url, let host = url.host, !host.isEmpty else {
-                throw RuleProxyError.subscription(.invalidURL)
+                throw NaiveFlowError.subscription(.invalidURL)
             }
             guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else {
-                throw RuleProxyError.subscription(.invalidURL)
+                throw NaiveFlowError.subscription(.invalidURL)
             }
             guard let address = try await resolveAddress(host) else {
-                throw RuleProxyError.dns(.noAddresses(host: host))
+                throw NaiveFlowError.dns(.noAddresses(host: host))
             }
 
             guard let port = UInt16(exactly: url.port ?? (scheme == "https" ? 443 : 80)) else {
-                throw RuleProxyError.subscription(.invalidURL)
+                throw NaiveFlowError.subscription(.invalidURL)
             }
             let result = try await perform(
                 request,
@@ -51,13 +51,13 @@ nonisolated enum ResolvedHostFetcher {
                     httpVersion: "HTTP/1.1",
                     headerFields: result.headers
                 ) else {
-                    throw RuleProxyError.dns(.malformedResponse)
+                    throw NaiveFlowError.dns(.malformedResponse)
                 }
                 return (result.body, response)
             }
 
             guard let next = URL(string: location, relativeTo: url)?.absoluteURL else {
-                throw RuleProxyError.subscription(.invalidURL)
+                throw NaiveFlowError.subscription(.invalidURL)
             }
             redirects += 1
             request.url = next
@@ -102,7 +102,7 @@ nonisolated enum ResolvedHostFetcher {
         return try await withDialDeadline(deadline) {
             transport.cancel()
         } error: {
-            RuleProxyError.transport(.timedOut(.receive, endpoint: "\(host) (\(address))", detail: "HTTP exchange"))
+            NaiveFlowError.transport(.timedOut(.receive, endpoint: "\(host) (\(address))", detail: "HTTP exchange"))
         } operation: {
             try await transport.send(head)
             return try await readResponse(from: transport)
@@ -172,7 +172,7 @@ nonisolated enum ResolvedHostFetcher {
             case .bytes(let data):
                 buffer.append(data)
                 guard buffer.count <= maxResponseBytes else {
-                    throw RuleProxyError.subscription(.fetchFailed(underlying: RuleProxyError.dns(.malformedResponse)))
+                    throw NaiveFlowError.subscription(.fetchFailed(underlying: NaiveFlowError.dns(.malformedResponse)))
                 }
             case .end:
                 guard let head, let exchange = try body(
@@ -182,7 +182,7 @@ nonisolated enum ResolvedHostFetcher {
                     chunked: &chunked,
                     atEOF: true
                 ) else {
-                    throw RuleProxyError.transport(.terminated)
+                    throw NaiveFlowError.transport(.terminated)
                 }
                 return exchange
             }
@@ -192,11 +192,11 @@ nonisolated enum ResolvedHostFetcher {
     private static func parseHead(_ data: Data) throws -> Head {
         let headText = String(decoding: data, as: UTF8.self)
         var lines = headText.components(separatedBy: "\r\n")
-        guard !lines.isEmpty else { throw RuleProxyError.dns(.malformedResponse) }
+        guard !lines.isEmpty else { throw NaiveFlowError.dns(.malformedResponse) }
 
         let statusLine = lines.removeFirst().split(separator: " ", maxSplits: 2, omittingEmptySubsequences: false)
         guard statusLine.count >= 2, let status = Int(statusLine[1]) else {
-            throw RuleProxyError.dns(.malformedResponse)
+            throw NaiveFlowError.dns(.malformedResponse)
         }
 
         var headers: [String: String] = [:]
@@ -241,11 +241,11 @@ nonisolated enum ResolvedHostFetcher {
             try chunked.consume(buffer, from: &cursor)
             if chunked.finished { return exchange(chunked.body) }
             guard atEOF else { return nil }
-            throw RuleProxyError.dns(.malformedResponse)
+            throw NaiveFlowError.dns(.malformedResponse)
 
         case .length(let length):
             guard buffer.distance(from: cursor, to: buffer.endIndex) >= length else {
-                if atEOF { throw RuleProxyError.transport(.terminated) }
+                if atEOF { throw NaiveFlowError.transport(.terminated) }
                 return nil
             }
             return exchange(Data(buffer[cursor..<buffer.index(cursor, offsetBy: length)]))
@@ -282,7 +282,7 @@ nonisolated enum ResolvedHostFetcher {
                 let sizeField = sizeText.split(separator: ";", maxSplits: 1).first.map(String.init) ?? sizeText
                 guard let size = Int(sizeField.trimmingCharacters(in: .whitespaces), radix: 16),
                       size >= 0, size <= ResolvedHostFetcher.maxResponseBytes else {
-                    throw RuleProxyError.dns(.malformedResponse)
+                    throw NaiveFlowError.dns(.malformedResponse)
                 }
 
                 cursor = lineEnd.upperBound

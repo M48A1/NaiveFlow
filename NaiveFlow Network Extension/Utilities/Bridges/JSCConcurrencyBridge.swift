@@ -1,6 +1,6 @@
 //
 //  JSCConcurrencyBridge.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/16/26.
 //
@@ -18,7 +18,7 @@ nonisolated final class JSCConcurrencyBridge: @unchecked Sendable {
     let executor: BridgeExecutor
 
     private init() {
-        self.executor = BridgeExecutor(label: "com.argsment.RuleProxy.JSCConcurrencyBridge")
+        self.executor = BridgeExecutor(label: "com.argsment.NaiveFlow.JSCConcurrencyBridge")
     }
     
     private var queue: DispatchQueue { executor.queue }

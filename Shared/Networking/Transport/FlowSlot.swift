@@ -1,13 +1,13 @@
 //
 //  FlowSlot.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/14/26.
 //
 
 import Foundation
 
-nonisolated private let logger = RuleProxyLogger(category: "FlowSlot")
+nonisolated private let logger = NaiveFlowLogger(category: "FlowSlot")
 
 nonisolated final class FlowSlot: Sendable {
 

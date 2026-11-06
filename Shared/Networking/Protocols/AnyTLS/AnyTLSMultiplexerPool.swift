@@ -1,6 +1,6 @@
 //
 //  AnyTLSMultiplexerPool.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/16/26.
 //
@@ -61,7 +61,7 @@ nonisolated final class AnyTLSMultiplexerPool: TransportPool {
     func acquireStream() async throws -> AnyTLSStream {
         let reused: AnyTLSMultiplexer? = try pool.state.withLock { state throws -> AnyTLSMultiplexer? in
             if state.phase == .closed {
-                throw RuleProxyError.transport(.terminated)
+                throw NaiveFlowError.transport(.terminated)
             }
             if let reused = state.multiplexers[Self.bucket]?.first(where: { $0.tryReserveStream() }) {
                 state.lastActivity[ObjectIdentifier(reused)] = MonotonicClock.now
@@ -98,7 +98,7 @@ nonisolated final class AnyTLSMultiplexerPool: TransportPool {
         if adopted?.pooled == true { pool.noteMultiplexersChanged() }
         guard let adopted else {
             connection.cancel()
-            throw RuleProxyError.transport(.terminated)
+            throw NaiveFlowError.transport(.terminated)
         }
         await adopted.multiplexer.start()
         return try await dispatchOpenStream(on: adopted.multiplexer, pooled: adopted.pooled)
@@ -123,7 +123,7 @@ nonisolated final class AnyTLSMultiplexerPool: TransportPool {
         }
         guard let stream = await multiplexer.openStream(onEnd: onEnd) else {
             if !pooled { multiplexer.close(error: nil) }
-            throw RuleProxyError.proxy(.anyTLS, .connectionClosed(detail: "Failed to open AnyTLS stream"))
+            throw NaiveFlowError.proxy(.anyTLS, .connectionClosed(detail: "Failed to open AnyTLS stream"))
         }
         return stream
     }

@@ -1,13 +1,13 @@
 //
 //  ConfigurationTextTests.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 11/4/26.
 //
 
 import Foundation
 import Testing
-@testable import RuleProxy
+@testable import NaiveFlow
 
 struct ConfigurationTextTests {
 

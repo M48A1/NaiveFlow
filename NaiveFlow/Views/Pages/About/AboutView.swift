@@ -1,6 +1,6 @@
 //
 //  AboutView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 8/21/26.
 //

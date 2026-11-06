@@ -1,6 +1,6 @@
 //
 //  ProxyClient+VLESS.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/13/26.
 //
@@ -22,7 +22,7 @@ nonisolated extension ProxyClient {
     
     func connectVLESSMultiplexerCarrier() async throws -> ProxyConnection {
         guard configuration.outboundProtocol == .vless else {
-            throw RuleProxyError.proxy(configuration.outboundProtocol.wire, .protocolViolation(
+            throw NaiveFlowError.proxy(configuration.outboundProtocol.wire, .protocolViolation(
                 detail: "Mux is not supported with \(configuration.outboundProtocol.name)"
             ))
         }
@@ -49,13 +49,13 @@ nonisolated extension ProxyClient {
         do {
             encryptionConfig = try VLESSEncryptionConfig.parse(vlessEncryption)
         } catch {
-            throw RuleProxyError.proxy(.vless, .protocolViolation(
+            throw NaiveFlowError.proxy(.vless, .protocolViolation(
                 detail: "Invalid VLESS encryption: \(error.localizedDescription)"
             ))
         }
         if let encryptionConfig {
             guard #available(iOS 26.0, macOS 26.0, tvOS 26.0, *) else {
-                throw RuleProxyError.proxy(.vless, .protocolViolation(
+                throw NaiveFlowError.proxy(.vless, .protocolViolation(
                     detail: "VLESS encryption requires iOS 26 / macOS 26 / tvOS 26 or later"
                 ))
             }
@@ -87,7 +87,7 @@ nonisolated extension ProxyClient {
         let vlessUUID = configuration.vless?.uuid ?? configuration.id
         let command = VLESSCommand(request.network, isMultiplexerCarrier: request.isMultiplexerCarrier)
         guard command == .mux || request.host.utf8.count <= 255 else {
-            throw RuleProxyError.proxy(.vless, .protocolViolation(detail: "destination host exceeds 255 bytes"))
+            throw NaiveFlowError.proxy(.vless, .protocolViolation(detail: "destination host exceeds 255 bytes"))
         }
         let isVision = supportsVision && isVisionFlow && command != .udp
 
@@ -105,7 +105,7 @@ nonisolated extension ProxyClient {
         do {
             try await vlessConnection.sendHandshake(requestHeader: requestHeader, initialData: handshakeInitialData)
         } catch {
-            throw RuleProxyError.capture(error, context: "VLESS handshake")
+            throw NaiveFlowError.capture(error, context: "VLESS handshake")
         }
 
         let proxyConnection: ProxyConnection = (command == .udp)
@@ -125,7 +125,7 @@ nonisolated extension ProxyClient {
                 }
                 return vision
             } catch {
-                throw RuleProxyError.capture(error, context: "VLESS Vision intro")
+                throw NaiveFlowError.capture(error, context: "VLESS Vision intro")
             }
         } else {
             return proxyConnection
@@ -139,10 +139,10 @@ nonisolated extension ProxyClient {
             return nil
         }
         guard let version = connection.outerTLSVersion else {
-            return RuleProxyError.proxy(.vless, .protocolViolation(detail: "Vision requires outer TLS or REALITY transport"))
+            return NaiveFlowError.proxy(.vless, .protocolViolation(detail: "Vision requires outer TLS or REALITY transport"))
         }
         if version != .tls13 {
-            return RuleProxyError.proxy(.vless, .protocolViolation(detail: "Vision requires outer TLS 1.3, found \(version)"))
+            return NaiveFlowError.proxy(.vless, .protocolViolation(detail: "Vision requires outer TLS 1.3, found \(version)"))
         }
         return nil
     }

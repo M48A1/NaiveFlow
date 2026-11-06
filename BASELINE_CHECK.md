@@ -8,8 +8,8 @@
 - 工程 project.pbxproj 格式合法；此前检查的 9 个 plist/entitlements、2 个 JSON/xcstrings、6 个 XML 配置均可解析。
 - 检查 49 处同步目录、本地包、Info.plist、entitlements、scheme target 引用。
 - 当前 target：主应用、Network Extension、Tests、Widget、TV 共 5 个（11-03 检查时还存在 Watch App，随后按平台范围要求删除）。
-- 本地 RuleProxyIP、RuleProxyQUIC、BLAKE、YAML 目录存在，改名后的包名与源码目录对应。
-- 主应用及扩展共享 `group.com.argsment.RuleProxy`；AWCore 使用对应 bundle、App Group 与 CloudKit 名称。本地声明一致不代表账号已开通能力。
+- 本地 NaiveFlowIP、NaiveFlowQUIC、BLAKE、YAML 目录存在，改名后的包名与源码目录对应。
+- 主应用及扩展共享 `group.com.argsment.NaiveFlow`；AWCore 使用对应 bundle、App Group 与 CloudKit 名称。本地声明一致不代表账号已开通能力。
 - 主应用 scheme 引用了仓库不存在的 StoreKit 配置。已移除该失效引用；未创建虚构的 StoreKit 商品配置。
 
 ## 环境与阻塞
@@ -18,7 +18,7 @@
 
 - 当时 developer directory：`/Library/Developer/CommandLineTools`（现为 `/Applications/Xcode.app/Contents/Developer`，Xcode 27.2 / 27B52）。
 - 当时已安装 Swift 6.4.2；本地网络包 manifest 要求 Swift tools 6.4。
-- 当时 `/Applications` 下未发现 Xcode.app；`xcodebuild -list -project RuleProxy.xcodeproj` 失败，提示需要完整 Xcode，因此当时没有完成工程加载、Swift 编译、SDK 链接或运行验证。
+- 当时 `/Applications` 下未发现 Xcode.app；`xcodebuild -list -project NaiveFlow.xcodeproj` 失败，提示需要完整 Xcode，因此当时没有完成工程加载、Swift 编译、SDK 链接或运行验证。
 - 部署版本仍待真机确认：主应用/扩展可见 iOS 18，测试 iOS 26，TV 为 tvOS 26，项目层还有 iOS 26.6；无签名构建已通过，说明 build settings 可解析，但不擅自降级部署版本。
 - 开发团队仍为 `C7AS5D38Q8`，是否属于当前用户可用账号尚未验证。不自动更换团队，不声称签名通过。
 
@@ -27,16 +27,16 @@
 批量改名改变了以下地址，不能据此认定资源已经存在；未联网验证或替用户创建资源：
 
 - AboutView 中的 Telegram 群组链接已整段移除（见文末清理记录），不再作为待核对资源。
-- MITMRuleEditorView 中 `https://argsment.com/ruleproxy`：只是输入示例，不能作为有效服务承诺。
+- MITMRuleEditorView 中 `https://argsment.com/naiveflow`：只是输入示例，不能作为有效服务承诺。
 - README 中的品牌图片、仓库等链接：发布文档前按实际资源替换。
-- `http://127.0.0.1:…/RuleProxyMITMRoot.mobileconfig` 为本地证书服务路径，与远程资源分开处理。
+- `http://127.0.0.1:…/NaiveFlowMITMRoot.mobileconfig` 为本地证书服务路径，与远程资源分开处理。
 
 不擅自恢复旧品牌地址，也不把未知地址当作已经配置完成的服务。
 
 ## 待补验收
 
 1. 安装完整 Xcode 并启用其 developer directory，确认所需 iOS/tvOS/watchOS SDK。
-2. 加载 RuleProxy.xcodeproj，运行主应用无签名构建及相关 target 构建，记录实际编译问题。
+2. 加载 NaiveFlow.xcodeproj，运行主应用无签名构建及相关 target 构建，记录实际编译问题。
 3. 在用户的开发者账号中核对团队、Bundle ID、App Group、CloudKit、Network Extension 和 provisioning profile。
 4. 真机签名安装，验证共享文件、provider message 与 VPN 启停。
 5. 使用受控测试节点完成导入、连接、实际访问与断开，记录协议、网络和系统版本。
@@ -48,17 +48,17 @@
 
 Xcode 27.2 已安装并启用，许可阻塞已解除。本次删除 Watch 目标与源代码后，检查剩余工程对象无悬空引用，pbxproj 格式合法。现有 target 为主应用、TV、Network Extension、Widget、Tests，尚无 macOS 客户端。
 
-已尝试完整 Xcode 的 `-list` 加载：包依赖 `https://github.com/hiDandelion/RuleProxyRules.git` 拉取失败，提示无法读取 GitHub 用户名。当时尚未进入源码编译，也未完成签名与真机验证；不将仓库访问错误判断为代码编译错误。（该阻塞已在“构建验证”一节通过移除该私有预设包解除。）
+已尝试完整 Xcode 的 `-list` 加载：包依赖 `https://github.com/hiDandelion/NaiveFlowRules.git` 拉取失败，提示无法读取 GitHub 用户名。当时尚未进入源码编译，也未完成签名与真机验证；不将仓库访问错误判断为代码编译错误。（该阻塞已在“构建验证”一节通过移除该私有预设包解除。）
 
 ## 后续清理：移除 Anywhere/Voyager 支付与 Telegram 群组
 
 本次按要求删除从 Anywhere 继承的付费/群组入口，不涉及网络内核与路由逻辑：
 
-- 删除 StoreKit 内购层：`RuleProxy/Stores/VoyagerStore.swift`（商品加载、购买、恢复、交易监听、会员凭证）以及空目录 `RuleProxy/Stores`。
+- 删除 StoreKit 内购层：`NaiveFlow/Stores/VoyagerStore.swift`（商品加载、购买、恢复、交易监听、会员凭证）以及空目录 `NaiveFlow/Stores`。
 - 删除付费墙 UI：`Views/Components/VoyagerNotice.swift`、`Views/Components/JoinVoyagerButton.swift`。
 - 删除依赖会员身份的公开测试页：`Views/Pages/About/AdvancedSettings/JoinBetaView.swift`，并从 `AdvancedSettingsView` 移除 “Public Beta” 入口，保留 “Experimental Features”。
 - 移除 `PersonalizationView` 的 “Voyager Member Card” 开关、`ToolboxView`/`HomeView` 的会员卡片块，以及 `CustomizeAppIconView`、`CustomizeThemeView` 的 `isMember` 门禁（原先是未购买即禁用）。
-- `RuleProxyApp` 不再创建/注入 `VoyagerStore`。
+- `NaiveFlowApp` 不再创建/注入 `VoyagerStore`。
 - `Shared/AWCore.swift` 移除 `voyagerMembership`、`showVoyagerCard` 两个 UserDefaults 键及其读写方法；`AppSettings` 移除 `showVoyagerCard`。
 - `AboutView` 删除 Telegram 群组 `Link` 段，并删除仅为该链接存在的 `TextWithColorfulIconAndCustomImage` 组件；`AcknowledgementsView` 商标列表移除 Telegram 条目。
 - `Shared/Localizable.xcstrings` 删除 22 个随之失效的键（Voyager 会员、解锁、购买/恢复购买、公开测试、Telegram 群组及 Join 等；478 → 456），JSON 校验通过，仅删不改格式。
@@ -71,24 +71,24 @@ Xcode 27.2 已安装并启用，许可阻塞已解除。本次删除 Watch 目�
 
 ### 依赖核对结论
 
-- 检查时工程共 5 个 SwiftPM 依赖，其中 4 个为仓库内本地包（`RuleProxyIP`、`RuleProxyQUIC`、`BLAKE`、`YAML`），
+- 检查时工程共 5 个 SwiftPM 依赖，其中 4 个为仓库内本地包（`NaiveFlowIP`、`NaiveFlowQUIC`、`BLAKE`、`YAML`），
   manifest 内无远程依赖；全部自包含，**无需额外下载**。
-- 第 5 个 `RuleProxyRules`（上游 `AnywhereRules`）为私有仓库：匿名访问 GitHub 返回 404，
+- 第 5 个 `NaiveFlowRules`（上游 `AnywhereRules`）为私有仓库：匿名访问 GitHub 返回 404，
   仓库搜索命中 0；上游公开仓库 `NodePassProject/Anywhere` 也指向同一私有地址，
   其公开 git 树中既没有该包源码也没有 `Rules.db`。因此该包**无法下载**，只能本地替身或由用户提供访问权限。
 - 明细与恢复步骤见 `Reference/Dependencies.md`。
 
 ### 依赖处理：只保留核心组件
 
-工程现在只链接 4 个仓库内本地包——`RuleProxyIP`、`RuleProxyQUIC`、`BLAKE`、`YAML`，即上游的核心组件，
-manifest 内无远程依赖，**没有任何需要联网拉取的东西**。第 5 个 `RuleProxyRules`（上游 `AnywhereRules`）
+工程现在只链接 4 个仓库内本地包——`NaiveFlowIP`、`NaiveFlowQUIC`、`BLAKE`、`YAML`，即上游的核心组件，
+manifest 内无远程依赖，**没有任何需要联网拉取的东西**。第 5 个 `NaiveFlowRules`（上游 `AnywhereRules`）
 只提供路由预设数据库、属于私有仓库（匿名访问 404，仓库搜索 0 命中，上游公开仓库也指向同一私有地址，
 其公开 git 树中既无源码也无 `Rules.db`），已按“只参考核心组件”**从工程中移除**：
 
-1. `Shared/DataStore/RoutingRulesDatabase.swift`：删除 `import RuleProxyRules`，改为 `resolveDatabaseURL()`
+1. `Shared/DataStore/RoutingRulesDatabase.swift`：删除 `import NaiveFlowRules`，改为 `resolveDatabaseURL()`
    在 `Bundle.main` 查找可选的 `Rules.db`（含 `Rules/` 子目录）；找不到时沿用原有兜底
    （记 `[Routing] Rules.db not found`，预设查询返回空数组/空字典）。路由内核、规则集编辑、连接流程不受影响。
-2. `RuleProxy.xcodeproj/project.pbxproj`：删除该包的 5 类对象及全部引用（远程包引用、两个产品依赖、
+2. `NaiveFlow.xcodeproj/project.pbxproj`：删除该包的 5 类对象及全部引用（远程包引用、两个产品依赖、
    两个 `PBXBuildFile`、主应用与 TV target 的 `packageProductDependencies` 与 `Frameworks` 条目、
    `packageReferences` 条目）。`plutil -lint` 通过，全文已无相关对象。`Package.resolved` 因无远程包被删除。
 3. 明细与恢复步骤见 `Reference/Dependencies.md`。
@@ -103,22 +103,22 @@ manifest 内无远程依赖，**没有任何需要联网拉取的东西**。第 
 
 | Scheme | 目标平台 | 命令要点 | 结果 |
 | --- | --- | --- | --- |
-| RuleProxy | iOS（generic/platform=iOS） | Debug、`CODE_SIGNING_ALLOWED=NO` | **BUILD SUCCEEDED**，0 error（日志 `/tmp/xcbuild5.log`） |
-| RuleProxy TV | tvOS（generic/platform=tvOS） | Debug、`CODE_SIGNING_ALLOWED=NO` | **BUILD SUCCEEDED**，0 error（日志 `/tmp/xcbuildtv3.log`） |
+| NaiveFlow | iOS（generic/platform=iOS） | Debug、`CODE_SIGNING_ALLOWED=NO` | **BUILD SUCCEEDED**，0 error（日志 `/tmp/xcbuild5.log`） |
+| NaiveFlow TV | tvOS（generic/platform=tvOS） | Debug、`CODE_SIGNING_ALLOWED=NO` | **BUILD SUCCEEDED**，0 error（日志 `/tmp/xcbuildtv3.log`） |
 
 ### 2026-11-04 追加：02 文本配置 + 应用内配置页
 
 | 动作 | 命令要点 | 结果 |
 | --- | --- | --- |
-| 构建主应用（含 NE、Widget） | `xcodebuild build -scheme RuleProxy -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO` | **BUILD SUCCEEDED**，0 error（日志 `/tmp/ruleproxy_build.log`）；`ConfigurationView.swift` 与 `ConfigurationDocumentOperations.swift` 均参与编译 |
-| 运行单元测试 | `xcodebuild test -scheme RuleProxy -destination 'platform=iOS Simulator,name=iPhone 17' CODE_SIGNING_ALLOWED=NO` | **TEST SUCCEEDED**，40 个用例全部通过、0 失败（日志 `/tmp/t3.log`），含 `ConfigurationTextTests`、`ConfigurationExporterTests`、`OrderedRouteMatcherTests`、`DeterministicBytesTests` |
+| 构建主应用（含 NE、Widget） | `xcodebuild build -scheme NaiveFlow -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO` | **BUILD SUCCEEDED**，0 error（日志 `/tmp/naiveflow_build.log`）；`ConfigurationView.swift` 与 `ConfigurationDocumentOperations.swift` 均参与编译 |
+| 运行单元测试 | `xcodebuild test -scheme NaiveFlow -destination 'platform=iOS Simulator,name=iPhone 17' CODE_SIGNING_ALLOWED=NO` | **TEST SUCCEEDED**，40 个用例全部通过、0 失败（日志 `/tmp/t3.log`），含 `ConfigurationTextTests`、`ConfigurationExporterTests`、`OrderedRouteMatcherTests`、`DeterministicBytesTests` |
 
 ### 2026-11-04 追加：`[General]` 目录化（settings catalog）
 
 | 动作 | 命令要点 | 结果 |
 | --- | --- | --- |
-| 构建主应用（含 NE、Widget） | `xcodebuild build -scheme RuleProxy -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO` | **BUILD SUCCEEDED**，0 error；`ConfigurationSettings.swift` 参与编译 |
-| 运行单元测试 | `xcodebuild test-without-building -scheme RuleProxy -destination 'platform=iOS Simulator,id=DE25C87A-…' -only-testing:'RuleProxy Tests' CODE_SIGNING_ALLOWED=NO` | **TEST EXECUTE SUCCEEDED**，66 个用例 / 6 个 suite 全部通过、0 失败（日志 `/tmp/tB.log`），新增 `ConfigurationSettingsTests`（19 例） |
+| 构建主应用（含 NE、Widget） | `xcodebuild build -scheme NaiveFlow -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO` | **BUILD SUCCEEDED**，0 error；`ConfigurationSettings.swift` 参与编译 |
+| 运行单元测试 | `xcodebuild test-without-building -scheme NaiveFlow -destination 'platform=iOS Simulator,id=DE25C87A-…' -only-testing:'NaiveFlow Tests' CODE_SIGNING_ALLOWED=NO` | **TEST EXECUTE SUCCEEDED**，66 个用例 / 6 个 suite 全部通过、0 失败（日志 `/tmp/tB.log`），新增 `ConfigurationSettingsTests`（19 例） |
 
 `[General]` 的键集合改由 `ConfigurationSettings.catalog` 声明、`ConfigurationSettingsBindings.all` 绑定；
 解析/校验/编译/安装/导出/重载分级共用这两张表，`[General]` 覆盖 17 → 54 个键。
@@ -146,8 +146,8 @@ manifest 内无远程依赖，**没有任何需要联网拉取的东西**。第 
 
 | 动作 | 命令要点 | 结果 |
 | --- | --- | --- |
-| 构建主应用（含 NE、Widget） | `xcodebuild build -scheme RuleProxy -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO` | **BUILD SUCCEEDED**，0 error（日志 `/tmp/pB.log`、最后一次增量构建 `/tmp/pD.log`）；`Shared/ViewModels/ProfileEditorModel.swift`、`RuleProxy/Views/Pages/Profile/ProfileView.swift` 均参与编译 |
-| 运行单元测试 | `xcodebuild test -scheme RuleProxy -destination 'platform=iOS Simulator,id=DE25C87A-…' -only-testing:'RuleProxy Tests' CODE_SIGNING_ALLOWED=NO` | **TEST SUCCEEDED**，7 个 suite、73 个用例通过、0 失败（日志 `/tmp/tG.log`、最后一次全量 `/tmp/tH.log`），其中新增 `ProfileEditorModelTests` 14 例；`ConfigurationConnectivityTests` 7 例按 `TestEnvironment` 未配置跳过 |
+| 构建主应用（含 NE、Widget） | `xcodebuild build -scheme NaiveFlow -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO` | **BUILD SUCCEEDED**，0 error（日志 `/tmp/pB.log`、最后一次增量构建 `/tmp/pD.log`）；`Shared/ViewModels/ProfileEditorModel.swift`、`NaiveFlow/Views/Pages/Profile/ProfileView.swift` 均参与编译 |
+| 运行单元测试 | `xcodebuild test -scheme NaiveFlow -destination 'platform=iOS Simulator,id=DE25C87A-…' -only-testing:'NaiveFlow Tests' CODE_SIGNING_ALLOWED=NO` | **TEST SUCCEEDED**，7 个 suite、73 个用例通过、0 失败（日志 `/tmp/tG.log`、最后一次全量 `/tmp/tH.log`），其中新增 `ProfileEditorModelTests` 14 例；`ConfigurationConnectivityTests` 7 例按 `TestEnvironment` 未配置跳过 |
 
 `ConfigurationView` 换名为 `ProfileView`，会话逻辑移入 `ProfileEditorModel`（经 `ProfileEditing` 协议与流水线解耦，
 测试用桩件即可覆盖 dirty 追踪、被拒绝的 apply、reload 分级与导入失败），`Views/Pages/Configuration/` 目录随之删除，
@@ -163,5 +163,5 @@ manifest 内无远程依赖，**没有任何需要联网拉取的东西**。第 
 1. 签名、provisioning profile、真机安装与 VPN 启停验证未做（本次全部无签名构建）。
 2. 真实 `AppIcon`、`AccentColor` 与其余品牌资源未提供，当前为占位。
 3. 内置路由预设为空（不链接私有预设包）；需要时把自备 `Rules.db` 加入主应用 target 资源即可自动加载。
-4. 单元测试 target 未执行（`RuleProxy Tests` 未纳入本次构建范围）。
+4. 单元测试 target 未执行（`NaiveFlow Tests` 未纳入本次构建范围）。
 

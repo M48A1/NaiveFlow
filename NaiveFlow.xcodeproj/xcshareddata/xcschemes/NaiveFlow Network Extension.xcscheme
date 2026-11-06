@@ -17,9 +17,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "CB1C10762F23B82F00B74CD8"
-               BuildableName = "RuleProxy Network Extension.appex"
-               BlueprintName = "RuleProxy Network Extension"
-               ReferencedContainer = "container:RuleProxy.xcodeproj">
+               BuildableName = "NaiveFlow Network Extension.appex"
+               BlueprintName = "NaiveFlow Network Extension"
+               ReferencedContainer = "container:NaiveFlow.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -31,9 +31,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "CB1C10642F23B81500B74CD8"
-               BuildableName = "RuleProxy.app"
-               BlueprintName = "RuleProxy"
-               ReferencedContainer = "container:RuleProxy.xcodeproj">
+               BuildableName = "NaiveFlow.app"
+               BlueprintName = "NaiveFlow"
+               ReferencedContainer = "container:NaiveFlow.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -51,9 +51,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "78B6DF992FE7B70D0084897A"
-               BuildableName = "RuleProxy Tests.xctest"
-               BlueprintName = "RuleProxy Tests"
-               ReferencedContainer = "container:RuleProxy.xcodeproj">
+               BuildableName = "NaiveFlow Tests.xctest"
+               BlueprintName = "NaiveFlow Tests"
+               ReferencedContainer = "container:NaiveFlow.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -72,16 +72,16 @@
       launchAutomaticallySubstyle = "2">
       <RemoteRunnable
          runnableDebuggingMode = "0"
-         BundleIdentifier = "com.argsment.RuleProxy"
-         RemotePath = "/var/containers/Bundle/Application/67DE49ED-C4A8-48AB-B1B4-F554C500182A/RuleProxy.app">
+         BundleIdentifier = "com.argsment.NaiveFlow"
+         RemotePath = "/var/containers/Bundle/Application/67DE49ED-C4A8-48AB-B1B4-F554C500182A/NaiveFlow.app">
       </RemoteRunnable>
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "CB1C10642F23B81500B74CD8"
-            BuildableName = "RuleProxy.app"
-            BlueprintName = "RuleProxy"
-            ReferencedContainer = "container:RuleProxy.xcodeproj">
+            BuildableName = "NaiveFlow.app"
+            BlueprintName = "NaiveFlow"
+            ReferencedContainer = "container:NaiveFlow.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
    </LaunchAction>
@@ -95,8 +95,8 @@
       launchAutomaticallySubstyle = "2">
       <RemoteRunnable
          runnableDebuggingMode = "0"
-         BundleIdentifier = "com.argsment.RuleProxy"
-         RemotePath = "/var/containers/Bundle/Application/66710054-06CE-452D-9201-BBF15B693088/RuleProxy.app">
+         BundleIdentifier = "com.argsment.NaiveFlow"
+         RemotePath = "/var/containers/Bundle/Application/66710054-06CE-452D-9201-BBF15B693088/NaiveFlow.app">
       </RemoteRunnable>
    </ProfileAction>
    <AnalyzeAction

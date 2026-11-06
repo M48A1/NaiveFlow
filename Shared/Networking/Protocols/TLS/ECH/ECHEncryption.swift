@@ -1,6 +1,6 @@
 //
 //  ECHEncryption.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/14/26.
 //
@@ -38,20 +38,20 @@ nonisolated final class ECHClientContext {
         self.cipherSuite = cipherSuite
 
         guard config.kemID == ECHKemID.dhkemX25519HKDFSHA256 else {
-            throw RuleProxyError.tls(.ech(.unsupportedKEM))
+            throw NaiveFlowError.tls(.ech(.unsupportedKEM))
         }
         guard let kdf = ECHEncryption.hpkeKDF(cipherSuite.kdfID) else {
-            throw RuleProxyError.tls(.ech(.unsupportedKDF))
+            throw NaiveFlowError.tls(.ech(.unsupportedKDF))
         }
         guard let aead = ECHEncryption.hpkeAEAD(cipherSuite.aeadID) else {
-            throw RuleProxyError.tls(.ech(.unsupportedAEAD))
+            throw NaiveFlowError.tls(.ech(.unsupportedAEAD))
         }
 
         let recipientKey: Curve25519.KeyAgreement.PublicKey
         do {
             recipientKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: config.publicKey)
         } catch {
-            throw RuleProxyError.tls(.ech(.invalidPublicKey))
+            throw NaiveFlowError.tls(.ech(.invalidPublicKey))
         }
 
         let suite = HPKE.Ciphersuite(kem: .Curve25519_HKDF_SHA256, kdf: kdf, aead: aead)
@@ -64,7 +64,7 @@ nonisolated final class ECHClientContext {
         do {
             createdSender = try HPKE.Sender(recipientKey: recipientKey, ciphersuite: suite, info: info)
         } catch {
-            throw RuleProxyError.tls(.ech(.hpkeSetupFailed))
+            throw NaiveFlowError.tls(.ech(.hpkeSetupFailed))
         }
         self.sender = createdSender
         self.encapsulatedKey = createdSender.encapsulatedKey
@@ -72,12 +72,12 @@ nonisolated final class ECHClientContext {
 
     func seal(plaintext: Data, aad: Data) throws -> Data {
         guard sealClaim.claim() else {
-            throw RuleProxyError.tls(.ech(.sealFailed))
+            throw NaiveFlowError.tls(.ech(.sealFailed))
         }
         do {
             return try sender.seal(plaintext, authenticating: aad)
         } catch {
-            throw RuleProxyError.tls(.ech(.sealFailed))
+            throw NaiveFlowError.tls(.ech(.sealFailed))
         }
     }
 }
@@ -108,7 +108,7 @@ nonisolated enum ECHEncryption {
     // MARK: - EncodedClientHelloInner
 
     static func encodeInnerClientHello(_ innerMessage: Data, serverName: String, maxNameLength: Int) throws -> Data {
-        guard innerMessage.count >= 4 else { throw RuleProxyError.tls(.ech(.malformedInnerHello)) }
+        guard innerMessage.count >= 4 else { throw NaiveFlowError.tls(.ech(.malformedInnerHello)) }
         
         var encodedHelloBody = Data(innerMessage.dropFirst(4))
         

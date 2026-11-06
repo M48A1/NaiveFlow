@@ -1,6 +1,6 @@
 //
 //  MainControlView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 9/22/26.
 //
@@ -252,7 +252,7 @@ private struct ConfigurationCapsule: View {
             ProminentCapsule {
                 HStack {
                     HStack {
-                        Image("ruleproxy.fill")
+                        Image("naiveflow.fill")
                             .font(.body.weight(.medium))
                         Text(configuration.name)
                             .font(.body.weight(.medium))

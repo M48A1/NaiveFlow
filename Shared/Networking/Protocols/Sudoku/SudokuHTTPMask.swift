@@ -1,6 +1,6 @@
 //
 //  SudokuHTTPMask.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by saba-futai on 10/18/26.
 //
@@ -72,7 +72,7 @@ private nonisolated func sudokuReadHTTPLine(
         if byte == 0x0a { break }
         if byte != 0x0d { data.append(byte) }
         if data.count > maxBytes {
-            throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "HTTP line too long"))
+            throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "HTTP line too long"))
         }
     }
     return String(data: data, encoding: .utf8) ?? ""
@@ -107,7 +107,7 @@ nonisolated private final class SudokuHTTPBodyReader {
                 let line = try await sudokuReadHTTPLine(from: stream)
                 let lenText = line.split(separator: ";", maxSplits: 1).first.map(String.init) ?? line
                 guard let length = Int(lenText.trimmingCharacters(in: .whitespacesAndNewlines), radix: 16), length >= 0 else {
-                    throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "bad chunk length"))
+                    throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "bad chunk length"))
                 }
                 if length == 0 {
                     while true {
@@ -143,7 +143,7 @@ nonisolated private final class SudokuHTTPBodyReader {
             return data
         }
         do { return try await stream.readSome(max: max) }
-        catch RuleProxyError.proxy(.sudoku, .connectionClosed) {
+        catch NaiveFlowError.proxy(.sudoku, .connectionClosed) {
             done = true
             return Data()
         }
@@ -270,7 +270,7 @@ nonisolated final class SudokuHTTPMaskTransport: Sendable {
             try Task.checkCancellation()
             var toResume: [AsyncStream<Never>.Continuation] = []
             let step: Step<Void> = state.withLock { s in
-                if s.phase == .closed { return .fail(RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil))) }
+                if s.phase == .closed { return .fail(NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil))) }
                 if s.txQueue.count + data.count > queueLimit { return .wait(s.generation) }
                 s.txQueue.append(data)
                 toResume = drainWaitersLocked(&s)
@@ -296,9 +296,9 @@ nonisolated final class SudokuHTTPMaskTransport: Sendable {
                     toResume = drainWaitersLocked(&s)
                     return .done(out)
                 }
-                if s.readEOF { return .fail(RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil))) }
+                if s.readEOF { return .fail(NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil))) }
                 if s.phase == .closed {
-                    return .fail(s.fatal ? RuleProxyError.proxy(.sudoku, .connectionClosed(detail: "HTTPMask closed")) : RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil)))
+                    return .fail(s.fatal ? NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: "HTTPMask closed")) : NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil)))
                 }
                 return .wait(s.generation)
             }
@@ -331,7 +331,7 @@ nonisolated final class SudokuHTTPMaskTransport: Sendable {
             try Task.checkCancellation()
             let step: Step<Void> = state.withLock { s in
                 if s.pullReady && s.pushReady { return .done(()) }
-                if s.phase == .closed { return .fail(RuleProxyError.proxy(.sudoku, .connectionClosed(detail: "HTTPMask closed before tunnel became ready"))) }
+                if s.phase == .closed { return .fail(NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: "HTTPMask closed before tunnel became ready"))) }
                 return .wait(s.generation)
             }
             switch step {
@@ -339,7 +339,7 @@ nonisolated final class SudokuHTTPMaskTransport: Sendable {
             case .fail(let error): throw error
             case .wait(let generation):
                 if MonotonicClock.now >= deadline {
-                    throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: "timeout waiting for HTTPMask tunnel readiness"))
+                    throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: "timeout waiting for HTTPMask tunnel readiness"))
                 }
                 await waitSignal(observed: generation, until: deadline)
             }
@@ -389,9 +389,9 @@ nonisolated final class SudokuHTTPMaskTransport: Sendable {
 
     private func sendSessionControl(path: String, attempts: Int = 3) async throws {
         guard !path.isEmpty else {
-            throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "HTTPMask session control path is empty"))
+            throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "HTTPMask session control path is empty"))
         }
-        var lastError: Error = RuleProxyError.proxy(.sudoku, .connectionClosed(detail: "HTTPMask session control failed"))
+        var lastError: Error = NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: "HTTPMask session control failed"))
         for _ in 0..<max(1, attempts) {
             do {
                 let opened = try await Self.request(
@@ -410,7 +410,7 @@ nonisolated final class SudokuHTTPMaskTransport: Sendable {
                 if [403, 404, 410].contains(opened.status) {
                     return
                 }
-                lastError = RuleProxyError.proxy(.sudoku, .connectionClosed(detail:
+                lastError = NaiveFlowError.proxy(.sudoku, .connectionClosed(detail:
                     "HTTPMask session control status \(opened.status)"
                 ))
             } catch {
@@ -423,7 +423,7 @@ nonisolated final class SudokuHTTPMaskTransport: Sendable {
     private static func readHeaders(stream: BlockingProxyStream) async throws -> SudokuHTTPBodyReader {
         let statusLine = try await sudokuReadHTTPLine(from: stream)
         let parts = statusLine.split(separator: " ")
-        guard parts.count >= 2, let status = Int(parts[1]) else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "bad HTTP response")) }
+        guard parts.count >= 2, let status = Int(parts[1]) else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "bad HTTP response")) }
         var chunked = false
         var contentLength: Int?
         while true {
@@ -447,16 +447,16 @@ nonisolated final class SudokuHTTPMaskTransport: Sendable {
         let sessionPath = applyPathRoot(config: config, "/session")
         let opened = try await request(config: config, factory: factory, mode: mode, method: "GET", requestPath: appendEarlyData(sessionPath, payload: earlyRequestPayload), body: Data())
         defer { opened.finish() }
-        guard opened.status == 200 else { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: "HTTPMask authorize status \(opened.status)")) }
+        guard opened.status == 200 else { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: "HTTPMask authorize status \(opened.status)")) }
         let body = try await opened.readAll(limit: 4096)
         guard let text = String(data: body, encoding: .utf8), let range = text.range(of: "token=") else {
-            throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: "HTTPMask authorize missing token"))
+            throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: "HTTPMask authorize missing token"))
         }
         let tail = text[range.upperBound...]
         let token = String(tail.prefix { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
-        guard !token.isEmpty else { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: "HTTPMask empty token")) }
+        guard !token.isEmpty else { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: "HTTPMask empty token")) }
         guard text.split(whereSeparator: \.isNewline).contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines) == "cap=\(sudokuHTTPMaskUploadSequenceCapability)" }) else {
-            throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: "HTTPMask server does not support upload sequencing"))
+            throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: "HTTPMask server does not support upload sequencing"))
         }
         var earlyResponse = Data()
         for line in text.split(whereSeparator: \.isNewline) {
@@ -535,7 +535,7 @@ nonisolated final class SudokuHTTPMaskTransport: Sendable {
                             if byte == 0x0a {
                                 if !pollLine.isEmpty {
                                     guard let decoded = Data(base64Encoded: pollLine) else {
-                                        throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "invalid HTTPMask poll payload"))
+                                        throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "invalid HTTPMask poll payload"))
                                     }
                                     await enqueueRX(decoded)
                                     pollLine.removeAll()
@@ -543,7 +543,7 @@ nonisolated final class SudokuHTTPMaskTransport: Sendable {
                             } else {
                                 pollLine.append(byte)
                                 if pollLine.count > sudokuHTTPMaskMaxPollLineBytes {
-                                    throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "HTTPMask poll line too long"))
+                                    throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "HTTPMask poll line too long"))
                                 }
                             }
                         }
@@ -556,7 +556,7 @@ nonisolated final class SudokuHTTPMaskTransport: Sendable {
                     return
                 }
             } catch {
-                if case RuleProxyError.proxy(.sudoku, .protocolViolation) = error {
+                if case NaiveFlowError.proxy(.sudoku, .protocolViolation) = error {
                     markClosed(fatal: true)
                     return
                 }

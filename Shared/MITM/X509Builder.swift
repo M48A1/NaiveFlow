@@ -1,6 +1,6 @@
 //
 //  X509Builder.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/3/26.
 //
@@ -23,7 +23,7 @@ nonisolated enum X509Builder {
         notAfter: Date
     ) throws -> Data {
         guard let publicKey = SecKeyCopyPublicKey(privateKey) else {
-            throw RuleProxyError.certificate(.publicKeyExportFailed)
+            throw NaiveFlowError.certificate(.publicKeyExportFailed)
         }
         let spki = try buildECP256SPKI(publicKey: publicKey)
         let subject = encodeName(commonName: subjectCN, organization: organization)
@@ -65,7 +65,7 @@ nonisolated enum X509Builder {
         } else {
             cnHostname = hostname
         }
-        let subject = encodeName(commonName: cnHostname, organization: "RuleProxy")
+        let subject = encodeName(commonName: cnHostname, organization: "NaiveFlow")
         let validity = encodeValidity(notBefore: notBefore, notAfter: notAfter)
 
         let extensions = encodeExtensions([
@@ -100,11 +100,11 @@ nonisolated enum X509Builder {
         notAfter: Date
     ) throws -> Data {
         guard let publicKey = SecKeyCopyPublicKey(signingKey) else {
-            throw RuleProxyError.certificate(.publicKeyExportFailed)
+            throw NaiveFlowError.certificate(.publicKeyExportFailed)
         }
         let spki = try buildECP256SPKI(publicKey: publicKey)
         let caComponents = try parseCAComponents(certificateDER: caCertificateDER)
-        let subject = encodeName(commonName: commonName, organization: "RuleProxy")
+        let subject = encodeName(commonName: commonName, organization: "NaiveFlow")
 
         let extensions = encodeExtensions([
             encodeBasicConstraintsLeaf(),
@@ -279,14 +279,14 @@ nonisolated enum X509Builder {
         var error: Unmanaged<CFError>?
         guard let raw = SecKeyCopyExternalRepresentation(publicKey, &error) as Data? else {
             _ = error?.takeRetainedValue()
-            throw RuleProxyError.certificate(.publicKeyExportFailed)
+            throw NaiveFlowError.certificate(.publicKeyExportFailed)
         }
         return try buildECP256SPKI(publicKeyX963: raw)
     }
 
     private static func buildECP256SPKI(publicKeyX963: Data) throws -> Data {
         guard publicKeyX963.count == 65, publicKeyX963.first == 0x04 else {
-            throw RuleProxyError.certificate(.invalidPublicKey)
+            throw NaiveFlowError.certificate(.invalidPublicKey)
         }
 
         var algorithm = Data()
@@ -532,7 +532,7 @@ nonisolated enum X509Builder {
         let algorithm: SecKeyAlgorithm = .ecdsaSignatureMessageX962SHA256
         guard let signature = SecKeyCreateSignature(privateKey, algorithm, data as CFData, &error) as Data? else {
             let cfError = error?.takeRetainedValue()
-            throw RuleProxyError.certificate(.signingFailed(detail: cfError.flatMap { CFErrorCopyDescription($0) as String? } ?? "unknown"))
+            throw NaiveFlowError.certificate(.signingFailed(detail: cfError.flatMap { CFErrorCopyDescription($0) as String? } ?? "unknown"))
         }
         return signature
     }
@@ -582,7 +582,7 @@ nonisolated enum X509Builder {
                 return try ASN1Parser.contentOf(identifier)
             }
         }
-        throw RuleProxyError.certificate(.asn1ParseFailed(detail: "CA cert missing SubjectKeyIdentifier"))
+        throw NaiveFlowError.certificate(.asn1ParseFailed(detail: "CA cert missing SubjectKeyIdentifier"))
     }
 
     private static func extractSubjectPublicKey(spki: Data) throws -> Data {
@@ -594,7 +594,7 @@ nonisolated enum X509Builder {
         let content = try ASN1Parser.contentOf(bitString)
         // First content byte is "unused bits" — skip it.
         guard !content.isEmpty else {
-            throw RuleProxyError.certificate(.asn1ParseFailed(detail: "Empty BIT STRING"))
+            throw NaiveFlowError.certificate(.asn1ParseFailed(detail: "Empty BIT STRING"))
         }
         return content.dropFirst()
     }
@@ -752,7 +752,7 @@ nonisolated private struct ASN1Parser {
 
     mutating func peekTag() throws -> UInt8 {
         guard offset < data.endIndex else {
-            throw RuleProxyError.certificate(.asn1ParseFailed(detail: "Unexpected end of data"))
+            throw NaiveFlowError.certificate(.asn1ParseFailed(detail: "Unexpected end of data"))
         }
         return data[offset]
     }
@@ -763,18 +763,18 @@ nonisolated private struct ASN1Parser {
 
     mutating func readNextWithHeader(expectedTag: UInt8?) throws -> Data {
         guard offset < data.endIndex else {
-            throw RuleProxyError.certificate(.asn1ParseFailed(detail: "Unexpected end of data"))
+            throw NaiveFlowError.certificate(.asn1ParseFailed(detail: "Unexpected end of data"))
         }
         let tag = data[offset]
         if let expected = expectedTag, tag != expected {
-            throw RuleProxyError.certificate(.asn1ParseFailed(detail: "Tag mismatch: expected \(expected), got \(tag)"))
+            throw NaiveFlowError.certificate(.asn1ParseFailed(detail: "Tag mismatch: expected \(expected), got \(tag)"))
         }
         let start = offset
         let (length, lengthBytes) = try parseLength(at: offset + 1)
         let total = 1 + lengthBytes + length
         let end = start + total
         guard end <= data.endIndex else {
-            throw RuleProxyError.certificate(.asn1ParseFailed(detail: "Length overrun"))
+            throw NaiveFlowError.certificate(.asn1ParseFailed(detail: "Length overrun"))
         }
         offset = end
         return data[start..<end]
@@ -802,7 +802,7 @@ nonisolated private struct ASN1Parser {
 
     private func parseLength(at start: Int) throws -> (length: Int, bytes: Int) {
         guard start < data.endIndex else {
-            throw RuleProxyError.certificate(.asn1ParseFailed(detail: "Length truncated"))
+            throw NaiveFlowError.certificate(.asn1ParseFailed(detail: "Length truncated"))
         }
         let first = data[start]
         if first & 0x80 == 0 {
@@ -810,7 +810,7 @@ nonisolated private struct ASN1Parser {
         }
         let count = Int(first & 0x7F)
         guard count > 0, count <= 4, start + count < data.endIndex else {
-            throw RuleProxyError.certificate(.asn1ParseFailed(detail: "Length encoding invalid"))
+            throw NaiveFlowError.certificate(.asn1ParseFailed(detail: "Length encoding invalid"))
         }
         var length: UInt64 = 0
         for i in 0..<count {
@@ -818,7 +818,7 @@ nonisolated private struct ASN1Parser {
         }
         let remaining = data.endIndex - (start + 1 + count)
         guard length <= UInt64(Int.max), length <= UInt64(remaining) else {
-            throw RuleProxyError.certificate(.asn1ParseFailed(detail:
+            throw NaiveFlowError.certificate(.asn1ParseFailed(detail:
                 "Length \(length) exceeds remaining buffer \(remaining)"
             ))
         }
@@ -827,7 +827,7 @@ nonisolated private struct ASN1Parser {
 
     static func contentOf(_ tlv: Data) throws -> Data {
         guard tlv.count >= 2 else {
-            throw RuleProxyError.certificate(.asn1ParseFailed(detail: "TLV too short"))
+            throw NaiveFlowError.certificate(.asn1ParseFailed(detail: "TLV too short"))
         }
         let lengthByte = tlv[tlv.startIndex + 1]
         let lengthHeaderBytes: Int
@@ -838,7 +838,7 @@ nonisolated private struct ASN1Parser {
         }
         let prefix = 1 + lengthHeaderBytes
         guard tlv.count >= prefix else {
-            throw RuleProxyError.certificate(.asn1ParseFailed(detail: "TLV truncated"))
+            throw NaiveFlowError.certificate(.asn1ParseFailed(detail: "TLV truncated"))
         }
         return tlv.suffix(from: tlv.startIndex + prefix)
     }

@@ -1,6 +1,6 @@
 //
 //  SubscriptionEditorView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 8/23/26.
 //

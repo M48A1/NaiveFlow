@@ -1,6 +1,6 @@
 //
 //  VLESSVisionUDPMultiplexerPool.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
@@ -23,7 +23,7 @@ nonisolated final class VLESSVisionUDPMultiplexerPool: Sendable {
         globalID: Data?
     ) async throws -> VLESSVisionUDPStream {
         guard host.utf8.count <= 255 else {
-            throw RuleProxyError.proxy(.vless, .protocolViolation(detail: "destination host exceeds 255 bytes"))
+            throw NaiveFlowError.proxy(.vless, .protocolViolation(detail: "destination host exceeds 255 bytes"))
         }
         let multiplexer: VLESSVisionUDPMultiplexer = multiplexers.withLock { multiplexers in
             multiplexers.removeAll { $0.isClosed }

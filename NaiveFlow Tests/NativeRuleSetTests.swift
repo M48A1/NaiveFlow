@@ -1,7 +1,7 @@
 import Foundation
 import Synchronization
 import Testing
-@testable import RuleProxy
+@testable import NaiveFlow
 
 nonisolated private final class RuleSetFixture: Sendable {
     let calls = Mutex(0)

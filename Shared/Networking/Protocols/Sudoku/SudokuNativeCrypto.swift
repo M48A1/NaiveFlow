@@ -1,6 +1,6 @@
 //
 //  SudokuNativeCrypto.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by saba-futai on 10/18/26.
 //
@@ -17,7 +17,7 @@ nonisolated enum SudokuNativeCrypto {
             guard let base = raw.baseAddress else { return errSecParam }
             return SecRandomCopyBytes(kSecRandomDefault, count, base)
         }
-        guard status == errSecSuccess else { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: "random generator failed")) }
+        guard status == errSecSuccess else { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: "random generator failed")) }
         return data
     }
 
@@ -115,7 +115,7 @@ nonisolated enum SudokuNativeCrypto {
             }
         } catch {
             let detail = method == .aes128GCM ? "AES-GCM open failed" : "ChaCha20-Poly1305 open failed"
-            throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: detail))
+            throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: detail))
         }
     }
 
@@ -129,7 +129,7 @@ nonisolated enum SudokuNativeCrypto {
                 authenticating: aad
             )
             guard let combined = box.combined else {
-                throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "invalid record nonce length"))
+                throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "invalid record nonce length"))
             }
             return combined.dropFirst(nonce.count)
         case .chacha20Poly1305:
@@ -152,7 +152,7 @@ nonisolated enum SudokuNativeCrypto {
     static func open(method: SudokuAEADMethod, key: SymmetricKey, nonce: Data, ciphertext: Data, aad: Data) throws -> Data {
         switch method {
         case .aes128GCM:
-            guard ciphertext.count >= 16 else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "short AES-GCM frame")) }
+            guard ciphertext.count >= 16 else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "short AES-GCM frame")) }
             let split = ciphertext.count - 16
             do {
                 let box = try AES.GCM.SealedBox(
@@ -162,10 +162,10 @@ nonisolated enum SudokuNativeCrypto {
                 )
                 return try AES.GCM.open(box, using: key, authenticating: aad)
             } catch {
-                throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "AES-GCM open failed"))
+                throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "AES-GCM open failed"))
             }
         case .chacha20Poly1305:
-            guard ciphertext.count >= 16 else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "short ChaCha20-Poly1305 frame")) }
+            guard ciphertext.count >= 16 else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "short ChaCha20-Poly1305 frame")) }
             let split = ciphertext.count - 16
             do {
                 let box = try ChaChaPoly.SealedBox(
@@ -175,7 +175,7 @@ nonisolated enum SudokuNativeCrypto {
                 )
                 return try ChaChaPoly.open(box, using: key, authenticating: aad)
             } catch {
-                throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "ChaCha20-Poly1305 open failed"))
+                throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "ChaCha20-Poly1305 open failed"))
             }
         case .none:
             return ciphertext

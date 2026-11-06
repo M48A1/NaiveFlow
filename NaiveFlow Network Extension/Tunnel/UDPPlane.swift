@@ -1,15 +1,15 @@
 //
 //  UDPPlane.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/17/26.
 //
 
 import Foundation
 import Synchronization
-import RuleProxyIP
+import NaiveFlowIP
 
-nonisolated private let logger = RuleProxyLogger(category: "UDPPlane")
+nonisolated private let logger = NaiveFlowLogger(category: "UDPPlane")
 
 nonisolated enum UDPPlaneCommand {
     case setMultiplexerPool((any UDPMultiplexerPool)?)
@@ -585,23 +585,23 @@ actor UDPPlane {
 
     // MARK: - Shadowsocks UDP sessions
 
-    func shadowsocksSession(for configuration: ProxyConfiguration) -> Result<ShadowsocksUDPSession, RuleProxyError> {
+    func shadowsocksSession(for configuration: ProxyConfiguration) -> Result<ShadowsocksUDPSession, NaiveFlowError> {
         if let existing = ssSessions[configuration.id], existing.isUsable {
             return .success(existing)
         }
         ssSessions.removeValue(forKey: configuration.id)
 
         guard case .shadowsocks(let shadowsocks) = configuration.outbound else {
-            return .failure(RuleProxyError.proxy(.shadowsocks, .protocolViolation(detail: "Shadowsocks password not set")))
+            return .failure(NaiveFlowError.proxy(.shadowsocks, .protocolViolation(detail: "Shadowsocks password not set")))
         }
         guard let cipher = shadowsocks.cipher else {
-            return .failure(RuleProxyError.proxy(.shadowsocks, .cipher(.unsupportedMethod(shadowsocks.method))))
+            return .failure(NaiveFlowError.proxy(.shadowsocks, .cipher(.unsupportedMethod(shadowsocks.method))))
         }
 
         let mode: ShadowsocksUDPSession.Mode
         if cipher.isSS2022 {
             guard let pskList = ShadowsocksKeyDerivation.decodePSKList(password: shadowsocks.password, keySize: cipher.keySize) else {
-                return .failure(RuleProxyError.proxy(.shadowsocks, .cipher(.invalidKey)))
+                return .failure(NaiveFlowError.proxy(.shadowsocks, .cipher(.invalidKey)))
             }
             if cipher == .blake3chacha20poly1305 {
                 mode = .ss2022ChaCha(psk: pskList.last!)

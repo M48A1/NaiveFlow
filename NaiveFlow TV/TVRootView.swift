@@ -1,6 +1,6 @@
 //
 //  TVRootView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 8/27/26.
 //
@@ -12,7 +12,7 @@ struct TVRootView: View {
 
     var body: some View {
         TabView {
-            Tab("Launchpad", image: "ruleproxy.fill") {
+            Tab("Launchpad", image: "naiveflow.fill") {
                 TVPageHost { TVLaunchpadViewController(container: container) }
                     .ignoresSafeArea()
             }

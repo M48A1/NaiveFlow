@@ -1,6 +1,6 @@
 # Text Configuration — Developer Guide
 
-RuleProxy can drive nodes, proxy groups, rules, host overrides and global
+NaiveFlow can drive nodes, proxy groups, rules, host overrides and global
 settings from one Surge-style text profile. This guide documents exactly what
 this build parses, what it applies, and what it only stores, so a profile that
 imports cleanly is never mistaken for a profile that is fully honored.
@@ -467,7 +467,7 @@ that drifts away from the parser fails a test rather than a user's activation.
 
 Two pieces, split on purpose:
 
-- `RuleProxy/Views/Pages/Profile/ProfileView.swift` — a renderer. It draws the
+- `NaiveFlow/Views/Pages/Profile/ProfileView.swift` — a renderer. It draws the
   editor, the counts, the diagnostics, the reload notice, the actions and the
   applied-document list, and nothing else.
 - `Shared/ViewModels/ProfileEditorModel.swift` — the session state machine

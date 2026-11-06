@@ -1,6 +1,6 @@
 //
 //  MITMRewritePolicy.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/4/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 
-nonisolated private let logger = RuleProxyLogger(category: "MITMRewritePolicy")
+nonisolated private let logger = NaiveFlowLogger(category: "MITMRewritePolicy")
 
 nonisolated struct CompiledMITMRule {
     let phase: MITMPhase
@@ -507,11 +507,11 @@ nonisolated enum MITMBinaryReader {
 
         init(bytes: UnsafeBufferPointer<UInt8>) { self.bytes = bytes }
 
-        mutating func readSnapshot() throws(RuleProxyError) -> (enabled: Bool, ruleSets: [MITMRuleSet]) {
+        mutating func readSnapshot() throws(NaiveFlowError) -> (enabled: Bool, ruleSets: [MITMRuleSet]) {
             try expectMagic()
             let payloadVersion = try readUInt8()
             guard payloadVersion >= 1, payloadVersion <= MITMBinaryFormat.version else {
-                throw RuleProxyError.mitm(.rewriteRulesCorrupted(.unsupportedVersion))
+                throw NaiveFlowError.mitm(.rewriteRulesCorrupted(.unsupportedVersion))
             }
             version = payloadVersion
             let enabled = try readUInt8() != 0
@@ -526,7 +526,7 @@ nonisolated enum MITMBinaryReader {
             return (enabled, sets)
         }
 
-        private mutating func readSet() throws(RuleProxyError) -> MITMRuleSet {
+        private mutating func readSet() throws(NaiveFlowError) -> MITMRuleSet {
             let id = try readUUID()
             let name = try readString16()
             let enabled = try readUInt8() != 0
@@ -565,19 +565,19 @@ nonisolated enum MITMBinaryReader {
             return set
         }
 
-        private mutating func readRule() throws(RuleProxyError) -> MITMRule {
+        private mutating func readRule() throws(NaiveFlowError) -> MITMRule {
             let phase: MITMPhase
             switch try readUInt8() {
             case MITMBinaryFormat.Phase.httpRequest.rawValue: phase = .httpRequest
             case MITMBinaryFormat.Phase.httpResponse.rawValue: phase = .httpResponse
-            default: throw RuleProxyError.mitm(.rewriteRulesCorrupted(.malformed))
+            default: throw NaiveFlowError.mitm(.rewriteRulesCorrupted(.malformed))
             }
             let urlPattern = try readString32()
             return MITMRule(phase: phase, urlPattern: urlPattern, operation: try readOperation())
         }
 
-        private mutating func readOperation() throws(RuleProxyError) -> MITMOperation {
-            guard let kind = MITMBinaryFormat.OperationKind(rawValue: try readUInt8()) else { throw RuleProxyError.mitm(.rewriteRulesCorrupted(.malformed)) }
+        private mutating func readOperation() throws(NaiveFlowError) -> MITMOperation {
+            guard let kind = MITMBinaryFormat.OperationKind(rawValue: try readUInt8()) else { throw NaiveFlowError.mitm(.rewriteRulesCorrupted(.malformed)) }
             switch kind {
             case .rewrite:       return .rewrite(try readRewrite())
             case .headerAdd:     return .headerAdd(name: try readString16(), value: try readString32())
@@ -590,8 +590,8 @@ nonisolated enum MITMBinaryReader {
             }
         }
 
-        private mutating func readRewrite() throws(RuleProxyError) -> MITMRewriteAction {
-            guard let kind = MITMBinaryFormat.RewriteKind(rawValue: try readUInt8()) else { throw RuleProxyError.mitm(.rewriteRulesCorrupted(.malformed)) }
+        private mutating func readRewrite() throws(NaiveFlowError) -> MITMRewriteAction {
+            guard let kind = MITMBinaryFormat.RewriteKind(rawValue: try readUInt8()) else { throw NaiveFlowError.mitm(.rewriteRulesCorrupted(.malformed)) }
             switch kind {
             case .transparent:   return .transparent(url: try readString32())
             case .redirect302:   return .redirect302(url: try readString32())
@@ -601,8 +601,8 @@ nonisolated enum MITMBinaryReader {
             }
         }
 
-        private mutating func readJSON() throws(RuleProxyError) -> MITMJSONOperation {
-            guard let action = MITMBinaryFormat.JSONAction(rawValue: try readUInt8()) else { throw RuleProxyError.mitm(.rewriteRulesCorrupted(.malformed)) }
+        private mutating func readJSON() throws(NaiveFlowError) -> MITMJSONOperation {
+            guard let action = MITMBinaryFormat.JSONAction(rawValue: try readUInt8()) else { throw NaiveFlowError.mitm(.rewriteRulesCorrupted(.malformed)) }
             switch action {
             case .add:                  return .add(path: try readString32(), value: try readString32())
             case .replace:              return .replace(path: try readString32(), value: try readString32())
@@ -616,48 +616,48 @@ nonisolated enum MITMBinaryReader {
 
         // MARK: Primitives
 
-        private mutating func expectMagic() throws(RuleProxyError) {
+        private mutating func expectMagic() throws(NaiveFlowError) {
             let magic = MITMBinaryFormat.magic
-            guard readOffset + magic.count <= count else { throw RuleProxyError.mitm(.rewriteRulesCorrupted(.truncated)) }
-            for index in 0..<magic.count where bytes[readOffset + index] != magic[index] { throw RuleProxyError.mitm(.rewriteRulesCorrupted(.badMagic)) }
+            guard readOffset + magic.count <= count else { throw NaiveFlowError.mitm(.rewriteRulesCorrupted(.truncated)) }
+            for index in 0..<magic.count where bytes[readOffset + index] != magic[index] { throw NaiveFlowError.mitm(.rewriteRulesCorrupted(.badMagic)) }
             readOffset += magic.count
         }
 
-        private mutating func readUInt8() throws(RuleProxyError) -> UInt8 {
-            guard readOffset < count else { throw RuleProxyError.mitm(.rewriteRulesCorrupted(.truncated)) }
+        private mutating func readUInt8() throws(NaiveFlowError) -> UInt8 {
+            guard readOffset < count else { throw NaiveFlowError.mitm(.rewriteRulesCorrupted(.truncated)) }
             defer { readOffset += 1 }
             return bytes[readOffset]
         }
 
-        private mutating func readUInt16() throws(RuleProxyError) -> UInt16 {
-            guard readOffset + 2 <= count else { throw RuleProxyError.mitm(.rewriteRulesCorrupted(.truncated)) }
+        private mutating func readUInt16() throws(NaiveFlowError) -> UInt16 {
+            guard readOffset + 2 <= count else { throw NaiveFlowError.mitm(.rewriteRulesCorrupted(.truncated)) }
             defer { readOffset += 2 }
             return UInt16(bytes[readOffset]) | (UInt16(bytes[readOffset + 1]) << 8)
         }
 
-        private mutating func readUInt32() throws(RuleProxyError) -> UInt32 {
-            guard readOffset + 4 <= count else { throw RuleProxyError.mitm(.rewriteRulesCorrupted(.truncated)) }
+        private mutating func readUInt32() throws(NaiveFlowError) -> UInt32 {
+            guard readOffset + 4 <= count else { throw NaiveFlowError.mitm(.rewriteRulesCorrupted(.truncated)) }
             defer { readOffset += 4 }
             return UInt32(bytes[readOffset]) | (UInt32(bytes[readOffset + 1]) << 8)
                  | (UInt32(bytes[readOffset + 2]) << 16) | (UInt32(bytes[readOffset + 3]) << 24)
         }
 
-        private mutating func readString16() throws(RuleProxyError) -> String {
+        private mutating func readString16() throws(NaiveFlowError) -> String {
             let length = Int(try readUInt16())
-            guard readOffset + length <= count else { throw RuleProxyError.mitm(.rewriteRulesCorrupted(.truncated)) }
+            guard readOffset + length <= count else { throw NaiveFlowError.mitm(.rewriteRulesCorrupted(.truncated)) }
             defer { readOffset += length }
             return String(decoding: bytes[readOffset..<readOffset + length], as: UTF8.self)
         }
 
-        private mutating func readString32() throws(RuleProxyError) -> String {
+        private mutating func readString32() throws(NaiveFlowError) -> String {
             let length = Int(try readUInt32())
-            guard readOffset + length <= count else { throw RuleProxyError.mitm(.rewriteRulesCorrupted(.truncated)) }
+            guard readOffset + length <= count else { throw NaiveFlowError.mitm(.rewriteRulesCorrupted(.truncated)) }
             defer { readOffset += length }
             return String(decoding: bytes[readOffset..<readOffset + length], as: UTF8.self)
         }
 
-        private mutating func readUUID() throws(RuleProxyError) -> UUID {
-            guard readOffset + 16 <= count else { throw RuleProxyError.mitm(.rewriteRulesCorrupted(.truncated)) }
+        private mutating func readUUID() throws(NaiveFlowError) -> UUID {
+            guard readOffset + 16 <= count else { throw NaiveFlowError.mitm(.rewriteRulesCorrupted(.truncated)) }
             let uuid = UUID(uuid: (
                 bytes[readOffset], bytes[readOffset + 1], bytes[readOffset + 2], bytes[readOffset + 3],
                 bytes[readOffset + 4], bytes[readOffset + 5], bytes[readOffset + 6], bytes[readOffset + 7],

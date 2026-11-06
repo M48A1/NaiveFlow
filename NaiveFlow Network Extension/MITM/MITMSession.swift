@@ -1,6 +1,6 @@
 //
 //  MITMSession.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/3/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 
-nonisolated private let logger = RuleProxyLogger(category: "MITMSession")
+nonisolated private let logger = NaiveFlowLogger(category: "MITMSession")
 
 nonisolated struct MITMDialResult {
     let connection: ProxyConnection
@@ -61,9 +61,9 @@ actor MITMSession: MITMHTTP1StreamDelegate {
         // MARK: ByteTransport
 
         func send(_ data: Data) async throws {
-            guard !state.withLock({ $0.phase == .closed }) else { throw RuleProxyError.transport(.notConnected) }
+            guard !state.withLock({ $0.phase == .closed }) else { throw NaiveFlowError.transport(.notConnected) }
             guard let host = state.withLock({ $0.phase == .closed ? nil : $0.host }) else {
-                throw RuleProxyError.transport(.terminated)
+                throw NaiveFlowError.transport(.terminated)
             }
             try await host.mitmSessionWriteToClient(data)
         }
@@ -679,7 +679,7 @@ actor MITMSession: MITMHTTP1StreamDelegate {
         let client = TLSClient(configuration: configuration)
         tlsClient = client
         let disarm = armUpstreamHandshakeTimeout { [weak self] in
-            self?.post(.failInnerLegWith502(error: RuleProxyError.mitm(.upstreamHandshakeTimeout)))
+            self?.post(.failInnerLegWith502(error: NaiveFlowError.mitm(.upstreamHandshakeTimeout)))
         }
         do {
             let record = try await client.connect(overTunnel: connection)
@@ -716,7 +716,7 @@ actor MITMSession: MITMHTTP1StreamDelegate {
     }
 
     private static func isCertificateVerificationFailure(_ error: Error) -> Bool {
-        if case RuleProxyError.tls(.certificateValidationFailed) = error { return true }
+        if case NaiveFlowError.tls(.certificateValidationFailed) = error { return true }
         return false
     }
 
@@ -769,12 +769,12 @@ actor MITMSession: MITMHTTP1StreamDelegate {
     }
 
     private func writeWithBackpressure(_ data: Data, to leg: any MITMByteLeg) async throws {
-        guard phase != .torn else { throw RuleProxyError.transport(.notConnected) }
+        guard phase != .torn else { throw NaiveFlowError.transport(.notConnected) }
         try await writer(for: leg).writeWithBackpressure(data)
     }
 
     private func drainWrites(to leg: any MITMByteLeg) async throws {
-        guard phase != .torn else { throw RuleProxyError.transport(.notConnected) }
+        guard phase != .torn else { throw NaiveFlowError.transport(.notConnected) }
         try await writer(for: leg).drain()
     }
 
@@ -1149,7 +1149,7 @@ extension MITMSession: TLSServerDelegate {
         spawn(.inboundPump(inner: record))
     }
 
-    nonisolated func tlsServer(_ server: TLSServer, didFail error: RuleProxyError) {
+    nonisolated func tlsServer(_ server: TLSServer, didFail error: NaiveFlowError) {
         assumeIsolated { $0.cancel(error: error) }
     }
 }
@@ -1337,7 +1337,7 @@ extension MITMSession: MITMBridgeClientLegDelegate, MITMUpstreamLegDelegate {
         let dialHost = resolved?.host ?? dstHost
         let port = resolved?.port ?? dstPort
         guard let host else {
-            failPendingBridgeRequests(error: RuleProxyError.transport(.notConnected))
+            failPendingBridgeRequests(error: NaiveFlowError.transport(.notConnected))
             return
         }
         firstUpstreamDialTarget = UpstreamKey(host: dialHost, port: port)
@@ -1360,7 +1360,7 @@ extension MITMSession: MITMBridgeClientLegDelegate, MITMUpstreamLegDelegate {
     private func failPendingBridgeRequests(error: Error) {
         guard phase != .torn else { return }
         logger.report("[MITM] \(dstHost): Upstream connect failed", error: error)
-        if !RuleProxyError.isTermination(error), let target = firstUpstreamDialTarget {
+        if !NaiveFlowError.isTermination(error), let target = firstUpstreamDialTarget {
             markUpstreamDead(target)
         }
         firstUpstreamDialTarget = nil
@@ -1400,7 +1400,7 @@ extension MITMSession: MITMBridgeClientLegDelegate, MITMUpstreamLegDelegate {
         let client = TLSClient(configuration: configuration)
         sharedUpstreamTLSClient = client
         let disarm = armUpstreamHandshakeTimeout { [weak self] in
-            self?.post(.failPendingBridgeRequests(reason: RuleProxyError.mitm(.upstreamHandshakeTimeout)))
+            self?.post(.failPendingBridgeRequests(reason: NaiveFlowError.mitm(.upstreamHandshakeTimeout)))
         }
         do {
             let record = try await client.connect(overTunnel: connection)
@@ -1635,7 +1635,7 @@ extension MITMSession: MITMBridgeClientLegDelegate, MITMUpstreamLegDelegate {
         } catch {
             guard phase != .torn else { return }
             logger.report("[MITM] \(dstHost): Upstream connect failed", error: error)
-            if !RuleProxyError.isTermination(error) {
+            if !NaiveFlowError.isTermination(error) {
                 markUpstreamDead(UpstreamKey(host: host, port: port))
             }
             bridgeAbortStream(streamID)
@@ -1767,7 +1767,7 @@ extension MITMSession: MITMBridgeClientLegDelegate, MITMUpstreamLegDelegate {
             if Self.isCertificateVerificationFailure(error) {
                 cancel(error: nil)
             } else {
-                if !RuleProxyError.isTermination(error), let target = bridgeStream.dialTarget {
+                if !NaiveFlowError.isTermination(error), let target = bridgeStream.dialTarget {
                     markUpstreamDead(target)
                 }
                 bridgeAbortStream(streamID)
@@ -1778,7 +1778,7 @@ extension MITMSession: MITMBridgeClientLegDelegate, MITMUpstreamLegDelegate {
 
     private func failBridgeStreamOnTimeout(_ streamID: UInt32) {
         guard phase != .torn, let bridgeStream = bridgeStreams[streamID] else { return }
-        logger.report("[MITM] \(dstHost): Upstream connect failed", error: RuleProxyError.mitm(.upstreamHandshakeTimeout))
+        logger.report("[MITM] \(dstHost): Upstream connect failed", error: NaiveFlowError.mitm(.upstreamHandshakeTimeout))
         if let target = bridgeStream.dialTarget {
             markUpstreamDead(target)
         }
@@ -1808,7 +1808,7 @@ extension MITMSession: MITMBridgeClientLegDelegate, MITMUpstreamLegDelegate {
                 step = .stop
             } else if let bridgeStream = bridgeStreams[streamID], let client = bridgeClient {
                 if let error {
-                    if !RuleProxyError.isPeerClose(error) {
+                    if !NaiveFlowError.isPeerClose(error) {
                         logger.report("[MITM] \(dstHost): Upstream read failed", error: error)
                     }
                     await client.acceptResponseAborted(streamID: streamID)

@@ -1,6 +1,6 @@
 //
 //  QUICConnection+Streams.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/18/26.
 //
@@ -8,9 +8,9 @@
 import Foundation
 import Synchronization
 import Network
-import RuleProxyQUIC
+import NaiveFlowQUIC
 
-nonisolated private let logger = RuleProxyLogger(category: "QUICConnection")
+nonisolated private let logger = NaiveFlowLogger(category: "QUICConnection")
 
 extension QUICConnectionCore {
     func openStream(bidirectional: Bool) -> Int64? {
@@ -56,18 +56,18 @@ extension QUICConnectionCore {
             didWarnDatagramOverflow = true
             logger.warning("[QUIC] \(host): Datagram queue full")
         }
-        let overflowError = RuleProxyError.quic(.connectionFailed(detail: "Datagram send queue overflowed"))
+        let overflowError = NaiveFlowError.quic(.connectionFailed(detail: "Datagram send queue overflowed"))
         for d in dropped { d.latch?.settle(overflowError) }
     }
 
     func writeStreamImmediately(_ streamId: Int64, data: Data, fin: Bool) -> Result<Void, Error>? {
         guard phase == .connected, let engine else {
-            return .failure(RuleProxyError.quic(.closed(graceful: false)))
+            return .failure(NaiveFlowError.quic(.closed(graceful: false)))
         }
         if data.isEmpty && !fin { return .success(()) }
         let queue = streamSendQueues[streamId]
         guard streamId >= 0, queue?.finQueued != true, queue?.isFailed != true else {
-            return .failure(RuleProxyError.quic(.closed(graceful: false)))
+            return .failure(NaiveFlowError.quic(.closed(graceful: false)))
         }
         let id = QUICStreamID(rawValue: UInt64(streamId))
         guard !data.isEmpty, queue?.chunks.isEmpty ?? true, engine.sendCapacity(on: id) >= data.count else {
@@ -109,7 +109,7 @@ extension QUICConnectionCore {
             streamSendQueues[streamId] = queue
         }
         guard streamId >= 0, !queue.finQueued, !queue.isFailed else {
-            continuation?.resume(throwing: RuleProxyError.quic(.closed(graceful: false)))
+            continuation?.resume(throwing: NaiveFlowError.quic(.closed(graceful: false)))
             return
         }
         queue.append(
@@ -126,7 +126,7 @@ extension QUICConnectionCore {
         scheduleFlush()
     }
 
-    func pumpStreamQueues(_ engine: RuleProxyQUIC.QUICConnection) {
+    func pumpStreamQueues(_ engine: NaiveFlowQUIC.QUICConnection) {
         for id in blockedStreams {
             guard let queue = streamSendQueues[id] else {
                 blockedStreams.remove(id)
@@ -136,7 +136,7 @@ extension QUICConnectionCore {
         }
     }
 
-    private func pumpStreamQueue(_ id: Int64, _ queue: StreamSendQueue, _ engine: RuleProxyQUIC.QUICConnection) {
+    private func pumpStreamQueue(_ id: Int64, _ queue: StreamSendQueue, _ engine: NaiveFlowQUIC.QUICConnection) {
         defer { if queue.chunks.isEmpty { blockedStreams.remove(id) } }
         guard !queue.isFailed else { return }
         while let chunk = queue.chunks.first {
@@ -159,9 +159,9 @@ extension QUICConnectionCore {
     nonisolated static func streamWriteError(_ error: QUICError) -> Error {
         switch error {
         case .invalidState, .streamNotFound, .streamSendClosed:
-            return RuleProxyError.quic(.closed(graceful: false))
+            return NaiveFlowError.quic(.closed(graceful: false))
         default:
-            return RuleProxyError.quic(.streamFailed(detail: String(describing: error)))
+            return NaiveFlowError.quic(.streamFailed(detail: String(describing: error)))
         }
     }
 

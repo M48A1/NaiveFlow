@@ -1,6 +1,6 @@
 //
 //  RFCConfiguration.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 9/13/26.
 //

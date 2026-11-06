@@ -1,6 +1,6 @@
 //
 //  QUICInitialPeek.swift
-//  RuleProxyQUIC
+//  NaiveFlowQUIC
 //
 //  Created by NodePassProject on 10/25/26.
 //

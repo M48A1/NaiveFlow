@@ -1,6 +1,6 @@
 //
 //  PacketTunnelProvider.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 1/23/26.
 //
@@ -12,7 +12,7 @@ import Synchronization
 import WidgetKit
 #endif
 
-nonisolated private let logger = RuleProxyLogger(category: "PacketTunnelProvider")
+nonisolated private let logger = NaiveFlowLogger(category: "PacketTunnelProvider")
 
 nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private let tunnelStack = TunnelStack()
@@ -74,7 +74,7 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
         case .alreadyUp:
             return
         case .superseded:
-            throw RuleProxyError.tunnel(.sessionUnavailable)
+            throw NaiveFlowError.tunnel(.sessionUnavailable)
         }
 
         let resolved: ProxyConfiguration?
@@ -84,7 +84,7 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
             throw error
         }
         guard var configuration = resolved else {
-            let error = RuleProxyError.tunnel(.invalidConfiguration)
+            let error = NaiveFlowError.tunnel(.invalidConfiguration)
             logger.report("[VPN] Start failed", error: error)
             releaseStartClaim(myClaim)
             throw error
@@ -98,18 +98,18 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
                 try await applyTunnelSettings()
             }
         } catch {
-            let wrapped = RuleProxyError.tunnel(.settingsApplyFailed(underlying: error))
+            let wrapped = NaiveFlowError.tunnel(.settingsApplyFailed(underlying: error))
             logger.report("[VPN] Start failed", error: wrapped)
             releaseStartClaim(myClaim)
             throw wrapped
         }
 
         guard providerState.withLock({ $0.phase == .starting && $0.claimGeneration == myClaim }) else {
-            throw RuleProxyError.tunnel(.sessionUnavailable)
+            throw NaiveFlowError.tunnel(.sessionUnavailable)
         }
 
 #if os(iOS)
-        ControlCenter.shared.reloadControls(ofKind: "com.argsment.RuleProxy.Widget.VPNToggle")
+        ControlCenter.shared.reloadControls(ofKind: "com.argsment.NaiveFlow.Widget.VPNToggle")
 #endif
 
         let stackStarted = await tunnelStack.start(packetFlow: packetFlow, configuration: configuration)
@@ -160,7 +160,7 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
             if stackStarted {
                 await tunnelStack.stop()
             }
-            throw RuleProxyError.tunnel(.sessionUnavailable)
+            throw NaiveFlowError.tunnel(.sessionUnavailable)
         }
     }
 
@@ -192,7 +192,7 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
         do {
             return try ActiveConfiguration.load()
         } catch {
-            logger.report(RuleProxyError.store(.corrupted(.configurations, detail: RuleProxyError.describe(error))))
+            logger.report(NaiveFlowError.store(.corrupted(.configurations, detail: NaiveFlowError.describe(error))))
             return nil
         }
     }
@@ -308,7 +308,7 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
 
     override func stopTunnel(with reason: NEProviderStopReason) async {
 #if os(iOS)
-        ControlCenter.shared.reloadControls(ofKind: "com.argsment.RuleProxy.Widget.VPNToggle")
+        ControlCenter.shared.reloadControls(ofKind: "com.argsment.NaiveFlow.Widget.VPNToggle")
 #endif
 
         let task: Task<Void, Never>? = providerState.withLock { state in

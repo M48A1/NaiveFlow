@@ -1,6 +1,6 @@
 //
 //  RuleSetIconView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 8/18/26.
 //

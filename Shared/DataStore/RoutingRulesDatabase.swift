@@ -1,6 +1,6 @@
 //
 //  RoutingRulesDatabase.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/5/26.
 //
@@ -9,7 +9,7 @@ import Foundation
 import SQLite3
 import Synchronization
 
-nonisolated private let logger = RuleProxyLogger(category: "RoutingRulesDatabase")
+nonisolated private let logger = NaiveFlowLogger(category: "RoutingRulesDatabase")
 
 nonisolated final class RoutingRulesDatabase: Sendable {
     static let shared = RoutingRulesDatabase()

@@ -1,6 +1,6 @@
 //
 //  TunneledHTTP1Exchange.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/1/26.
 //
@@ -68,7 +68,7 @@ actor TunneledHTTP1Exchange {
             group.addTask { try await self.runExchange() }
             group.addTask {
                 try await Task.sleep(seconds: timeout, precision: .relaxed)
-                throw RuleProxyError.transport(.timedOut(.receive, endpoint: nil, detail: "request exceeded \(Int(timeout))s deadline"))
+                throw NaiveFlowError.transport(.timedOut(.receive, endpoint: nil, detail: "request exceeded \(Int(timeout))s deadline"))
             }
             if request.timeoutInterval > 0 {
                 group.addTask { try await self.idleWatchdog() }
@@ -76,7 +76,7 @@ actor TunneledHTTP1Exchange {
             defer { group.cancelAll() }
             do {
                 guard let result = try await group.next() else {
-                    throw RuleProxyError.transport(.terminated)
+                    throw NaiveFlowError.transport(.terminated)
                 }
                 return result
             } catch {
@@ -98,7 +98,7 @@ actor TunneledHTTP1Exchange {
         while true {
             let deadline = idleDeadline
             if ContinuousClock().now >= deadline {
-                throw RuleProxyError.transport(.timedOut(.receive, endpoint: nil, detail: "request idle for \(Int(interval))s"))
+                throw NaiveFlowError.transport(.timedOut(.receive, endpoint: nil, detail: "request idle for \(Int(interval))s"))
             }
             try await Task.sleep(until: deadline, tolerance: TimerPrecision.relaxed.tolerance(forRemaining: ContinuousClock().now.duration(to: deadline)), clock: .continuous)
         }
@@ -108,18 +108,18 @@ actor TunneledHTTP1Exchange {
 
     private func runExchange() async throws -> MITMScriptHTTPClient.Response {
         guard let head = serializeRequest() else {
-            throw RuleProxyError.mitm(.invalidScriptRequest)
+            throw NaiveFlowError.mitm(.invalidScriptRequest)
         }
         try await connection.send(head)
 
         while !headParsed {
             guard let chunk = try await receiveChunk() else {
-                throw RuleProxyError.proxy(.http11, .connectionClosed(detail: "before response head"))
+                throw NaiveFlowError.proxy(.http11, .connectionClosed(detail: "before response head"))
             }
             inbound.append(chunk)
             if try parseHeadIfReady() { break }
             if inbound.count > Self.maxHeadBytes {
-                throw RuleProxyError.proxy(.http11, .protocolViolation(detail: "response head exceeds \(Self.maxHeadBytes) bytes"))
+                throw NaiveFlowError.proxy(.http11, .protocolViolation(detail: "response head exceeds \(Self.maxHeadBytes) bytes"))
             }
         }
 
@@ -153,7 +153,7 @@ actor TunneledHTTP1Exchange {
                 }
                 if body.count >= total { return try finishSuccess() }
                 guard let chunk = try await receiveChunk() else {
-                    throw RuleProxyError.proxy(.http11, .connectionClosed(detail: "body truncated (\(body.count)/\(total))"))
+                    throw NaiveFlowError.proxy(.http11, .connectionClosed(detail: "body truncated (\(body.count)/\(total))"))
                 }
                 inbound.append(chunk)
             }
@@ -165,14 +165,14 @@ actor TunneledHTTP1Exchange {
                 case .needMore:
                     try appendBody(decoded)
                     guard let chunk = try await receiveChunk() else {
-                        throw RuleProxyError.proxy(.http11, .connectionClosed(detail: "before final chunk"))
+                        throw NaiveFlowError.proxy(.http11, .connectionClosed(detail: "before final chunk"))
                     }
                     inbound.append(chunk)
                 case .done:
                     try appendBody(decoded)
                     return try finishSuccess()
                 case .error(let message):
-                    throw RuleProxyError.proxy(.http11, .protocolViolation(detail: "chunked decode failed: \(message)"))
+                    throw NaiveFlowError.proxy(.http11, .protocolViolation(detail: "chunked decode failed: \(message)"))
                 }
             }
 
@@ -242,7 +242,7 @@ actor TunneledHTTP1Exchange {
         while true {
             guard let range = inbound.range(of: terminator) else { return false }
             guard let (code, parsedHeaders) = Self.parseHead(inbound.subdata(in: inbound.startIndex..<range.lowerBound)) else {
-                throw RuleProxyError.proxy(.http11, .protocolViolation(detail: "malformed response head"))
+                throw NaiveFlowError.proxy(.http11, .protocolViolation(detail: "malformed response head"))
             }
             inbound = inbound.subdata(in: range.upperBound..<inbound.endIndex)
             if (100..<200).contains(code) { continue }   // interim response: keep reading for the final head
@@ -266,7 +266,7 @@ actor TunneledHTTP1Exchange {
         if let contentLengthValue = header("Content-Length"),
            let contentLength = Int(contentLengthValue.trimmingCharacters(in: .whitespaces)), contentLength >= 0 {
             if contentLength > maxBytes {
-                throw RuleProxyError.mitm(.responseTooLarge(limit: maxBytes))
+                throw NaiveFlowError.mitm(.responseTooLarge(limit: maxBytes))
             }
             bodyMode = .contentLength(contentLength)
             return
@@ -279,10 +279,10 @@ actor TunneledHTTP1Exchange {
     private func appendBody(_ data: Data) throws {
         guard !data.isEmpty else { return }
         if body.count + data.count > maxBytes {
-            throw RuleProxyError.mitm(.responseTooLarge(limit: maxBytes))
+            throw NaiveFlowError.mitm(.responseTooLarge(limit: maxBytes))
         }
         guard MITMScriptHTTPClient.reserveInFlight(data.count) else {
-            throw RuleProxyError.mitm(.scriptBudgetExceeded(limit: MITMScriptHTTPClient.maxGlobalInFlightBytes))
+            throw NaiveFlowError.mitm(.scriptBudgetExceeded(limit: MITMScriptHTTPClient.maxGlobalInFlightBytes))
         }
         reservedBytes += data.count
         body.append(data)
@@ -298,7 +298,7 @@ actor TunneledHTTP1Exchange {
         if plan.requiresDecompression,
            let decoded = MITMBodyCodec.decompress(body, plan: plan, host: request.url?.host ?? "") {
             if decoded.count > maxBytes {
-                throw RuleProxyError.mitm(.responseTooLarge(limit: maxBytes))
+                throw NaiveFlowError.mitm(.responseTooLarge(limit: maxBytes))
             }
             responseBody = decoded
             dropHeaders.insert("content-encoding")

@@ -1,6 +1,6 @@
 //
 //  SudokuConfiguration.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by saba-futai on 4/23/26.
 //

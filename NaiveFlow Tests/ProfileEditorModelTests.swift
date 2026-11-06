@@ -1,13 +1,13 @@
 //
 //  ProfileEditorModelTests.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 11/4/26.
 //
 
 import Foundation
 import Testing
-@testable import RuleProxy
+@testable import NaiveFlow
 
 /// The editor's session logic used to live inside `ConfigurationView`, where only
 /// a human tapping around could exercise it. These tests pin the behaviour the

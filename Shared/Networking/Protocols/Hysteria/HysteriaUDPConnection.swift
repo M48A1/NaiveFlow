@@ -1,6 +1,6 @@
 //
 //  HysteriaUDPConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/13/26.
 //
@@ -83,7 +83,7 @@ actor HysteriaUDPConnection {
 
     func open() async throws {
         let begin = phase.withLock { Phase.transition(&$0, to: .opening) }
-        guard begin else { throw RuleProxyError.proxy(.hysteria, .streamClosed) }
+        guard begin else { throw NaiveFlowError.proxy(.hysteria, .streamClosed) }
 
         let sid: UInt32
         do {
@@ -95,7 +95,7 @@ actor HysteriaUDPConnection {
         let adopted = phase.withLock { Phase.transition(&$0, to: .open(sid: sid)) }
         guard adopted else {
             session.releaseUDPSession(sid)
-            throw RuleProxyError.proxy(.hysteria, .streamClosed)
+            throw NaiveFlowError.proxy(.hysteria, .streamClosed)
         }
     }
 
@@ -194,7 +194,7 @@ actor HysteriaUDPConnection {
     
     private func attemptSend(data: Data, maxSizeOverride: Int?, retriesLeft: Int) async throws {
         guard let sessionID = currentSID else {
-            throw RuleProxyError.proxy(.hysteria, .streamClosed)
+            throw NaiveFlowError.proxy(.hysteria, .streamClosed)
         }
         let maxSize: Int
         if let maxSizeOverride {
@@ -204,7 +204,7 @@ actor HysteriaUDPConnection {
         }
         let headerSize = HysteriaProtocol.udpHeaderSize(address: destination)
         guard maxSize > headerSize else {
-            throw RuleProxyError.proxy(.hysteria, .datagramTooLarge(maxFrame: maxSize, headerSize: headerSize))
+            throw NaiveFlowError.proxy(.hysteria, .datagramTooLarge(maxFrame: maxSize, headerSize: headerSize))
         }
         let packetID = newPacketID()
         let fragments = HysteriaProtocol.fragmentUDP(
@@ -215,16 +215,16 @@ actor HysteriaUDPConnection {
             maxDatagramSize: maxSize
         )
         guard !fragments.isEmpty else {
-            throw RuleProxyError.proxy(.hysteria, .connectionClosed(detail: "UDP payload too large to fragment"))
+            throw NaiveFlowError.proxy(.hysteria, .connectionClosed(detail: "UDP payload too large to fragment"))
         }
         let encoded = fragments.map { $0.encoded }
         do {
             try await session.writeDatagrams(encoded)
         } catch {
-            if case RuleProxyError.quic(.datagramTooLarge(let maxBound)) = error,
+            if case NaiveFlowError.quic(.datagramTooLarge(let maxBound)) = error,
                retriesLeft > 0 {
                 guard isConnected else {
-                    throw RuleProxyError.proxy(.hysteria, .streamClosed)
+                    throw NaiveFlowError.proxy(.hysteria, .streamClosed)
                 }
                 try await attemptSend(data: data, maxSizeOverride: maxBound, retriesLeft: retriesLeft - 1)
                 return

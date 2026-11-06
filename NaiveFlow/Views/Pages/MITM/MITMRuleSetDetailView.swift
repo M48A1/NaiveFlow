@@ -1,6 +1,6 @@
 //
 //  MITMRuleSetDetailView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/4/26.
 //
@@ -268,7 +268,7 @@ struct MITMRuleSetDetailView: View {
     private var domainSuffixesSection: some View {
         Section("Domain Suffixes") {
             ForEach($suffixDrafts) { $draft in
-                TextField(String("ruleproxy.com"), text: $draft.value)
+                TextField(String("naiveflow.com"), text: $draft.value)
                     .keyboardType(.URL)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)

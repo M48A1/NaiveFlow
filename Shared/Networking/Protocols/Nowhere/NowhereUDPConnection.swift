@@ -1,6 +1,6 @@
 //
 //  NowhereUDPConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/30/26.
 //
@@ -66,7 +66,7 @@ actor NowhereUDPConnection {
 
     func open() async throws {
         let begin = lifecycle.withLock { $0.transition(to: .opening) }
-        guard begin else { throw RuleProxyError.proxy(.nowhere, .streamClosed) }
+        guard begin else { throw NaiveFlowError.proxy(.nowhere, .streamClosed) }
         do {
             try await withTaskCancellationHandler {
                 try Task.checkCancellation()
@@ -87,18 +87,18 @@ actor NowhereUDPConnection {
         let flowID = try NowhereProtocol.udpFlowID(streamID: sid)
         guard let chunk = try await controlInbox.next(),
               let result = NowhereProtocol.decodeFlowResult(chunk) else {
-            throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "UDP control stream closed before READY"))
+            throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "UDP control stream closed before READY"))
         }
         session.extendStreamOffset(sid, count: chunk.count)
         switch result {
         case .ready:
             break
         case .reject(let code):
-            throw RuleProxyError.proxy(.nowhere, .flowRejected(code: code.rawValue))
+            throw NaiveFlowError.proxy(.nowhere, .flowRejected(code: code.rawValue))
         }
         session.activateUDPSession(flowID)
         guard lifecycle.withLock({ $0.transition(to: .ready) }) else {
-            throw RuleProxyError.proxy(.nowhere, .streamClosed)
+            throw NaiveFlowError.proxy(.nowhere, .streamClosed)
         }
     }
 
@@ -112,7 +112,7 @@ actor NowhereUDPConnection {
                 return true
             }
             guard accepted else {
-                terminate(error: RuleProxyError.proxy(.nowhere, .protocolViolation(detail: "Unexpected UDP control stream data")))
+                terminate(error: NaiveFlowError.proxy(.nowhere, .protocolViolation(detail: "Unexpected UDP control stream data")))
                 return
             }
             controlInbox.yield(data)
@@ -137,7 +137,7 @@ actor NowhereUDPConnection {
     }
 
     nonisolated func handleSessionError(_ error: Error) {
-        if case RuleProxyError.quic(.closed(graceful: true)) = error {
+        if case NaiveFlowError.quic(.closed(graceful: true)) = error {
             terminate(error: nil)
         } else {
             terminate(error: error)
@@ -148,7 +148,7 @@ actor NowhereUDPConnection {
 
     func receiveRaw() async throws -> Data? {
         guard !receiveInProgress else {
-            throw RuleProxyError.proxy(.nowhere, .protocolViolation(detail: "Overlapping receive on Nowhere UDP flow"))
+            throw NaiveFlowError.proxy(.nowhere, .protocolViolation(detail: "Overlapping receive on Nowhere UDP flow"))
         }
         receiveInProgress = true
         defer { receiveInProgress = false }
@@ -158,7 +158,7 @@ actor NowhereUDPConnection {
 
     func sendRaw(_ data: Data) async throws {
         guard isConnected else {
-            throw RuleProxyError.proxy(.nowhere, .streamClosed)
+            throw NaiveFlowError.proxy(.nowhere, .streamClosed)
         }
         try await attemptSend(data: data, maxSizeOverride: nil, retriesLeft: 1)
     }
@@ -185,16 +185,16 @@ actor NowhereUDPConnection {
                 payload: data,
                 maxDatagramSize: maxSize
             )
-        } catch RuleProxyError.proxy(.nowhere, .packetTooLarge) {
+        } catch NaiveFlowError.proxy(.nowhere, .packetTooLarge) {
             return
         }
         do {
             try await session.writeDatagrams(frames)
         } catch {
-            if case RuleProxyError.quic(.datagramTooLarge(let maxBound)) = error,
+            if case NaiveFlowError.quic(.datagramTooLarge(let maxBound)) = error,
                retriesLeft > 0 {
                 guard isConnected else {
-                    throw RuleProxyError.proxy(.nowhere, .streamClosed)
+                    throw NaiveFlowError.proxy(.nowhere, .streamClosed)
                 }
                 try await attemptSend(
                     data: data,
@@ -203,10 +203,10 @@ actor NowhereUDPConnection {
                 )
                 return
             }
-            if case RuleProxyError.quic(.datagramTooLarge) = error {
+            if case NaiveFlowError.quic(.datagramTooLarge) = error {
                 return
             }
-            if case RuleProxyError.quic(.datagramQueueFull) = error {
+            if case NaiveFlowError.quic(.datagramQueueFull) = error {
                 return
             }
             throw error
@@ -249,7 +249,7 @@ actor NowhereUDPConnection {
 
     private nonisolated func currentFlowID() throws -> UInt32 {
         guard let sid = lifecycle.withLock({ $0.controlStreamID }) else {
-            throw RuleProxyError.proxy(.nowhere, .streamClosed)
+            throw NaiveFlowError.proxy(.nowhere, .streamClosed)
         }
         return try NowhereProtocol.udpFlowID(streamID: sid)
     }

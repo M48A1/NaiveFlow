@@ -1,6 +1,6 @@
 //
 //  RealityConfiguration.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 1/26/26.
 //
@@ -24,15 +24,15 @@ nonisolated struct RealityConfiguration {
         guard params["security"] == "reality" else { return nil }
 
         guard let sni = params["sni"], !sni.isEmpty else {
-            throw RuleProxyError.proxy(.vless, .invalidConfiguration(detail: "missing parameter: sni"))
+            throw NaiveFlowError.proxy(.vless, .invalidConfiguration(detail: "missing parameter: sni"))
         }
 
         guard let pbkString = params["pbk"], !pbkString.isEmpty else {
-            throw RuleProxyError.proxy(.vless, .invalidConfiguration(detail: "missing parameter: pbk (public key)"))
+            throw NaiveFlowError.proxy(.vless, .invalidConfiguration(detail: "missing parameter: pbk (public key)"))
         }
 
         guard let publicKey = Data(base64URLEncoded: pbkString), publicKey.count == 32 else {
-            throw RuleProxyError.tls(.reality(.invalidPublicKey))
+            throw NaiveFlowError.tls(.reality(.invalidPublicKey))
         }
 
         let sidString = params["sid"] ?? ""

@@ -1,6 +1,6 @@
 //
 //  ProxyUserAgent.swift
-//  RuleProxy
+//  NaiveFlow
 //
 
 import Foundation

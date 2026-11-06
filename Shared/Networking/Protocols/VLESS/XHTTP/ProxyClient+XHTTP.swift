@@ -1,6 +1,6 @@
 //
 //  ProxyClient+XHTTP.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 9/13/26.
 //
@@ -92,7 +92,7 @@ nonisolated extension ProxyClient {
 
     func connectWithXHTTP(_ request: ProxyRequest) async throws -> ProxyConnection {
         guard case .xhttp(let xhttpConfig) = configuration.xrayTransportLayer else {
-            throw RuleProxyError.proxy(.xhttp, .invalidConfiguration(detail: "XHTTP transport specified but no XHTTP configuration"))
+            throw NaiveFlowError.proxy(.xhttp, .invalidConfiguration(detail: "XHTTP transport specified but no XHTTP configuration"))
         }
 
         let httpVersion = decideXHTTPHTTPVersion()
@@ -359,7 +359,7 @@ nonisolated extension ProxyClient {
             }
         }
         guard let lease = await manager.acquire(), let session = lease.connection as? HTTP3Multiplexer else {
-            throw RuleProxyError.transport(.connectionFailed(endpoint: "\(host):\(port)", detail: "xmux H3 session acquisition failed"))
+            throw NaiveFlowError.transport(.connectionFailed(endpoint: "\(host):\(port)", detail: "xmux H3 session acquisition failed"))
         }
         let connection = XHTTPConnection(
             h3Multiplexer: session, configuration: xhttp, mode: mode, sessionId: sessionId
@@ -393,7 +393,7 @@ nonisolated extension ProxyClient {
             }
         }
         guard let lease = await manager.acquire(), let shared = lease.connection as? XHTTPH2Multiplexer else {
-            throw RuleProxyError.transport(.connectionFailed(endpoint: "\(host):\(port)", detail: "xmux H2 connection acquisition failed"))
+            throw NaiveFlowError.transport(.connectionFailed(endpoint: "\(host):\(port)", detail: "xmux H2 connection acquisition failed"))
         }
         let connection = XHTTPConnection(sharedH2: shared, configuration: xhttp, mode: mode, sessionId: sessionId)
         connection.configureRole(role)
@@ -427,7 +427,7 @@ nonisolated extension ProxyClient {
                     .seconds(Self.sharedH2BringUpTimeout),
                     onExpiry: { shared.poolClose() },
                     error: {
-                        RuleProxyError.transport(
+                        NaiveFlowError.transport(
                             .timedOut(
                                 .connect,
                                 endpoint: "\(host):\(port)",
@@ -614,7 +614,7 @@ nonisolated extension ProxyClient {
             return {
                 try await ConnectionMetrics.$currentAttempt.withValue(nil) {
                     guard let lease = await manager.acquire(), let connection = lease.connection as? XHTTPH1Multiplexer else {
-                        throw RuleProxyError.transport(.connectionFailed(endpoint: "\(host):\(port)", detail: "xmux H1 upload acquisition failed"))
+                        throw NaiveFlowError.transport(.connectionFailed(endpoint: "\(host):\(port)", detail: "xmux H1 upload acquisition failed"))
                     }
                     connection.adoptLease(lease)
                     return connection.sessionTransport
@@ -624,7 +624,7 @@ nonisolated extension ProxyClient {
 
         return { [weak self] in
             guard let self else {
-                throw RuleProxyError.transport(.terminated)
+                throw NaiveFlowError.transport(.terminated)
             }
             let route = self.additionalXHTTPRoute()
             let transport = try await ConnectionMetrics.$currentAttempt.withValue(nil) {
@@ -634,7 +634,7 @@ nonisolated extension ProxyClient {
             case .byteStream(let closures):
                 return closures
             case .http3:
-                throw RuleProxyError.proxy(.xhttp, .invalidConfiguration(detail: "HTTP/3 has no separate upload connection"))
+                throw NaiveFlowError.proxy(.xhttp, .invalidConfiguration(detail: "HTTP/3 has no separate upload connection"))
             }
         }
     }

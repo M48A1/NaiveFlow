@@ -1,6 +1,6 @@
 //
 //  ByteTransportAdapters.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/17/26.
 //

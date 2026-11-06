@@ -1,13 +1,13 @@
 //
 //  MITMBridgeClientLeg.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/15/26.
 //
 
 import Foundation
 
-nonisolated private let logger = RuleProxyLogger(category: "MITMBridgeClientLeg")
+nonisolated private let logger = NaiveFlowLogger(category: "MITMBridgeClientLeg")
 
 nonisolated protocol MITMBridgeClientLegDelegate: AnyObject {
     func clientLegSendRequestHead(_ head: MITMRequestHead, url: String?, endStream: Bool)
@@ -942,11 +942,11 @@ actor MITMBridgeClientLeg: MITMResponseSink {
     private func answerWithSynthesizedResponse(streamID: UInt32, response: MITMScriptEngine.SynthesizedResponse) {
         requestStreams[streamID] = .answeredWithSynthesizedResponse
         let sanitized = response.sanitizedHeaders(lowercaseNames: true) { name in
-            logger.warning("[Script] RuleProxy.respond: Invalid header: \(name)")
+            logger.warning("[Script] NaiveFlow.respond: Invalid header: \(name)")
         }
         let headers = response.withDateStamp(sanitized, lowercaseName: true)
         let body = response.truncatedBody(cap: MITMBodyCodec.maxBufferedBodyBytes) {
-            logger.warning("[Script] RuleProxy.respond: Body too large")
+            logger.warning("[Script] NaiveFlow.respond: Body too large")
         }
         deliverResponseHead(streamID: streamID, status: response.status, headers: headers, endStream: body.isEmpty)
         if !body.isEmpty { deliverResponseData(streamID: streamID, body, endStream: true) }

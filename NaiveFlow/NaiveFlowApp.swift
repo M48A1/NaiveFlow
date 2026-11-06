@@ -1,6 +1,6 @@
 //
-//  RuleProxyApp.swift
-//  RuleProxy
+//  NaiveFlowApp.swift
+//  NaiveFlow
 //
 //  Created by NodePassProject on 1/23/26.
 //
@@ -8,7 +8,7 @@
 import SwiftUI
 
 @main
-struct RuleProxyApp: App {
+struct NaiveFlowApp: App {
     @State private var container: AppContainer
     @State private var operations: Operations
     @State private var settings: AppSettings

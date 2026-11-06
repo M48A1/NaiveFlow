@@ -1,6 +1,6 @@
 //
 //  XHTTPConnection+HTTP11.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/30/26.
 //
@@ -32,13 +32,13 @@ extension XHTTPConnection {
         request += "\r\n"
 
         guard let requestData = request.data(using: .utf8) else {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "Failed to encode stream-one request"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "Failed to encode stream-one request"))
         }
 
         do {
             try await download.send(requestData)
         } catch {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: error.localizedDescription))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: error.localizedDescription))
         }
         try await receiveResponseHeaders()
     }
@@ -53,12 +53,12 @@ extension XHTTPConnection {
     @discardableResult
     private func openDownloadWithConcurrentUpload() async throws -> any ByteTransport {
         guard let factory = uploadConnectionFactory else {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "No upload connection factory"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "No upload connection factory"))
         }
         let request = buildDownloadGETRequest()
 
         guard let requestData = request.data(using: .utf8) else {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "Failed to encode GET request"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "Failed to encode GET request"))
         }
 
         async let pendingUpload = factory()
@@ -66,7 +66,7 @@ extension XHTTPConnection {
             do {
                 try await download.send(requestData)
             } catch {
-                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: error.localizedDescription))
+                throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: error.localizedDescription))
             }
             try await receiveResponseHeaders()
         } catch {
@@ -78,7 +78,7 @@ extension XHTTPConnection {
         do {
             upload = try await pendingUpload
         } catch {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "Upload connection failed: \(error.localizedDescription)"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "Upload connection failed: \(error.localizedDescription)"))
         }
         let adopted = state.withLock { state -> Bool in
             guard state.phase != .cancelled else { return false }
@@ -87,7 +87,7 @@ extension XHTTPConnection {
         }
         guard adopted else {
             upload.cancel()
-            throw RuleProxyError.transport(.terminated)
+            throw NaiveFlowError.transport(.terminated)
         }
         return upload
     }
@@ -123,12 +123,12 @@ extension XHTTPConnection {
 
         let postRequest = buildStreamUpPOSTRequest()
         guard let postData = postRequest.data(using: .utf8) else {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "Failed to encode stream-up POST request"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "Failed to encode stream-up POST request"))
         }
         do {
             try await closures.send(postData)
         } catch {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "Stream-up POST send failed: \(error.localizedDescription)"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "Stream-up POST send failed: \(error.localizedDescription)"))
         }
     }
 
@@ -137,12 +137,12 @@ extension XHTTPConnection {
     func performDownloadOnlyHTTP11Setup() async throws {
         let request = buildDownloadGETRequest()
         guard let requestData = request.data(using: .utf8) else {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "Failed to encode GET request"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "Failed to encode GET request"))
         }
         do {
             try await download.send(requestData)
         } catch {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: error.localizedDescription))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: error.localizedDescription))
         }
         try await receiveResponseHeaders()
     }
@@ -154,12 +154,12 @@ extension XHTTPConnection {
         if mode == .streamUp {
             let postRequest = buildStreamUpPOSTRequest()
             guard let postData = postRequest.data(using: .utf8) else {
-                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "Failed to encode stream-up POST request"))
+                throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "Failed to encode stream-up POST request"))
             }
             do {
                 try await download.send(postData)
             } catch {
-                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "Stream-up POST send failed: \(error.localizedDescription)"))
+                throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "Stream-up POST send failed: \(error.localizedDescription)"))
             }
         } else {
             startUploadResponseDrain()
@@ -214,17 +214,17 @@ extension XHTTPConnection {
             do {
                 chunk = try await download.receive()
             } catch {
-                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: error.localizedDescription))
+                throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: error.localizedDescription))
             }
             guard case .bytes(let data) = chunk, !data.isEmpty else {
-                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "Empty response from server"))
+                throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "Empty response from server"))
             }
 
             let headerData: Data? = try state.withLock { state in
                 state.headerBuffer.append(data)
                 guard let range = state.headerBuffer.range(of: headerEnd) else {
                     if state.headerBuffer.count > Self.maxResponseHeaderSize {
-                        throw RuleProxyError.proxy(.xhttp, .protocolViolation(detail: "response headers too large"))
+                        throw NaiveFlowError.proxy(.xhttp, .protocolViolation(detail: "response headers too large"))
                     }
                     return nil
                 }
@@ -237,11 +237,11 @@ extension XHTTPConnection {
             guard let headerData else { continue }
 
             guard let headerString = String(data: headerData, encoding: .utf8) else {
-                throw RuleProxyError.proxy(.xhttp, .protocolViolation(detail: "Cannot decode response headers"))
+                throw NaiveFlowError.proxy(.xhttp, .protocolViolation(detail: "Cannot decode response headers"))
             }
             let firstLine = headerString.split(separator: "\r\n", maxSplits: 1).first ?? ""
             guard firstLine.contains("200") else {
-                throw RuleProxyError.proxy(.xhttp, .protocolViolation(detail: "Expected HTTP 200, got: \(firstLine)"))
+                throw NaiveFlowError.proxy(.xhttp, .protocolViolation(detail: "Expected HTTP 200, got: \(firstLine)"))
             }
             return
         }
@@ -255,14 +255,14 @@ extension XHTTPConnection {
 
     func sendStreamUp(data: Data) async throws {
         guard let upload = state.withLock({ $0.uploadTransport }) else {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "Upload connection not established"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "Upload connection not established"))
         }
         try await upload.send(ChunkedTransferEncoder.encode(data))
     }
 
     func sendPacketUpHTTP11(data: Data) async throws {
         guard let upload = state.withLock({ $0.uploadTransport }) else {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "Upload connection not established"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "Upload connection not established"))
         }
         let maxSize = max(1, configuration.scMaxEachPostBytes)
         var remaining = data
@@ -310,7 +310,7 @@ extension XHTTPConnection {
         request += "\r\n"
 
         guard var requestData = request.data(using: .utf8) else {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "Failed to encode POST request"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "Failed to encode POST request"))
         }
         requestData.append(bodyData)
 

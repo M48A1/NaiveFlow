@@ -1,6 +1,6 @@
 //
 //  MITMLegWriter.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 10/20/26.
 //
@@ -66,7 +66,7 @@ actor MITMLegWriter {
 
     func write(_ data: Data, then completion: @escaping @Sendable (Error?) -> Void) {
         guard phase == .open else {
-            completion(RuleProxyError.transport(.terminated))
+            completion(NaiveFlowError.transport(.terminated))
             return
         }
         guard !data.isEmpty else {
@@ -81,7 +81,7 @@ actor MITMLegWriter {
     }
 
     func writeWithBackpressure(_ data: Data) async throws {
-        guard phase == .open else { throw failure ?? RuleProxyError.transport(.terminated) }
+        guard phase == .open else { throw failure ?? NaiveFlowError.transport(.terminated) }
         guard !data.isEmpty else { return }
         enqueue(data, mark: nil)
         guard queuedBytes - sentBytes > Self.maxUnsentBytes else { return }
@@ -90,7 +90,7 @@ actor MITMLegWriter {
     }
 
     func drain() async throws {
-        guard phase == .open else { throw failure ?? RuleProxyError.transport(.terminated) }
+        guard phase == .open else { throw failure ?? NaiveFlowError.transport(.terminated) }
         guard queuedBytes > sentBytes else { return }
         let through = queuedBytes
         try await withCheckedThrowingContinuation { marks.append((through: through, mark: .resume($0))) }
@@ -120,7 +120,7 @@ actor MITMLegWriter {
         loop?.cancel()
         loop = nil
         queue = MITMByteQueue()
-        settle(through: .max, error: RuleProxyError.transport(.terminated))
+        settle(through: .max, error: NaiveFlowError.transport(.terminated))
         finishClose()
     }
 

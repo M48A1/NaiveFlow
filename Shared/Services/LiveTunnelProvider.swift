@@ -1,6 +1,6 @@
 //
 //  LiveTunnelProvider.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 8/3/26.
 //
@@ -10,7 +10,7 @@ import NetworkExtension
 
 @MainActor
 final class LiveTunnelProvider: TunnelProviding {
-    static let providerBundleIdentifier = "com.argsment.RuleProxy.Network-Extension"
+    static let providerBundleIdentifier = "com.argsment.NaiveFlow.Network-Extension"
 
     private var manager: NETunnelProviderManager?
     private var loadedFromPreferences = false
@@ -53,7 +53,7 @@ final class LiveTunnelProvider: TunnelProviding {
 
         let tunnelProtocol = NETunnelProviderProtocol()
         tunnelProtocol.providerBundleIdentifier = Self.providerBundleIdentifier
-        tunnelProtocol.serverAddress = "RuleProxy"
+        tunnelProtocol.serverAddress = "NaiveFlow"
         #if !os(tvOS)
         tunnelProtocol.includeAllNetworks = request.includeAllNetworks
         tunnelProtocol.excludeLocalNetworks = request.excludeLocalNetworks
@@ -63,7 +63,7 @@ final class LiveTunnelProvider: TunnelProviding {
         #endif
 
         manager.protocolConfiguration = tunnelProtocol
-        manager.localizedDescription = "RuleProxy"
+        manager.localizedDescription = "NaiveFlow"
         manager.isEnabled = true
 
         if request.alwaysOn {

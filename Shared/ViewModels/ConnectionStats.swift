@@ -1,6 +1,6 @@
 //
 //  ConnectionStats.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/29/26.
 //

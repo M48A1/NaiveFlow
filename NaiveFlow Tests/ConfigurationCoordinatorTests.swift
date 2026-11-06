@@ -1,13 +1,13 @@
 //
 //  ConfigurationCoordinatorTests.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 11/5/26.
 //
 
 import Foundation
 import Testing
-@testable import RuleProxy
+@testable import NaiveFlow
 
 /// The work of describing a document is split in two: `ConfigurationCoordinator`
 /// decides what the host has to say about it, and `RuntimeCoordinator` decides

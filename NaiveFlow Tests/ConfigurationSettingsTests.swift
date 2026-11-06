@@ -1,13 +1,13 @@
 //
 //  ConfigurationSettingsTests.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 11/4/26.
 //
 
 import Foundation
 import Testing
-@testable import RuleProxy
+@testable import NaiveFlow
 
 /// The catalog is the contract that every `[General]` key is parsed, validated,
 /// compiled, applied and exported from one place. These tests hold that contract

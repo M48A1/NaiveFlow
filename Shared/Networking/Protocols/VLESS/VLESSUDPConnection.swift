@@ -1,6 +1,6 @@
 //
 //  VLESSUDPConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/13/26.
 //
@@ -30,7 +30,7 @@ nonisolated final class VLESSUDPConnection: ProxyConnection, UDPFramingCapable {
     // MARK: - Send: length-prefix each datagram, then hand off to the TCP-style inner.
 
     func sendRaw(_ data: Data) async throws {
-        guard let frame = frameUDPPacket(data) else { throw RuleProxyError.proxy(.vless, .packetTooLarge) }
+        guard let frame = frameUDPPacket(data) else { throw NaiveFlowError.proxy(.vless, .packetTooLarge) }
         let inner = self.inner
         try await sendChain.run { try await inner.sendRaw(frame) }
     }

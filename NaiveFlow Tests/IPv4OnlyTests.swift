@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import RuleProxy
+@testable import NaiveFlow
 
 struct IPv4OnlyTests {
     @Test func rejectsUnsupportedLiteralAtEveryConfigurationEntry() {

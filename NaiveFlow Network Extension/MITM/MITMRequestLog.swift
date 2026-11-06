@@ -1,6 +1,6 @@
 //
 //  MITMRequestLog.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/14/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 
-nonisolated private let logger = RuleProxyLogger(category: "MITMRequestLog")
+nonisolated private let logger = NaiveFlowLogger(category: "MITMRequestLog")
 
 nonisolated final class MITMRequestLog: Sendable {
     struct Record {

@@ -1,6 +1,6 @@
 //
 //  NWTransportHelpers.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/6/26.
 //
@@ -25,7 +25,7 @@ nonisolated final class NWStallLatch: Sendable {
         }
     }
 
-    func failure(for error: NWError, operation: RuleProxyError.Transport.Operation) -> any Error {
+    func failure(for error: NWError, operation: NaiveFlowError.Transport.Operation) -> any Error {
         (stallError.withLock { $0 } ?? error).engineError(operation: operation)
     }
 
@@ -41,7 +41,7 @@ nonisolated final class NWStallLatch: Sendable {
 // MARK: - NWError
 
 extension NWError {
-    nonisolated func ruleproxyError(operation: RuleProxyError.Transport.Operation) -> RuleProxyError {
+    nonisolated func naiveflowError(operation: NaiveFlowError.Transport.Operation) -> NaiveFlowError {
         switch self {
         case .posix(let code):
             return .transport(.posix(operation, errno: code.rawValue))
@@ -52,9 +52,9 @@ extension NWError {
         }
     }
     
-    nonisolated func engineError(operation: RuleProxyError.Transport.Operation) -> any Error {
+    nonisolated func engineError(operation: NaiveFlowError.Transport.Operation) -> any Error {
         if case .posix(.ECANCELED) = self { return CancellationError() }
-        return ruleproxyError(operation: operation)
+        return naiveflowError(operation: operation)
     }
     
     nonisolated var connectWaitingDescription: String {
@@ -69,13 +69,13 @@ extension NWError {
     }
 }
 
-// MARK: - RuleProxyError
+// MARK: - NaiveFlowError
 
-extension RuleProxyError {
-    nonisolated static func networkFailure(_ error: Error, operation: Transport.Operation) -> RuleProxyError {
+extension NaiveFlowError {
+    nonisolated static func networkFailure(_ error: Error, operation: Transport.Operation) -> NaiveFlowError {
         if error is CancellationError { return .transport(.terminated) }
-        if let nwError = error as? NWError { return nwError.ruleproxyError(operation: operation) }
-        if let ruleproxyError = error as? RuleProxyError { return ruleproxyError }
+        if let nwError = error as? NWError { return nwError.naiveflowError(operation: operation) }
+        if let naiveflowError = error as? NaiveFlowError { return naiveflowError }
         return .transport(.connectionFailed(endpoint: nil, detail: error.localizedDescription))
     }
     
@@ -104,7 +104,7 @@ extension NWEndpoint.Host {
         case .localRequests: addresses = await DNSResolver.localRequests.resolveAll(host, family: .ipv4)
         }
         guard let address = addresses.first, let literal = NWEndpoint.Host(ipLiteral: address) else {
-            throw RuleProxyError.dns(.noAddresses(host: host))
+            throw NaiveFlowError.dns(.noAddresses(host: host))
         }
         return literal
     }

@@ -1,6 +1,6 @@
 //
 //  GQUICClientHello.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 10/26/26.
 //

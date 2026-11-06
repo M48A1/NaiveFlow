@@ -1,6 +1,6 @@
 //
 //  DirectConfiguration.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 10/30/26.
 //

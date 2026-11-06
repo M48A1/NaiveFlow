@@ -1,6 +1,6 @@
 //
 //  ConfigurationSettings.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 11/4/26.
 //
@@ -365,6 +365,13 @@ nonisolated enum ConfigurationSettings {
             scope: .stackRestart,
             applies: true,
             summary: "Domain suffixes that never get a fake IP."
+        ),
+        ConfigurationSettingKey(
+            name: "dns-exempt-servers",
+            kind: .list,
+            scope: .stackRestart,
+            applies: true,
+            summary: "IPv4 addresses the ordinary DNS interception leaves alone."
         ),
 
         // MARK: TLS and interception
@@ -771,6 +778,12 @@ nonisolated enum ConfigurationSettingsBindings {
             .list(AWCore.getSyntheticAddressExcludedDomainSuffixes())
         }, write: { value in
             if let suffixes = list(value) { AWCore.setSyntheticAddressExcludedDomainSuffixes(suffixes) }
+        }),
+
+        bind("dns-exempt-servers", read: {
+            .list(AWCore.getDNSExemptServers())
+        }, write: { value in
+            if let servers = list(value) { AWCore.setDNSExemptServers(servers) }
         }),
 
         // MARK: TLS and interception

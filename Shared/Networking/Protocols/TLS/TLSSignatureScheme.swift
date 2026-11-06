@@ -1,6 +1,6 @@
 //
 //  TLSSignatureScheme.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/19/26.
 //
@@ -59,7 +59,7 @@ nonisolated enum TLS13CertificateVerifier {
         keyDerivation: TLS13KeyDerivation?
     ) -> Error? {
         guard let keyDerivation else {
-            return RuleProxyError.tls(.handshakeFailed(detail: "Missing key derivation"))
+            return NaiveFlowError.tls(.handshakeFailed(detail: "Missing key derivation"))
         }
 
         // Mandatory in a full handshake: the CertificateVerify (transcript + signature)
@@ -67,16 +67,16 @@ nonisolated enum TLS13CertificateVerifier {
         guard let transcript = transcriptBeforeCertVerify,
               let signature,
               let serverCert = serverCertificates.first else {
-            return RuleProxyError.tls(.certificateValidationFailed(detail: "Full handshake missing CertificateVerify"))
+            return NaiveFlowError.tls(.certificateValidationFailed(detail: "Full handshake missing CertificateVerify"))
         }
 
         // Legal for a TLS 1.3 handshake signature (RFC 8446 §4.2.3).
         guard TLSSignatureScheme.tls13HandshakeSignatureAlgorithms.contains(algorithm) else {
-            return RuleProxyError.tls(.certificateValidationFailed(detail: "CertificateVerify algorithm not permitted"))
+            return NaiveFlowError.tls(.certificateValidationFailed(detail: "CertificateVerify algorithm not permitted"))
         }
 
         guard let serverPublicKey = SecCertificateCopyKey(serverCert) else {
-            return RuleProxyError.tls(.certificateValidationFailed(detail: "Failed to extract public key from certificate"))
+            return NaiveFlowError.tls(.certificateValidationFailed(detail: "Failed to extract public key from certificate"))
         }
 
         let transcriptHash = keyDerivation.transcriptHash(transcript)
@@ -98,7 +98,7 @@ nonisolated enum TLS13CertificateVerifier {
 
         guard isValid else {
             let message = error?.takeRetainedValue().localizedDescription ?? "Signature verification failed"
-            return RuleProxyError.tls(.certificateValidationFailed(detail: "CertificateVerify failed: \(message)"))
+            return NaiveFlowError.tls(.certificateValidationFailed(detail: "CertificateVerify failed: \(message)"))
         }
 
         return nil

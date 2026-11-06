@@ -1,6 +1,6 @@
 //
 //  XHTTPConnection+H2Transport.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/30/26.
 //
@@ -25,7 +25,7 @@ extension XHTTPConnection {
             do {
                 try await download.send(initData)
             } catch {
-                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H2 upload setup send failed: \(error.localizedDescription)"))
+                throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "H2 upload setup send failed: \(error.localizedDescription)"))
             }
             try await processInitialServerFrames()
             startH2UploadPump()
@@ -36,7 +36,7 @@ extension XHTTPConnection {
             do {
                 try await download.send(initData)
             } catch {
-                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H2 download setup send failed: \(error.localizedDescription)"))
+                throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "H2 download setup send failed: \(error.localizedDescription)"))
             }
             try await processInitialServerFrames()
 
@@ -55,7 +55,7 @@ extension XHTTPConnection {
             do {
                 try await download.send(initData)
             } catch {
-                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H2 setup send failed: \(error.localizedDescription)"))
+                throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "H2 setup send failed: \(error.localizedDescription)"))
             }
             try await processInitialServerFrames()
         }
@@ -111,7 +111,7 @@ extension XHTTPConnection {
             do {
                 frame = try await h2FrameReader.readFrame()
             } catch {
-                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H2 setup read failed: \(error.localizedDescription)"))
+                throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "H2 setup read failed: \(error.localizedDescription)"))
             }
 
             switch frame.type {
@@ -128,7 +128,7 @@ extension XHTTPConnection {
                 let isDownload = frame.streamId == 0 || frame.streamId == downloadStreamId
                 if isDownload {
                     if let rejection = checkH2ResponseStatus(frame.payload) {
-                        throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H2 response rejected: \(rejection)"))
+                        throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "H2 response rejected: \(rejection)"))
                     }
                     state.withLock { $0.h2ResponseReceived = true }
                 }
@@ -157,7 +157,7 @@ extension XHTTPConnection {
                 continue
 
             case Self.h2FrameGoaway:
-                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "Server sent GOAWAY"))
+                throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "Server sent GOAWAY"))
 
             default:
                 continue
@@ -218,7 +218,7 @@ extension XHTTPConnection {
 
             switch step {
             case .closed:
-                throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil))
+                throw NaiveFlowError.proxy(.xhttp, .connectionClosed(detail: nil))
             case .park:
                 await parkForH2Flow { state in min(state.h2PeerConnectionWindow, state.h2PeerStreamSendWindow) > 0 }
                 try Task.checkCancellation()
@@ -285,7 +285,7 @@ extension XHTTPConnection {
 
         switch build {
         case .closed:
-            throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil))
+            throw NaiveFlowError.proxy(.xhttp, .connectionClosed(detail: nil))
         case .headersOnly(let outbound):
             do {
                 try await download.send(outbound)
@@ -352,7 +352,7 @@ extension XHTTPConnection {
 
             switch step {
             case .closed:
-                throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil))
+                throw NaiveFlowError.proxy(.xhttp, .connectionClosed(detail: nil))
             case .park:
                 await parkForH2Flow { state in min(state.h2PeerConnectionWindow, state.h2PacketStreamWindows[streamId] ?? currentStreamWindow) > 0 }
                 try Task.checkCancellation()
@@ -389,7 +389,7 @@ extension XHTTPConnection {
             do {
                 frame = try await h2FrameReader.readFrame()
             } catch {
-                if case RuleProxyError.proxy(.xhttp, .streamClosed) = error {
+                if case NaiveFlowError.proxy(.xhttp, .streamClosed) = error {
                     markH2Closed()
                     return nil
                 }
@@ -505,7 +505,7 @@ extension XHTTPConnection {
 
     func performSharedH2Setup() async throws {
         guard let shared = sharedH2 else {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "no shared H2 connection"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "no shared H2 connection"))
         }
         switch role {
         case .downloadOnly:
@@ -524,7 +524,7 @@ extension XHTTPConnection {
                 try await headersSent.value()
             case .streamUp:
                 try await setupSharedH2Download(shared)
-                guard let shared = sharedH2 else { throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)) }
+                guard let shared = sharedH2 else { throw NaiveFlowError.proxy(.xhttp, .connectionClosed(detail: nil)) }
                 try await openSharedH2Upload(shared)
             default:
                 try await setupSharedH2Download(shared)
@@ -550,7 +550,7 @@ extension XHTTPConnection {
     }
 
     func sendSharedH2PacketUp(data: Data) async throws {
-        guard let shared = sharedH2 else { throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)) }
+        guard let shared = sharedH2 else { throw NaiveFlowError.proxy(.xhttp, .connectionClosed(detail: nil)) }
         let seq = state.withLock { state -> Int64 in let s = state.nextSeq; state.nextSeq += 1; return s }
         xmuxLease?.noteRequest()
 

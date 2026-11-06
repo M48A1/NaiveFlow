@@ -1,6 +1,6 @@
 //
 //  RFCHTTP11Tunnel.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 9/11/26.
 //
@@ -30,7 +30,7 @@ nonisolated enum RFCHTTP11Tunnel {
                     : RFCReplayConnection(inner: connection, replay: response.leftover)
             }
             guard let chunk = try await connection.receive() else {
-                throw RuleProxyError.proxy(.http11, .handshakeFailed(
+                throw NaiveFlowError.proxy(.http11, .handshakeFailed(
                     detail: "Proxy closed before completing the CONNECT response"
                 ))
             }

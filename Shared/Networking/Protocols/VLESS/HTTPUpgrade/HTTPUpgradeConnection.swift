@@ -1,6 +1,6 @@
 //
 //  HTTPUpgradeConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
@@ -77,7 +77,7 @@ nonisolated final class HTTPUpgradeConnection: Sendable {
         try await withDialDeadline(Self.upgradeDeadline, onExpiry: {
             self.cancel()
         }, error: {
-            RuleProxyError.proxy(.httpUpgrade, .upgradeFailed(detail: "handshake timed out"))
+            NaiveFlowError.proxy(.httpUpgrade, .upgradeFailed(detail: "handshake timed out"))
         }) {
             try await self.sendAndAwaitUpgrade()
         }
@@ -100,13 +100,13 @@ nonisolated final class HTTPUpgradeConnection: Sendable {
         request += "\r\n"
 
         guard let requestData = request.data(using: .utf8) else {
-            throw RuleProxyError.proxy(.httpUpgrade, .upgradeFailed(detail: "Failed to encode upgrade request"))
+            throw NaiveFlowError.proxy(.httpUpgrade, .upgradeFailed(detail: "Failed to encode upgrade request"))
         }
 
         do {
             try await transport.send(requestData)
         } catch {
-            throw RuleProxyError.capture(error, context: "HTTPUpgrade request")
+            throw NaiveFlowError.capture(error, context: "HTTPUpgrade request")
         }
 
         try await receiveUpgradeResponse()
@@ -118,11 +118,11 @@ nonisolated final class HTTPUpgradeConnection: Sendable {
             do {
                 chunk = try await transport.receive()
             } catch {
-                throw RuleProxyError.capture(error, context: "HTTPUpgrade response")
+                throw NaiveFlowError.capture(error, context: "HTTPUpgrade response")
             }
 
             guard case .bytes(let data) = chunk, !data.isEmpty else {
-                throw RuleProxyError.proxy(.httpUpgrade, .upgradeFailed(detail: "Empty response from server"))
+                throw NaiveFlowError.proxy(.httpUpgrade, .upgradeFailed(detail: "Empty response from server"))
             }
 
             let headerData: Data? = try state.withLock { state in
@@ -131,7 +131,7 @@ nonisolated final class HTTPUpgradeConnection: Sendable {
                 let headerEnd = Data([0x0D, 0x0A, 0x0D, 0x0A])
                 guard let range = state.leftoverBuffer.range(of: headerEnd) else {
                     if state.leftoverBuffer.count > Self.maxResponseHeaderSize {
-                        throw RuleProxyError.proxy(.httpUpgrade, .upgradeFailed(detail: "response headers too large"))
+                        throw NaiveFlowError.proxy(.httpUpgrade, .upgradeFailed(detail: "response headers too large"))
                     }
                     return nil
                 }
@@ -147,16 +147,16 @@ nonisolated final class HTTPUpgradeConnection: Sendable {
             }
 
             guard let headerString = String(data: headerData, encoding: .utf8) else {
-                throw RuleProxyError.proxy(.httpUpgrade, .upgradeFailed(detail: "Cannot decode response headers"))
+                throw NaiveFlowError.proxy(.httpUpgrade, .upgradeFailed(detail: "Cannot decode response headers"))
             }
 
             let lines = headerString.split(separator: "\r\n")
             guard let statusLine = lines.first else {
-                throw RuleProxyError.proxy(.httpUpgrade, .upgradeFailed(detail: "Empty response"))
+                throw NaiveFlowError.proxy(.httpUpgrade, .upgradeFailed(detail: "Empty response"))
             }
 
             guard statusLine.contains("101") else {
-                throw RuleProxyError.proxy(.httpUpgrade, .upgradeFailed(detail: "Expected HTTP 101, got: \(statusLine)"))
+                throw NaiveFlowError.proxy(.httpUpgrade, .upgradeFailed(detail: "Expected HTTP 101, got: \(statusLine)"))
             }
 
             var hasUpgradeWebSocket = false
@@ -175,12 +175,12 @@ nonisolated final class HTTPUpgradeConnection: Sendable {
             }
 
             guard hasUpgradeWebSocket && hasConnectionUpgrade else {
-                throw RuleProxyError.proxy(.httpUpgrade, .upgradeFailed(detail: "Missing Upgrade/Connection headers in 101 response"))
+                throw NaiveFlowError.proxy(.httpUpgrade, .upgradeFailed(detail: "Missing Upgrade/Connection headers in 101 response"))
             }
 
             let opened: Bool = state.withLock { $0.transition(to: .open) }
             guard opened else {
-                throw RuleProxyError.proxy(.httpUpgrade, .upgradeFailed(detail: "cancelled during upgrade"))
+                throw NaiveFlowError.proxy(.httpUpgrade, .upgradeFailed(detail: "cancelled during upgrade"))
             }
             return
         }
@@ -210,11 +210,11 @@ nonisolated final class HTTPUpgradeConnection: Sendable {
         case .data(let data):
             return data
         case .upgrading:
-            throw RuleProxyError.proxy(.httpUpgrade, .notReady)
+            throw NaiveFlowError.proxy(.httpUpgrade, .notReady)
         case .closed:
             return nil
         case .cancelled:
-            throw RuleProxyError.transport(.terminated)
+            throw NaiveFlowError.transport(.terminated)
         case .empty:
             break
         }

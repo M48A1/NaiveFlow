@@ -1,6 +1,6 @@
 //
 //  TrojanConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/22/26.
 //

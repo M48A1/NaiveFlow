@@ -1,6 +1,6 @@
 //
 //  HTTP3Multiplexer.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/11/26.
 //
@@ -222,9 +222,9 @@ nonisolated final class HTTP3Multiplexer: Multiplexer, Sendable {
         case .ready:
             return
         case .drainingFail:
-            throw RuleProxyError.proxy(.http3, .connectionClosed(detail: "Session draining (GOAWAY)"))
+            throw NaiveFlowError.proxy(.http3, .connectionClosed(detail: "Session draining (GOAWAY)"))
         case .closedFail:
-            throw RuleProxyError.proxy(.http3, .connectionClosed(detail: "Session closed"))
+            throw NaiveFlowError.proxy(.http3, .connectionClosed(detail: "Session closed"))
         case .beginAndPark:
             startConnection()
             try await readyTask.value
@@ -335,13 +335,13 @@ nonisolated final class HTTP3Multiplexer: Multiplexer, Sendable {
             switch streamType {
             case 0x00:
                 guard session.serverControlStreamID == nil else {
-                    return [.fail(RuleProxyError.proxy(.http3, .connectionClosed(detail: "Duplicate server control stream")))]
+                    return [.fail(NaiveFlowError.proxy(.http3, .connectionClosed(detail: "Duplicate server control stream")))]
                 }
                 session.serverControlStreamID = streamID
                 session.serverControlBuffer = Data(buffer.dropFirst())
                 return Self.processServerControlFrames(&session)
             case 0x01:
-                return [.fail(RuleProxyError.proxy(.http3, .connectionClosed(detail: "Server opened push stream without MAX_PUSH_ID")))]
+                return [.fail(NaiveFlowError.proxy(.http3, .connectionClosed(detail: "Server opened push stream without MAX_PUSH_ID")))]
             case 0x02, 0x03:
                 session.ignoredServerStreams.insert(streamID)
                 return []
@@ -365,7 +365,7 @@ nonisolated final class HTTP3Multiplexer: Multiplexer, Sendable {
         guard let sink = state.withLock({ $0.streams[streamID] }) else { return }
         switch cause {
         case .reset:
-            sink.error(error ?? RuleProxyError.quic(.streamReset(applicationCode: HTTP3ErrorCode.noError.rawValue)))
+            sink.error(error ?? NaiveFlowError.quic(.streamReset(applicationCode: HTTP3ErrorCode.noError.rawValue)))
         case .closed:
             if let error { sink.error(error) }
         }
@@ -400,12 +400,12 @@ nonisolated final class HTTP3Multiplexer: Multiplexer, Sendable {
 
             if !session.serverSettingsReceived {
                 guard frame.type == HTTP3FrameType.settings.rawValue else {
-                    effects.append(.fail(RuleProxyError.proxy(.http3, .connectionClosed(detail: "First control-stream frame was not SETTINGS"))))
+                    effects.append(.fail(NaiveFlowError.proxy(.http3, .connectionClosed(detail: "First control-stream frame was not SETTINGS"))))
                     return effects
                 }
                 session.serverSettingsReceived = true
                 if !parseServerSettings(frame.payload, into: &session) {
-                    effects.append(.fail(RuleProxyError.proxy(.http3, .connectionClosed(detail: "Malformed SETTINGS frame"))))
+                    effects.append(.fail(NaiveFlowError.proxy(.http3, .connectionClosed(detail: "Malformed SETTINGS frame"))))
                     return effects
                 }
                 continue
@@ -420,19 +420,19 @@ nonisolated final class HTTP3Multiplexer: Multiplexer, Sendable {
                     session.pendingGoaway = true
                 }
             case HTTP3FrameType.settings.rawValue:
-                effects.append(.fail(RuleProxyError.proxy(.http3, .connectionClosed(detail: "Duplicate SETTINGS frame"))))
+                effects.append(.fail(NaiveFlowError.proxy(.http3, .connectionClosed(detail: "Duplicate SETTINGS frame"))))
                 return effects
             case HTTP3FrameType.data.rawValue,
                 HTTP3FrameType.headers.rawValue,
                 HTTP3FrameType.pushPromise.rawValue:
-                effects.append(.fail(RuleProxyError.proxy(.http3, .connectionClosed(detail: "Forbidden frame type \(frame.type) on control stream"))))
+                effects.append(.fail(NaiveFlowError.proxy(.http3, .connectionClosed(detail: "Forbidden frame type \(frame.type) on control stream"))))
                 return effects
             default:
                 break
             }
         }
         if session.serverControlBuffer.count > maxServerControlBufferBytes {
-            effects.append(.fail(RuleProxyError.proxy(.http3, .connectionClosed(detail: "Control-stream frame too large"))))
+            effects.append(.fail(NaiveFlowError.proxy(.http3, .connectionClosed(detail: "Control-stream frame too large"))))
         }
         return effects
     }
@@ -485,7 +485,7 @@ nonisolated final class HTTP3Multiplexer: Multiplexer, Sendable {
     // MARK: - Close
 
     func close(error: Error? = nil) {
-        failSession(error ?? RuleProxyError.proxy(.http3, .connectionClosed(detail: "Session closed")))
+        failSession(error ?? NaiveFlowError.proxy(.http3, .connectionClosed(detail: "Session closed")))
     }
 
     private func failSession(_ error: Error) {

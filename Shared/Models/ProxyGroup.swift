@@ -1,6 +1,6 @@
 //
 //  ProxyGroup.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 8/8/26.
 //

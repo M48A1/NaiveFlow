@@ -1,6 +1,6 @@
 //
 //  MITMScriptHTTP2Pool.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/2/26.
 //
@@ -81,7 +81,7 @@ nonisolated final class MITMScriptHTTP2Pool: TransportPool {
                 resourceTimeout: resourceTimeout
             )
             return .response(response)
-        } catch RuleProxyError.mitm(.needsHTTP1Fallback) {
+        } catch NaiveFlowError.mitm(.needsHTTP1Fallback) {
             return .fallbackToHTTP1
         }
     }

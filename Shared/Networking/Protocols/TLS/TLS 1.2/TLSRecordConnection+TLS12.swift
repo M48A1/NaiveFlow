@@ -1,6 +1,6 @@
 //
 //  TLSRecordConnection+TLS12.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/19/26.
 //
@@ -95,7 +95,7 @@ nonisolated extension TLSRecordConnection {
 
         var iv = Data(count: blockSize)
         guard iv.withUnsafeMutableBytes({ SecRandomCopyBytes(kSecRandomDefault, blockSize, $0.baseAddress!) }) == errSecSuccess else {
-            throw RuleProxyError.tls(.record(.ivGenerationFailed))
+            throw NaiveFlowError.tls(.record(.ivGenerationFailed))
         }
 
         var encrypted = Data(count: data.count)
@@ -121,7 +121,7 @@ nonisolated extension TLSRecordConnection {
         }
 
         guard status == kCCSuccess else {
-            throw RuleProxyError.tls(.record(.encryptionFailed))
+            throw NaiveFlowError.tls(.record(.encryptionFailed))
         }
 
         let recordPayloadLen = blockSize + numBytesEncrypted
@@ -154,7 +154,7 @@ nonisolated extension TLSRecordConnection {
         let contentType = header.first ?? TLSContentType.applicationData
 
         guard ciphertext.count >= explicitNonceLen + 16 else {
-            throw RuleProxyError.tls(.record(.ciphertextTooShort))
+            throw NaiveFlowError.tls(.record(.ciphertextTooShort))
         }
 
         let explicitNonce = isChaCha ? Data() : ciphertext.prefix(explicitNonceLen)
@@ -193,14 +193,14 @@ nonisolated extension TLSRecordConnection {
         let contentType = header.first ?? TLSContentType.applicationData
 
         guard ciphertext.count >= blockSize * 2 else {
-            throw RuleProxyError.tls(.record(.ciphertextTooShort))
+            throw NaiveFlowError.tls(.record(.ciphertextTooShort))
         }
 
         let iv = Data(ciphertext.prefix(blockSize))
         let encrypted = Data(ciphertext.suffix(from: ciphertext.startIndex + blockSize))
 
         guard encrypted.count % blockSize == 0 else {
-            throw RuleProxyError.tls(.record(.malformed(detail: "CBC ciphertext not block-aligned")))
+            throw NaiveFlowError.tls(.record(.malformed(detail: "CBC ciphertext not block-aligned")))
         }
 
         var decrypted = Data(count: encrypted.count)
@@ -226,7 +226,7 @@ nonisolated extension TLSRecordConnection {
         }
 
         guard status == kCCSuccess, numBytesDecrypted > 0 else {
-            throw RuleProxyError.tls(.record(.malformed(detail: "CBC decryption failed")))
+            throw NaiveFlowError.tls(.record(.malformed(detail: "CBC decryption failed")))
         }
 
         decrypted = decrypted.prefix(numBytesDecrypted)
@@ -249,7 +249,7 @@ nonisolated extension TLSRecordConnection {
 
         let macSize = TLSCipherSuite.macLength(cipherSuite)
         guard decrypted.count >= macSize else {
-            throw RuleProxyError.tls(.record(.malformed(detail: "decrypted record too short for MAC")))
+            throw NaiveFlowError.tls(.record(.malformed(detail: "decrypted record too short for MAC")))
         }
 
         let payload = Data(decrypted.prefix(decrypted.count - macSize))
@@ -274,7 +274,7 @@ nonisolated extension TLSRecordConnection {
         )
 
         guard constantTimeEqual(receivedMAC, expectedMAC), paddingGood == 0 else {
-            throw RuleProxyError.tls(.record(.macVerificationFailed))
+            throw NaiveFlowError.tls(.record(.macVerificationFailed))
         }
 
         return payload

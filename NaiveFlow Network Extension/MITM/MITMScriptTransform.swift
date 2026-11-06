@@ -1,6 +1,6 @@
 //
 //  MITMScriptTransform.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/9/26.
 //
@@ -10,7 +10,7 @@ import Synchronization
 import JavaScriptCore
 import os
 
-nonisolated private let logger = RuleProxyLogger(category: "MITMScriptTransform")
+nonisolated private let logger = NaiveFlowLogger(category: "MITMScriptTransform")
 
 nonisolated private let nativeBodyEditReservedBytes = Atomic<Int>(0)
 

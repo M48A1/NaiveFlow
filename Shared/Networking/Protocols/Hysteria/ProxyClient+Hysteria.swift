@@ -1,6 +1,6 @@
 //
 //  ProxyClient+Hysteria.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/15/26.
 //
@@ -11,7 +11,7 @@ import Synchronization
 extension ProxyClient {
     func connectWithHysteria(_ request: ProxyRequest) async throws -> ProxyConnection {
         guard case .hysteria(let hysteriaConfiguration) = configuration.outbound else {
-            throw RuleProxyError.proxy(.hysteria, .protocolViolation(detail: "Hysteria password not set"))
+            throw NaiveFlowError.proxy(.hysteria, .protocolViolation(detail: "Hysteria password not set"))
         }
 
         let hysteriaRuntimeConfiguration = HysteriaRuntimeConfiguration(

@@ -1,6 +1,6 @@
 //
 //  CloudSync.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 8/25/26.
 //
@@ -8,12 +8,12 @@
 import Foundation
 import CloudKit
 
-nonisolated private let logger = RuleProxyLogger(category: "CloudSync")
+nonisolated private let logger = NaiveFlowLogger(category: "CloudSync")
 
 actor CloudSync {
     static let shared = CloudSync()
 
-    private static let zoneName = "RuleProxySync"
+    private static let zoneName = "NaiveFlowSync"
     private static let recordType: CKRecord.RecordType = "SyncItem"
     private static let recordNameSeparator: Character = ":"
 

@@ -123,7 +123,7 @@ refresh never changes an assignment made in the app.
 ## Subscriptions
 
 A subscription is a `.amod` file served over **http(s)** from a URL whose path
-ends in `.amod`. RuleProxy fetches it (HTTP 2xx, UTF-8 body required), parses
+ends in `.amod`. NaiveFlow fetches it (HTTP 2xx, UTF-8 body required), parses
 it, validates the [limits](#limits), and stores the result as one module.
 
 On **refresh** the file is fetched once and the module's content is replaced
@@ -146,7 +146,7 @@ A subscribed module's rule sets are read-only in the app: their switches,
 parameter values, and routing assignments can be changed, their rules and
 names cannot.
 
-A module can also be offered through the `ruleproxy://add-module?link=…` deep
+A module can also be offered through the `naiveflow://add-module?link=…` deep
 link, where `link` is the `.amod` URL. The app previews the module's rule
 sets and, on confirmation, subscribes to it.
 
@@ -196,7 +196,7 @@ routing = 2
 name = My Service API
 hostname = api.myservice.example
 # request: add a header on API paths
-0, 1, ^/v1/, X-Client, ruleproxy
+0, 1, ^/v1/, X-Client, naiveflow
 # response: drop a cookie
 1, 2, .*, Set-Cookie
 [Parameter]

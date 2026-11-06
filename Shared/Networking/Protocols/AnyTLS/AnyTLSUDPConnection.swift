@@ -1,6 +1,6 @@
 //
 //  AnyTLSUDPConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/16/26.
 //
@@ -25,7 +25,7 @@ nonisolated final class AnyTLSUDPConnection: ProxyConnection, UDPFramingCapable 
     // MARK: - Send
 
     func sendRaw(_ data: Data) async throws {
-        guard let frame = frameUDPPacket(data) else { throw RuleProxyError.proxy(.anyTLS, .packetTooLarge) }
+        guard let frame = frameUDPPacket(data) else { throw NaiveFlowError.proxy(.anyTLS, .packetTooLarge) }
         try await inner.sendRaw(frame)
     }
 

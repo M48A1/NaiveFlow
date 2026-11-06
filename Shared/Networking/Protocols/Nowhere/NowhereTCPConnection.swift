@@ -1,6 +1,6 @@
 //
 //  NowhereTCPConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 8/24/26.
 //
@@ -90,7 +90,7 @@ actor NowhereTCPConnection: ProxyConnection {
     ) async throws {
         let request = NowhereProtocol.encodeFlowRequest(kind: kind, target: destination)
         guard lifecycle.withLock({ $0.transition(to: .opening) }) else {
-            throw RuleProxyError.proxy(.nowhere, .notReady)
+            throw NaiveFlowError.proxy(.nowhere, .notReady)
         }
 
         let client = TLSClient(configuration: configuration.tlsConfiguration)
@@ -123,7 +123,7 @@ actor NowhereTCPConnection: ProxyConnection {
                 }
                 guard let keys = configuration.morphKeys else {
                     base.cancel()
-                    throw RuleProxyError.proxy(.nowhere, .protocolViolation(detail: "Missing Morph keys"))
+                    throw NaiveFlowError.proxy(.nowhere, .protocolViolation(detail: "Missing Morph keys"))
                 }
                 let adoptedBase = lifecycle.withLock { state -> Bool in
                     guard state.phase == .opening else { return false }
@@ -166,7 +166,7 @@ actor NowhereTCPConnection: ProxyConnection {
 
             try Task.checkCancellation()
             guard record.negotiatedALPN == NowhereProtocol.applicationProtocol else {
-                throw RuleProxyError.tls(.handshakeFailed(
+                throw NaiveFlowError.tls(.handshakeFailed(
                     detail: "Portal did not negotiate the Nowhere application protocol"
                 ))
             }
@@ -207,7 +207,7 @@ actor NowhereTCPConnection: ProxyConnection {
             case .bytes(let data):
                 buffer.append(data)
             case .end:
-                throw RuleProxyError.proxy(
+                throw NaiveFlowError.proxy(
                     .nowhere,
                     .connectionClosed(detail: "TLS carrier closed before complete READY")
                 )
@@ -215,7 +215,7 @@ actor NowhereTCPConnection: ProxyConnection {
         }
 
         guard let result = NowhereProtocol.decodeFlowResult(buffer) else {
-            throw RuleProxyError.proxy(
+            throw NaiveFlowError.proxy(
                 .nowhere,
                 .connectionClosed(detail: "Invalid flow result")
             )
@@ -224,7 +224,7 @@ actor NowhereTCPConnection: ProxyConnection {
         case .ready:
             return Data(buffer.dropFirst(NowhereProtocol.flowResultSize))
         case .reject(let code):
-            throw RuleProxyError.proxy(.nowhere, .flowRejected(code: code.rawValue))
+            throw NaiveFlowError.proxy(.nowhere, .flowRejected(code: code.rawValue))
         }
     }
 
@@ -242,7 +242,7 @@ actor NowhereTCPConnection: ProxyConnection {
     func receiveRaw() async throws -> Data? {
         try Task.checkCancellation()
         guard !receiveInProgress else {
-            throw RuleProxyError.proxy(
+            throw NaiveFlowError.proxy(
                 .nowhere,
                 .protocolViolation(detail: "Overlapping receive on Nowhere TLS carrier")
             )
@@ -273,14 +273,14 @@ actor NowhereTCPConnection: ProxyConnection {
     private func readyTransport() throws -> any ByteTransport {
         try lifecycle.withLock { state in
             guard state.phase == .ready, let transport = state.transport else {
-                throw state.terminalError ?? RuleProxyError.proxy(.nowhere, .streamClosed)
+                throw state.terminalError ?? NaiveFlowError.proxy(.nowhere, .streamClosed)
             }
             return transport
         }
     }
 
     private nonisolated func terminalError(
-        fallback: Error = RuleProxyError.proxy(.nowhere, .streamClosed)
+        fallback: Error = NaiveFlowError.proxy(.nowhere, .streamClosed)
     ) -> Error {
         lifecycle.withLock { $0.terminalError ?? fallback }
     }
@@ -309,6 +309,6 @@ actor NowhereTCPConnection: ProxyConnection {
     }
 
     nonisolated func abort() {
-        finish(error: RuleProxyError.proxy(.nowhere, .streamClosed))
+        finish(error: NaiveFlowError.proxy(.nowhere, .streamClosed))
     }
 }

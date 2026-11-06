@@ -1,6 +1,6 @@
 //
 //  TunnelStack+DNS.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/30/26.
 //
@@ -12,12 +12,12 @@ extension TunnelStack {
     // MARK: - DNS Interception (Synthetic Address)
 
     enum DNSDestination {
-        case ruleproxyResolver
+        case naiveflowResolver
         case publicResolver
     }
     
     static let interceptedDNSServers: [String: DNSDestination] = [
-        TunnelAddress.ipv4: .ruleproxyResolver,
+        TunnelAddress.ipv4: .naiveflowResolver,
         "8.8.8.8": .publicResolver,
         "8.8.4.4": .publicResolver,
     ]
@@ -38,11 +38,16 @@ extension TunnelStack {
         if case .servers(let seeds) = AWCore.getBootstrapDNS() {
             addresses.formUnion(seeds.filter { $0 != TunnelAddress.ipv4 })
         }
+        for raw in AWCore.getDNSExemptServers() {
+            if let canonical = DNSUpstream.canonicalIPv4(raw), canonical != TunnelAddress.ipv4 {
+                addresses.insert(canonical)
+            }
+        }
         return addresses
     }
     
     static func dnsDestination(for dstIP: String, exempting exempt: Set<String>) -> DNSDestination? {
-        if dstIP == TunnelAddress.ipv4 { return .ruleproxyResolver }
+        if dstIP == TunnelAddress.ipv4 { return .naiveflowResolver }
         return exempt.contains(dstIP) ? nil : .publicResolver
     }
 

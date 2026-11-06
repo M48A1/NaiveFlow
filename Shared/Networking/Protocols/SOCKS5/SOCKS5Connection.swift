@@ -1,6 +1,6 @@
 //
 //  SOCKS5Connection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/26/26.
 //
@@ -143,17 +143,17 @@ nonisolated enum SOCKS5Handshake {
 
         try await transport.send(greeting)
         guard let data = try await buffer.readExact(count: 2) else {
-            throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 server closed during greeting"))
+            throw NaiveFlowError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 server closed during greeting"))
         }
         guard data[0] == SOCKS5.version else {
-            throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 unexpected server version: \(data[0])"))
+            throw NaiveFlowError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 unexpected server version: \(data[0])"))
         }
         let expectedMethod = hasAuth ? SOCKS5.authPassword : SOCKS5.authNone
         guard data[1] == expectedMethod else {
             if data[1] == SOCKS5.authNoMatch {
-                throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 server: no matching auth method"))
+                throw NaiveFlowError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 server: no matching auth method"))
             }
-            throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 auth method mismatch: expected \(expectedMethod), got \(data[1])"))
+            throw NaiveFlowError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 auth method mismatch: expected \(expectedMethod), got \(data[1])"))
         }
         if hasAuth {
             try await sendAuth(buffer: buffer, transport: transport, username: username!, password: password!)
@@ -177,10 +177,10 @@ nonisolated enum SOCKS5Handshake {
 
         try await transport.send(authData)
         guard let data = try await buffer.readExact(count: 2) else {
-            throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 server closed during auth"))
+            throw NaiveFlowError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 server closed during auth"))
         }
         guard data[1] == 0x00 else {
-            throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 authentication failed (status \(data[1]))"))
+            throw NaiveFlowError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 authentication failed (status \(data[1]))"))
         }
     }
 
@@ -207,38 +207,38 @@ nonisolated enum SOCKS5Handshake {
         buffer: SOCKS5AsyncBuffer
     ) async throws -> UDPRelayInfo {
         guard let data = try await buffer.readExact(count: 4) else {
-            throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 server closed during command"))
+            throw NaiveFlowError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 server closed during command"))
         }
         guard data[1] == SOCKS5.statusSuccess else {
-            throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 command failed (reply \(data[1]))"))
+            throw NaiveFlowError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 command failed (reply \(data[1]))"))
         }
 
         switch data[3] {
         case SOCKS5.addrIPv4:
             guard let addrData = try await buffer.readExact(count: 4 + 2) else {
-                throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 server closed reading bound address"))
+                throw NaiveFlowError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 server closed reading bound address"))
             }
             let ip = "\(addrData[0]).\(addrData[1]).\(addrData[2]).\(addrData[3])"
             let port = UInt16(addrData[4]) << 8 | UInt16(addrData[5])
             return UDPRelayInfo(host: ip, port: port)
 
         case SOCKS5.unsupportedAddress:
-            throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "IPv4-only build: unsupported relay address"))
+            throw NaiveFlowError.proxy(.socks5, .protocolViolation(detail: "IPv4-only build: unsupported relay address"))
 
         case SOCKS5.addrDomain:
             guard let lenData = try await buffer.readExact(count: 1) else {
-                throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 server closed reading bound address"))
+                throw NaiveFlowError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 server closed reading bound address"))
             }
             let domainLen = Int(lenData[0])
             guard let domainData = try await buffer.readExact(count: domainLen + 2) else {
-                throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 server closed reading bound address"))
+                throw NaiveFlowError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 server closed reading bound address"))
             }
             let domain = String(data: domainData.prefix(domainLen), encoding: .utf8) ?? ""
             let port = UInt16(domainData[domainLen]) << 8 | UInt16(domainData[domainLen + 1])
             return UDPRelayInfo(host: domain, port: port)
 
         default:
-            throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 unknown address type: \(data[3])"))
+            throw NaiveFlowError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 unknown address type: \(data[3])"))
         }
     }
 
@@ -314,7 +314,7 @@ nonisolated final class SOCKS5UDPProxyConnection: ProxyConnection, Sendable {
 
     func sendRaw(_ data: Data) async throws {
         guard !phase.withLock({ $0 == .cancelled }) else {
-            throw RuleProxyError.transport(.terminated)
+            throw NaiveFlowError.transport(.terminated)
         }
         var packet = udpHeader
         packet.append(data)
@@ -325,7 +325,7 @@ nonisolated final class SOCKS5UDPProxyConnection: ProxyConnection, Sendable {
     func receiveRaw() async throws -> Data? {
         while true {
             guard !phase.withLock({ $0 == .cancelled }) else {
-                throw RuleProxyError.transport(.terminated)
+                throw NaiveFlowError.transport(.terminated)
             }
             guard let data = try await relay.receive(), !data.isEmpty else {
                 return nil

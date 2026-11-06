@@ -1,6 +1,6 @@
 //
 //  MITMCertificateView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/3/26.
 //
@@ -214,7 +214,7 @@ struct MITMCertificateView: View {
             return String(localized: "Generate a certificate to begin.")
         }
         return controller.isTrusted
-            ? String(localized: "RuleProxy Root Certificate is installed and trusted.")
+            ? String(localized: "NaiveFlow Root Certificate is installed and trusted.")
             : String(localized: "Install the profile and trust in Settings to use MITM.")
     }
 
@@ -252,7 +252,7 @@ struct MITMCertificateView: View {
 
     private func certificateURL() -> URL? {
         guard let der = controller.certificateData() else { return nil }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("RuleProxyMITMRoot.cer")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("NaiveFlowMITMRoot.cer")
         do {
             try der.write(to: url, options: .atomic)
             return url

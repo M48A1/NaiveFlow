@@ -1,6 +1,6 @@
 //
-//  RuleProxyLogger.swift
-//  RuleProxy
+//  NaiveFlowLogger.swift
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/8/26.
 //
@@ -9,7 +9,7 @@ import Foundation
 import Synchronization
 import os.log
 
-nonisolated struct RuleProxyLogger {
+nonisolated struct NaiveFlowLogger {
     private let logger: Logger
 
     private struct LogSink: Sendable {
@@ -35,7 +35,7 @@ nonisolated struct RuleProxyLogger {
     }
 
     init(category: String) {
-        self.logger = Logger(subsystem: "com.argsment.RuleProxy", category: category)
+        self.logger = Logger(subsystem: "com.argsment.NaiveFlow", category: category)
     }
 
     func debug(_ message: @autoclosure () -> String) {

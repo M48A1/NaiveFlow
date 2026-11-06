@@ -3,7 +3,7 @@
   "targets" : [
     {
       "id" : "C34DEB9E-F320-4813-B39C-CD001D157444",
-      "name" : "RuleProxy"
+      "name" : "NaiveFlow"
     }
   ]
 }

@@ -61,7 +61,7 @@ actor ManualConfigurationCloudTransport: ConfigurationCloudTransport {
         var totalBytes = 0
         // Read legacy copies only on this explicit command. Never delete or
         // overwrite them during migration to the manual-only zone.
-        for name in [Self.zoneName, "RuleProxySync"] {
+        for name in [Self.zoneName, "NaiveFlowSync"] {
             var token: CKServerChangeToken?
             var records: [CKRecord.ID: Data] = [:]
             do {

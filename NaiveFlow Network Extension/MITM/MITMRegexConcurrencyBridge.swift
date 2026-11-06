@@ -1,6 +1,6 @@
 //
 //  MITMRegexConcurrencyBridge.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/17/26.
 //
@@ -12,13 +12,13 @@ nonisolated final class MITMRegexConcurrencyBridge: Sendable {
     static let shared = MITMRegexConcurrencyBridge()
 
     private let queue = DispatchQueue(
-        label: "com.argsment.RuleProxy.MITMRegexConcurrencyBridge",
+        label: "com.argsment.NaiveFlow.MITMRegexConcurrencyBridge",
         qos: .userInitiated,
         attributes: .concurrent
     )
 
     private let deadlineQueue = DispatchQueue(
-        label: "com.argsment.RuleProxy.MITMRegexConcurrencyBridge.Deadline",
+        label: "com.argsment.NaiveFlow.MITMRegexConcurrencyBridge.Deadline",
         qos: .userInitiated
     )
 

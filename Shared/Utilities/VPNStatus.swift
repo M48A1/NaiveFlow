@@ -1,6 +1,6 @@
 //
 //  VPNStatus.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/4/26.
 //

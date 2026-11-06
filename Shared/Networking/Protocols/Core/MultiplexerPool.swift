@@ -1,6 +1,6 @@
 //
 //  MultiplexerPool.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/14/26.
 //

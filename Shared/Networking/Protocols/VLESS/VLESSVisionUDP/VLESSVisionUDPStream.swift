@@ -1,6 +1,6 @@
 //
 //  VLESSVisionUDPStream.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
@@ -63,13 +63,13 @@ actor VLESSVisionUDPStream {
 
     func send(data: Data) async throws {
         guard !closed else {
-            throw RuleProxyError.proxy(.vless, .connectionClosed(detail: "Mux stream closed"))
+            throw NaiveFlowError.proxy(.vless, .connectionClosed(detail: "Mux stream closed"))
         }
         guard let multiplexer else {
-            throw RuleProxyError.proxy(.vless, .connectionClosed(detail: "Mux multiplexer deallocated"))
+            throw NaiveFlowError.proxy(.vless, .connectionClosed(detail: "Mux multiplexer deallocated"))
         }
         try await sendChain.run { [weak self] in
-            guard let self else { throw RuleProxyError.proxy(.vless, .connectionClosed(detail: "Mux stream closed")) }
+            guard let self else { throw NaiveFlowError.proxy(.vless, .connectionClosed(detail: "Mux stream closed")) }
             try await self.buildAndSend(data: data, multiplexer: multiplexer)
         }
     }

@@ -38,6 +38,6 @@ nonisolated enum DNSBootstrapPolicy: Equatable, Sendable {
             } catch is CancellationError { throw CancellationError() }
             catch { lastFailure = error }
         }
-        throw lastFailure ?? RuleProxyError.dns(.noAddresses(host: bare))
+        throw lastFailure ?? NaiveFlowError.dns(.noAddresses(host: bare))
     }
 }

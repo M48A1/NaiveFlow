@@ -1,6 +1,6 @@
 //
 //  ProxyDoHClient.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 11/6/26.
 //
@@ -21,7 +21,7 @@ nonisolated enum ProxyDoHClient {
         guard url.scheme?.lowercased() == "https",
               let host = url.host, IPv4Only.supportsHost(host),
               let portNumber = UInt16(exactly: url.port ?? 443), portNumber > 0 else {
-            throw RuleProxyError.dns(.malformedResponse)
+            throw NaiveFlowError.dns(.malformedResponse)
         }
 
         let dialed = try await OutboundConnector.dial(host: host, port: portNumber)
@@ -45,19 +45,19 @@ nonisolated enum ProxyDoHClient {
         return try await withDialDeadline(DNSUpstreamClient.queryTimeout) {
             connection.cancel()
         } error: {
-            RuleProxyError.dns(.timedOut(host: host))
+            NaiveFlowError.dns(.timedOut(host: host))
         } operation: {
             try await connection.send(wire)
             var response = Data()
             while true {
                 guard let chunk = try await connection.receive() else {
                     if let parsed = try BootstrapDoHClient.parseResponse(response, eof: true) { return parsed }
-                    throw RuleProxyError.dns(.malformedResponse)
+                    throw NaiveFlowError.dns(.malformedResponse)
                 }
                 guard !chunk.isEmpty else { continue }
                 response.append(chunk)
                 guard response.count <= BootstrapDoHClient.maximumWireBytes else {
-                    throw RuleProxyError.dns(.malformedResponse)
+                    throw NaiveFlowError.dns(.malformedResponse)
                 }
                 if let parsed = try BootstrapDoHClient.parseResponse(response, eof: false) { return parsed }
             }

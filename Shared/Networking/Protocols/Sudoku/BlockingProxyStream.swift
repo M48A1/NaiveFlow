@@ -1,6 +1,6 @@
 //
 //  BlockingProxyStream.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by saba-futai on 10/18/26.
 //
@@ -37,7 +37,7 @@ nonisolated final class BlockingProxyStream: Sendable {
 
     func sendAll(_ data: Data) async throws {
         if data.isEmpty { return }
-        if isClosed { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil)) }
+        if isClosed { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil)) }
         try await connection.sendRaw(data)
     }
 
@@ -46,10 +46,10 @@ nonisolated final class BlockingProxyStream: Sendable {
         if let buffered = pending.withLock({ $0.isEmpty ? nil : $0.read(max: max) }) {
             return buffered
         }
-        if isClosed { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil)) }
+        if isClosed { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil)) }
         guard let data = try await connection.receiveRaw(), !data.isEmpty else {
             markClosed()
-            throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil))
+            throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil))
         }
         if data.count > max {
             pending.withLock { $0.append(data, from: max) }
@@ -65,10 +65,10 @@ nonisolated final class BlockingProxyStream: Sendable {
             if !pending.isEmpty { pending.drain(exact: count, into: &out) }
         }
         while out.count < count {
-            if isClosed { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil)) }
+            if isClosed { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil)) }
             guard let data = try await connection.receiveRaw(), !data.isEmpty else {
                 markClosed()
-                throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil))
+                throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil))
             }
             let need = count - out.count
             if data.count > need {

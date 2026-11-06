@@ -1,6 +1,6 @@
 //
 //  TVAddProxyViewController.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/19/26.
 //
@@ -222,7 +222,7 @@ class TVAddProxyViewController: UITableViewController {
     private func importFromString(_ string: String) {
         var trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // The Link field may carry ruleproxy:// deep link; unwrap to the embedded link.
+        // The Link field may carry naiveflow:// deep link; unwrap to the embedded link.
         if let embedded = DeepLinkManager.extractAddProxyLink(from: trimmed) {
             trimmed = embedded
         }

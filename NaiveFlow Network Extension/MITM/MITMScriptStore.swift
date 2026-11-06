@@ -1,6 +1,6 @@
 //
 //  MITMScriptStore.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/9/26.
 //
@@ -28,9 +28,9 @@ nonisolated final class MITMScriptStore: Sendable {
         return state.withLock { $0.buckets[scope]?[key] }
     }
 
-    func setValue(_ value: Data, forKey key: String, scope: UUID, onDisk: Bool = false) throws(RuleProxyError) {
+    func setValue(_ value: Data, forKey key: String, scope: UUID, onDisk: Bool = false) throws(NaiveFlowError) {
         if onDisk { return try MITMScriptDiskStore.shared.setValue(value, forKey: key, scope: scope) }
-        try state.withLock { (state) throws(RuleProxyError) in
+        try state.withLock { (state) throws(NaiveFlowError) in
             // Mutate via subscript to stay in-place; aliasing COW storage copies the whole bucket per write.
             let keyBytes = key.utf8.count
             let oldEntryBytes = state.buckets[scope]?[key].map { $0.count + keyBytes } ?? 0
@@ -38,11 +38,11 @@ nonisolated final class MITMScriptStore: Sendable {
             let delta = newEntryBytes - oldEntryBytes
             let projected = (state.bucketSizes[scope] ?? 0) + delta
             if projected > Self.maxBytesPerScope {
-                throw RuleProxyError.mitm(.scriptStoreCapacityExceeded)
+                throw NaiveFlowError.mitm(.scriptStoreCapacityExceeded)
             }
             let projectedTotal = state.totalBytes + delta
             if projectedTotal > Self.maxTotalBytes {
-                throw RuleProxyError.mitm(.scriptStoreCapacityExceeded)
+                throw NaiveFlowError.mitm(.scriptStoreCapacityExceeded)
             }
             state.buckets[scope, default: [:]][key] = value
             state.bucketSizes[scope] = projected

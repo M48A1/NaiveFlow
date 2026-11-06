@@ -1,6 +1,6 @@
 //
 //  SudokuRecordLayer.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by saba-futai on 10/18/26.
 //
@@ -96,9 +96,9 @@ nonisolated final class SudokuObfsTransport: Sendable {
                 } else {
                     out.append(chunk)
                 }
-            } catch RuleProxyError.proxy(.sudoku, .connectionClosed) {
+            } catch NaiveFlowError.proxy(.sudoku, .connectionClosed) {
                 if out.isEmpty { return nil }
-                throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "truncated \(what)"))
+                throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "truncated \(what)"))
             }
         }
         return out
@@ -256,14 +256,14 @@ nonisolated final class SudokuRecordStream: Sendable {
         if method == .none { return try await transport.receive(max: max) }
         while true {
             guard let lenData = try await transport.readExactAllowingEOF(2, what: "record length") else {
-                throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil))
+                throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil))
             }
             let bodyLen = try Self.parseRecordLength(lenData)
             let body: Data
             do {
                 body = try await transport.readExact(bodyLen)
-            } catch RuleProxyError.proxy(.sudoku, .connectionClosed) {
-                throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "truncated record body"))
+            } catch NaiveFlowError.proxy(.sudoku, .connectionClosed) {
+                throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "truncated record body"))
             }
             let out: Data? = try state.withLock { state in
                 let plain = try decryptRecord(&state, body: body)
@@ -288,7 +288,7 @@ nonisolated final class SudokuRecordStream: Sendable {
 
     private static func parseRecordLength(_ lenData: Data) throws -> Int {
         let bodyLen = Int(UInt16(lenData.uint8(at: 0)) << 8 | UInt16(lenData.uint8(at: 1)))
-        guard bodyLen >= 12 && bodyLen <= 65535 else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "bad record length")) }
+        guard bodyLen >= 12 && bodyLen <= 65535 else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "bad record length")) }
         return bodyLen
     }
 
@@ -296,9 +296,9 @@ nonisolated final class SudokuRecordStream: Sendable {
         let epoch = body.uint32BE(at: 0)
         let seq = body.uint64BE(at: 4)
         if state.recvInitialized {
-            if epoch < state.recvEpoch { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "replayed record epoch")) }
-            if epoch == state.recvEpoch && seq != state.recvSeq { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "out of order record")) }
-            if epoch > state.recvEpoch && epoch - state.recvEpoch > 8 { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "record epoch jump")) }
+            if epoch < state.recvEpoch { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "replayed record epoch")) }
+            if epoch == state.recvEpoch && seq != state.recvSeq { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "out of order record")) }
+            if epoch > state.recvEpoch && epoch - state.recvEpoch > 8 { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "record epoch jump")) }
         }
         let key: SymmetricKey
         if epoch == state.recvEpoch, let cached = state.epochKey {

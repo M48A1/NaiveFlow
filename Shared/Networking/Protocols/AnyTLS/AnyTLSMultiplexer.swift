@@ -1,6 +1,6 @@
 //
 //  AnyTLSMultiplexer.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/16/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 
-nonisolated private let logger = RuleProxyLogger(category: "AnyTLSMultiplexer")
+nonisolated private let logger = NaiveFlowLogger(category: "AnyTLSMultiplexer")
 
 nonisolated final class AnyTLSMultiplexer: Multiplexer, Sendable {
 
@@ -141,7 +141,7 @@ nonisolated final class AnyTLSMultiplexer: Multiplexer, Sendable {
     private func armSynDoneTimerLocked(_ state: inout State) {
         state.synDoneDeadline?.cancel()
         state.synDoneDeadline = TickScheduler.shared.schedule(in: .seconds(3), precision: .relaxed) { [weak self] in
-            self?.close(error: RuleProxyError.proxy(.anyTLS, .openTimeout))
+            self?.close(error: NaiveFlowError.proxy(.anyTLS, .openTimeout))
         }
     }
 
@@ -275,7 +275,7 @@ nonisolated final class AnyTLSMultiplexer: Multiplexer, Sendable {
 
         switch action {
         case .rejected:
-            throw RuleProxyError.proxy(.anyTLS, .connectionClosed(detail: "AnyTLS multiplexer closed"))
+            throw NaiveFlowError.proxy(.anyTLS, .connectionClosed(detail: "AnyTLS multiplexer closed"))
         case .buffered:
             return
         case .send(let pending):
@@ -358,7 +358,7 @@ nonisolated final class AnyTLSMultiplexer: Multiplexer, Sendable {
     }
 
     private func handleTransportEOF() {
-        close(error: RuleProxyError.proxy(.anyTLS, .connectionClosed(detail: "AnyTLS session closed by peer")))
+        close(error: NaiveFlowError.proxy(.anyTLS, .connectionClosed(detail: "AnyTLS session closed by peer")))
     }
 
     private func handleTransportFailure(_ error: Error) {
@@ -429,7 +429,7 @@ nonisolated final class AnyTLSMultiplexer: Multiplexer, Sendable {
             }
             if !payload.isEmpty {
                 let message = String(data: payload, encoding: .utf8) ?? "<binary>"
-                stream?.deliverClose(error: RuleProxyError.proxy(.anyTLS, .protocolViolation(detail: "AnyTLS remote: \(message)")))
+                stream?.deliverClose(error: NaiveFlowError.proxy(.anyTLS, .protocolViolation(detail: "AnyTLS remote: \(message)")))
                 state.withLock { $0.streams[sid] = nil }
             }
 
@@ -450,7 +450,7 @@ nonisolated final class AnyTLSMultiplexer: Multiplexer, Sendable {
 
         case AnyTLSProtocol.cmdAlert:
             let message = String(data: payload, encoding: .utf8) ?? "<binary>"
-            close(error: RuleProxyError.proxy(.anyTLS, .protocolViolation(detail: "AnyTLS alert: \(message)")))
+            close(error: NaiveFlowError.proxy(.anyTLS, .protocolViolation(detail: "AnyTLS alert: \(message)")))
 
         case AnyTLSProtocol.cmdUpdatePaddingScheme:
             if let new = AnyTLSPaddingScheme.parse(payload) {

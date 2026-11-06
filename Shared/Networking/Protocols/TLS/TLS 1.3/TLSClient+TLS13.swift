@@ -1,6 +1,6 @@
 //
 //  TLSClient+TLS13.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/19/26.
 //
@@ -11,7 +11,7 @@ import CommonCrypto
 import Security
 import Compression
 
-nonisolated private let logger = RuleProxyLogger(category: "TLSClient")
+nonisolated private let logger = NaiveFlowLogger(category: "TLSClient")
 
 extension TLSClient {
 
@@ -25,7 +25,7 @@ extension TLSClient {
         clientHello: Data
     ) async throws -> TLSRecordConnection {
         guard let privateKey = ephemeralPrivateKey else {
-            throw RuleProxyError.tls(.handshakeFailed(detail: "No ephemeral key"))
+            throw NaiveFlowError.tls(.handshakeFailed(detail: "No ephemeral key"))
         }
 
         do {
@@ -73,7 +73,7 @@ extension TLSClient {
             tls13.handshakeTranscript = transcript
             negotiatedVersion = 0x0304
         } catch {
-            throw RuleProxyError.tls(.handshakeFailed(detail: "Key derivation failed"))
+            throw NaiveFlowError.tls(.handshakeFailed(detail: "Key derivation failed"))
         }
 
         return try await consumeRemainingTLS13Handshake(buffer: buffer)
@@ -128,7 +128,7 @@ extension TLSClient {
 
         while true {
             guard let keys = tls13.handshakeKeys, let kd = tls13.keyDerivation else {
-                throw RuleProxyError.tls(.handshakeFailed(detail: "Missing handshake keys"))
+                throw NaiveFlowError.tls(.handshakeFailed(detail: "Missing handshake keys"))
             }
             
             var offset = startOffset
@@ -179,7 +179,7 @@ extension TLSClient {
                                     ech.outcome = .rejected(retryConfigList: parseECHRetryConfigList(fromEncryptedExtensions: hsBody))
                                 } else if let alpn = parseALPNFromEncryptedExtensions(hsBody) {
                                     guard (configuration.alpn ?? ["h2", "http/1.1"]).contains(alpn) else {
-                                        throw RuleProxyError.tls(.handshakeFailed(detail: "Server selected an ALPN we didn't offer"))
+                                        throw NaiveFlowError.tls(.handshakeFailed(detail: "Server selected an ALPN we didn't offer"))
                                     }
                                     self.negotiatedALPN = alpn
                                 }
@@ -211,7 +211,7 @@ extension TLSClient {
                                     )
                                     guard hsBody.count == expectedVerifyData.count,
                                           constantTimeEqual(hsBody, expectedVerifyData) else {
-                                        throw RuleProxyError.tls(.handshakeFailed(detail: "Server Finished verification failed"))
+                                        throw NaiveFlowError.tls(.handshakeFailed(detail: "Server Finished verification failed"))
                                     }
                                 }
                                 fullTranscript.append(hsMessage)
@@ -231,7 +231,7 @@ extension TLSClient {
                         }
                         pendingHandshake = messages.subdata(in: hsOffset..<messages.count)
                     } catch {
-                        throw RuleProxyError.tls(.handshakeFailed(detail: "Record decryption failed"))
+                        throw NaiveFlowError.tls(.handshakeFailed(detail: "Record decryption failed"))
                     }
                 }
                 
@@ -248,7 +248,7 @@ extension TLSClient {
             
             if foundServerFinished {
                 if let ech = echContext, case .rejected(let retryConfigList) = ech.outcome {
-                    throw RuleProxyError.tls(.ech(.rejected(retryConfigList: retryConfigList)))
+                    throw NaiveFlowError.tls(.ech(.rejected(retryConfigList: retryConfigList)))
                 }
                 
                 try await validateCertificate()
@@ -269,18 +269,18 @@ extension TLSClient {
                 return try await finishTLS13Handshake(fullTranscript: fullTranscript)
             } else {
                 guard let connection else {
-                    throw RuleProxyError.transport(.connectionFailed(endpoint: nil, detail: "Connection cancelled"))
+                    throw NaiveFlowError.transport(.connectionFailed(endpoint: nil, detail: "Connection cancelled"))
                 }
                 switch try await connection.receive() {
                 case .bytes(let moreData):
                     buffer.append(moreData)
                     guard buffer.count <= Self.maxHandshakeBufferSize else {
-                        throw RuleProxyError.tls(.handshakeFailed(detail: "Handshake flight exceeds \(Self.maxHandshakeBufferSize) bytes"))
+                        throw NaiveFlowError.tls(.handshakeFailed(detail: "Handshake flight exceeds \(Self.maxHandshakeBufferSize) bytes"))
                     }
                     startOffset = processedOffset
                     continue
                 case .end:
-                    throw RuleProxyError.tls(.handshakeFailed(detail: "Connection closed before TLS 1.3 handshake completed"))
+                    throw NaiveFlowError.tls(.handshakeFailed(detail: "Connection closed before TLS 1.3 handshake completed"))
                 }
             }
         }
@@ -359,7 +359,7 @@ extension TLSClient {
 
     private func finishTLS13Handshake(fullTranscript: Data) async throws -> TLSRecordConnection {
         guard let kd = tls13.keyDerivation, let hs = tls13.handshakeSecret else {
-            throw RuleProxyError.tls(.handshakeFailed(detail: "Missing handshake state"))
+            throw NaiveFlowError.tls(.handshakeFailed(detail: "Missing handshake state"))
         }
 
         let application = kd.deriveApplicationMaterial(
@@ -371,7 +371,7 @@ extension TLSClient {
         try await sendTLS13ClientFinished()
 
         guard let appKeys = self.tls13.applicationKeys else {
-            throw RuleProxyError.tls(.handshakeFailed(detail: "Application keys not available"))
+            throw NaiveFlowError.tls(.handshakeFailed(detail: "Application keys not available"))
         }
 
         let tlsConnection = TLSRecordConnection(
@@ -399,7 +399,7 @@ extension TLSClient {
         guard let keys = tls13.handshakeKeys,
               let transcript = tls13.handshakeTranscript,
               let kd = tls13.keyDerivation else {
-            throw RuleProxyError.tls(.handshakeFailed(detail: "Missing handshake keys"))
+            throw NaiveFlowError.tls(.handshakeFailed(detail: "Missing handshake keys"))
         }
 
         var ccsRecord = Data([TLSContentType.changeCipherSpec, 0x03, 0x03, 0x00, 0x01, 0x01])
@@ -443,7 +443,7 @@ extension TLSClient {
         ccsRecord.append(finishedRecord)
 
         guard let connection else {
-            throw RuleProxyError.transport(.connectionFailed(endpoint: nil, detail: "Connection cancelled"))
+            throw NaiveFlowError.transport(.connectionFailed(endpoint: nil, detail: "Connection cancelled"))
         }
         try await connection.send(ccsRecord)
     }

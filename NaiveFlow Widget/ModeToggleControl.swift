@@ -1,6 +1,6 @@
 //
 //  ModeToggleControl.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/26/26.
 //
@@ -12,7 +12,7 @@ import WidgetKit
 struct ModeToggleControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(
-            kind: "com.argsment.RuleProxy.Widget.ModeToggle",
+            kind: "com.argsment.NaiveFlow.Widget.ModeToggle",
             provider: ProxyModeProvider()
         ) { isGlobal in
             ControlWidgetToggle(
@@ -22,7 +22,7 @@ struct ModeToggleControl: ControlWidget {
             ) { isGlobal in
                 Label(
                     isGlobal ? "Global Mode" : "Proxy Mode",
-                    image: isGlobal ? "ruleproxy.global" : "ruleproxy.proxy"
+                    image: isGlobal ? "naiveflow.global" : "naiveflow.proxy"
                 )
             }
         }

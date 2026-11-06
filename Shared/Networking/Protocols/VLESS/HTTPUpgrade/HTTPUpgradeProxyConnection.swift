@@ -1,6 +1,6 @@
 //
 //  HTTPUpgradeProxyConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 1/26/26.
 //

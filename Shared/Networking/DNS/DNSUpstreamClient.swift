@@ -1,6 +1,6 @@
 //
 //  DNSUpstreamClient.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/24/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 
-nonisolated private let logger = RuleProxyLogger(category: "DNSUpstreamClient")
+nonisolated private let logger = NaiveFlowLogger(category: "DNSUpstreamClient")
 
 nonisolated enum DNSUpstreamClient {
     static let queryTimeout: Duration = .seconds(4)
@@ -46,7 +46,7 @@ nonisolated enum DNSUpstreamClient {
         do {
             switch upstream {
             case .system:
-                throw RuleProxyError.dns(.resolutionFailed(host: host, detail: "no upstream configured"))
+                throw NaiveFlowError.dns(.resolutionFailed(host: host, detail: "no upstream configured"))
             case .plain(let server, let port):
                 addresses = try await queryAll(host, family: family) { name, type in
                     try await queryPlain(name, type: type, server: server, port: port)
@@ -62,7 +62,7 @@ nonisolated enum DNSUpstreamClient {
         }
 
         guard !addresses.isEmpty else {
-            throw RuleProxyError.dns(.noAddresses(host: host))
+            throw NaiveFlowError.dns(.noAddresses(host: host))
         }
         return addresses
     }
@@ -75,11 +75,11 @@ nonisolated enum DNSUpstreamClient {
         accept: @escaping @Sendable (Data) -> Data?
     ) async throws -> (payload: Data, ttl: UInt32)? {
         try IPv4Only.requireHost(host)
-        guard type != 28 else { throw RuleProxyError.dns(.malformedResponse) }
+        guard type != 28 else { throw NaiveFlowError.dns(.malformedResponse) }
         do {
             switch upstream {
             case .system:
-                throw RuleProxyError.dns(.resolutionFailed(host: host, detail: "no upstream configured"))
+                throw NaiveFlowError.dns(.resolutionFailed(host: host, detail: "no upstream configured"))
             case .plain(let server, let port):
                 return try await queryRecordPlain(host, type: type, server: server, port: port, accept: accept)
             case .doh(let url):
@@ -93,7 +93,7 @@ nonisolated enum DNSUpstreamClient {
 
     /// Forward one complete message, retaining transaction and question identity.
     static func exchange(_ query: Data, via upstream: DNSUpstream, preferTCP: Bool = false) async throws -> Data {
-        guard query.count >= 12, query.count <= 65535 else { throw RuleProxyError.dns(.malformedResponse) }
+        guard query.count >= 12, query.count <= 65535 else { throw NaiveFlowError.dns(.malformedResponse) }
         switch upstream {
         case .plain(let host, let port):
             if preferTCP { return try await exchangeTCP(query, host: host, port: port) }
@@ -102,7 +102,7 @@ nonisolated enum DNSUpstreamClient {
             let reply = try await withDialDeadline(queryTimeout) {
                 transport.cancel()
             } error: {
-                RuleProxyError.dns(.timedOut(host: host))
+                NaiveFlowError.dns(.timedOut(host: host))
             } operation: {
                 try await transport.connect()
                 try await transport.send(query)
@@ -121,7 +121,7 @@ nonisolated enum DNSUpstreamClient {
             request.setValue("application/dns-message", forHTTPHeaderField: "Accept")
             let reply = try await sendDoH(request, bootstrap: AWCore.getBootstrapDNS())
             guard matchesReply(reply, query: query), reply[2] & 0x02 == 0 else {
-                throw RuleProxyError.dns(.malformedResponse)
+                throw NaiveFlowError.dns(.malformedResponse)
             }
             return reply
         case .system:
@@ -151,7 +151,7 @@ nonisolated enum DNSUpstreamClient {
         return try await withDialDeadline(queryTimeout) {
             transport.cancel()
         } error: {
-            RuleProxyError.dns(.timedOut(host: host))
+            NaiveFlowError.dns(.timedOut(host: host))
         } operation: {
             try await transport.connect()
             var request = Data([UInt8(query.count >> 8), UInt8(query.count & 255)])
@@ -159,21 +159,21 @@ nonisolated enum DNSUpstreamClient {
             try await connection.send(request)
             var buffer = Data()
             while let chunk = try await connection.receive() {
-                guard buffer.count + chunk.count <= 131_074 else { throw RuleProxyError.dns(.malformedResponse) }
+                guard buffer.count + chunk.count <= 131_074 else { throw NaiveFlowError.dns(.malformedResponse) }
                 buffer.append(chunk)
                 if buffer.count >= 2 {
                     let length = Int(buffer[0]) << 8 | Int(buffer[1])
-                    guard length >= 12 else { throw RuleProxyError.dns(.malformedResponse) }
+                    guard length >= 12 else { throw NaiveFlowError.dns(.malformedResponse) }
                     if buffer.count >= length + 2 {
                         let reply = Data(buffer[2..<(length + 2)])
                         guard matchesReply(reply, query: query), reply[2] & 0x02 == 0 else {
-                            throw RuleProxyError.dns(.malformedResponse)
+                            throw NaiveFlowError.dns(.malformedResponse)
                         }
                         return reply
                     }
                 }
             }
-            throw RuleProxyError.dns(.malformedResponse)
+            throw NaiveFlowError.dns(.malformedResponse)
         }
     }
 
@@ -197,7 +197,7 @@ nonisolated enum DNSUpstreamClient {
     ) async throws -> [String] {
         let id = UInt16.random(in: UInt16.min...UInt16.max)
         guard let query = DNSMessage.makeQuery(domain: name, type: type, id: id) else {
-            throw RuleProxyError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
+            throw NaiveFlowError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
         }
 
         let transport = UDPTransport(host: server, port: port)
@@ -206,7 +206,7 @@ nonisolated enum DNSUpstreamClient {
         return try await withDialDeadline(queryTimeout) {
             transport.cancel()
         } error: {
-            RuleProxyError.dns(.timedOut(host: name))
+            NaiveFlowError.dns(.timedOut(host: name))
         } operation: {
             try await transport.connect()
             try await transport.send(query)
@@ -231,7 +231,7 @@ nonisolated enum DNSUpstreamClient {
             id: id,
             udpPayloadSize: recordUDPPayloadSize
         ) else {
-            throw RuleProxyError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
+            throw NaiveFlowError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
         }
 
         let transport = UDPTransport(host: server, port: port)
@@ -240,7 +240,7 @@ nonisolated enum DNSUpstreamClient {
         return try await withDialDeadline(queryTimeout) {
             transport.cancel()
         } error: {
-            RuleProxyError.dns(.timedOut(host: name))
+            NaiveFlowError.dns(.timedOut(host: name))
         } operation: {
             try await transport.connect()
             try await transport.send(query)
@@ -258,7 +258,7 @@ nonisolated enum DNSUpstreamClient {
     private static func queryDoH(_ name: String, type: UInt16, url: URL, bootstrap: DNSBootstrapPolicy, viaProxy: Bool = false) async throws -> [String] {
         let id: UInt16 = 0
         guard let query = DNSMessage.makeQuery(domain: name, type: type, id: id) else {
-            throw RuleProxyError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
+            throw NaiveFlowError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
         }
 
         var request = URLRequest(url: url)
@@ -272,7 +272,7 @@ nonisolated enum DNSUpstreamClient {
 
         let data = try await sendDoH(request, bootstrap: bootstrap, viaProxy: viaProxy)
         guard let addresses = try decode(data, id: id) else {
-            throw RuleProxyError.dns(.malformedResponse)
+            throw NaiveFlowError.dns(.malformedResponse)
         }
         return addresses
     }
@@ -286,7 +286,7 @@ nonisolated enum DNSUpstreamClient {
     ) async throws -> (payload: Data, ttl: UInt32)? {
         let id: UInt16 = 0
         guard let query = DNSMessage.makeQuery(domain: name, type: type, id: id) else {
-            throw RuleProxyError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
+            throw NaiveFlowError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
         }
 
         var request = URLRequest(url: url)
@@ -300,13 +300,13 @@ nonisolated enum DNSUpstreamClient {
 
         let data = try await sendDoH(request, bootstrap: bootstrap)
         guard let records = try decodeRecords(data, id: id, type: type) else {
-            throw RuleProxyError.dns(.malformedResponse)
+            throw NaiveFlowError.dns(.malformedResponse)
         }
         return firstAccepted(records, accept: accept)
     }
 
     private static func sendDoH(_ request: URLRequest, bootstrap: DNSBootstrapPolicy, viaProxy: Bool = false) async throws -> Data {
-        guard let url = request.url, let host = url.host else { throw RuleProxyError.dns(.malformedResponse) }
+        guard let url = request.url, let host = url.host else { throw NaiveFlowError.dns(.malformedResponse) }
         // All endpoints use a numeric IPv4 dial destination.
         try IPv4Only.requireHost(host)
         // Proxy-side DoH routes through the tunnel when requested; bootstrap and
@@ -330,7 +330,7 @@ nonisolated enum DNSUpstreamClient {
             catch is CancellationError { throw CancellationError() }
             catch { failure = error }
         }
-        throw failure ?? RuleProxyError.dns(.noAddresses(host: host))
+        throw failure ?? NaiveFlowError.dns(.noAddresses(host: host))
     }
 
     // MARK: - Shared decoding
@@ -343,7 +343,7 @@ nonisolated enum DNSUpstreamClient {
         } catch DNSMessage.ParseFailure.serverFailure {
             return []
         } catch {
-            throw RuleProxyError.dns(.malformedResponse)
+            throw NaiveFlowError.dns(.malformedResponse)
         }
     }
 
@@ -359,7 +359,7 @@ nonisolated enum DNSUpstreamClient {
         } catch DNSMessage.ParseFailure.serverFailure {
             return []
         } catch {
-            throw RuleProxyError.dns(.malformedResponse)
+            throw NaiveFlowError.dns(.malformedResponse)
         }
     }
 

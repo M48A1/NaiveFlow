@@ -1,6 +1,6 @@
 //
 //  SerialSender.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/17/26.
 //
@@ -15,7 +15,7 @@ nonisolated final class SerialSender: Sendable {
         func value() async throws {
             for try await _ in signal { return }
             try Task.checkCancellation()
-            throw RuleProxyError.transport(.terminated)
+            throw NaiveFlowError.transport(.terminated)
         }
     }
 
@@ -60,7 +60,7 @@ nonisolated final class SerialSender: Sendable {
     func submit(_ body: @escaping @Sendable () async throws -> Void) -> Pending {
         let (signal, done) = AsyncThrowingStream.makeStream(of: Void.self)
         if case .terminated = jobs.yield(Job(body: body, done: done)) {
-            done.finish(throwing: RuleProxyError.transport(.terminated))
+            done.finish(throwing: NaiveFlowError.transport(.terminated))
         }
         return Pending(signal: signal)
     }

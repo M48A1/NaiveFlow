@@ -1,6 +1,6 @@
 //
 //  MITMScriptHTTP2Stream.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/2/26.
 //
@@ -109,7 +109,7 @@ nonisolated final class MITMScriptHTTP2Stream: Sendable {
             return first
         }
         guard timedOut else { return }
-        fail(RuleProxyError.transport(.timedOut(.receive, endpoint: nil, detail: "request exceeded \(Int(resourceTimeout))s deadline")))
+        fail(NaiveFlowError.transport(.timedOut(.receive, endpoint: nil, detail: "request exceeded \(Int(resourceTimeout))s deadline")))
     }
 
     func runIdleLoop() async {
@@ -137,7 +137,7 @@ nonisolated final class MITMScriptHTTP2Stream: Sendable {
             if isFinished { return }
             let isExpired = state.withLock { $0.phase != .finished && $0.idleGeneration == generation }
             guard isExpired else { continue }
-            fail(RuleProxyError.transport(.timedOut(.receive, endpoint: nil, detail: "request idle for \(Int(interval))s")))
+            fail(NaiveFlowError.transport(.timedOut(.receive, endpoint: nil, detail: "request idle for \(Int(interval))s")))
             return
         }
     }
@@ -150,15 +150,15 @@ nonisolated final class MITMScriptHTTP2Stream: Sendable {
 
     private func sendRequest() async {
         guard let connection else {
-            fail(RuleProxyError.proxy(.http2, .notReady))
+            fail(NaiveFlowError.proxy(.http2, .notReady))
             return
         }
         guard let headerBlock = buildHeaderBlock() else {
-            fail(RuleProxyError.mitm(.invalidScriptRequest))
+            fail(NaiveFlowError.mitm(.invalidScriptRequest))
             return
         }
         guard headerBlock.count <= Int(MITMScriptHTTP2Connection.maxFrameSize) else {
-            fail(RuleProxyError.mitm(.requestHeadersTooLarge))
+            fail(NaiveFlowError.mitm(.requestHeadersTooLarge))
             return
         }
         let requestBody = request.httpBody ?? Data()
@@ -238,7 +238,7 @@ nonisolated final class MITMScriptHTTP2Stream: Sendable {
         case .ignore:
             break
         case .failStatus:
-            fail(RuleProxyError.proxy(.http2, .protocolViolation(detail: "missing or invalid :status")))
+            fail(NaiveFlowError.proxy(.http2, .protocolViolation(detail: "missing or invalid :status")))
         case .finishOK:
             finishSuccess()
         }
@@ -267,10 +267,10 @@ nonisolated final class MITMScriptHTTP2Stream: Sendable {
 
             if !body.isEmpty {
                 if state.body.count + body.count > maxBytes {
-                    return .fail(RuleProxyError.mitm(.responseTooLarge(limit: maxBytes)))
+                    return .fail(NaiveFlowError.mitm(.responseTooLarge(limit: maxBytes)))
                 }
                 guard MITMScriptHTTPClient.reserveInFlight(body.count) else {
-                    return .fail(RuleProxyError.mitm(.scriptBudgetExceeded(limit: MITMScriptHTTPClient.maxGlobalInFlightBytes)))
+                    return .fail(NaiveFlowError.mitm(.scriptBudgetExceeded(limit: MITMScriptHTTPClient.maxGlobalInFlightBytes)))
                 }
                 state.reservedBytes += body.count
                 state.body.append(body)
@@ -291,7 +291,7 @@ nonisolated final class MITMScriptHTTP2Stream: Sendable {
         case .ignore:
             break
         case .failNoHead:
-            fail(RuleProxyError.proxy(.http2, .protocolViolation(detail: "DATA before response head")))
+            fail(NaiveFlowError.proxy(.http2, .protocolViolation(detail: "DATA before response head")))
         case .fail(let error):
             fail(error)
         case .ok(let windowUpdate, let finish):
@@ -301,7 +301,7 @@ nonisolated final class MITMScriptHTTP2Stream: Sendable {
     }
 
     func handleReset(errorCode: UInt32) {
-        finish(.failure(RuleProxyError.proxy(.http2, .streamReset(code: errorCode))), removeFromConnection: false, sendRST: false)
+        finish(.failure(NaiveFlowError.proxy(.http2, .streamReset(code: errorCode))), removeFromConnection: false, sendRST: false)
     }
 
     func failFromSession(_ error: Error) {
@@ -332,7 +332,7 @@ nonisolated final class MITMScriptHTTP2Stream: Sendable {
         if plan.requiresDecompression,
            let decoded = MITMBodyCodec.decompress(snapshot.body, plan: plan, host: request.url?.host ?? "") {
             if decoded.count > maxBytes {
-                fail(RuleProxyError.mitm(.responseTooLarge(limit: maxBytes)))
+                fail(NaiveFlowError.mitm(.responseTooLarge(limit: maxBytes)))
                 return
             }
             responseBody = decoded

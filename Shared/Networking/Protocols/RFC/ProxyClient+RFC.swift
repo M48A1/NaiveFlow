@@ -1,6 +1,6 @@
 //
 //  ProxyClient+RFC.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 9/11/26.
 //
@@ -10,11 +10,11 @@ import Foundation
 extension ProxyClient {
     func connectWithRFC(_ request: ProxyRequest) async throws -> ProxyConnection {
         guard case .rfc(let rfc) = configuration.outbound else {
-            throw RuleProxyError.proxy(.rfc, .invalidConfiguration(detail: "RFC outbound expected"))
+            throw NaiveFlowError.proxy(.rfc, .invalidConfiguration(detail: "RFC outbound expected"))
         }
 
         guard request.network == .tcp else {
-            throw RuleProxyError.proxy(.rfc, .unsupported(feature: "UDP over CONNECT"))
+            throw NaiveFlowError.proxy(.rfc, .unsupported(feature: "UDP over CONNECT"))
         }
 
         let initialData = request.initialData
@@ -37,7 +37,7 @@ extension ProxyClient {
         let dialed = try await dialRFC(securityLayer: rfc.securityLayer)
         guard !isCancelled else {
             dialed.connection.cancel()
-            throw RuleProxyError.transport(.terminated)
+            throw NaiveFlowError.transport(.terminated)
         }
 
         switch dialed.version {
@@ -45,7 +45,7 @@ extension ProxyClient {
             guard let pool else {
                 guard chained else {
                     dialed.connection.cancel()
-                    throw RuleProxyError.proxy(.rfc, .notReady)
+                    throw NaiveFlowError.proxy(.rfc, .notReady)
                 }
                 return try await openDedicatedRFCTunnel(
                     over: dialed.connection, authority: authority,
@@ -54,7 +54,7 @@ extension ProxyClient {
             }
             guard let multiplexer = try await pool.adopt(dialed.connection) else {
                 dialed.connection.cancel()
-                throw RuleProxyError.transport(.terminated)
+                throw NaiveFlowError.transport(.terminated)
             }
             return try await openRFCTunnel(
                 on: multiplexer, onEnd: pool.idleClockHook(for: multiplexer), authority: authority,
@@ -68,7 +68,7 @@ extension ProxyClient {
                 )
                 guard !isCancelled else {
                     tunnel.cancel()
-                    throw RuleProxyError.transport(.terminated)
+                    throw NaiveFlowError.transport(.terminated)
                 }
                 if let initialData, !initialData.isEmpty {
                     try await tunnel.send(initialData)
@@ -163,7 +163,7 @@ extension ProxyClient {
         )
         guard !isCancelled else {
             stream.cancel()
-            throw RuleProxyError.transport(.terminated)
+            throw NaiveFlowError.transport(.terminated)
         }
         if let initialData, !initialData.isEmpty {
             do {
@@ -202,8 +202,8 @@ extension ProxyClient {
     // MARK: - Retry classification
     
     private static func isRetryableRFCSessionFailure(_ error: Error) -> Bool {
-        guard let ruleproxyError = error as? RuleProxyError else { return true }
-        guard case .proxy(_, let detail) = ruleproxyError else { return true }
+        guard let naiveflowError = error as? NaiveFlowError else { return true }
+        guard case .proxy(_, let detail) = naiveflowError else { return true }
         switch detail {
         case .tunnelRejected, .authenticationRejected, .authenticationRequired, .unsupported:
             return false

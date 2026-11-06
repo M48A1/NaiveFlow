@@ -1,6 +1,6 @@
 //
 //  XHTTPConnection+H3.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/26/26.
 //
@@ -14,7 +14,7 @@ extension XHTTPConnection {
 
     func performH3Setup() async throws {
         guard let multiplexer = h3Multiplexer else {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H3 setup without a multiplexer"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "H3 setup without a multiplexer"))
         }
 
         switch role {
@@ -38,7 +38,7 @@ extension XHTTPConnection {
                 do {
                     try await stream.sendRequest(headerBlock: headers, endStream: false)
                 } catch {
-                    throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H3 stream-one request failed: \(error.localizedDescription)"))
+                    throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "H3 stream-one request failed: \(error.localizedDescription)"))
                 }
 
             case .streamUp:
@@ -61,7 +61,7 @@ extension XHTTPConnection {
         do {
             try await upload.sendRequest(headerBlock: headers, endStream: false)
         } catch {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H3 upload stream open failed: \(error.localizedDescription)"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "H3 upload stream open failed: \(error.localizedDescription)"))
         }
     }
 
@@ -79,16 +79,16 @@ extension XHTTPConnection {
         do {
             try await stream.sendRequest(headerBlock: headers, endStream: true)
         } catch {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H3 download request failed: \(error.localizedDescription)"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "H3 download request failed: \(error.localizedDescription)"))
         }
         let status: Int
         do {
             status = try await stream.awaitResponseStatus()
         } catch {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H3 download failed: \(error.localizedDescription)"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "H3 download failed: \(error.localizedDescription)"))
         }
         guard (200...299).contains(status) else {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "H3 download rejected: status \(status)"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "H3 download rejected: status \(status)"))
         }
     }
 
@@ -98,7 +98,7 @@ extension XHTTPConnection {
     /// discarded. Called under `packetUpMutex`.
     func sendH3PacketUp(data: Data) async throws {
         guard let multiplexer = h3Multiplexer, state.withLock({ $0.phase != .cancelled }) else {
-            throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil))
+            throw NaiveFlowError.proxy(.xhttp, .connectionClosed(detail: nil))
         }
         let seq = state.withLock { state -> Int64 in let s = state.nextSeq; state.nextSeq += 1; return s }
         xmuxLease?.noteRequest()

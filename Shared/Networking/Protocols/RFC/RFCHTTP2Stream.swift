@@ -1,6 +1,6 @@
 //
 //  RFCHTTP2Stream.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 9/11/26.
 //
@@ -65,7 +65,7 @@ nonisolated final class RFCHTTP2Stream: ProxyConnection, MultiplexerStreamSink, 
             return state.multiplexer
         }
         guard let multiplexer else {
-            throw RuleProxyError.proxy(.http2, .connectionClosed(detail: "RFC stream \(streamID) closed"))
+            throw NaiveFlowError.proxy(.http2, .connectionClosed(detail: "RFC stream \(streamID) closed"))
         }
         try await multiplexer.sendData(streamID: streamID, data: data)
     }

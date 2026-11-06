@@ -1,6 +1,6 @@
 //
 //  TLSRecordConnection+TLS13.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/19/26.
 //
@@ -39,7 +39,7 @@ nonisolated extension TLSRecordConnection {
     
     func decryptTLS13Record(ciphertext: Data, header: Data, ingress: DirectionState, receive state: inout ReceiveState) throws -> Data {
         guard ciphertext.count >= 16 else {
-            throw RuleProxyError.tls(.record(.ciphertextTooShort))
+            throw NaiveFlowError.tls(.record(.ciphertextTooShort))
         }
 
         var nonce = ingress.iv
@@ -51,7 +51,7 @@ nonisolated extension TLSRecordConnection {
         let decrypted = try openAEAD(ciphertext: ct, tag: tag, nonce: nonce, aad: header, key: ingress.symmetricKey)
 
         guard !decrypted.isEmpty else {
-            throw RuleProxyError.tls(.record(.emptyPlaintext))
+            throw NaiveFlowError.tls(.record(.emptyPlaintext))
         }
 
         var innerContentType: UInt8 = 0
@@ -65,7 +65,7 @@ nonisolated extension TLSRecordConnection {
         }
 
         guard contentLen >= 0 else {
-            throw RuleProxyError.tls(.record(.missingContentType))
+            throw NaiveFlowError.tls(.record(.missingContentType))
         }
         
         if innerContentType == TLSContentType.handshake {
@@ -81,7 +81,7 @@ nonisolated extension TLSRecordConnection {
                 state.receivedCloseNotify = true
                 return Data()
             }
-            throw RuleProxyError.tls(.alert(level: level, code: description))
+            throw NaiveFlowError.tls(.alert(level: level, code: description))
         }
 
         return decrypted.prefix(Int(contentLen))
@@ -101,7 +101,7 @@ nonisolated extension TLSRecordConnection {
             let bodyEnd = bodyStart + length
             guard bodyEnd <= end else {
                 guard length <= 1 << 17 else {
-                    throw RuleProxyError.tls(.record(.malformed(detail: "post-handshake message too large (\(length) bytes)")))
+                    throw NaiveFlowError.tls(.record(.malformed(detail: "post-handshake message too large (\(length) bytes)")))
                 }
                 break
             }

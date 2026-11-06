@@ -1,13 +1,13 @@
 //
 //  TunneledHTTP3Client.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/21/26.
 //
 
 import Foundation
 import Synchronization
-@testable import RuleProxy
+@testable import NaiveFlow
 
 enum TunneledHTTP3Client {
     static func get(
@@ -65,7 +65,7 @@ private nonisolated final class HTTP3GetRequest: Sendable {
         self.resultSignal = resultSignal
         self.resultTask = Task {
             for try await response in resultStream { return response }
-            throw RuleProxyError.proxy(.http3, .streamClosed)
+            throw NaiveFlowError.proxy(.http3, .streamClosed)
         }
     }
 
@@ -81,7 +81,7 @@ private nonisolated final class HTTP3GetRequest: Sendable {
             }
         )
         guard let streamID = await multiplexer.openStream(events: events) else {
-            throw RuleProxyError.proxy(.http3, .streamIDsExhausted)
+            throw NaiveFlowError.proxy(.http3, .streamIDsExhausted)
         }
         lock.withLock { $0.quicStreamID = streamID }
 
@@ -89,7 +89,7 @@ private nonisolated final class HTTP3GetRequest: Sendable {
             method: "GET",
             authority: authority,
             path: path,
-            extraHeaders: [(name: "user-agent", value: "RuleProxy")]
+            extraHeaders: [(name: "user-agent", value: "NaiveFlow")]
         )
         let frame = HTTP3Framer.headersFrame(headerBlock: headerBlock)
         Task {
@@ -155,7 +155,7 @@ private nonisolated final class HTTP3GetRequest: Sendable {
         }
 
         if malformed {
-            complete(.failure(RuleProxyError.proxy(.http3, .connectionClosed(detail: "Malformed QPACK header block"))))
+            complete(.failure(NaiveFlowError.proxy(.http3, .connectionClosed(detail: "Malformed QPACK header block"))))
             return
         }
         if consumedBytes > 0, let streamID = lock.withLock({ $0.quicStreamID }) {
@@ -167,7 +167,7 @@ private nonisolated final class HTTP3GetRequest: Sendable {
         let snapshot: (status: Int?, headers: [(name: String, value: String)], body: Data) =
             lock.withLock { (status: $0.status, headers: $0.responseHeaders, body: $0.body) }
         guard let status = snapshot.status else {
-            complete(.failure(RuleProxyError.proxy(.http3, .connectionClosed(detail: "stream ended before response headers"))))
+            complete(.failure(NaiveFlowError.proxy(.http3, .connectionClosed(detail: "stream ended before response headers"))))
             return
         }
         complete(.success(HTTPResponse(statusCode: status, headers: snapshot.headers, body: snapshot.body)))

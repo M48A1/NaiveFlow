@@ -1,6 +1,6 @@
 //
 //  TLSServer.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/3/26.
 //
@@ -19,7 +19,7 @@ nonisolated protocol TLSServerDelegate: AnyObject {
         clientFinishedHandshakeTrailer: Data
     )
 
-    func tlsServer(_ server: TLSServer, didFail error: RuleProxyError)
+    func tlsServer(_ server: TLSServer, didFail error: NaiveFlowError)
 }
 
 nonisolated final class TLSServer {
@@ -119,7 +119,7 @@ nonisolated final class TLSServer {
         rxBuffer.append(data)
         do {
             try runStateMachine()
-        } catch let error as RuleProxyError {
+        } catch let error as NaiveFlowError {
             failHandshake(error)
         } catch {
             failHandshake(.tls(.handshakeFailed(detail: error.localizedDescription)))
@@ -148,7 +148,7 @@ nonisolated final class TLSServer {
                 rxBuffer.removeFirst(record.count)
                 ccsBudget -= 1
                 guard ccsBudget > 0 else {
-                    throw RuleProxyError.tls(.handshakeFailed(detail: "too many change_cipher_spec records"))
+                    throw NaiveFlowError.tls(.handshakeFailed(detail: "too many change_cipher_spec records"))
                 }
             }
         }
@@ -289,7 +289,7 @@ nonisolated final class TLSServer {
         emitChangeCipherSpec()
 
         guard let clientPub = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: clientKeyShare) else {
-            throw RuleProxyError.tls(.handshakeFailed(detail: "invalid client X25519 key share"))
+            throw NaiveFlowError.tls(.handshakeFailed(detail: "invalid client X25519 key share"))
         }
         let shared = try serverPriv.sharedSecretFromKeyAgreement(with: clientPub)
         let sharedData = shared.withUnsafeBytes { Data($0) }
@@ -348,17 +348,17 @@ nonisolated final class TLSServer {
             if contentType == TLSContentType.changeCipherSpec {
                 ccsBudget -= 1
                 guard ccsBudget > 0 else {
-                    throw RuleProxyError.tls(.handshakeFailed(detail: "too many change_cipher_spec records"))
+                    throw NaiveFlowError.tls(.handshakeFailed(detail: "too many change_cipher_spec records"))
                 }
                 continue
             }
             guard contentType == TLSContentType.applicationData else {
-                throw RuleProxyError.tls(.handshakeFailed(detail: "expected encrypted handshake (got \(contentType))"))
+                throw NaiveFlowError.tls(.handshakeFailed(detail: "expected encrypted handshake (got \(contentType))"))
             }
 
             guard let keys = handshake.handshakeKeys, let kd = handshake.keyDerivation,
                   let hsSecret = handshake.handshakeSecret else {
-                throw RuleProxyError.tls(.handshakeFailed(detail: "missing handshake keys"))
+                throw NaiveFlowError.tls(.handshakeFailed(detail: "missing handshake keys"))
             }
 
             let header = record.subdata(in: record.startIndex..<(record.startIndex + 5))
@@ -397,7 +397,7 @@ nonisolated final class TLSServer {
                     | (Int(buffer[offset + 2]) << 8)
                     | Int(buffer[offset + 3])
             guard length <= 0xFFFF else {
-                throw RuleProxyError.tls(.handshakeFailed(detail: "handshake message too large"))
+                throw NaiveFlowError.tls(.handshakeFailed(detail: "handshake message too large"))
             }
             let total = 4 + length
             guard offset + total <= buffer.endIndex else { return }
@@ -412,14 +412,14 @@ nonisolated final class TLSServer {
                     transcript: handshake.transcript
                 )
                 guard expected.count == received.count else {
-                    throw RuleProxyError.tls(.handshakeFailed(detail: "Finished length mismatch"))
+                    throw NaiveFlowError.tls(.handshakeFailed(detail: "Finished length mismatch"))
                 }
                 var diff: UInt8 = 0
                 for i in 0..<expected.count {
                     diff |= expected[expected.startIndex + i] ^ received[received.startIndex + i]
                 }
                 guard diff == 0 else {
-                    throw RuleProxyError.tls(.handshakeFailed(detail: "Client Finished verify failed"))
+                    throw NaiveFlowError.tls(.handshakeFailed(detail: "Client Finished verify failed"))
                 }
 
                 let appKeys = kd.deriveApplicationKeys(
@@ -539,7 +539,7 @@ nonisolated final class TLSServer {
 
     // MARK: - Failure
 
-    private func failHandshake(_ error: RuleProxyError) {
+    private func failHandshake(_ error: NaiveFlowError) {
         guard transition(to: .failed) else { return }
         delegate?.tlsServer(self, didFail: error)
     }
@@ -563,7 +563,7 @@ nonisolated final class TLSServer {
         let length = (Int(rxBuffer[rxBuffer.startIndex + 3]) << 8)
                 | Int(rxBuffer[rxBuffer.startIndex + 4])
         guard length <= 16384 + 256 else {
-            throw RuleProxyError.tls(.handshakeFailed(detail: "record length \(length) out of bounds"))
+            throw NaiveFlowError.tls(.handshakeFailed(detail: "record length \(length) out of bounds"))
         }
         let total = 5 + length
         guard rxBuffer.count >= total else { return nil }
@@ -582,12 +582,12 @@ nonisolated final class TLSServer {
             guard available - offset >= 5 else { return nil }
             let h = rxBuffer.index(base, offsetBy: offset)
             guard rxBuffer[h] == TLSContentType.handshake else {
-                throw RuleProxyError.tls(.handshakeFailed(detail: "Expected handshake record"))
+                throw NaiveFlowError.tls(.handshakeFailed(detail: "Expected handshake record"))
             }
             let length = (Int(rxBuffer[rxBuffer.index(h, offsetBy: 3)]) << 8)
                     | Int(rxBuffer[rxBuffer.index(h, offsetBy: 4)])
             guard length > 0, length <= 16384 + 256 else {
-                throw RuleProxyError.tls(.handshakeFailed(detail: "record length \(length) out of bounds"))
+                throw NaiveFlowError.tls(.handshakeFailed(detail: "record length \(length) out of bounds"))
             }
             let recordTotal = 5 + length
             guard available - offset >= recordTotal else { return nil }
@@ -598,14 +598,14 @@ nonisolated final class TLSServer {
             if messageLength == nil, payload.count >= 4 {
                 let b = payload.startIndex
                 guard payload[b] == TLSHandshakeType.clientHello else {
-                    throw RuleProxyError.tls(.handshakeFailed(detail: "Expected ClientHello"))
+                    throw NaiveFlowError.tls(.handshakeFailed(detail: "Expected ClientHello"))
                 }
                 let bodyLen = (Int(payload[payload.index(b, offsetBy: 1)]) << 16)
                             | (Int(payload[payload.index(b, offsetBy: 2)]) << 8)
                             | Int(payload[payload.index(b, offsetBy: 3)])
                 let total = 4 + bodyLen
                 guard total <= Self.maxClientHelloBytes else {
-                    throw RuleProxyError.tls(.handshakeFailed(detail: "ClientHello too large (\(total) B)"))
+                    throw NaiveFlowError.tls(.handshakeFailed(detail: "ClientHello too large (\(total) B)"))
                 }
                 messageLength = total
             }

@@ -1,6 +1,6 @@
 //
 //  ConfigurationCoordinator.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 11/5/26.
 //

@@ -1,6 +1,6 @@
 //
 //  TLSRecordConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 1/26/26.
 //
@@ -189,7 +189,7 @@ nonisolated final class TLSRecordConnection: Sendable {
     
     func exportKeyingMaterial(label: String, context: Data, length: Int) throws -> Data {
         guard tlsVersion == 0x0304, let exporterMasterSecret, length > 0 else {
-            throw RuleProxyError.tls(.handshakeFailed(detail: "TLS exporter unavailable"))
+            throw NaiveFlowError.tls(.handshakeFailed(detail: "TLS exporter unavailable"))
         }
         return TLS13KeyDerivation(cipherSuite: cipherSuite).exportKeyingMaterial(
             exporterMasterSecret: exporterMasterSecret,
@@ -207,7 +207,7 @@ nonisolated final class TLSRecordConnection: Sendable {
     
     func sendRaw(_ data: Data) async throws {
         try await chainedSend { [self] in
-            guard let connection else { throw RuleProxyError.tls(.record(.connectionUnavailable)) }
+            guard let connection else { throw NaiveFlowError.tls(.record(.connectionUnavailable)) }
             try await connection.send(data)
         }
     }
@@ -221,7 +221,7 @@ nonisolated final class TLSRecordConnection: Sendable {
         }
         if let buffered { return buffered }
 
-        guard let connection else { throw RuleProxyError.tls(.record(.connectionUnavailable)) }
+        guard let connection else { throw NaiveFlowError.tls(.record(.connectionUnavailable)) }
         switch try await connection.receive() {
         case .bytes(let data): return data
         case .end: return nil
@@ -236,7 +236,7 @@ nonisolated final class TLSRecordConnection: Sendable {
 
     func send(contentsOf parts: [Data]) async throws {
         try await chainedSend { [self] in
-            guard let connection else { throw RuleProxyError.tls(.record(.connectionUnavailable)) }
+            guard let connection else { throw NaiveFlowError.tls(.record(.connectionUnavailable)) }
             let record = try buildTLSRecords(for: parts)
             try await connection.send(record)
         }
@@ -271,7 +271,7 @@ nonisolated final class TLSRecordConnection: Sendable {
             }
 
             guard let connection else {
-                throw RuleProxyError.tls(.record(.connectionUnavailable))
+                throw NaiveFlowError.tls(.record(.connectionUnavailable))
             }
             switch try await connection.receive() {
             case .bytes(let data):
@@ -349,7 +349,7 @@ nonisolated final class TLSRecordConnection: Sendable {
             let maxCiphertext = tlsVersion >= 0x0304 ? 16384 + 256 : 16384 + 2048
             guard Int(recordLen) <= maxCiphertext else {
                 state.buffer.removeAll()
-                return .error(RuleProxyError.tls(.record(.malformed(detail: "record overflow (\(recordLen) bytes)"))))
+                return .error(NaiveFlowError.tls(.record(.malformed(detail: "record overflow (\(recordLen) bytes)"))))
             }
 
             let totalLen = 5 + Int(recordLen)
@@ -381,7 +381,7 @@ nonisolated final class TLSRecordConnection: Sendable {
                     }
                     if state.receivedCloseNotify { break }
                 } catch {
-                    if case RuleProxyError.tls(.alert) = error {
+                    if case NaiveFlowError.tls(.alert) = error {
                         state.buffer.removeAll()
                         consumed = 0
                         hasError = error
@@ -404,15 +404,15 @@ nonisolated final class TLSRecordConnection: Sendable {
                         if alert[alert.startIndex + 1] == TLSAlertDescription.closeNotify {
                             state.receivedCloseNotify = true
                         } else {
-                            hasError = RuleProxyError.tls(.alert(level: alert[alert.startIndex],
+                            hasError = NaiveFlowError.tls(.alert(level: alert[alert.startIndex],
                                                                 code: alert[alert.startIndex + 1]))
                         }
                     } else {
-                        hasError = RuleProxyError.tls(.unexpectedAlert)
+                        hasError = NaiveFlowError.tls(.unexpectedAlert)
                     }
                 } else {
                     consumed += totalLen
-                    hasError = RuleProxyError.tls(.unexpectedAlert)
+                    hasError = NaiveFlowError.tls(.unexpectedAlert)
                 }
                 break
             } else {
@@ -561,7 +561,7 @@ nonisolated final class TLSRecordConnection: Sendable {
                 return Data(try AES.GCM.open(sealedBox, using: key, authenticating: aad))
             }
         } catch CryptoKitError.authenticationFailure {
-            throw RuleProxyError.tls(.record(.authenticationFailed))
+            throw NaiveFlowError.tls(.record(.authenticationFailed))
         }
     }
 

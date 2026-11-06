@@ -1,6 +1,6 @@
 //
 //  SudokuConnectionFactory.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by saba-futai on 10/18/26.
 //
@@ -106,7 +106,7 @@ nonisolated final class SudokuConnectionFactory: Sendable {
     }
 
     func open(host: String, port: UInt16, useTLS: Bool, serverName: String?) async throws -> BlockingProxyStream {
-        if stateLock.withLock({ $0.phase == .closed }) { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil)) }
+        if stateLock.withLock({ $0.phase == .closed }) { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil)) }
         let key = preparedKey(host: host, port: port, useTLS: useTLS, serverName: serverName)
         if let prepared = await takePreparedConnection(for: key) {
             return BlockingProxyStream(connection: prepared.connection, owner: self)
@@ -114,7 +114,7 @@ nonisolated final class SudokuConnectionFactory: Sendable {
         let connection = try await openProxyConnection(host: host, port: port, useTLS: useTLS, serverName: serverName)
         guard retainConnection(connection) else {
             connection.cancel()
-            throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil))
+            throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil))
         }
         return BlockingProxyStream(connection: connection, owner: self)
     }
@@ -180,11 +180,11 @@ nonisolated final class SudokuConnectionFactory: Sendable {
         path: String,
         headers: [String: String]
     ) async throws -> BlockingProxyStream {
-        if stateLock.withLock({ $0.phase == .closed }) { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil)) }
+        if stateLock.withLock({ $0.phase == .closed }) { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil)) }
         let base = try await openProxyConnection(host: host, port: port, useTLS: useTLS, serverName: serverName)
         guard retainConnection(base) else {
             base.cancel()
-            throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil))
+            throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil))
         }
         let ws = WebSocketConnection(
             tunnel: base,
@@ -206,7 +206,7 @@ nonisolated final class SudokuConnectionFactory: Sendable {
         let connection = WebSocketProxyConnection(wsConnection: ws)
         guard replaceConnection(base, with: connection) else {
             connection.cancel()
-            throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil))
+            throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil))
         }
         return BlockingProxyStream(connection: connection, owner: self)
     }
@@ -265,7 +265,7 @@ nonisolated final class SudokuConnectionFactory: Sendable {
     }
 
     fileprivate var preparedConnectionsEnabled: Bool {
-        ProcessInfo.processInfo.environment["RULEPROXY_SUDOKU_DISABLE_PRECONNECT"] != "1"
+        ProcessInfo.processInfo.environment["NAIVEFLOW_SUDOKU_DISABLE_PRECONNECT"] != "1"
             && supportsPreparedConnections
     }
 
@@ -416,7 +416,7 @@ nonisolated final class SudokuConnectionFactory: Sendable {
 
         let transport = TCPTransport(host: directDialHost, port: port, resolution: .proxies)
         guard retainTransport(transport) else {
-            throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil))
+            throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil))
         }
         do {
             try await transport.connect()
@@ -436,7 +436,7 @@ nonisolated final class SudokuConnectionFactory: Sendable {
         let tls = TLSClient(configuration: TLSConfiguration(serverName: serverName, alpn: ["http/1.1"]))
         guard retainTLSClient(tls) else {
             tunnel?.cancel()
-            throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil))
+            throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil))
         }
         do {
             let connection: TLSRecordConnection

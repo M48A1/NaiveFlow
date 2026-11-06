@@ -1,6 +1,6 @@
 //
 //  NowhereSession.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/30/26.
 //
@@ -160,7 +160,7 @@ nonisolated final class NowhereSession: Sendable {
         let morphObfuscator: NowhereMorphPacketObfuscator?
         if configuration.morph {
             guard let keys = configuration.morphKeys else {
-                throw RuleProxyError.proxy(.nowhere, .protocolViolation(detail: "Missing Morph keys"))
+                throw NaiveFlowError.proxy(.nowhere, .protocolViolation(detail: "Missing Morph keys"))
             }
             morphObfuscator = try NowhereMorphPacketObfuscator(
                 sendKey: keys.udpClientToServer,
@@ -198,7 +198,7 @@ nonisolated final class NowhereSession: Sendable {
             guard session.transition(to: .connecting) else { return false }
             session.authenticationDeadline = TickScheduler.shared.schedule(in: .seconds(30), precision: .relaxed) { [weak self] in
                 self?.performTeardown(
-                    readyError: RuleProxyError.proxy(.nowhere, .openTimeout),
+                    readyError: NaiveFlowError.proxy(.nowhere, .openTimeout),
                     handleClean: false,
                     onlyWhileOpening: true
                 )
@@ -249,7 +249,7 @@ nonisolated final class NowhereSession: Sendable {
                 let sid: Int64 = try state.withLock { session in
                     guard session.transition(to: .authenticating),
                           let sid = quic.openBidiStream(), sid == 0 else {
-                        throw RuleProxyError.proxy(.nowhere, .streamClosed)
+                        throw NaiveFlowError.proxy(.nowhere, .streamClosed)
                     }
                     session.firstStreamID = sid
                     return sid
@@ -260,7 +260,7 @@ nonisolated final class NowhereSession: Sendable {
                     session.bootstrapSubmitted = true
                     return true
                 }
-                guard submitted else { throw RuleProxyError.proxy(.nowhere, .streamClosed) }
+                guard submitted else { throw NaiveFlowError.proxy(.nowhere, .streamClosed) }
                 transportSignal.finish()
                 finishAuthenticationIfReady()
             } catch {
@@ -308,7 +308,7 @@ nonisolated final class NowhereSession: Sendable {
         case .udpControl(let connection):
             connection.handleControlStreamData(data, fin: fin)
         case .violation:
-            failSession(RuleProxyError.proxy(.nowhere, .protocolViolation(detail: "Unexpected authentication data or business stream direction")))
+            failSession(NaiveFlowError.proxy(.nowhere, .protocolViolation(detail: "Unexpected authentication data or business stream direction")))
         case .orphanData:
             quic.extendStreamOffset(sid, count: data.count)
         case .ignore:
@@ -503,7 +503,7 @@ nonisolated final class NowhereSession: Sendable {
         try await ensureReady()
 
         try await nowhereCancellableValue(of: authTask)
-        guard state.withLock({ $0.phase == .ready }) else { throw RuleProxyError.proxy(.nowhere, .streamClosed) }
+        guard state.withLock({ $0.phase == .ready }) else { throw NaiveFlowError.proxy(.nowhere, .streamClosed) }
         try Task.checkCancellation()
 
         let sid = try await openBidiStreamWhenCreditAvailable(registerUnderLock: registerUnderLock)
@@ -556,7 +556,7 @@ nonisolated final class NowhereSession: Sendable {
                 return .failed(CancellationError())
             }
             guard session.phase == .ready, !session.draining else {
-                return .failed(RuleProxyError.proxy(.nowhere, .streamClosed))
+                return .failed(NaiveFlowError.proxy(.nowhere, .streamClosed))
             }
             if session.streamOpenWaiters.isEmpty, let sid = quic.openBidiStream() {
                 do {
@@ -579,7 +579,7 @@ nonisolated final class NowhereSession: Sendable {
         case .opened(let sid): continuation.resume(returning: sid)
         case .failed(let error):
             continuation.resume(throwing: error)
-            if case RuleProxyError.proxy(.nowhere, .streamIDsExhausted) = error { beginDraining() }
+            if case NaiveFlowError.proxy(.nowhere, .streamIDsExhausted) = error { beginDraining() }
         case .parked: break
         }
     }
@@ -604,7 +604,7 @@ nonisolated final class NowhereSession: Sendable {
         }
         for (continuation, result) in drained {
             continuation.resume(with: result)
-            if case .failure(RuleProxyError.proxy(.nowhere, .streamIDsExhausted)) = result { beginDraining() }
+            if case .failure(NaiveFlowError.proxy(.nowhere, .streamIDsExhausted)) = result { beginDraining() }
         }
     }
 
@@ -620,7 +620,7 @@ nonisolated final class NowhereSession: Sendable {
             return waiters
         }
         for waiter in waiters {
-            waiter.continuation.resume(throwing: RuleProxyError.proxy(.nowhere, .streamIDsExhausted))
+            waiter.continuation.resume(throwing: NaiveFlowError.proxy(.nowhere, .streamIDsExhausted))
         }
         updateIdleCloseTimer()
     }
@@ -644,7 +644,7 @@ nonisolated final class NowhereSession: Sendable {
             request: request,
             registerUnderLock: { session, sid in
                 guard connection.adoptStream(sid) else {
-                    throw RuleProxyError.proxy(.nowhere, .streamClosed)
+                    throw NaiveFlowError.proxy(.nowhere, .streamClosed)
                 }
                 session.tcpStreams[sid] = TCPRoute(connection: connection)
             },
@@ -660,17 +660,17 @@ nonisolated final class NowhereSession: Sendable {
     func openUDPControlStream(for connection: NowhereUDPConnection, request: Data) async throws -> Int64 {
         try await ensureReady()
         guard quic.maxDatagramPayloadSize >= NowhereProtocol.udpHeaderSize else {
-            throw RuleProxyError.proxy(.nowhere, .protocolViolation(detail: "QUIC DATAGRAM is unavailable"))
+            throw NaiveFlowError.proxy(.nowhere, .protocolViolation(detail: "QUIC DATAGRAM is unavailable"))
         }
         return try await openStream(
             request: request,
             registerUnderLock: { session, sid in
                 guard session.udpRoutes.count < Self.maxUDPFlows else {
-                    throw RuleProxyError.proxy(.nowhere, .flowRejected(code: NowhereProtocol.FlowRejectCode.flowLimit.rawValue))
+                    throw NaiveFlowError.proxy(.nowhere, .flowRejected(code: NowhereProtocol.FlowRejectCode.flowLimit.rawValue))
                 }
                 let flowID = try NowhereProtocol.udpFlowID(streamID: sid)
                 guard connection.adoptControlStream(sid) else {
-                    throw RuleProxyError.proxy(.nowhere, .streamClosed)
+                    throw NaiveFlowError.proxy(.nowhere, .streamClosed)
                 }
                 session.udpRoutes[flowID] = UDPRoute(connection: connection)
                 session.udpControlStreams[sid] = connection
@@ -792,7 +792,7 @@ nonisolated final class NowhereSession: Sendable {
 
     private func closeIfStillIdle() {
         performTeardown(
-            readyError: RuleProxyError.proxy(.nowhere, .streamClosed),
+            readyError: NaiveFlowError.proxy(.nowhere, .streamClosed),
             handleClean: true,
             onlyIfIdle: true
         )
@@ -801,7 +801,7 @@ nonisolated final class NowhereSession: Sendable {
     // MARK: - Close
 
     func close() {
-        performTeardown(readyError: RuleProxyError.proxy(.nowhere, .streamClosed), handleClean: true)
+        performTeardown(readyError: NaiveFlowError.proxy(.nowhere, .streamClosed), handleClean: true)
     }
 
     private func failSession(_ error: Error) {
@@ -870,7 +870,7 @@ nonisolated final class NowhereSession: Sendable {
             for connection in teardown.tcp { connection.handleSessionClose() }
             for connection in teardown.udp { connection.handleSessionClose() }
         } else {
-            let failure = error ?? RuleProxyError.proxy(.nowhere, .streamClosed)
+            let failure = error ?? NaiveFlowError.proxy(.nowhere, .streamClosed)
             for connection in teardown.tcp { connection.handleSessionError(failure) }
             for connection in teardown.udp { connection.handleSessionError(failure) }
         }

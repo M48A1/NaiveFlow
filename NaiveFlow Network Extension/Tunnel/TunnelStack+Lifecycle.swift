@@ -1,6 +1,6 @@
 //
 //  TunnelStack+Lifecycle.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/30/26.
 //
@@ -8,9 +8,9 @@
 import Foundation
 import Synchronization
 @preconcurrency import NetworkExtension
-import RuleProxyIP
+import NaiveFlowIP
 
-nonisolated private let logger = RuleProxyLogger(category: "TunnelStack+Lifecycle")
+nonisolated private let logger = NaiveFlowLogger(category: "TunnelStack+Lifecycle")
 
 extension TunnelStack {
 
@@ -22,7 +22,7 @@ extension TunnelStack {
         TransportReclaim.unsealAll()
         makeFreshDutyCycleStreams()
         purgeOutputBuffer()
-        RuleProxyLogger.installLogSink { [weak self] message, level in
+        NaiveFlowLogger.installLogSink { [weak self] message, level in
             let logLevel: TunnelLogLevel
             switch level {
             case .debug, .info: logLevel = .info
@@ -121,7 +121,7 @@ extension TunnelStack {
         nurseryJobContinuation.finish()
         await rootTask?.value
         rootTask = nil
-        RuleProxyLogger.installLogSink(nil)
+        NaiveFlowLogger.installLogSink(nil)
         transition(to: .stopped)
         let waiters = stopWaiters
         stopWaiters = []

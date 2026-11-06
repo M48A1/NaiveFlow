@@ -1,6 +1,6 @@
 //
 //  ConnectionStatsView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/7/26.
 //
@@ -328,7 +328,7 @@ private struct PressureGauge: View {
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
         }
-        .gaugeStyle(RuleProxyLinearGaugeStyle())
+        .gaugeStyle(NaiveFlowLinearGaugeStyle())
     }
 }
 
@@ -549,7 +549,7 @@ private struct RouteLegend: View {
 
 // MARK: - Gauge style
 
-struct RuleProxyLinearGaugeStyle: GaugeStyle {
+struct NaiveFlowLinearGaugeStyle: GaugeStyle {
     var color: Color = .blue
 
     func makeBody(configuration: Configuration) -> some View {
@@ -572,7 +572,7 @@ struct RuleProxyLinearGaugeStyle: GaugeStyle {
     }
 }
 
-struct RuleProxyRingGaugeStyle: GaugeStyle {
+struct NaiveFlowRingGaugeStyle: GaugeStyle {
     var color: Color = .blue
 
     func makeBody(configuration: Configuration) -> some View {

@@ -29,4 +29,4 @@ QUIC Preferred Address 固定线格式仍需跳过/填零一个 18 字节的未�
 
 新增回归用例覆盖所有配置入口拒绝、协议编码不误用域名、IPv4 DNS/Bootstrap、IPv4 UDP 包往返、IPv4 TCP 包布局及头校验和、非 IPv4 包丢弃。旧 IPv6 正向用例已改为拒绝用例。
 
-本环境没有 Swift/Xcode，只完成语法树、符号引用、工程/清单及 diff 静态检查。合入代码不等于测试通过。需要在 Mac 构建所有 target、运行应用测试和 `swift test --package-path Packages/RuleProxyIP`，并真机验证 VPN、IPv4 TCP/UDP、所有承诺协议、DNS、版本切换与防绕行。
+本环境没有 Swift/Xcode，只完成语法树、符号引用、工程/清单及 diff 静态检查。合入代码不等于测试通过。需要在 Mac 构建所有 target、运行应用测试和 `swift test --package-path Packages/NaiveFlowIP`，并真机验证 VPN、IPv4 TCP/UDP、所有承诺协议、DNS、版本切换与防绕行。

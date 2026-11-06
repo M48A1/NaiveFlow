@@ -1,19 +1,19 @@
 //
 //  QUICConnection+Events.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/18/26.
 //
 
 import Foundation
 import Synchronization
-import RuleProxyQUIC
+import NaiveFlowQUIC
 
 extension QUICConnectionCore {
 
     // MARK: Engine events
 
-    func drainEngineEvents(_ engine: RuleProxyQUIC.QUICConnection) {
+    func drainEngineEvents(_ engine: NaiveFlowQUIC.QUICConnection) {
         var events = eventBuffer
         eventBuffer = []
         defer {
@@ -41,9 +41,9 @@ extension QUICConnectionCore {
                 case .streamReset(let id, let code, _):
                     handleStreamReset(streamId: Int64(id.rawValue), appErrorCode: code)
                 case .streamSendingStopped(let id, let code):
-                    failStreamSendQueue(streamId: Int64(id.rawValue), error: RuleProxyError.quic(.streamReset(applicationCode: code)))
+                    failStreamSendQueue(streamId: Int64(id.rawValue), error: NaiveFlowError.quic(.streamReset(applicationCode: code)))
                     if let handler = handlers.withLock({ $0.streamSendingStopped }) {
-                        publish { handler(Int64(id.rawValue), RuleProxyError.quic(.streamReset(applicationCode: code))) }
+                        publish { handler(Int64(id.rawValue), NaiveFlowError.quic(.streamReset(applicationCode: code))) }
                     }
                 case .streamClosed(let id, let code):
                     handleStreamClose(streamId: Int64(id.rawValue), appErrorCode: code ?? 0, hasAppError: code != nil)
@@ -66,15 +66,15 @@ extension QUICConnectionCore {
     func connectionError(_ reason: QUICConnectionCloseReason) -> Error {
         switch reason {
         case .peerTransportError(let code, _, _) where code.rawValue == 0:
-            return RuleProxyError.quic(.closed(graceful: true))
+            return NaiveFlowError.quic(.closed(graceful: true))
         case .peerApplicationError(let code, _) where Self.isBenignCloseCode(code):
-            return RuleProxyError.quic(.closed(graceful: true))
+            return NaiveFlowError.quic(.closed(graceful: true))
         case .tlsError(let error):
             return error
         case .handshakeTimeout:
-            return RuleProxyError.quic(.handshakeFailed(detail: "QUIC handshake timed out"))
+            return NaiveFlowError.quic(.handshakeFailed(detail: "QUIC handshake timed out"))
         default:
-            return RuleProxyError.quic(.connectionFailed(detail: String(describing: reason)))
+            return NaiveFlowError.quic(.connectionFailed(detail: String(describing: reason)))
         }
     }
 
@@ -99,9 +99,9 @@ extension QUICConnectionCore {
 
     func handleStreamClose(streamId: Int64, appErrorCode: UInt64, hasAppError: Bool) {
         let error: Error? = (hasAppError && !Self.isBenignCloseCode(appErrorCode))
-            ? RuleProxyError.quic(.streamClosedWithError(applicationCode: appErrorCode))
+            ? NaiveFlowError.quic(.streamClosedWithError(applicationCode: appErrorCode))
             : nil
-        terminateStreamSendQueue(streamId: streamId, error: error ?? RuleProxyError.quic(.closed(graceful: false)))
+        terminateStreamSendQueue(streamId: streamId, error: error ?? NaiveFlowError.quic(.closed(graceful: false)))
         let handler = handlers.withLock { $0.streamTermination }
         publish { handler?(streamId, error, .closed) }
     }
@@ -109,8 +109,8 @@ extension QUICConnectionCore {
     func handleStreamReset(streamId: Int64, appErrorCode: UInt64) {
         let error: Error? = Self.isBenignCloseCode(appErrorCode)
             ? nil
-            : RuleProxyError.quic(.streamReset(applicationCode: appErrorCode))
-        failStreamSendQueue(streamId: streamId, error: error ?? RuleProxyError.quic(.closed(graceful: false)))
+            : NaiveFlowError.quic(.streamReset(applicationCode: appErrorCode))
+        failStreamSendQueue(streamId: streamId, error: error ?? NaiveFlowError.quic(.closed(graceful: false)))
         let handler = handlers.withLock { $0.streamTermination }
         publish { handler?(streamId, error, .reset) }
     }

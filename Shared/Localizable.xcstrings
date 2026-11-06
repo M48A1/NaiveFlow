@@ -2728,265 +2728,265 @@
         }
       }
     },
-    "RuleProxy" : {
+    "NaiveFlow" : {
       "shouldTranslate" : false
     },
-    "RuleProxy is an independent project and is not affiliated with, endorsed by, or sponsored by any of the companies listed below." : {
+    "NaiveFlow is an independent project and is not affiliated with, endorsed by, or sponsored by any of the companies listed below." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy هو مشروع مستقل وليس تابعًا لأي من الشركات المذكورة أدناه أو معتمدًا أو مدعومًا منها."
+            "value" : "NaiveFlow هو مشروع مستقل وليس تابعًا لأي من الشركات المذكورة أدناه أو معتمدًا أو مدعومًا منها."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy is an independent project and is not affiliated with, endorsed by, or sponsored by any of the companies listed below."
+            "value" : "NaiveFlow is an independent project and is not affiliated with, endorsed by, or sponsored by any of the companies listed below."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy es un proyecto independiente y no está afiliado, respaldado ni patrocinado por ninguna de las empresas que se indican a continuación."
+            "value" : "NaiveFlow es un proyecto independiente y no está afiliado, respaldado ni patrocinado por ninguna de las empresas que se indican a continuación."
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy یک پروژه مستقل است و هیچ‌گونه وابستگی، تأیید یا حمایت مالی از سوی شرکت‌های ذکر شده در زیر ندارد."
+            "value" : "NaiveFlow یک پروژه مستقل است و هیچ‌گونه وابستگی، تأیید یا حمایت مالی از سوی شرکت‌های ذکر شده در زیر ندارد."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy — независимый проект, не связанный ни с одной из перечисленных ниже компаний и не одобренный или спонсируемый ими."
+            "value" : "NaiveFlow — независимый проект, не связанный ни с одной из перечисленных ниже компаний и не одобренный или спонсируемый ими."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy bağımsız bir projedir ve aşağıda listelenen şirketlerin hiçbiriyle ilişkili değildir, onlar tarafından onaylanmaz veya desteklenmez."
+            "value" : "NaiveFlow bağımsız bir projedir ve aşağıda listelenen şirketlerin hiçbiriyle ilişkili değildir, onlar tarafından onaylanmaz veya desteklenmez."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy là một dự án độc lập, không liên kết, được xác nhận hay tài trợ bởi bất kỳ công ty nào được liệt kê dưới đây."
+            "value" : "NaiveFlow là một dự án độc lập, không liên kết, được xác nhận hay tài trợ bởi bất kỳ công ty nào được liệt kê dưới đây."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy 是一个独立项目，与以下列出的任何公司无关，未获其认可或赞助。"
+            "value" : "NaiveFlow 是一个独立项目，与以下列出的任何公司无关，未获其认可或赞助。"
           }
         }
       }
     },
-    "RuleProxy MITM Rule Set URL" : {
+    "NaiveFlow MITM Rule Set URL" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "رابط مجموعة قواعد RuleProxy MITM"
+            "value" : "رابط مجموعة قواعد NaiveFlow MITM"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy MITM Rule Set URL"
+            "value" : "NaiveFlow MITM Rule Set URL"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL del conjunto de reglas RuleProxy MITM"
+            "value" : "URL del conjunto de reglas NaiveFlow MITM"
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "نشانی مجموعه قانون RuleProxy MITM"
+            "value" : "نشانی مجموعه قانون NaiveFlow MITM"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL набора правил RuleProxy MITM"
+            "value" : "URL набора правил NaiveFlow MITM"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy MITM Kural Seti URL'si"
+            "value" : "NaiveFlow MITM Kural Seti URL'si"
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL bộ quy tắc RuleProxy MITM"
+            "value" : "URL bộ quy tắc NaiveFlow MITM"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy MITM 规则列表 URL"
+            "value" : "NaiveFlow MITM 规则列表 URL"
           }
         }
       }
     },
-    "RuleProxy Module URL" : {
+    "NaiveFlow Module URL" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "رابط وحدة RuleProxy"
+            "value" : "رابط وحدة NaiveFlow"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy Module URL"
+            "value" : "NaiveFlow Module URL"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL del módulo RuleProxy"
+            "value" : "URL del módulo NaiveFlow"
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "نشانی ماژول RuleProxy"
+            "value" : "نشانی ماژول NaiveFlow"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL модуля RuleProxy"
+            "value" : "URL модуля NaiveFlow"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy Modül URL'si"
+            "value" : "NaiveFlow Modül URL'si"
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL mô-đun RuleProxy"
+            "value" : "URL mô-đun NaiveFlow"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy 模块 URL"
+            "value" : "NaiveFlow 模块 URL"
           }
         }
       }
     },
-    "RuleProxy Root Certificate is installed and trusted." : {
+    "NaiveFlow Root Certificate is installed and trusted." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "شهادة RuleProxy الجذرية مثبتة وموثوقة."
+            "value" : "شهادة NaiveFlow الجذرية مثبتة وموثوقة."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy Root Certificate is installed and trusted."
+            "value" : "NaiveFlow Root Certificate is installed and trusted."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El certificado raíz de RuleProxy está instalado y es de confianza."
+            "value" : "El certificado raíz de NaiveFlow está instalado y es de confianza."
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "گواهی ریشه RuleProxy نصب و مورد اعتماد است."
+            "value" : "گواهی ریشه NaiveFlow نصب و مورد اعتماد است."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Корневой сертификат RuleProxy установлен и доверен."
+            "value" : "Корневой сертификат NaiveFlow установлен и доверен."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy Kök Sertifikası yüklendi ve güveniliyor."
+            "value" : "NaiveFlow Kök Sertifikası yüklendi ve güveniliyor."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Chứng chỉ gốc RuleProxy đã được cài đặt và tin cậy."
+            "value" : "Chứng chỉ gốc NaiveFlow đã được cài đặt và tin cậy."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy Root Certificate 已安装且受信任。"
+            "value" : "NaiveFlow Root Certificate 已安装且受信任。"
           }
         }
       }
     },
-    "RuleProxy Routing Rule Set URL" : {
+    "NaiveFlow Routing Rule Set URL" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "رابط مجموعة قواعد التوجيه RuleProxy"
+            "value" : "رابط مجموعة قواعد التوجيه NaiveFlow"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy Routing Rule Set URL"
+            "value" : "NaiveFlow Routing Rule Set URL"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL del conjunto de reglas de enrutamiento RuleProxy"
+            "value" : "URL del conjunto de reglas de enrutamiento NaiveFlow"
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "نشانی مجموعه قانون مسیریابی RuleProxy"
+            "value" : "نشانی مجموعه قانون مسیریابی NaiveFlow"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL набора правил маршрутизации RuleProxy"
+            "value" : "URL набора правил маршрутизации NaiveFlow"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy Yönlendirme Kural Seti URL'si"
+            "value" : "NaiveFlow Yönlendirme Kural Seti URL'si"
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL bộ quy tắc định tuyến RuleProxy"
+            "value" : "URL bộ quy tắc định tuyến NaiveFlow"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy 路由规则列表 URL"
+            "value" : "NaiveFlow 路由规则列表 URL"
           }
         }
       }
@@ -6883,54 +6883,54 @@
         }
       }
     },
-    "Enjoy RuleProxy features with no restrictions." : {
+    "Enjoy NaiveFlow features with no restrictions." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "استمتع بميزات RuleProxy دون أي قيود."
+            "value" : "استمتع بميزات NaiveFlow دون أي قيود."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enjoy RuleProxy features with no restrictions."
+            "value" : "Enjoy NaiveFlow features with no restrictions."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Disfruta de las funciones de RuleProxy sin restricciones."
+            "value" : "Disfruta de las funciones de NaiveFlow sin restricciones."
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "از ویژگی‌های RuleProxy بدون هیچ محدودیتی لذت ببرید."
+            "value" : "از ویژگی‌های NaiveFlow بدون هیچ محدودیتی لذت ببرید."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Пользуйтесь возможностями RuleProxy без ограничений."
+            "value" : "Пользуйтесь возможностями NaiveFlow без ограничений."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RuleProxy özelliklerini kısıtlama olmadan kullanın."
+            "value" : "NaiveFlow özelliklerini kısıtlama olmadan kullanın."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tận hưởng các tính năng của RuleProxy mà không bị giới hạn."
+            "value" : "Tận hưởng các tính năng của NaiveFlow mà không bị giới hạn."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "享受无限制的 RuleProxy 特色功能。"
+            "value" : "享受无限制的 NaiveFlow 特色功能。"
           }
         }
       }
@@ -9136,314 +9136,314 @@
         }
       }
     },
-    "Invalid RuleProxy MITM Rule Set File." : {
+    "Invalid NaiveFlow MITM Rule Set File." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ملف مجموعة قواعد RuleProxy MITM غير صالح."
+            "value" : "ملف مجموعة قواعد NaiveFlow MITM غير صالح."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Invalid RuleProxy MITM Rule Set File."
+            "value" : "Invalid NaiveFlow MITM Rule Set File."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Archivo del conjunto de reglas RuleProxy MITM no válido."
+            "value" : "Archivo del conjunto de reglas NaiveFlow MITM no válido."
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "فایل مجموعه قانون RuleProxy MITM نامعتبر است."
+            "value" : "فایل مجموعه قانون NaiveFlow MITM نامعتبر است."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Недействительный файл набора правил RuleProxy MITM."
+            "value" : "Недействительный файл набора правил NaiveFlow MITM."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Geçersiz RuleProxy MITM Kural Seti Dosyası."
+            "value" : "Geçersiz NaiveFlow MITM Kural Seti Dosyası."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tệp bộ quy tắc RuleProxy MITM không hợp lệ."
+            "value" : "Tệp bộ quy tắc NaiveFlow MITM không hợp lệ."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无效 RuleProxy MITM 规则列表文件。"
+            "value" : "无效 NaiveFlow MITM 规则列表文件。"
           }
         }
       }
     },
-    "Invalid RuleProxy MITM Rule Set URL." : {
+    "Invalid NaiveFlow MITM Rule Set URL." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "رابط مجموعة قواعد RuleProxy MITM غير صالح."
+            "value" : "رابط مجموعة قواعد NaiveFlow MITM غير صالح."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Invalid RuleProxy MITM Rule Set URL."
+            "value" : "Invalid NaiveFlow MITM Rule Set URL."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL del conjunto de reglas RuleProxy MITM no válida."
+            "value" : "URL del conjunto de reglas NaiveFlow MITM no válida."
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "نشانی مجموعه قانون RuleProxy MITM نامعتبر است."
+            "value" : "نشانی مجموعه قانون NaiveFlow MITM نامعتبر است."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Недействительный URL набора правил RuleProxy MITM."
+            "value" : "Недействительный URL набора правил NaiveFlow MITM."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Geçersiz RuleProxy MITM Kural Seti URL'si."
+            "value" : "Geçersiz NaiveFlow MITM Kural Seti URL'si."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL bộ quy tắc RuleProxy MITM không hợp lệ."
+            "value" : "URL bộ quy tắc NaiveFlow MITM không hợp lệ."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无效 RuleProxy MITM 规则列表 URL。"
+            "value" : "无效 NaiveFlow MITM 规则列表 URL。"
           }
         }
       }
     },
-    "Invalid RuleProxy Module File." : {
+    "Invalid NaiveFlow Module File." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ملف وحدة RuleProxy غير صالح."
+            "value" : "ملف وحدة NaiveFlow غير صالح."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Invalid RuleProxy Module File."
+            "value" : "Invalid NaiveFlow Module File."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Archivo de módulo RuleProxy no válido."
+            "value" : "Archivo de módulo NaiveFlow no válido."
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "فایل ماژول RuleProxy نامعتبر است."
+            "value" : "فایل ماژول NaiveFlow نامعتبر است."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Недействительный файл модуля RuleProxy."
+            "value" : "Недействительный файл модуля NaiveFlow."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Geçersiz RuleProxy Modül Dosyası."
+            "value" : "Geçersiz NaiveFlow Modül Dosyası."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tệp mô-đun RuleProxy không hợp lệ."
+            "value" : "Tệp mô-đun NaiveFlow không hợp lệ."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无效 RuleProxy 模块文件。"
+            "value" : "无效 NaiveFlow 模块文件。"
           }
         }
       }
     },
-    "Invalid RuleProxy Module URL." : {
+    "Invalid NaiveFlow Module URL." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "رابط وحدة RuleProxy غير صالح."
+            "value" : "رابط وحدة NaiveFlow غير صالح."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Invalid RuleProxy Module URL."
+            "value" : "Invalid NaiveFlow Module URL."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL del módulo RuleProxy no válida."
+            "value" : "URL del módulo NaiveFlow no válida."
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "نشانی ماژول RuleProxy نامعتبر است."
+            "value" : "نشانی ماژول NaiveFlow نامعتبر است."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Недействительный URL модуля RuleProxy."
+            "value" : "Недействительный URL модуля NaiveFlow."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Geçersiz RuleProxy Modül URL'si."
+            "value" : "Geçersiz NaiveFlow Modül URL'si."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL mô-đun RuleProxy không hợp lệ."
+            "value" : "URL mô-đun NaiveFlow không hợp lệ."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无效 RuleProxy 模块 URL。"
+            "value" : "无效 NaiveFlow 模块 URL。"
           }
         }
       }
     },
-    "Invalid RuleProxy Routing Rule Set File." : {
+    "Invalid NaiveFlow Routing Rule Set File." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ملف مجموعة قواعد التوجيه RuleProxy غير صالح."
+            "value" : "ملف مجموعة قواعد التوجيه NaiveFlow غير صالح."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Invalid RuleProxy Routing Rule Set File."
+            "value" : "Invalid NaiveFlow Routing Rule Set File."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Archivo de conjunto de reglas de enrutamiento RuleProxy no válido."
+            "value" : "Archivo de conjunto de reglas de enrutamiento NaiveFlow no válido."
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "فایل مجموعه قانون مسیریابی RuleProxy نامعتبر است."
+            "value" : "فایل مجموعه قانون مسیریابی NaiveFlow نامعتبر است."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Недействительный файл набора правил маршрутизации RuleProxy."
+            "value" : "Недействительный файл набора правил маршрутизации NaiveFlow."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Geçersiz RuleProxy Yönlendirme Kural Seti Dosyası."
+            "value" : "Geçersiz NaiveFlow Yönlendirme Kural Seti Dosyası."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tệp bộ quy tắc định tuyến RuleProxy không hợp lệ."
+            "value" : "Tệp bộ quy tắc định tuyến NaiveFlow không hợp lệ."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无效 RuleProxy 路由规则列表文件。"
+            "value" : "无效 NaiveFlow 路由规则列表文件。"
           }
         }
       }
     },
-    "Invalid RuleProxy Routing Rule Set URL." : {
+    "Invalid NaiveFlow Routing Rule Set URL." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "رابط مجموعة قواعد التوجيه RuleProxy غير صالح."
+            "value" : "رابط مجموعة قواعد التوجيه NaiveFlow غير صالح."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Invalid RuleProxy Routing Rule Set URL."
+            "value" : "Invalid NaiveFlow Routing Rule Set URL."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL del conjunto de reglas de enrutamiento RuleProxy no válida."
+            "value" : "URL del conjunto de reglas de enrutamiento NaiveFlow no válida."
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "نشانی مجموعه قانون مسیریابی RuleProxy نامعتبر است."
+            "value" : "نشانی مجموعه قانون مسیریابی NaiveFlow نامعتبر است."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Недействительный URL набора правил маршрутизации RuleProxy."
+            "value" : "Недействительный URL набора правил маршрутизации NaiveFlow."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Geçersiz RuleProxy Yönlendirme Kural Seti URL'si."
+            "value" : "Geçersiz NaiveFlow Yönlendirme Kural Seti URL'si."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL bộ quy tắc định tuyến RuleProxy không hợp lệ."
+            "value" : "URL bộ quy tắc định tuyến NaiveFlow không hợp lệ."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无效 RuleProxy 路由规则列表 URL。"
+            "value" : "无效 NaiveFlow 路由规则列表 URL。"
           }
         }
       }
@@ -12545,54 +12545,54 @@
         }
       }
     },
-    "Open RuleProxy on your iPhone to sync." : {
+    "Open NaiveFlow on your iPhone to sync." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "افتح RuleProxy على iPhone الخاص بك للمزامنة."
+            "value" : "افتح NaiveFlow على iPhone الخاص بك للمزامنة."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open RuleProxy on your iPhone to sync."
+            "value" : "Open NaiveFlow on your iPhone to sync."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre RuleProxy en tu iPhone para sincronizar."
+            "value" : "Abre NaiveFlow en tu iPhone para sincronizar."
           }
         },
         "fa" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "برای همگام‌سازی، RuleProxy را روی iPhone خود باز کنید."
+            "value" : "برای همگام‌سازی، NaiveFlow را روی iPhone خود باز کنید."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Откройте RuleProxy на вашем iPhone для синхронизации."
+            "value" : "Откройте NaiveFlow на вашем iPhone для синхронизации."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Eşitlemek için iPhone'unuzda RuleProxy'i açın."
+            "value" : "Eşitlemek için iPhone'unuzda NaiveFlow'i açın."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mở RuleProxy trên iPhone của bạn để đồng bộ."
+            "value" : "Mở NaiveFlow trên iPhone của bạn để đồng bộ."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在你的 iPhone 上打开 RuleProxy 来同步。"
+            "value" : "在你的 iPhone 上打开 NaiveFlow 来同步。"
           }
         }
       }

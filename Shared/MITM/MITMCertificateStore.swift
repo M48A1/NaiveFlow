@@ -1,6 +1,6 @@
 //
 //  MITMCertificateStore.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/3/26.
 //
@@ -16,14 +16,14 @@ nonisolated final class MITMCertificateStore: Sendable {
 
     private static let accessGroup = AWCore.Identifier.appGroupSuite
 
-    private static let service = "com.argsment.RuleProxy.MITM"
+    private static let service = "com.argsment.NaiveFlow.MITM"
 
     private static let privateKeyTag = "\(service).caPrivateKey".data(using: .utf8)!
     private static let certificateAccount = "\(service).caCertificate"
     private static let serialAccount = "\(service).caSerial"
 
-    private static let caSubjectCN = "RuleProxy Root Certificate"
-    private static let caOrganization = "RuleProxy"
+    private static let caSubjectCN = "NaiveFlow Root Certificate"
+    private static let caOrganization = "NaiveFlow"
 
     typealias CA = (privateKey: SecKey, certificateDER: Data)
 
@@ -84,7 +84,7 @@ nonisolated final class MITMCertificateStore: Sendable {
             return false
         }
 
-        let testHost = "ruleproxy-mitm-trust-check.invalid"
+        let testHost = "naiveflow-mitm-trust-check.invalid"
         let leafKey = P256.Signing.PrivateKey()
         let now = Date()
 
@@ -126,7 +126,7 @@ nonisolated final class MITMCertificateStore: Sendable {
     func exportMobileConfig() -> Data? {
         guard let (caPrivateKey, certificateDER) = loadCA() else { return nil }
 
-        let identifier = "com.argsment.RuleProxy.mitm.root"
+        let identifier = "com.argsment.NaiveFlow.mitm.root"
         let payloadIdentifier = "\(identifier).payload"
         let payloadUUID = UUID().uuidString
         let outerUUID = UUID().uuidString
@@ -136,18 +136,18 @@ nonisolated final class MITMCertificateStore: Sendable {
             "PayloadVersion": 1,
             "PayloadIdentifier": identifier,
             "PayloadUUID": outerUUID,
-            "PayloadDisplayName": "RuleProxy Root Certificate",
-            "PayloadDescription": "Installs RuleProxy Root Certificate.",
-            "PayloadOrganization": "RuleProxy",
+            "PayloadDisplayName": "NaiveFlow Root Certificate",
+            "PayloadDescription": "Installs NaiveFlow Root Certificate.",
+            "PayloadOrganization": "NaiveFlow",
             "PayloadContent": [
                 [
                     "PayloadType": "com.apple.security.root",
                     "PayloadVersion": 1,
                     "PayloadIdentifier": payloadIdentifier,
                     "PayloadUUID": payloadUUID,
-                    "PayloadDisplayName": "RuleProxy Root Certificate",
-                    "PayloadDescription": "The CA is used in RuleProxy app.",
-                    "PayloadCertificateFileName": "RuleProxyRootCertificate.cer",
+                    "PayloadDisplayName": "NaiveFlow Root Certificate",
+                    "PayloadDescription": "The CA is used in NaiveFlow app.",
+                    "PayloadCertificateFileName": "NaiveFlowRootCertificate.cer",
                     "PayloadContent": certificateDER,
                 ]
             ]
@@ -174,7 +174,7 @@ nonisolated final class MITMCertificateStore: Sendable {
             signingKey: signingKey,
             caPrivateKey: caPrivateKey,
             caCertificateDER: caCertificateDER,
-            commonName: "RuleProxy Profile Signing",
+            commonName: "NaiveFlow Profile Signing",
             serial: randomSerial(),
             notBefore: now.addingTimeInterval(-60 * 60),
             notAfter: notAfter
@@ -196,7 +196,7 @@ nonisolated final class MITMCertificateStore: Sendable {
         var error: Unmanaged<CFError>?
         guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else {
             let message = (error?.takeRetainedValue()).flatMap { CFErrorCopyDescription($0) as String? } ?? "unknown"
-            throw RuleProxyError.certificate(.keyGenerationFailed(detail: message))
+            throw NaiveFlowError.certificate(.keyGenerationFailed(detail: message))
         }
         return key
     }
@@ -247,7 +247,7 @@ nonisolated final class MITMCertificateStore: Sendable {
             // The key was already persisted (kSecAttrIsPermanent); delete it or
             // the next call hits errSecDuplicateItem on the same tag.
             deletePrivateKey()
-            throw RuleProxyError.certificate(.buildFailed(underlying: error))
+            throw NaiveFlowError.certificate(.buildFailed(underlying: error))
         }
     }
 
@@ -314,7 +314,7 @@ nonisolated final class MITMCertificateStore: Sendable {
         var error: Unmanaged<CFError>?
         guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else {
             let message = (error?.takeRetainedValue()).flatMap { CFErrorCopyDescription($0) as String? } ?? "unknown"
-            throw RuleProxyError.certificate(.keyGenerationFailed(detail: message))
+            throw NaiveFlowError.certificate(.keyGenerationFailed(detail: message))
         }
         return key
     }
@@ -330,7 +330,7 @@ nonisolated final class MITMCertificateStore: Sendable {
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let item, CFGetTypeID(item) == SecKeyGetTypeID() else {
-            throw RuleProxyError.certificate(.keychainReadFailed(status: status))
+            throw NaiveFlowError.certificate(.keychainReadFailed(status: status))
         }
         return item as! SecKey
     }
@@ -358,7 +358,7 @@ nonisolated final class MITMCertificateStore: Sendable {
         ]
         let status = SecItemAdd(attributes as CFDictionary, nil)
         guard status == errSecSuccess else {
-            throw RuleProxyError.certificate(.keychainWriteFailed(status: status))
+            throw NaiveFlowError.certificate(.keychainWriteFailed(status: status))
         }
     }
 
@@ -373,7 +373,7 @@ nonisolated final class MITMCertificateStore: Sendable {
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data else {
-            throw RuleProxyError.certificate(.keychainReadFailed(status: status))
+            throw NaiveFlowError.certificate(.keychainReadFailed(status: status))
         }
         return data
     }

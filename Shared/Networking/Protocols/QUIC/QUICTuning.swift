@@ -1,12 +1,12 @@
 //
 //  QUICTuning.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/13/26.
 //
 
 import Foundation
-import RuleProxyQUIC
+import NaiveFlowQUIC
 
 nonisolated struct QUICTuning {
 

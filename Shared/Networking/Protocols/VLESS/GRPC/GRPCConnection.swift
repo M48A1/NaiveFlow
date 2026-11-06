@@ -1,6 +1,6 @@
 //
 //  GRPCConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/23/26.
 //
@@ -133,7 +133,7 @@ nonisolated final class GRPCConnection: Sendable {
         do {
             try await transport.send(initData)
         } catch {
-            throw RuleProxyError.capture(error, context: "gRPC preface/HEADERS write")
+            throw NaiveFlowError.capture(error, context: "gRPC preface/HEADERS write")
         }
         try await processInitialServerFrames()
     }
@@ -144,7 +144,7 @@ nonisolated final class GRPCConnection: Sendable {
             do {
                 frame = try await readH2Frame()
             } catch {
-                throw RuleProxyError.capture(error, context: "gRPC SETTINGS read")
+                throw NaiveFlowError.capture(error, context: "gRPC SETTINGS read")
             }
 
             switch frame.type {
@@ -161,12 +161,12 @@ nonisolated final class GRPCConnection: Sendable {
             case Self.h2FrameHeaders:
                 if frame.streamId == Self.streamId {
                     if let rejection = checkH2ResponseStatus(frame.payload) {
-                        throw RuleProxyError.proxy(.grpc, .handshakeFailed(detail: "gRPC response rejected: \(rejection)"))
+                        throw NaiveFlowError.proxy(.grpc, .handshakeFailed(detail: "gRPC response rejected: \(rejection)"))
                     }
                     if frame.flags & Self.h2FlagEndStream != 0 {
                         if let grpcError = Self.parseGRPCTrailer(frame.payload) {
                             markClosed()
-                            throw RuleProxyError.proxy(.grpc, .handshakeFailed(detail: grpcError.localizedDescription))
+                            throw NaiveFlowError.proxy(.grpc, .handshakeFailed(detail: grpcError.localizedDescription))
                         }
                     }
                     state.withLock { $0.h2ResponseReceived = true }
@@ -187,12 +187,12 @@ nonisolated final class GRPCConnection: Sendable {
 
             case Self.h2FrameGoaway:
                 let reason = Self.describeGoawayPayload(frame.payload)
-                throw RuleProxyError.proxy(.grpc, .handshakeFailed(detail: "Server sent GOAWAY during setup (\(reason))"))
+                throw NaiveFlowError.proxy(.grpc, .handshakeFailed(detail: "Server sent GOAWAY during setup (\(reason))"))
 
             case Self.h2FrameRstStream:
                 if frame.streamId == Self.streamId {
                     let reason = Self.describeRstStreamPayload(frame.payload)
-                    throw RuleProxyError.proxy(.grpc, .handshakeFailed(detail: "Server reset the stream during setup (\(reason))"))
+                    throw NaiveFlowError.proxy(.grpc, .handshakeFailed(detail: "Server reset the stream during setup (\(reason))"))
                 }
                 continue
 
@@ -331,7 +331,7 @@ nonisolated extension GRPCConnection {
 
             let chunk = try await transport.receive()
             guard case .bytes(let data) = chunk, !data.isEmpty else {
-                throw RuleProxyError.proxy(.grpc, .streamClosed)
+                throw NaiveFlowError.proxy(.grpc, .streamClosed)
             }
 
             let overflow: Bool = state.withLock { state in
@@ -343,7 +343,7 @@ nonisolated extension GRPCConnection {
                 return false
             }
             if overflow {
-                throw RuleProxyError.proxy(.grpc, .connectionClosed(detail: nil))
+                throw NaiveFlowError.proxy(.grpc, .connectionClosed(detail: nil))
             }
         }
     }
@@ -609,7 +609,7 @@ nonisolated extension GRPCConnection {
         var offset = 0
         while offset < message.count {
             guard let (tag, tagConsumed) = varintDecode(message, at: offset) else {
-                throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "truncated protobuf tag"))
+                throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "truncated protobuf tag"))
             }
             offset += tagConsumed
             let fieldNumber = Int(tag >> 3)
@@ -618,11 +618,11 @@ nonisolated extension GRPCConnection {
             switch wireType {
             case 2:
                 guard let (length, lenConsumed) = varintDecode(message, at: offset) else {
-                    throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "truncated protobuf length"))
+                    throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "truncated protobuf length"))
                 }
                 offset += lenConsumed
                 guard length <= UInt64(message.count - offset) else {
-                    throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "truncated protobuf value"))
+                    throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "truncated protobuf value"))
                 }
                 let lenInt = Int(length)
                 if fieldNumber == 1 {
@@ -631,21 +631,21 @@ nonisolated extension GRPCConnection {
                 offset += lenInt
             case 0:
                 guard let (_, vConsumed) = varintDecode(message, at: offset) else {
-                    throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "truncated varint field"))
+                    throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "truncated varint field"))
                 }
                 offset += vConsumed
             case 5:
                 guard offset + 4 <= message.count else {
-                    throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "truncated fixed32 field"))
+                    throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "truncated fixed32 field"))
                 }
                 offset += 4
             case 1:
                 guard offset + 8 <= message.count else {
-                    throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "truncated fixed64 field"))
+                    throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "truncated fixed64 field"))
                 }
                 offset += 8
             default:
-                throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "unknown protobuf wire type \(wireType)"))
+                throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "unknown protobuf wire type \(wireType)"))
             }
         }
         return out
@@ -691,7 +691,7 @@ nonisolated extension GRPCConnection {
 
             switch step {
             case .closed:
-                throw RuleProxyError.proxy(.grpc, .connectionClosed(detail: nil))
+                throw NaiveFlowError.proxy(.grpc, .connectionClosed(detail: nil))
             case .park:
                 await parkForFlowWindow()
                 try Task.checkCancellation()
@@ -743,7 +743,7 @@ nonisolated extension GRPCConnection {
             do {
                 frame = try await readH2Frame()
             } catch {
-                if case RuleProxyError.proxy(.grpc, .streamClosed) = error {
+                if case NaiveFlowError.proxy(.grpc, .streamClosed) = error {
                     let leftover: Data = state.withLock { state in
                         state.transition(to: .halfClosed)
                         let leftover = state.decodedBuffer
@@ -844,7 +844,7 @@ nonisolated extension GRPCConnection {
 
         if let rejection = checkH2ResponseStatus(payload) {
             markClosed()
-            throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "gRPC response rejected: \(rejection)"))
+            throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "gRPC response rejected: \(rejection)"))
         }
         state.withLock { $0.h2ResponseReceived = true }
     }
@@ -896,7 +896,7 @@ nonisolated extension GRPCConnection {
                 }
 
                 if compressed != 0 {
-                    decodeError = RuleProxyError.proxy(.grpc, .unsupported(feature: "compressed messages"))
+                    decodeError = NaiveFlowError.proxy(.grpc, .unsupported(feature: "compressed messages"))
                     break
                 }
                 do {
@@ -921,7 +921,7 @@ nonisolated extension GRPCConnection {
 
         switch result {
         case .overflow:
-            throw RuleProxyError.proxy(.grpc, .protocolViolation(detail: "gRPC frame buffer overflow"))
+            throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "gRPC frame buffer overflow"))
         case .parsed(let decoded, let streamClosed, let decodeError):
             if let decodeError { throw decodeError }
             if decoded.isEmpty {
@@ -1065,7 +1065,7 @@ nonisolated extension GRPCConnection {
 // MARK: - gRPC trailer parsing
 
 nonisolated extension GRPCConnection {
-    fileprivate static func parseGRPCTrailer(_ payload: Data) -> RuleProxyError? {
+    fileprivate static func parseGRPCTrailer(_ payload: Data) -> NaiveFlowError? {
         let headers = decodeHPACKHeaders(payload)
         guard let statusStr = headers["grpc-status"], let status = Int(statusStr), status != 0 else {
             return nil

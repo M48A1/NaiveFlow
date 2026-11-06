@@ -1,6 +1,6 @@
 //
 //  ProxyClient.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 1/26/26.
 //
@@ -96,10 +96,10 @@ nonisolated final class ProxyClient: Sendable {
             return connection
         case .cancelled:
             connection.cancel()
-            throw RuleProxyError.transport(.terminated)
+            throw NaiveFlowError.transport(.terminated)
         case .alreadyDelivered:
             connection.cancel()
-            throw RuleProxyError.transport(.connectionFailed(
+            throw NaiveFlowError.transport(.connectionFailed(
                 endpoint: configuration.serverAddress,
                 detail: "proxy client already delivered a connection"
             ))
@@ -142,7 +142,7 @@ nonisolated final class ProxyClient: Sendable {
             // format can carry it. For an IP-only transport, report the gap
             // instead of silently resolving through the carrier DNS.
             if !configuration.outboundProtocol.supportsDomainTarget, !DNSName.isIPAddress(request.host) {
-                throw RuleProxyError.proxy(configuration.outboundProtocol.wire, .protocolViolation(
+                throw NaiveFlowError.proxy(configuration.outboundProtocol.wire, .protocolViolation(
                     detail: "\(configuration.outboundProtocol.name) cannot carry a domain-name target"
                 ))
             }
@@ -166,7 +166,7 @@ nonisolated final class ProxyClient: Sendable {
         }
 
         guard let lastDeliver = configuration.upstreamNetwork(for: request.network) else {
-            throw RuleProxyError.proxy(configuration.outboundProtocol.wire, .protocolViolation(
+            throw NaiveFlowError.proxy(configuration.outboundProtocol.wire, .protocolViolation(
                 detail: "\(configuration.outboundProtocol.name) doesn't support \(request.network)"
             ))
         }
@@ -183,7 +183,7 @@ nonisolated final class ProxyClient: Sendable {
         }
         guard installed else {
             chainTunnel.cancel()
-            throw RuleProxyError.transport(.terminated)
+            throw NaiveFlowError.transport(.terminated)
         }
         return try await connectWithOutbound(request)
     }
@@ -196,7 +196,7 @@ nonisolated final class ProxyClient: Sendable {
         guard !chain.isEmpty else { return .success([]) }
 
         guard let lastDeliver = outerProtocol.upstreamNetwork(for: outerNetwork) else {
-            return .failure(RuleProxyError.proxy(outerProtocol.wire, .protocolViolation(
+            return .failure(NaiveFlowError.proxy(outerProtocol.wire, .protocolViolation(
                 detail: "\(outerProtocol.name) doesn't support \(outerNetwork)"
             )))
         }
@@ -218,7 +218,7 @@ nonisolated final class ProxyClient: Sendable {
                 let nextHop = chain[i + 1]
                 let downstream = networks[i + 1]
                 guard let upstream = nextHop.upstreamNetwork(for: downstream) else {
-                    return .failure(RuleProxyError.proxy(nextHop.outboundProtocol.wire, .protocolViolation(
+                    return .failure(NaiveFlowError.proxy(nextHop.outboundProtocol.wire, .protocolViolation(
                         detail: "Chain hop \(nextHop.outboundProtocol.name) doesn't support \(downstream) downstream — needed by the hop above it"
                     )))
                 }
@@ -346,7 +346,7 @@ nonisolated final class ProxyClient: Sendable {
             throw error
         }
         guard let tunnel = currentTunnel else {
-            throw RuleProxyError.transport(.connectionFailed(endpoint: nil, detail: "Empty proxy chain"))
+            throw NaiveFlowError.transport(.connectionFailed(endpoint: nil, detail: "Empty proxy chain"))
         }
         return tunnel
     }
@@ -427,7 +427,7 @@ nonisolated final class ProxyClient: Sendable {
 // MARK: - Wire Mapping
 
 nonisolated extension OutboundProtocol {
-    var wire: RuleProxyError.Wire {
+    var wire: NaiveFlowError.Wire {
         switch self {
         case .nowhere: .nowhere
         case .vless: .vless

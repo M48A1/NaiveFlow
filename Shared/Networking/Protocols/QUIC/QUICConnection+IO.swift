@@ -1,13 +1,13 @@
 //
 //  QUICConnection+IO.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/18/26.
 //
 
 import Foundation
 import Network
-import RuleProxyQUIC
+import NaiveFlowQUIC
 
 extension QUICConnectionCore {
 
@@ -36,7 +36,7 @@ extension QUICConnectionCore {
             guard let carrier else { return }
             owner?.update { core in
                 guard core.carrier === carrier else { return }
-                core.close(error: RuleProxyError.quic(.connectionFailed(detail: "recv errno=\(errno)")))
+                core.close(error: NaiveFlowError.quic(.connectionFailed(detail: "recv errno=\(errno)")))
             }
         }
         installMigrationTriggers(on: carrier)
@@ -86,7 +86,7 @@ extension QUICConnectionCore {
         if phase != .closed { scheduleFlush() }
     }
 
-    func pumpDatagrams(_ engine: RuleProxyQUIC.QUICConnection) {
+    func pumpDatagrams(_ engine: NaiveFlowQUIC.QUICConnection) {
         guard !pendingDatagrams.isEmpty, engine.state == .established else { return }
         var consumed = 0
         defer { pendingDatagrams.removeFirst(consumed) }
@@ -101,11 +101,11 @@ extension QUICConnectionCore {
                 let failure: Error
                 switch error {
                 case .datagramTooLarge:
-                    failure = RuleProxyError.quic(.datagramTooLarge(limit: engine.maxDatagramPayloadSize))
+                    failure = NaiveFlowError.quic(.datagramTooLarge(limit: engine.maxDatagramPayloadSize))
                 case .invalidState:
-                    failure = RuleProxyError.quic(.closed(graceful: false))
+                    failure = NaiveFlowError.quic(.closed(graceful: false))
                 default:
-                    failure = RuleProxyError.quic(.connectionFailed(detail: String(describing: error)))
+                    failure = NaiveFlowError.quic(.connectionFailed(detail: String(describing: error)))
                 }
                 head.latch?.settle(failure)
                 continue

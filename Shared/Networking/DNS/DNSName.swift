@@ -1,6 +1,6 @@
 //
 //  DNSName.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 10/9/26.
 //
@@ -67,7 +67,7 @@ nonisolated enum IPv4Only {
     }
     static func requireHost(_ host: String) throws {
         guard supportsHost(host) else {
-            throw RuleProxyError.dns(.resolutionFailed(host: host, detail: "IPv4-only build: unsupported address family"))
+            throw NaiveFlowError.dns(.resolutionFailed(host: host, detail: "IPv4-only build: unsupported address family"))
         }
     }
 }

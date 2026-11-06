@@ -1,6 +1,6 @@
 //
 //  QUICConnection+Migration.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/18/26.
 //
@@ -8,9 +8,9 @@
 import Foundation
 import Synchronization
 import Network
-import RuleProxyQUIC
+import NaiveFlowQUIC
 
-nonisolated private let logger = RuleProxyLogger(category: "QUICConnection")
+nonisolated private let logger = NaiveFlowLogger(category: "QUICConnection")
 
 extension QUICConnectionCore {
 
@@ -62,7 +62,7 @@ extension QUICConnectionCore {
         guard migrationEnabled, phase == .connected, case .none = migration,
               migrationFailures < Self.maxMigrationFailures,
               let engine else {
-            close(error: RuleProxyError.quic(.connectionFailed(detail: "network path lost")))
+            close(error: NaiveFlowError.quic(.connectionFailed(detail: "network path lost")))
             return
         }
 
@@ -82,7 +82,7 @@ extension QUICConnectionCore {
         } catch {
             newCarrier.close()
             migrationFailures += 1
-            close(error: RuleProxyError.quic(.connectionFailed(detail: "migration rejected: \(RuleProxyError.describe(error))")))
+            close(error: NaiveFlowError.quic(.connectionFailed(detail: "migration rejected: \(NaiveFlowError.describe(error))")))
             return
         }
 
@@ -216,7 +216,7 @@ extension QUICConnectionCore {
                 migrationFailures = 0
             case .failure:
                 setMigration(.none)
-                close(error: RuleProxyError.quic(.connectionFailed(detail: "migration path validation failed")))
+                close(error: NaiveFlowError.quic(.connectionFailed(detail: "migration path validation failed")))
             case .aborted:
                 setMigration(.none)
             }

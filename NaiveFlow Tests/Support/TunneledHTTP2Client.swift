@@ -1,12 +1,12 @@
 //
 //  TunneledHTTP2Client.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/21/26.
 //
 
 import Foundation
-@testable import RuleProxy
+@testable import NaiveFlow
 
 enum TunneledHTTP2Client {
     private static let connectionPreface = Data("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".utf8)
@@ -38,7 +38,7 @@ enum TunneledHTTP2Client {
             (":scheme", "https"),
             (":authority", authority),
             (":path", path),
-            ("user-agent", "RuleProxy"),
+            ("user-agent", "NaiveFlow"),
             ("accept", "*/*"),
         ]
         let headerBlock = HPACKEncoder.encodeHeaderBlock(requestHeaders)

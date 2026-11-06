@@ -1,6 +1,6 @@
 //
 //  SudokuNativeConfig.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by saba-futai on 10/18/26.
 //
@@ -26,7 +26,7 @@ nonisolated final class SudokuNativeConfig: Sendable {
 
     init(configuration: ProxyConfiguration) throws {
         guard case .sudoku(let sudoku) = configuration.outbound else {
-            throw RuleProxyError.proxy(.sudoku, .invalidConfiguration(detail: "missing protocol settings"))
+            throw NaiveFlowError.proxy(.sudoku, .invalidConfiguration(detail: "missing protocol settings"))
         }
         self.serverHost = configuration.serverAddress
         self.serverPort = configuration.serverPort

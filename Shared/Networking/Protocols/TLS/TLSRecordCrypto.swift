@@ -1,6 +1,6 @@
 //
 //  TLSRecordCrypto.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
@@ -31,7 +31,7 @@ nonisolated struct TLSRecordCrypto {
         let nonce = buildNonce(iv: iv, seqNum: seqNum)
 
         guard ciphertext.count >= 16 else {
-            throw RuleProxyError.tls(.record(.ciphertextTooShort))
+            throw NaiveFlowError.tls(.record(.ciphertextTooShort))
         }
 
         let ct = ciphertext.prefix(ciphertext.count - 16)
@@ -40,7 +40,7 @@ nonisolated struct TLSRecordCrypto {
         let decrypted = try openAEAD(ciphertext: Data(ct), tag: Data(tag), key: key, nonce: nonce, aad: recordHeader, cipherSuite: cipherSuite)
 
         guard !decrypted.isEmpty else {
-            throw RuleProxyError.tls(.record(.emptyPlaintext))
+            throw NaiveFlowError.tls(.record(.emptyPlaintext))
         }
 
         var contentEnd = decrypted.count - 1
@@ -49,7 +49,7 @@ nonisolated struct TLSRecordCrypto {
         }
 
         guard contentEnd >= 0 else {
-            throw RuleProxyError.tls(.record(.missingContentType))
+            throw NaiveFlowError.tls(.record(.missingContentType))
         }
 
         return Data(decrypted.prefix(contentEnd))
@@ -90,7 +90,7 @@ nonisolated struct TLSRecordCrypto {
                 return Data(try AES.GCM.open(sealedBox, using: key, authenticating: aad))
             }
         } catch CryptoKitError.authenticationFailure {
-            throw RuleProxyError.tls(.record(.authenticationFailed))
+            throw NaiveFlowError.tls(.record(.authenticationFailed))
         }
     }
 

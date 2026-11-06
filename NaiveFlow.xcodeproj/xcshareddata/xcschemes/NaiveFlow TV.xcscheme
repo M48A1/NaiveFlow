@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "CB2B549B2F6C3E2700F24AC2"
-               BuildableName = "RuleProxy TV.app"
-               BlueprintName = "RuleProxy TV"
-               ReferencedContainer = "container:RuleProxy.xcodeproj">
+               BuildableName = "NaiveFlow TV.app"
+               BlueprintName = "NaiveFlow TV"
+               ReferencedContainer = "container:NaiveFlow.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -45,9 +45,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "CB2B549B2F6C3E2700F24AC2"
-            BuildableName = "RuleProxy TV.app"
-            BlueprintName = "RuleProxy TV"
-            ReferencedContainer = "container:RuleProxy.xcodeproj">
+            BuildableName = "NaiveFlow TV.app"
+            BlueprintName = "NaiveFlow TV"
+            ReferencedContainer = "container:NaiveFlow.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -62,9 +62,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "CB2B549B2F6C3E2700F24AC2"
-            BuildableName = "RuleProxy TV.app"
-            BlueprintName = "RuleProxy TV"
-            ReferencedContainer = "container:RuleProxy.xcodeproj">
+            BuildableName = "NaiveFlow TV.app"
+            BlueprintName = "NaiveFlow TV"
+            ReferencedContainer = "container:NaiveFlow.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

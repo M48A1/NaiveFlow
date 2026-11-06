@@ -1,6 +1,6 @@
 //
 //  TunnelController.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 8/3/26.
 //
@@ -9,7 +9,7 @@ import Foundation
 import NetworkExtension
 import Observation
 
-nonisolated private let logger = RuleProxyLogger(category: "TunnelController")
+nonisolated private let logger = NaiveFlowLogger(category: "TunnelController")
 
 @MainActor
 @Observable

@@ -1,6 +1,6 @@
 //
 //  SyncStore.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 8/13/26.
 //
@@ -10,7 +10,7 @@ import Synchronization
 import CryptoKit
 import SwiftData
 
-nonisolated private let logger = RuleProxyLogger(category: "SyncStore")
+nonisolated private let logger = NaiveFlowLogger(category: "SyncStore")
 
 @Model
 nonisolated final class SyncItem {

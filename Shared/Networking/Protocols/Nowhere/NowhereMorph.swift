@@ -1,6 +1,6 @@
 //
 //  NowhereMorph.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 9/11/26.
 //
@@ -64,7 +64,7 @@ nonisolated enum NowhereMorph {
         let count = network == .tcp ? tcpPreludeSize : udpPreludeSize
         var prelude = try NowhereMorphNonceGenerator.secureRandomBytes(count: count)
         guard prelude.count == count else {
-            throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Failed to generate Morph prelude"))
+            throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Failed to generate Morph prelude"))
         }
         switch policy {
         case .fade:
@@ -117,7 +117,7 @@ nonisolated enum NowhereMorph {
             }
             let identity = try state.identity!.get()
             guard state.counter < maximumPreludeCounter else {
-                throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Morph prelude counter exhausted"))
+                throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Morph prelude counter exhausted"))
             }
             state.counter += 1
             return (identity, state.counter)
@@ -167,7 +167,7 @@ nonisolated enum NowhereMorph {
                     base.cancel()
                     client.cancel()
                 }, error: {
-                    RuleProxyError.tls(.handshakeFailed(detail: "Morph bootstrap or TLS handshake timed out"))
+                    NaiveFlowError.tls(.handshakeFailed(detail: "Morph bootstrap or TLS handshake timed out"))
                 }, discardingLateResult: { record in
                     record.cancel()
                 }, operation: {
@@ -225,7 +225,7 @@ nonisolated enum NowhereMorph {
     ) throws {
         try validate(count: input.count, keyCount: key.count, nonceCount: nonce.count, offset: offset)
         guard output.count == input.count else {
-            throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Morph buffer size mismatch"))
+            throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Morph buffer size mismatch"))
         }
         NowhereMorphCrypto.xor(destination: output, input: input, key: key, nonce: nonce, offset: offset)
     }
@@ -233,7 +233,7 @@ nonisolated enum NowhereMorph {
     private static func validate(count: Int, keyCount: Int, nonceCount: Int, offset: UInt64) throws {
         guard keyCount == 32, nonceCount == nonceSize,
               offset <= byteLimit, UInt64(count) <= byteLimit - offset else {
-            throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Morph stream limit exceeded"))
+            throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Morph stream limit exceeded"))
         }
     }
 }
@@ -256,7 +256,7 @@ nonisolated final class NowhereMorphNonceGenerator: Sendable {
         reseedByteLimit: UInt64 = NowhereMorph.byteLimit
     ) throws {
         guard reseedByteLimit >= UInt64(NowhereMorph.nonceSize) else {
-            throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Invalid Morph nonce limit"))
+            throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Invalid Morph nonce limit"))
         }
         self.randomBytes = randomBytes
         self.reseedByteLimit = reseedByteLimit
@@ -284,7 +284,7 @@ nonisolated final class NowhereMorphNonceGenerator: Sendable {
     private static func makeState(randomBytes: RandomBytes) throws -> State {
         let seed = try randomBytes(44)
         guard seed.count == 44 else {
-            throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Failed to seed Morph nonce generator"))
+            throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Failed to seed Morph nonce generator"))
         }
         return State(key: Data(seed.prefix(32)), nonce: Data(seed.suffix(12)), offset: 0)
     }
@@ -295,7 +295,7 @@ nonisolated final class NowhereMorphNonceGenerator: Sendable {
             SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!)
         }
         guard status == errSecSuccess else {
-            throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Failed to seed Morph nonce generator"))
+            throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Failed to seed Morph nonce generator"))
         }
         return bytes
     }
@@ -342,7 +342,7 @@ nonisolated final class NowhereMorphPacketObfuscator: QUICPreludeCapable {
         let error: Error? = failureState.withLock { state in
             state.handler = handler
             return state.failed
-                ? RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Morph nonce generation failed"))
+                ? NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Morph nonce generation failed"))
                 : nil
         }
         if let error { handler(error) }
@@ -411,7 +411,7 @@ nonisolated final class NowhereMorphTCPTransport: ByteTransport, Sendable {
 
     private init(inner: any ByteTransport, keys: NowhereMorph.Keys, nonce: Data) throws {
         guard nonce.count == NowhereMorph.nonceSize else {
-            throw RuleProxyError.proxy(.nowhere, .protocolViolation(detail: "Invalid Morph nonce"))
+            throw NaiveFlowError.proxy(.nowhere, .protocolViolation(detail: "Invalid Morph nonce"))
         }
         self.inner = inner
         clientToServerKey = keys.tcpClientToServer

@@ -1,6 +1,6 @@
 //
 //  QUICConnection+Connect.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/18/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 import Network
-import RuleProxyQUIC
+import NaiveFlowQUIC
 
 private struct WeakConnectionBox: Sendable {
     weak var value: QUICConnection?
@@ -39,7 +39,7 @@ extension QUICConnectionCore {
             try IPv4Only.requireHost(host)
             populateRemoteAddr(resolvedIPs: resolvedIPs)
             guard remoteAddr.ss_family != 0 else {
-                throw RuleProxyError.quic(.connectionFailed(detail: "DNS lookup failed for \(host)"))
+                throw NaiveFlowError.quic(.connectionFailed(detail: "DNS lookup failed for \(host)"))
             }
             let carrier = QUICDatagramCarrier(obfuscator: obfuscator, executor: executor)
             let remote = remoteAddr
@@ -154,7 +154,7 @@ extension QUICConnectionCore {
     }
 
     func handleTransportClosed(_ error: Error?) {
-        let err = error ?? RuleProxyError.quic(.closed(graceful: false))
+        let err = error ?? NaiveFlowError.quic(.closed(graceful: false))
         finishConnect(err)
         close(error: err)
     }
@@ -260,7 +260,7 @@ extension QUICConnectionCore {
         )
         let controller = tuning.makeCongestionController()
         usesBrutalCC = controller is QUICBrutalCongestionController
-        let engine = RuleProxyQUIC.QUICConnection(
+        let engine = NaiveFlowQUIC.QUICConnection(
             settings: settings,
             transportParameters: parameters,
             destinationID: .random(length: 16),

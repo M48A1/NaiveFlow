@@ -1,6 +1,6 @@
 //
 //  RealityProxyConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 1/26/26.
 //
@@ -28,11 +28,11 @@ nonisolated final class RealityProxyConnection: ProxyConnection {
     func receiveRaw() async throws -> Data? {
         do {
             return try await realityConnection.receive()
-        } catch RuleProxyError.tls(.record(.authenticationFailed)) {
+        } catch NaiveFlowError.tls(.record(.authenticationFailed)) {
             // AEAD auth failure means the record no longer decrypts with the derived
             // keys — the server may have switched to Vision direct-copy. Only that
             // case maps to the Reality-specific error; everything else propagates.
-            throw RuleProxyError.tls(.reality(.decryptionFailed))
+            throw NaiveFlowError.tls(.reality(.decryptionFailed))
         }
     }
 

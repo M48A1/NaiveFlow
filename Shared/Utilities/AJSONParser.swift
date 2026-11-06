@@ -1,6 +1,6 @@
 //
 //  AJSONParser.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 10/28/26.
 //
@@ -50,20 +50,20 @@ nonisolated enum AJSONParser {
             object = try JSONSerialization.jsonObject(with: Data(text.utf8), options: [.json5Allowed])
         } catch {
             let detail = (error as NSError).userInfo[NSDebugDescriptionErrorKey] as? String ?? error.localizedDescription
-            throw RuleProxyError.parse(.ajson(detail: detail))
+            throw NaiveFlowError.parse(.ajson(detail: detail))
         }
         guard let root = object as? [String: Any] else {
-            throw RuleProxyError.parse(.ajson(detail: "root is not an object"))
+            throw NaiveFlowError.parse(.ajson(detail: "root is not an object"))
         }
         let document = Fields(root)
-        guard let version = try? document.int("ruleproxy") else {
-            throw RuleProxyError.parse(.ajson(detail: "missing 'ruleproxy' version"))
+        guard let version = try? document.int("naiveflow") else {
+            throw NaiveFlowError.parse(.ajson(detail: "missing 'naiveflow' version"))
         }
         guard (1...Self.version).contains(version) else {
-            throw RuleProxyError.parse(.ajson(detail: "version \(version) is not supported, update RuleProxy"))
+            throw NaiveFlowError.parse(.ajson(detail: "version \(version) is not supported, update NaiveFlow"))
         }
         guard let entries = root["proxies"] as? [Any] else {
-            throw RuleProxyError.parse(.ajson(detail: "missing 'proxies' array"))
+            throw NaiveFlowError.parse(.ajson(detail: "missing 'proxies' array"))
         }
 
         let templates = ((root["templates"] as? [String: Any]) ?? [:]).compactMapValues { value -> [String: Any]? in

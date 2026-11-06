@@ -1,6 +1,6 @@
 //
 //  QUICDatagramCarrier.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/21/26.
 //
@@ -197,10 +197,10 @@ nonisolated final class QUICDatagramCarrierCore: QUICPublishingState {
 
     func connect(remoteAddr: sockaddr_storage, localAddr: inout sockaddr_storage) throws {
         guard case .idle = phase else {
-            throw RuleProxyError.quic(.connectionFailed(detail: "carrier is \(phase.label)"))
+            throw NaiveFlowError.quic(.connectionFailed(detail: "carrier is \(phase.label)"))
         }
         guard let endpoint = Self.nwEndpoint(from: remoteAddr) else {
-            throw RuleProxyError.quic(.connectionFailed(detail: "invalid remote address"))
+            throw NaiveFlowError.quic(.connectionFailed(detail: "invalid remote address"))
         }
         Self.fillAnyLocalAddr(&localAddr, family: remoteAddr.ss_family)
 
@@ -412,9 +412,9 @@ nonisolated final class QUICDatagramEngine: Sendable {
             case .ready:
                 sink.ready(interfaceType: connection?.currentPath?.availableInterfaces.first?.type)
             case .failed(let error):
-                sink.failed(RuleProxyError.errnoCode(from: error))
+                sink.failed(NaiveFlowError.errnoCode(from: error))
             case .waiting(let error):
-                sink.waiting(RuleProxyError.errnoCode(from: error))
+                sink.waiting(NaiveFlowError.errnoCode(from: error))
             default:
                 break
             }
@@ -493,7 +493,7 @@ nonisolated final class QUICDatagramEngine: Sendable {
 
     private func finishPrelude(_ error: NWError?) {
         if let error {
-            failPrelude(RuleProxyError.errnoCode(from: error))
+            failPrelude(NaiveFlowError.errnoCode(from: error))
             return
         }
         let pending = preludeState.withLock { state -> [Data]? in
@@ -550,7 +550,7 @@ nonisolated final class QUICDatagramEngine: Sendable {
         connection.receiveMessage { content, _, _, error in
             if let error {
                 if terminated.claim() {
-                    sink.failed(RuleProxyError.errnoCode(from: error))
+                    sink.failed(NaiveFlowError.errnoCode(from: error))
                     sink.finished()
                 }
                 return

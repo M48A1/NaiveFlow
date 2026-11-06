@@ -1,6 +1,6 @@
 //
 //  AnyTLSStream.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/16/26.
 //
@@ -70,7 +70,7 @@ actor AnyTLSStream {
 
     func sendRaw(_ data: Data) async throws {
         guard isConnected, let multiplexer else {
-            throw RuleProxyError.proxy(.anyTLS, .connectionClosed(detail: "AnyTLS stream closed"))
+            throw NaiveFlowError.proxy(.anyTLS, .connectionClosed(detail: "AnyTLS stream closed"))
         }
         try await multiplexer.writeData(sid: sid, data: data)
     }

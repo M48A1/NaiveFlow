@@ -1,6 +1,6 @@
 //
 //  RFCProtocol.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 9/11/26.
 //
@@ -24,7 +24,7 @@ nonisolated enum RFCProtocol {
             self = negotiatedALPN == RFCProtocol.alpnHTTP2 ? .http2 : .http11
         }
 
-        var wire: RuleProxyError.Wire {
+        var wire: NaiveFlowError.Wire {
             switch self {
             case .http11: .http11
             case .http2:  .http2
@@ -50,13 +50,13 @@ nonisolated enum RFCProtocol {
 
     // MARK: Status
     
-    static func tunnelError(status: Int, reason: String?, wire: RuleProxyError.Wire) -> RuleProxyError? {
+    static func tunnelError(status: Int, reason: String?, wire: NaiveFlowError.Wire) -> NaiveFlowError? {
         if (200...299).contains(status) { return nil }
         if status == 407 {
-            return RuleProxyError.proxy(wire, .authenticationRejected(status: status, detail: reason))
+            return NaiveFlowError.proxy(wire, .authenticationRejected(status: status, detail: reason))
         }
         let detail = reason.map { "CONNECT rejected: \(status) \($0)" } ?? "CONNECT rejected: \(status)"
-        return RuleProxyError.proxy(wire, .tunnelRejected(detail: detail))
+        return NaiveFlowError.proxy(wire, .tunnelRejected(detail: detail))
     }
 
     // MARK: - HTTP/1.1 Request
@@ -91,7 +91,7 @@ nonisolated enum RFCProtocol {
         while true {
             guard let terminator = search.range(of: headerTerminator) else {
                 guard buffer.count <= maxHTTP11HeaderBytes else {
-                    throw RuleProxyError.proxy(.http11, .handshakeFailed(
+                    throw NaiveFlowError.proxy(.http11, .handshakeFailed(
                         detail: "CONNECT response head exceeded \(maxHTTP11HeaderBytes) bytes"
                     ))
                 }
@@ -100,7 +100,7 @@ nonisolated enum RFCProtocol {
             let headEnd = terminator.upperBound
             let head = search[search.startIndex..<terminator.lowerBound]
             guard let text = String(data: Data(head), encoding: .utf8) else {
-                throw RuleProxyError.proxy(.http11, .handshakeFailed(detail: "Malformed CONNECT response head"))
+                throw NaiveFlowError.proxy(.http11, .handshakeFailed(detail: "Malformed CONNECT response head"))
             }
             let firstLine = text.prefix { $0 != "\r" && $0 != "\n" }
             let (status, reason) = try parseStatusLine(String(firstLine))
@@ -125,7 +125,7 @@ nonisolated enum RFCProtocol {
         guard parts.count >= 2,
               parts[0].hasPrefix("HTTP/"),
               let status = Int(parts[1]), (100...599).contains(status) else {
-            throw RuleProxyError.proxy(.http11, .handshakeFailed(detail: "Malformed CONNECT status line: \(line)"))
+            throw NaiveFlowError.proxy(.http11, .handshakeFailed(detail: "Malformed CONNECT status line: \(line)"))
         }
         let reason = parts.count > 2 ? String(parts[2]) : nil
         return (status, reason?.isEmpty == true ? nil : reason)

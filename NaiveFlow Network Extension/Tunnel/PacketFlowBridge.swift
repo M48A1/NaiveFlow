@@ -1,6 +1,6 @@
 //
 //  PacketFlowBridge.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 9/27/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 @preconcurrency import NetworkExtension
-import RuleProxyIP
+import NaiveFlowIP
 
 nonisolated final class PacketFlowWriter: @unchecked Sendable {
     private typealias WritePackets = @convention(c) (NSObject, Selector, NSArray, NSArray) -> ObjCBool

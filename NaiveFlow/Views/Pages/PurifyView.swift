@@ -1,6 +1,6 @@
 //
 //  PurifyView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/18/26.
 //

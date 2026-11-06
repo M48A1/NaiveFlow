@@ -1,6 +1,6 @@
 # Routing Rule System — Developer Guide
 
-RuleProxy decides, per connection, whether to send it **direct**, **reject**
+NaiveFlow decides, per connection, whether to send it **direct**, **reject**
 it, or route it through a chosen **proxy**, based on the connection's
 destination. Routing rules express that policy. This guide covers rule-set
 authoring, the `.arrs` import format, and the exact matching semantics. It
@@ -128,7 +128,7 @@ reverse-label trie walk and says exactly what it means.
 
 ### Domain Keyword (`3`)
 
-Raw **substring** match ruleproxy in the host (an Aho–Corasick automaton).
+Raw **substring** match naiveflow in the host (an Aho–Corasick automaton).
 `example` matches `example.com`, `myexample.net`, and `cdn.example-images.org`
 alike. Far more prone to false positives than a suffix — reserve keywords for
 tokens that float in the middle of the host.
@@ -261,7 +261,7 @@ discarded at load.
 ## Subscriptions
 
 A subscription is a `.arrs` file served over **http(s)** from a URL whose path
-ends in `.arrs`. RuleProxy fetches it (HTTP 2xx, UTF-8 body required), parses
+ends in `.arrs`. NaiveFlow fetches it (HTTP 2xx, UTF-8 body required), parses
 it with the format above, and stores the result as a custom set.
 
 On **refresh**, the rules and icons are **replaced** wholesale by the fetched

@@ -1,6 +1,6 @@
 //
 //  HysteriaClient.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/18/26.
 //
@@ -106,7 +106,7 @@ nonisolated final class HysteriaClient: Sendable {
         let (outcome, staleTransport, staleHolders): Discard = registry.withLock { state in
             guard state.epoch == buildEpoch else {
                 let built = try? builderResult.get()
-                return (.failure(RuleProxyError.proxy(.hysteria, .streamClosed)), built?.0, built?.1 ?? [])
+                return (.failure(NaiveFlowError.proxy(.hysteria, .streamClosed)), built?.0, built?.1 ?? [])
             }
             state.pending.removeValue(forKey: key)
             switch builderResult {
@@ -218,7 +218,7 @@ nonisolated final class HysteriaClient: Sendable {
             for client in abandoned {
                 await client.cancel()
             }
-            throw RuleProxyError.proxy(.hysteria, .streamClosed)
+            throw NaiveFlowError.proxy(.hysteria, .streamClosed)
         case .fresh(let newSession):
             newSession.setOnClose { [weak self, weak newSession] in
                 guard let self, let newSession else { return }
@@ -291,7 +291,7 @@ nonisolated final class HysteriaClient: Sendable {
     }
 
     private static func isStaleSessionError(_ error: Error) -> Bool {
-        if case RuleProxyError.quic(let quicError) = error {
+        if case NaiveFlowError.quic(let quicError) = error {
             switch quicError {
             case .closed, .timedOut, .streamReset, .streamClosedWithError, .streamFailed:
                 return true
@@ -299,7 +299,7 @@ nonisolated final class HysteriaClient: Sendable {
                 return false
             }
         }
-        if case RuleProxyError.proxy(.hysteria, let failure) = error {
+        if case NaiveFlowError.proxy(.hysteria, let failure) = error {
             switch failure {
             case .notReady, .streamClosed, .connectionClosed:
                 return true

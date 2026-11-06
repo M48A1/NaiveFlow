@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import RuleProxyIP
+@testable import NaiveFlowIP
 
 struct IPv4PacketTests {
     @Test func decodesIPv4UDPAfterHeaderSimplification() throws {

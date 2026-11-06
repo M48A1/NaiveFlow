@@ -1,6 +1,6 @@
 //
 //  CountryBypassCatalog.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/30/26.
 //

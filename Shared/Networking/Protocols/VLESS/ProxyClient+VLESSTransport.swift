@@ -1,6 +1,6 @@
 //
 //  ProxyClient+VLESSTransport.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 9/13/26.
 //
@@ -86,7 +86,7 @@ nonisolated extension ProxyClient {
 
     private func connectWithWebSocket(_ request: ProxyRequest) async throws -> ProxyConnection {
         guard case .ws(let wsConfig) = configuration.xrayTransportLayer else {
-            throw RuleProxyError.proxy(.webSocket, .invalidConfiguration(detail: "WebSocket transport specified but no WebSocket configuration"))
+            throw NaiveFlowError.proxy(.webSocket, .invalidConfiguration(detail: "WebSocket transport specified but no WebSocket configuration"))
         }
 
         let wsConnection: WebSocketConnection
@@ -123,7 +123,7 @@ nonisolated extension ProxyClient {
 
     private func connectWithHTTPUpgrade(_ request: ProxyRequest) async throws -> ProxyConnection {
         guard case .httpUpgrade(let huConfig) = configuration.xrayTransportLayer else {
-            throw RuleProxyError.proxy(.httpUpgrade, .invalidConfiguration(detail: "HTTP upgrade transport specified but no configuration"))
+            throw NaiveFlowError.proxy(.httpUpgrade, .invalidConfiguration(detail: "HTTP upgrade transport specified but no configuration"))
         }
 
         let huConnection: HTTPUpgradeConnection
@@ -153,7 +153,7 @@ nonisolated extension ProxyClient {
 
     private func connectWithGRPC(_ request: ProxyRequest) async throws -> ProxyConnection {
         guard case .grpc(let grpcConfig) = configuration.xrayTransportLayer else {
-            throw RuleProxyError.proxy(.grpc, .invalidConfiguration(detail: "gRPC transport specified but no gRPC configuration"))
+            throw NaiveFlowError.proxy(.grpc, .invalidConfiguration(detail: "gRPC transport specified but no gRPC configuration"))
         }
         
         let tlsServerName: String?

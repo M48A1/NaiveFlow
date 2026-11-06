@@ -1,13 +1,13 @@
 # MITM Rewrite System — Developer Guide
 
-RuleProxy can intercept the HTTP traffic of selected domains — terminating TLS
+NaiveFlow can intercept the HTTP traffic of selected domains — terminating TLS
 for HTTPS, or reading plain HTTP directly — then inspect, rewrite, and forward
 it upstream: a man-in-the-middle on traffic you control. This guide covers
 authoring rules and scripts. It assumes familiarity with HTTP, regular
 expressions, and JavaScript, and does not cover the settings UI.
 
 > **Prerequisite (HTTPS only).** Intercepting **HTTPS** works only for clients
-> that trust RuleProxy's generated root CA — install and trust it first. Apps
+> that trust NaiveFlow's generated root CA — install and trust it first. Apps
 > that pin certificates cannot be intercepted (their handshake to the minted
 > leaf fails); this is expected. Plain **HTTP** carries no certificate and needs
 > no CA trust.
@@ -32,7 +32,7 @@ see [DNS configuration](DNSConfiguration.md).
 - [Scripting: `stream-script`](#scripting-stream-script)
 - [Execution model](#execution-model)
 - [The `ctx` object](#the-ctx-object)
-- [The `RuleProxy` API](#the-ruleproxy-api)
+- [The `NaiveFlow` API](#the-naiveflow-api)
 - [Subscriptions](#subscriptions)
 - [Single-rule semantics](#single-rule-semantics)
 - [Limits and safety](#limits-and-safety)
@@ -99,7 +99,7 @@ tightly as you can.
 > just its own connection: CPU-bound execution can't be preempted. A watchdog
 > crashes and relaunches the extension after a ~30 s synchronous span, so a
 > runaway self-recovers rather than wedging for the process's life, but keep
-> scripts bounded. Awaiting an [`RuleProxy.http`](#ruleproxyhttp) fetch is the
+> scripts bounded. Awaiting an [`NaiveFlow.http`](#naiveflowhttp) fetch is the
 > exception — the connection parks while the shared runtime stays **free** for
 > other scripts; only CPU-bound work monopolizes it.
 
@@ -115,7 +115,7 @@ A rule set is the unit of configuration:
 | `domainSuffixes` | Hosts to intercept, matched by **suffix**. `example.com` covers `www.example.com`. No wildcards. |
 | `enabled`        | Per-set toggle; a disabled set is skipped but keeps its data. |
 | `rules`          | Ordered list of rewrite rules. Redirect / reject / host-rewrite are per-rule via the [`rewrite` operation](#rewrite-0--request-only). |
-| `parameters`     | Optional user-editable values, exposed read-only to scripts via [`RuleProxy.params`](#ruleproxyparams). See [Parameter lines](#parameter-lines). |
+| `parameters`     | Optional user-editable values, exposed read-only to scripts via [`NaiveFlow.params`](#naiveflowparams). See [Parameter lines](#parameter-lines). |
 
 Suffix matching is **most-specific-wins**: with both `example.com` and
 `api.example.com` configured, a request to `api.example.com` uses only the
@@ -153,7 +153,7 @@ hostname    = example.com, api.example.org
 # request: transparently rewrite the whole URL to a new host (dials it + rewrites Host)
 0, 0, ^https://example\.com/old, 0, https://upstream.example.com/new
 # request: add a header on /api/ paths
-0, 1, ^/api/, X-Powered-By, RuleProxy
+0, 1, ^/api/, X-Powered-By, NaiveFlow
 ```
 
 ### Header lines
@@ -236,7 +236,7 @@ URL — so a request and its response can share a pattern.
 ### Parameter lines
 
 Parameters expose a few user-editable values that scripts read at runtime via
-[`RuleProxy.params`](#ruleproxyparams) — a country code, a feature flag, a token.
+[`NaiveFlow.params`](#naiveflowparams) — a country code, a feature flag, a token.
 Declare them under `[Parameter]`; the app renders an editor for each, and the
 chosen values are surfaced **read-only** to the set's scripts.
 
@@ -250,7 +250,7 @@ Shape:
 | --------------- | ------- |
 | `type`          | `0` = free-text input, `1` = picker. |
 | `data-type`     | `0` = string. The only type today. |
-| `name`          | Lookup key for `RuleProxy.params.get("<name>")`. ASCII letters/digits/`_`, ≤128 bytes, unique within the set. |
+| `name`          | Lookup key for `NaiveFlow.params.get("<name>")`. ASCII letters/digits/`_`, ≤128 bytes, unique within the set. |
 | `label`         | Label shown in the editor. Optional — falls back to `name`. |
 | `description`   | Help text rendered as the editor's footer. Optional. |
 | `default`       | Value used until the user changes it. |
@@ -331,7 +331,7 @@ target hosts.
 Appends a header (does not replace an existing one of the same name):
 
 ```
-0, 1, .*, X-Trace-Id, ruleproxy
+0, 1, .*, X-Trace-Id, naiveflow
 ```
 
 ### `header-delete` (2)
@@ -392,7 +392,7 @@ fully-edited body).
 ### `body-json` (5)
 
 Declarative JSON body editing in **native code** — the same edits as the
-[`RuleProxy.json`](#ruleproxyjson) script API, without JavaScript. One rule, one
+[`NaiveFlow.json`](#naiveflowjson) script API, without JavaScript. One rule, one
 edit; fields are `url-pattern`, an `action` token, and the action's fields:
 
 | `action`                  | Trailing fields           | Effect |
@@ -409,7 +409,7 @@ edit; fields are `url-pattern`, an `action` token, and the action's fields:
 and `[index]` / `["key"]` brackets; an empty path or `$` addresses the whole
 document). `value` / `values` are JSON literals (`true`, `42`, `"text"`,
 `{"a":1}`, `["x","y"]`); a string that **isn't** valid JSON is taken literally,
-so `value = RuleProxy` means `"RuleProxy"`. Action tokens are case-insensitive and
+so `value = NaiveFlow` means `"NaiveFlow"`. Action tokens are case-insensitive and
 accept the camelCase spelling. A rule whose `path` can't be parsed is dropped.
 
 Like `script`, `body-json` is a **buffered** transform (auto-decoding, 4 MiB
@@ -446,7 +446,7 @@ JavaScript transforms. The field is base64-encoded UTF-8 source defining
 
 Use `script` when the rewrite needs the **whole message at once**: rewriting a
 body as a unit (JSON, protobuf, JWT, a regex over the full text) or
-short-circuiting a request with `RuleProxy.respond(...)`. The head is read-only —
+short-circuiting a request with `NaiveFlow.respond(...)`. The head is read-only —
 URL and header edits have dedicated rules, and `ctx.method` / `ctx.status` aren't
 script-writable — so a `script` rule's job is the body plus the control
 directives.
@@ -458,11 +458,11 @@ response; it is right for ordinary request/response APIs and wrong for live
 streams (pointing one at a streaming media type still runs, but logs a warning
 recommending `stream-script`).
 
-`process` may be **`async`** and `await` an [`RuleProxy.http`](#ruleproxyhttp)
+`process` may be **`async`** and `await` an [`NaiveFlow.http`](#naiveflowhttp)
 request mid-rewrite; the rewriter waits for the Promise to settle before reading
 `ctx.body` back. The connection parks while the fetch is in flight, and the
 shared runtime stays free for other connections. `stream-script` has no such
-facility — `RuleProxy.http` is unavailable there.
+facility — `NaiveFlow.http` is unavailable there.
 
 The body is held up to a **4 MiB** cap: a larger `Content-Length` body falls back
 to passthrough (the script is skipped), and a chunked body that reaches the cap
@@ -537,19 +537,19 @@ invocation starts and destroyed when it ends. An invocation is:
 What it gives a script:
 
 - **Fresh intrinsics.** `Object.prototype`, `JSON`, `Promise`, `RegExp`, and the
-  whole `RuleProxy` API are rebuilt per invocation. A script cannot patch a
+  whole `NaiveFlow` API are rebuilt per invocation. A script cannot patch a
   built-in to watch another's traffic.
 - **A private global.** Top-level `var` / `let` / `function` belong to that
   script alone.
 - **No crosstalk.** Two rule sets matching one flow share no objects, prototypes,
   or globals. (The single process-wide VM is shared, but each context is
-  isolated; the one deliberate channel is [`RuleProxy.store`](#ruleproxystore).)
+  isolated; the one deliberate channel is [`NaiveFlow.store`](#naiveflowstore).)
 
 What it costs:
 
 - **No state outlives an invocation.** A top-level `let cache = {}` is empty again
   on the next message. State that must outlive one message belongs in
-  [`RuleProxy.store`](#ruleproxystore); state scoped to the message belongs on
+  [`NaiveFlow.store`](#naiveflowstore); state scoped to the message belongs on
   `ctx`; state scoped to a stream belongs on `ctx.state`.
 - **Top-level code runs every time.** The source is compiled per invocation, so
   module scope is not a free place to precompute — build lookup tables and regexes
@@ -587,40 +587,40 @@ ignored on readback. URL and header edits have dedicated rule operations
   can't inject a malformed request line, status, or header.
 - An **uncaught exception** discards mutations and emits the original message
   unchanged — **unless** a directive was already signalled (see below), in which
-  case the directive wins. Use `try/catch`, or signal `RuleProxy.done()` before
+  case the directive wins. Use `try/catch`, or signal `NaiveFlow.done()` before
   throwing, to keep partial work.
 
 ---
 
-## The `RuleProxy` API
+## The `NaiveFlow` API
 
-A global `RuleProxy` object exposes helpers. **Byte convention:** functions that
+A global `NaiveFlow` object exposes helpers. **Byte convention:** functions that
 take "bytes" accept a `Uint8Array`, `ArrayBuffer`, or string (UTF-8 encoded);
 functions that return bytes return a `Uint8Array`.
 
-### `RuleProxy.codec`
+### `NaiveFlow.codec`
 
 Encoder/decoder pairs.
 
 | Member                     | encode                        | decode |
 | -------------------------- | ----------------------------- | ------ |
-| `RuleProxy.codec.utf8`      | `encode(string) → Uint8Array` | `decode(bytes) → string` |
-| `RuleProxy.codec.base64`    | `encode(bytes) → string`      | `decode(string) → Uint8Array` |
-| `RuleProxy.codec.base64url` | `encode(bytes) → string`      | `decode(string) → Uint8Array` |
-| `RuleProxy.codec.hex`       | `encode(bytes) → string`      | `decode(string) → Uint8Array` |
-| `RuleProxy.codec.gzip`      | `encode(bytes) → Uint8Array`  | `decode(bytes) → Uint8Array` |
-| `RuleProxy.codec.deflate`   | `encode(bytes) → Uint8Array`  | `decode(bytes) → Uint8Array` |
-| `RuleProxy.codec.brotli`    | `encode(bytes) → Uint8Array`  | `decode(bytes) → Uint8Array` |
+| `NaiveFlow.codec.utf8`      | `encode(string) → Uint8Array` | `decode(bytes) → string` |
+| `NaiveFlow.codec.base64`    | `encode(bytes) → string`      | `decode(string) → Uint8Array` |
+| `NaiveFlow.codec.base64url` | `encode(bytes) → string`      | `decode(string) → Uint8Array` |
+| `NaiveFlow.codec.hex`       | `encode(bytes) → string`      | `decode(string) → Uint8Array` |
+| `NaiveFlow.codec.gzip`      | `encode(bytes) → Uint8Array`  | `decode(bytes) → Uint8Array` |
+| `NaiveFlow.codec.deflate`   | `encode(bytes) → Uint8Array`  | `decode(bytes) → Uint8Array` |
+| `NaiveFlow.codec.brotli`    | `encode(bytes) → Uint8Array`  | `decode(bytes) → Uint8Array` |
 
 `base64url` emits unpadded RFC 4648 §5; decode accepts either alphabet, padded or
 not, ignoring whitespace. The compression codecs are for payloads the pipeline
 doesn't already handle (a gzipped blob nested in a JSON field, re-compressing a
-body for `RuleProxy.respond`); the outer `Content-Encoding` is already
+body for `NaiveFlow.respond`); the outer `Content-Encoding` is already
 auto-decoded for `script` rules. Compression `decode` / `encode` **throw** on
 malformed input or output past the 4 MiB cap; the text codecs (`utf8`, `base64`,
 `base64url`, `hex`) never throw — a bad input yields empty or replacement output.
 
-#### `RuleProxy.codec.protobuf`
+#### `NaiveFlow.codec.protobuf`
 
 Schema-free protobuf wire-format codec.
 
@@ -634,9 +634,9 @@ fixed32) are `Uint8Array` of length 8 / 4 (interpret with a `DataView`); wire 2
 (length-delimited) is a `Uint8Array` — recurse with `decode` for nested messages.
 Group wire types (3, 4) are rejected.
 
-### `RuleProxy.crypto`
+### `NaiveFlow.crypto`
 
-Hashes and HMAC return raw digest bytes; compose with `RuleProxy.codec.hex.encode`
+Hashes and HMAC return raw digest bytes; compose with `NaiveFlow.codec.hex.encode`
 / `base64.encode` to format.
 
 - `md5`, `sha1`, `sha256`, `sha384`, `sha512` — `(bytes) → Uint8Array`.
@@ -653,7 +653,7 @@ Hashes and HMAC return raw digest bytes; compose with `RuleProxy.codec.hex.encod
   - `aad`: optional additional authenticated data.
   - decrypt throws a catchable error on auth failure.
 
-### `RuleProxy.jwt`
+### `NaiveFlow.jwt`
 
 JWT compact serialization (RFC 7519 / 7515). **Pure codec — no signature
 verification or `alg` enforcement;** do that yourself with the crypto helpers.
@@ -665,7 +665,7 @@ verification or `alg` enforcement;** do that yourself with the crypto helpers.
 - `encode({ header, payload, signature? }) → string`. Object header/payload are
   `JSON.stringify`'d; bytes/string are used verbatim.
 
-### `RuleProxy.json`
+### `NaiveFlow.json`
 
 Byte-oriented JSON editing: **bytes-in / bytes-out** (first arg is the body;
 returns a fresh `Uint8Array` of compact JSON). The contract is **total** — a body
@@ -688,10 +688,10 @@ unchanged.
 
 > For these same edits **without** a script — declared as a rule, run in native
 > code — use [`body-json` (5)](#body-json-5). A `script` is only needed when the
-> edit must be conditional, computed, or combined with `RuleProxy.respond` /
+> edit must be conditional, computed, or combined with `NaiveFlow.respond` /
 > directives.
 
-### `RuleProxy.store`
+### `NaiveFlow.store`
 
 Per-rule-set key/value state, scoped by rule-set id — and, because every
 invocation gets a fresh context, the **only** place script state outlives a
@@ -724,20 +724,20 @@ lists only the backing you ask for. Tolerate a missing key in either.
 ```js
 // Persist a refreshed token across tunnel restarts; fall back to a fetch.
 async function process(ctx) {
-  let token = RuleProxy.store.getString("token", true);
+  let token = NaiveFlow.store.getString("token", true);
   if (!token) {
-    const r = await RuleProxy.http.get("https://api.example.com/token");
+    const r = await NaiveFlow.http.get("https://api.example.com/token");
     if (r.status === 200) {
-      token = RuleProxy.codec.utf8.decode(r.body).trim();
-      try { RuleProxy.store.set("token", token, true); }
-      catch (e) { RuleProxy.log.warning("store full: " + e); }
+      token = NaiveFlow.codec.utf8.decode(r.body).trim();
+      try { NaiveFlow.store.set("token", token, true); }
+      catch (e) { NaiveFlow.log.warning("store full: " + e); }
     }
   }
   if (token) ctx.headers.push(["Authorization", "Bearer " + token]);
 }
 ```
 
-### `RuleProxy.params`
+### `NaiveFlow.params`
 
 Read-only access to the rule set's [parameters](#parameter-lines), scoped to the
 running set. Each value is the user's choice, or the declared default.
@@ -746,25 +746,25 @@ running set. Each value is the user's choice, or the declared default.
 - `keys() → [string]` — the declared parameter names.
 - `all() → { [name]: string }` — every `name → value`.
 
-Unlike [`RuleProxy.store`](#ruleproxystore), parameters have **no setter** — they
+Unlike [`NaiveFlow.store`](#naiveflowstore), parameters have **no setter** — they
 are configured by the user. An undeclared name reads back `undefined`, so pair it
 with a fallback:
 
 ```js
 function process(ctx) {
-  const country = RuleProxy.params.get("country") || "US";
-  RuleProxy.log.info("country = " + country);
+  const country = NaiveFlow.params.get("country") || "US";
+  NaiveFlow.log.info("country = " + country);
   return ctx;
 }
 ```
 
-### `RuleProxy.log`
+### `NaiveFlow.log`
 
 `info(msg)`, `warning(msg)`, `error(msg)`, `debug(msg)` — written through the
 shared logger, prefixed `[MITM][JS]`. `debug` is **compiled out of release
 builds**; the other three reach both os.log and the user-facing log.
 
-### `RuleProxy.http`
+### `NaiveFlow.http`
 
 Make an outbound HTTP(S) request from a script and `await` the response — to
 fetch a token, look up data to splice into the body, or call a sidecar API.
@@ -773,10 +773,10 @@ Available in **`script` rules only** (not `stream-script`); the result must be
 
 ```js
 async function process(ctx) {
-  const r = await RuleProxy.http.get("https://api.example.com/token");
+  const r = await NaiveFlow.http.get("https://api.example.com/token");
   if (r.status === 200) {
-    const token = RuleProxy.codec.utf8.decode(r.body).trim();
-    ctx.body = RuleProxy.codec.utf8.encode(JSON.stringify({ token }));
+    const token = NaiveFlow.codec.utf8.decode(r.body).trim();
+    ctx.body = NaiveFlow.codec.utf8.encode(JSON.stringify({ token }));
   }
 }
 ```
@@ -814,10 +814,10 @@ re-intercepted by the MITM, so a script may call a host the set also intercepts
 without looping. It is logged in the request log as a `protocol: unknown` entry.
 Because other invocations run while you `await` but each has its own context,
 nothing your script holds across the suspension can change underneath it — except
-[`RuleProxy.store`](#ruleproxystore), which is deliberately shared, so re-read a
+[`NaiveFlow.store`](#naiveflowstore), which is deliberately shared, so re-read a
 store value after a fetch rather than caching it across one.
 
-> **Security.** `RuleProxy.http` follows the tunnel's routing rules — a `reject`
+> **Security.** `NaiveFlow.http` follows the tunnel's routing rules — a `reject`
 > rule blocks the fetch, a `proxy` rule routes it — but there is **no SSRF
 > filtering** beyond those rules: any host not rejected is reachable, including
 > `localhost`, `*.local`, and loopback / link-local (incl. the cloud-metadata
@@ -827,17 +827,17 @@ store value after a fetch rather than caching it across one.
 
 ### Control directives
 
-- `RuleProxy.done()` — commit the current `ctx` as this script's result. Because
+- `NaiveFlow.done()` — commit the current `ctx` as this script's result. Because
   at most one `script` runs per message it does not "skip" other scripts; its use
   is to lock in mutations before a possible throw, or in `stream-script` to emit
   this frame and pass every later frame through unchanged.
-- `RuleProxy.exit()` — discard this script's own changes: revert to the message as
+- `NaiveFlow.exit()` — discard this script's own changes: revert to the message as
   it entered the script (after native body edits), or in `stream-script` emit the
   original frame and stop scripting the stream.
-- `RuleProxy.respond({ status, headers, body })` — **request-phase only**. Drop the
+- `NaiveFlow.respond({ status, headers, body })` — **request-phase only**. Drop the
   request before it reaches upstream and synthesize a response to the client. All
   fields optional: `status` defaults to 200 (a value outside 100–599, or a
-  non-integer, is replaced with 200), `headers` to `[]`, `body` to empty. RuleProxy
+  non-integer, is replaced with 200), `headers` to `[]`, `body` to empty. NaiveFlow
   owns framing, so `Content-Length` and hop-by-hop headers you set are dropped and
   a `Date` is stamped when absent. Ignored (with a warning) on the response phase
   and in `stream-script`.
@@ -849,7 +849,7 @@ Signal a directive and `return` immediately after.
 ## Subscriptions
 
 A subscription is a `.amrs` file served over **http(s)** from a URL whose path
-ends in `.amrs`. RuleProxy fetches it (HTTP 2xx, UTF-8 body required), parses it
+ends in `.amrs`. NaiveFlow fetches it (HTTP 2xx, UTF-8 body required), parses it
 with the format above, and stores it as a rule set.
 
 On **refresh**, the suffixes, rules, parameters, and icons are **replaced**
@@ -881,7 +881,7 @@ order.
 ```
 name     = Add Trace
 hostname = api.example.com
-0, 1, ^/v2/, X-Trace-Id, ruleproxy
+0, 1, ^/v2/, X-Trace-Id, naiveflow
 ```
 
 ### Redirect an old path, preserving the tail (transparent URL rewrite)
@@ -905,11 +905,11 @@ hostname = tracker.example.com
 ```js
 function process(ctx) {
   try {
-    const obj = JSON.parse(RuleProxy.codec.utf8.decode(ctx.body));
+    const obj = JSON.parse(NaiveFlow.codec.utf8.decode(ctx.body));
     obj.vip = true;
-    ctx.body = RuleProxy.codec.utf8.encode(JSON.stringify(obj));
+    ctx.body = NaiveFlow.codec.utf8.encode(JSON.stringify(obj));
   } catch (e) {
-    RuleProxy.log.warning("not JSON: " + e);
+    NaiveFlow.log.warning("not JSON: " + e);
   }
 }
 ```
@@ -924,11 +924,11 @@ hostname = api.example.com
 1, 100, ^/v1/profile, <base64>
 ```
 
-### Mock an endpoint without hitting upstream (`RuleProxy.respond`)
+### Mock an endpoint without hitting upstream (`NaiveFlow.respond`)
 
 ```js
 function process(ctx) {
-  RuleProxy.respond({
+  NaiveFlow.respond({
     status: 200,
     headers: [["Content-Type", "application/json"]],
     body: '{"enabled":true}'
@@ -940,22 +940,22 @@ function process(ctx) {
 0, 100, ^/api/feature-flags, <base64>
 ```
 
-### Enrich a response with a second request (`RuleProxy.http`)
+### Enrich a response with a second request (`NaiveFlow.http`)
 
 ```js
 async function process(ctx) {
   try {
-    const obj = JSON.parse(RuleProxy.codec.utf8.decode(ctx.body));
-    const r = await RuleProxy.http.get("https://sidecar.example.com/profile/" + obj.id, {
+    const obj = JSON.parse(NaiveFlow.codec.utf8.decode(ctx.body));
+    const r = await NaiveFlow.http.get("https://sidecar.example.com/profile/" + obj.id, {
       headers: [["accept", "application/json"]],
       timeout: 3000
     });
     if (r.status === 200) {
-      obj.profile = JSON.parse(RuleProxy.codec.utf8.decode(r.body));
-      ctx.body = RuleProxy.codec.utf8.encode(JSON.stringify(obj));
+      obj.profile = JSON.parse(NaiveFlow.codec.utf8.decode(r.body));
+      ctx.body = NaiveFlow.codec.utf8.encode(JSON.stringify(obj));
     }
   } catch (e) {
-    RuleProxy.log.warning("enrich failed: " + e); // body left unchanged
+    NaiveFlow.log.warning("enrich failed: " + e); // body left unchanged
   }
 }
 ```
@@ -968,9 +968,9 @@ async function process(ctx) {
 
 ```js
 function process(ctx) {
-  let text = RuleProxy.codec.utf8.decode(ctx.body);
+  let text = NaiveFlow.codec.utf8.decode(ctx.body);
   text = text.replace(/Bearer [A-Za-z0-9._-]+/g, "Bearer ***");
-  ctx.body = RuleProxy.codec.utf8.encode(text);
+  ctx.body = NaiveFlow.codec.utf8.encode(text);
 }
 ```
 
@@ -980,15 +980,15 @@ hostname = api.example.com
 1, 101, ^/events, <base64>
 ```
 
-### Count requests across connections (`RuleProxy.store`)
+### Count requests across connections (`NaiveFlow.store`)
 
 ```js
 function process(ctx) {
-  const prev = RuleProxy.store.getString("count");
+  const prev = NaiveFlow.store.getString("count");
   const next = (prev ? parseInt(prev, 10) : 0) + 1;
-  try { RuleProxy.store.set("count", next.toString()); }
-  catch (e) { RuleProxy.log.warning("store full: " + e); }
-  RuleProxy.log.info("request #" + next + " to " + ctx.url);
+  try { NaiveFlow.store.set("count", next.toString()); }
+  catch (e) { NaiveFlow.log.warning("store full: " + e); }
+  NaiveFlow.log.info("request #" + next + " to " + ctx.url);
 }
 ```
 
@@ -1017,7 +1017,7 @@ function process(ctx) {
   load, and any that slips through is dropped at emission, so a rule can't create
   the `Transfer-Encoding` + `Content-Length` pair that inbound messages are
   rejected for (RFC 9112 §6.3.3) — except via `header-delete`, which is unguarded.
-- **Accept-Encoding.** RuleProxy clamps the client's `Accept-Encoding` to the
+- **Accept-Encoding.** NaiveFlow clamps the client's `Accept-Encoding` to the
   codings it can decode (`gzip`, `deflate`, `br`, `identity`) *only* when a
   response-phase body rule matches the request; a passthrough request forwards it
   untouched. A body that still arrives in an unsupported `Content-Encoding` is
@@ -1032,7 +1032,7 @@ function process(ctx) {
   **HTTP/2** `CONNECT` can't cross the bridge — a classic CONNECT is refused with
   `HTTP_1_1_REQUIRED` (the client retries over HTTP/1.1, where the tunnel path
   applies) and the RFC 8441 extended form is refused with `PROTOCOL_ERROR`.
-- **Pipelining order.** A request-phase `RuleProxy.respond` on a pipelined
+- **Pipelining order.** A request-phase `NaiveFlow.respond` on a pipelined
   connection is held until the in-flight response ahead of it finishes, so the
   client's ordering is preserved.
 - **Streaming media + `script`.** A buffered body rule on `text/event-stream` and
@@ -1045,4 +1045,4 @@ function process(ctx) {
   the set's `hostname` suffixes gate the host first.
 - **Scripts never change the head.** In both `script` and `stream-script`, only
   `ctx.body` is adopted — header/method/URL/status edits come from rules, not
-  scripts. On the HTTP/2 legs even a response-phase `RuleProxy.respond` is ignored.
+  scripts. On the HTTP/2 legs even a response-phase `NaiveFlow.respond` is ignored.

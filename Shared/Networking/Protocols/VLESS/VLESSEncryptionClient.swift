@@ -1,6 +1,6 @@
 //
 //  VLESSEncryptionClient.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/10/26.
 //
@@ -78,7 +78,7 @@ nonisolated private final class VLESSEncryptionAEAD: Sendable {
     
     func open(_ sealed: Data, nonce: Data, additionalData: Data?) throws -> Data {
         guard sealed.count >= VLESSWire.aeadTagLength else {
-            throw RuleProxyError.proxy(.vlessEncryption, .protocolViolation(detail: "framing: sealed buffer shorter than tag"))
+            throw NaiveFlowError.proxy(.vlessEncryption, .protocolViolation(detail: "framing: sealed buffer shorter than tag"))
         }
         let ciphertext = sealed.prefix(sealed.count - VLESSWire.aeadTagLength)
         let tag = sealed.suffix(VLESSWire.aeadTagLength)
@@ -122,16 +122,16 @@ nonisolated private enum VLESSHeader {
 
     static func decode(_ header: [UInt8]) throws -> Int {
         guard header.count == VLESSWire.headerLength else {
-            throw RuleProxyError.proxy(.vlessEncryption, .protocolViolation(detail: "framing: header is not 5 bytes"))
+            throw NaiveFlowError.proxy(.vlessEncryption, .protocolViolation(detail: "framing: header is not 5 bytes"))
         }
         let length = (Int(header[3]) << 8) | Int(header[4])
         guard header[0] == VLESSWire.recordTypeApplicationData,
               header[1] == VLESSWire.recordVersionMajor,
               header[2] == VLESSWire.recordVersionMinor else {
-            throw RuleProxyError.proxy(.vlessEncryption, .protocolViolation(detail: "framing: unexpected record prefix \(header[0..<3])"))
+            throw NaiveFlowError.proxy(.vlessEncryption, .protocolViolation(detail: "framing: unexpected record prefix \(header[0..<3])"))
         }
         guard length >= VLESSWire.minRecordPayload, length <= VLESSWire.maxRecordPayload else {
-            throw RuleProxyError.proxy(.vlessEncryption, .protocolViolation(detail: "framing: record length \(length) out of range"))
+            throw NaiveFlowError.proxy(.vlessEncryption, .protocolViolation(detail: "framing: record length \(length) out of range"))
         }
         return length
     }
@@ -168,16 +168,16 @@ nonisolated struct VLESSEncryptionPadding {
                   let prob = Int(parts[0]),
                   let lo = Int(parts[1]),
                   let hi = Int(parts[2]) else {
-                throw RuleProxyError.proxy(.vlessEncryption, .unsupported(feature: "invalid padding segment \"\(segment)\""))
+                throw NaiveFlowError.proxy(.vlessEncryption, .unsupported(feature: "invalid padding segment \"\(segment)\""))
             }
             if i == 0, prob < 100 || lo < 35 || hi < 35 {
-                throw RuleProxyError.proxy(.vlessEncryption, .unsupported(feature: "first padding length must be at least 35"))
+                throw NaiveFlowError.proxy(.vlessEncryption, .unsupported(feature: "first padding length must be at least 35"))
             }
             if i % 2 == 0 {
                 lengths.append((prob, lo, hi))
                 let (sum, overflow) = totalMaxLen.addingReportingOverflow(max(lo, hi))
                 guard !overflow else {
-                    throw RuleProxyError.proxy(.vlessEncryption, .unsupported(feature: "total padding length must not exceed 65553"))
+                    throw NaiveFlowError.proxy(.vlessEncryption, .unsupported(feature: "total padding length must not exceed 65553"))
                 }
                 totalMaxLen = sum
             } else {
@@ -185,7 +185,7 @@ nonisolated struct VLESSEncryptionPadding {
             }
         }
         guard totalMaxLen <= 18 + 65535 else {
-            throw RuleProxyError.proxy(.vlessEncryption, .unsupported(feature: "total padding length must not exceed 65553"))
+            throw NaiveFlowError.proxy(.vlessEncryption, .unsupported(feature: "total padding length must not exceed 65553"))
         }
         return VLESSEncryptionPadding(lengths: lengths, gaps: gaps)
     }
@@ -245,7 +245,7 @@ nonisolated private enum VLESSNfsPublicKey {
         case 1184:
             return .mlkem768(try MLKEM768.PublicKey(rawRepresentation: raw), raw: raw)
         default:
-            throw RuleProxyError.proxy(.vlessEncryption, .handshakeFailed(detail: "invalid public key"))
+            throw NaiveFlowError.proxy(.vlessEncryption, .handshakeFailed(detail: "invalid public key"))
         }
     }
 }
@@ -304,7 +304,7 @@ nonisolated final class VLESSEncryptionClient {
             SecRandomCopyBytes(kSecRandomDefault, 16, pointer.baseAddress!)
         }
         guard status == errSecSuccess else {
-            throw RuleProxyError.proxy(.vlessEncryption, .handshakeFailed(detail: "rng failure"))
+            throw NaiveFlowError.proxy(.vlessEncryption, .handshakeFailed(detail: "rng failure"))
         }
         return iv
     }
@@ -528,7 +528,7 @@ nonisolated final class VLESSEncryptionClient {
             additionalData: nil
         )
         guard serverPfsPublic.count == 1088 + 32 else {
-            throw RuleProxyError.proxy(.vlessEncryption, .handshakeFailed(detail: "PFS server hello has wrong length"))
+            throw NaiveFlowError.proxy(.vlessEncryption, .handshakeFailed(detail: "PFS server hello has wrong length"))
         }
         let mlkemCiphertext = serverPfsPublic.prefix(1088)
         let x25519PubBytes = serverPfsPublic.suffix(32)
@@ -589,7 +589,7 @@ nonisolated final class VLESSEncryptionClient {
         let sealedLength = try await reader.readExact(VLESSWire.sealedLengthFrame)
         let lenBytes = try readAEAD.open(sealedLength, additionalData: nil)
         guard lenBytes.count >= 2 else {
-            throw RuleProxyError.proxy(.vlessEncryption, .protocolViolation(detail: "framing: server sealed length frame too short: \(lenBytes.count) bytes"))
+            throw NaiveFlowError.proxy(.vlessEncryption, .protocolViolation(detail: "framing: server sealed length frame too short: \(lenBytes.count) bytes"))
         }
         let sealedPaddingBodySize = VLESSLength.decode(lenBytes)
         let leftover = reader.drain()
@@ -649,7 +649,7 @@ nonisolated private final class VLESSEncryptionByteReader {
                 return head
             }
             guard let data = try await connection.receiveRaw(), !data.isEmpty else {
-                throw RuleProxyError.proxy(.vlessEncryption, .connectionClosed(detail: nil))
+                throw NaiveFlowError.proxy(.vlessEncryption, .connectionClosed(detail: nil))
             }
             buffer.withLock { $0.append(data) }
         }
@@ -799,7 +799,7 @@ nonisolated final class VLESSEncryptedConnection: ProxyConnection {
                 return
             }
             guard let data = try await inner.receiveRaw(), !data.isEmpty else {
-                throw RuleProxyError.proxy(.vlessEncryption, .connectionClosed(detail: nil))
+                throw NaiveFlowError.proxy(.vlessEncryption, .connectionClosed(detail: nil))
             }
             recvState.withLock { $0.inboundBuffer.appendCompacting(data) }
         }
@@ -884,7 +884,7 @@ nonisolated final class VLESSEncryptedConnection: ProxyConnection {
             case .decodeFailed(let error, let firstRecordSeen):
                 if !firstRecordSeen, let zeroRTT = zeroRTTState {
                     VLESSEncryption0RTTCache.shared.invalidate(key: zeroRTT.cacheKey, matching: zeroRTT.pfsKey)
-                    throw RuleProxyError.proxy(.vlessEncryption, .handshakeFailed(detail: "new handshake needed"))
+                    throw NaiveFlowError.proxy(.vlessEncryption, .handshakeFailed(detail: "new handshake needed"))
                 }
                 throw error
             case .record(let plaintext):

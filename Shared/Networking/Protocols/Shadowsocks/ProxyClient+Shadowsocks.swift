@@ -1,6 +1,6 @@
 //
 //  ProxyClient+Shadowsocks.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/13/26.
 //
@@ -45,7 +45,7 @@ nonisolated extension ProxyClient {
         let udpInner: ProxyConnection
         if let tunnel = self.tunnel {
             guard tunnel.deliversDatagrams else {
-                throw RuleProxyError.proxy(.shadowsocks, .protocolViolation(
+                throw NaiveFlowError.proxy(.shadowsocks, .protocolViolation(
                     detail: "Shadowsocks UDP requires the chain link above it to deliver UDP datagrams."
                 ))
             }
@@ -76,15 +76,15 @@ nonisolated extension ProxyClient {
         destinationPort: UInt16
     ) -> Result<ProxyConnection, Error> {
         guard case .shadowsocks(let shadowsocks) = configuration.outbound else {
-            return .failure(RuleProxyError.proxy(.shadowsocks, .protocolViolation(detail: "Shadowsocks password not set")))
+            return .failure(NaiveFlowError.proxy(.shadowsocks, .protocolViolation(detail: "Shadowsocks password not set")))
         }
         guard let cipher = shadowsocks.cipher else {
-            return .failure(RuleProxyError.proxy(.shadowsocks, .protocolViolation(detail: "Invalid Shadowsocks method: \(shadowsocks.method)")))
+            return .failure(NaiveFlowError.proxy(.shadowsocks, .protocolViolation(detail: "Invalid Shadowsocks method: \(shadowsocks.method)")))
         }
 
         if cipher.isSS2022 {
             guard let pskList = ShadowsocksKeyDerivation.decodePSKList(password: shadowsocks.password, keySize: cipher.keySize) else {
-                return .failure(RuleProxyError.proxy(.shadowsocks, .protocolViolation(detail: "Invalid Shadowsocks 2022 PSK")))
+                return .failure(NaiveFlowError.proxy(.shadowsocks, .protocolViolation(detail: "Invalid Shadowsocks 2022 PSK")))
             }
 
             if network == .udp {

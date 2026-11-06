@@ -1,6 +1,6 @@
 //
 //  QUICDatagramTransport.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/19/26.
 //
@@ -54,7 +54,7 @@ nonisolated final class ProxyConnectionDatagramTransport: QUICDatagramTransport,
     }
     
     private static func isTransientDatagramError(_ error: Error) -> Bool {
-        if case RuleProxyError.quic(let quicError) = error {
+        if case NaiveFlowError.quic(let quicError) = error {
             switch quicError {
             case .handshakeFailed, .streamReset, .streamClosedWithError, .closed:
                 return false
@@ -62,7 +62,7 @@ nonisolated final class ProxyConnectionDatagramTransport: QUICDatagramTransport,
                 return true
             }
         }
-        if case RuleProxyError.proxy(.hysteria, let failure) = error {
+        if case NaiveFlowError.proxy(.hysteria, let failure) = error {
             switch failure {
             case .authenticationRejected, .unsupported, .datagramTooLarge, .streamClosed:
                 return false
@@ -72,7 +72,7 @@ nonisolated final class ProxyConnectionDatagramTransport: QUICDatagramTransport,
                 return false
             }
         }
-        if case RuleProxyError.proxy(.nowhere, let failure) = error {
+        if case NaiveFlowError.proxy(.nowhere, let failure) = error {
             if case .notReady = failure { return true }
             if case .connectionClosed = failure { return true }
             return false

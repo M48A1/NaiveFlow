@@ -1,6 +1,6 @@
 //
 //  NowhereConfiguration.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/30/26.
 //
@@ -86,7 +86,7 @@ nonisolated struct NowhereRuntimeConfiguration: Hashable, Sendable {
         configuration: NowhereConfiguration
     ) throws {
         guard proxyPort != 0 else {
-            throw RuleProxyError.proxy(.nowhere, .protocolViolation(detail: "Invalid Nowhere port"))
+            throw NaiveFlowError.proxy(.nowhere, .protocolViolation(detail: "Invalid Nowhere port"))
         }
         self.proxyHost = proxyHost
         self.connectHost = connectHost

@@ -1,6 +1,6 @@
 //
 //  PlaintextArena.swift
-//  RuleProxyQUIC
+//  NaiveFlowQUIC
 //
 //  Created by NodePassProject on 10/6/26.
 //

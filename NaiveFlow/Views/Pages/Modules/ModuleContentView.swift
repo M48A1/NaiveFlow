@@ -1,6 +1,6 @@
 //
 //  ModuleContentView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 10/12/26.
 //

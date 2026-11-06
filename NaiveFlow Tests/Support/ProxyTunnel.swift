@@ -1,12 +1,12 @@
 //
 //  ProxyTunnel.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/21/26.
 //
 
 import Foundation
-@testable import RuleProxy
+@testable import NaiveFlow
 
 // MARK: - Byte stream abstraction
 

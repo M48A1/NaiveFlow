@@ -1,6 +1,6 @@
 //
 //  QUICTLSHandler.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/11/26.
 //
@@ -9,9 +9,9 @@ import Foundation
 import Synchronization
 import CryptoKit
 import Security
-import RuleProxyQUIC
+import NaiveFlowQUIC
 
-nonisolated private let logger = RuleProxyLogger(category: "QUICTLSHandler")
+nonisolated private let logger = NaiveFlowLogger(category: "QUICTLSHandler")
 
 // MARK: - Session Ticket Cache
 
@@ -161,7 +161,7 @@ nonisolated final class QUICTLSHandler: QUICTLSProvider {
 
     func exportKeyingMaterial(label: String, context: Data, length: Int) throws -> Data {
         guard phase == .completed, let keyDerivation, let exporterMasterSecret, length > 0 else {
-            throw RuleProxyError.quic(.connectionFailed(detail: "TLS exporter unavailable"))
+            throw NaiveFlowError.quic(.connectionFailed(detail: "TLS exporter unavailable"))
         }
         return keyDerivation.exportKeyingMaterial(
             exporterMasterSecret: exporterMasterSecret,
@@ -238,7 +238,7 @@ nonisolated final class QUICTLSHandler: QUICTLSProvider {
 
     private func fail(_ reason: String, error: Error? = nil) -> QUICTLSResult {
         if handshakeError == nil {
-            handshakeError = error ?? RuleProxyError.tls(.handshakeFailed(detail: reason))
+            handshakeError = error ?? NaiveFlowError.tls(.handshakeFailed(detail: reason))
         }
         return .error
     }
@@ -247,7 +247,7 @@ nonisolated final class QUICTLSHandler: QUICTLSProvider {
     
     func startHandshake(localTransportParameters: Data) throws -> [QUICHandshakeAction] {
         guard let hello = buildClientHello(transportParams: localTransportParameters) else {
-            throw RuleProxyError.tls(.handshakeFailed(detail: "Unable to build QUIC ClientHello"))
+            throw NaiveFlowError.tls(.handshakeFailed(detail: "Unable to build QUIC ClientHello"))
         }
         return [.sendCryptoData(hello, level: .initial)]
     }
@@ -256,7 +256,7 @@ nonisolated final class QUICTLSHandler: QUICTLSProvider {
         actions.removeAll(keepingCapacity: true)
         if case .error = processCryptoData(data, level: level) {
             actions.removeAll(keepingCapacity: true)
-            throw handshakeError ?? RuleProxyError.tls(.handshakeFailed(detail: "QUIC TLS handshake failed"))
+            throw handshakeError ?? NaiveFlowError.tls(.handshakeFailed(detail: "QUIC TLS handshake failed"))
         }
         let result = actions
         actions.removeAll(keepingCapacity: true)
@@ -369,7 +369,7 @@ nonisolated final class QUICTLSHandler: QUICTLSProvider {
 
         let serverRandom = Data(body[2..<34])
         if serverRandom == TLSRandom.helloRetryRequest {
-            return fail("server sent HelloRetryRequest (unsupported)", error: RuleProxyError.tls(.helloRetryRequest))
+            return fail("server sent HelloRetryRequest (unsupported)", error: NaiveFlowError.tls(.helloRetryRequest))
         }
 
         var offset = 34
@@ -611,7 +611,7 @@ nonisolated final class QUICTLSHandler: QUICTLSProvider {
 
     func completePeerVerification(error: (any Error)?) throws -> [QUICHandshakeAction] {
         guard isAwaitingPeerVerification else {
-            throw RuleProxyError.tls(.handshakeFailed(detail: "Unexpected peer verification result"))
+            throw NaiveFlowError.tls(.handshakeFailed(detail: "Unexpected peer verification result"))
         }
         isAwaitingPeerVerification = false
         if let error {
@@ -621,7 +621,7 @@ nonisolated final class QUICTLSHandler: QUICTLSProvider {
         actions.removeAll(keepingCapacity: true)
         if case .error = completeServerFinished() {
             actions.removeAll(keepingCapacity: true)
-            throw handshakeError ?? RuleProxyError.tls(.handshakeFailed(detail: "QUIC TLS handshake failed"))
+            throw handshakeError ?? NaiveFlowError.tls(.handshakeFailed(detail: "QUIC TLS handshake failed"))
         }
         let result = actions
         actions.removeAll(keepingCapacity: true)
@@ -851,7 +851,7 @@ nonisolated final class QUICTLSHandler: QUICTLSProvider {
         case .trusted:
             return nil
         case .rejected(let reason):
-            return RuleProxyError.tls(.certificateValidationFailed(detail: reason))
+            return NaiveFlowError.tls(.certificateValidationFailed(detail: reason))
         }
     }
 

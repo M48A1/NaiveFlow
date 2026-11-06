@@ -1,6 +1,6 @@
 //
 //  VLESSVision.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
@@ -468,7 +468,7 @@ nonisolated final class VLESSVisionConnection: ProxyConnection {
         while true {
             let readerPhase = trafficState.withLock { $0.readerPhase }
             if readerPhase == .failed {
-                throw RuleProxyError.proxy(.vless, .protocolViolation(detail: "Vision: invalid padding command"))
+                throw NaiveFlowError.proxy(.vless, .protocolViolation(detail: "Vision: invalid padding command"))
             }
 
             if readerPhase == .direct {
@@ -484,7 +484,7 @@ nonisolated final class VLESSVisionConnection: ProxyConnection {
                 (processReceiveData(&data, state: &state), state.readerPhase == .failed)
             }
             if failed {
-                throw RuleProxyError.proxy(.vless, .protocolViolation(detail: "Vision: invalid padding command"))
+                throw NaiveFlowError.proxy(.vless, .protocolViolation(detail: "Vision: invalid padding command"))
             }
 
             if processedData.isEmpty {

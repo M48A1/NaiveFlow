@@ -1,6 +1,6 @@
 //
 //  OutboundConnector.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/1/26.
 //
@@ -74,7 +74,7 @@ nonisolated enum OutboundConnector {
         )
         switch route.resolved(against: context?.defaultRouteTarget ?? .direct) {
         case .reject:
-            throw RuleProxyError.routing(.rejectedByRule(host: host))
+            throw NaiveFlowError.routing(.rejectedByRule(host: host))
         case .default, .defaultProxy, .direct:
             return try await dialDirect(host: host, port: port)
         case .proxy(let id):

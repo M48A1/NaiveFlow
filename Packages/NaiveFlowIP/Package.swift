@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "RuleProxyIP",
+    name: "NaiveFlowIP",
     platforms: [
         .iOS(.v18),
         .macOS(.v15),
@@ -11,14 +11,14 @@ let package = Package(
     ],
     products: [
         .library(
-            name: "RuleProxyIP",
-            targets: ["RuleProxyIP"]
+            name: "NaiveFlowIP",
+            targets: ["NaiveFlowIP"]
         ),
     ],
     targets: [
         .target(
-            name: "RuleProxyIP"
+            name: "NaiveFlowIP"
         ),
-        .testTarget(name: "RuleProxyIPTests", dependencies: ["RuleProxyIP"]),
+        .testTarget(name: "NaiveFlowIPTests", dependencies: ["NaiveFlowIP"]),
     ]
 )

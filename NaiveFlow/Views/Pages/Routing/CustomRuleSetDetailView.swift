@@ -1,6 +1,6 @@
 //
 //  CustomRuleSetDetailView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/5/26.
 //

@@ -6,42 +6,42 @@
 	<array>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>RuleProxy JSON</string>
+			<string>NaiveFlow JSON</string>
 			<key>LSHandlerRank</key>
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.argsment.RuleProxy-JSON</string>
+				<string>com.argsment.NaiveFlow-JSON</string>
 			</array>
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>RuleProxy Routing Rule Set</string>
+			<string>NaiveFlow Routing Rule Set</string>
 			<key>LSHandlerRank</key>
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.argsment.RuleProxy-Routing-Rule-Set</string>
+				<string>com.argsment.NaiveFlow-Routing-Rule-Set</string>
 			</array>
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>RuleProxy MITM Rule Set</string>
+			<string>NaiveFlow MITM Rule Set</string>
 			<key>LSHandlerRank</key>
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.argsment.RuleProxy-MITM-Rule-Set</string>
+				<string>com.argsment.NaiveFlow-MITM-Rule-Set</string>
 			</array>
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>RuleProxy Module</string>
+			<string>NaiveFlow Module</string>
 			<key>LSHandlerRank</key>
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.argsment.RuleProxy-Module</string>
+				<string>com.argsment.NaiveFlow-Module</string>
 			</array>
 		</dict>
 	</array>
@@ -51,17 +51,17 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.argsment.RuleProxy.scheme.ruleproxy</string>
+			<string>com.argsment.NaiveFlow.scheme.naiveflow</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>ruleproxy</string>
+				<string>naiveflow</string>
 			</array>
 		</dict>
 		<dict>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.argsment.RuleProxy.scheme.ajson</string>
+			<string>com.argsment.NaiveFlow.scheme.ajson</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>ajson</string>
@@ -71,7 +71,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.argsment.RuleProxy.scheme.nowhere</string>
+			<string>com.argsment.NaiveFlow.scheme.nowhere</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>nowhere</string>
@@ -81,7 +81,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.argsment.RuleProxy.scheme.vless</string>
+			<string>com.argsment.NaiveFlow.scheme.vless</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>vless</string>
@@ -91,7 +91,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.argsment.RuleProxy.scheme.hysteria2</string>
+			<string>com.argsment.NaiveFlow.scheme.hysteria2</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>hysteria2</string>
@@ -101,7 +101,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.argsment.RuleProxy.scheme.hy2</string>
+			<string>com.argsment.NaiveFlow.scheme.hy2</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>hy2</string>
@@ -111,7 +111,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.argsment.RuleProxy.scheme.sudoku</string>
+			<string>com.argsment.NaiveFlow.scheme.sudoku</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>sudoku</string>
@@ -121,7 +121,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.argsment.RuleProxy.scheme.trojan</string>
+			<string>com.argsment.NaiveFlow.scheme.trojan</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>trojan</string>
@@ -131,7 +131,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.argsment.RuleProxy.scheme.anytls</string>
+			<string>com.argsment.NaiveFlow.scheme.anytls</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>anytls</string>
@@ -141,7 +141,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.argsment.RuleProxy.scheme.ss</string>
+			<string>com.argsment.NaiveFlow.scheme.ss</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>ss</string>
@@ -151,7 +151,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.argsment.RuleProxy.scheme.rfc</string>
+			<string>com.argsment.NaiveFlow.scheme.rfc</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>rfc</string>

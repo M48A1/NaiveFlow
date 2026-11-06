@@ -1,6 +1,6 @@
 //
 //  NowhereClient.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/30/26.
 //
@@ -75,7 +75,7 @@ nonisolated final class NowhereClient: Sendable {
             chain: []
         )
         return try registry.withLock { state in
-            guard !state.sealed else { throw RuleProxyError.transport(.terminated) }
+            guard !state.sealed else { throw NaiveFlowError.transport(.terminated) }
             if let existing = state.entries[key] { return existing }
             let client = NowhereClient(
                 configuration: configuration,
@@ -117,7 +117,7 @@ nonisolated final class NowhereClient: Sendable {
 
         enum Decision { case existing(NowhereClient); case join(Task<NowhereClient, Error>) }
         let decision: Decision = try registry.withLock { state in
-            guard !state.sealed else { throw RuleProxyError.transport(.terminated) }
+            guard !state.sealed else { throw NaiveFlowError.transport(.terminated) }
             if let client = state.entries[key] { return .existing(client) }
             if let inFlight = state.pending[key] { return .join(inFlight) }
             let buildEpoch = state.epoch
@@ -152,7 +152,7 @@ nonisolated final class NowhereClient: Sendable {
             guard state.epoch == buildEpoch, !state.sealed else {
                 let built = try? builderResult.get()
                 return (
-                    .failure(RuleProxyError.proxy(.nowhere, .streamClosed)),
+                    .failure(NaiveFlowError.proxy(.nowhere, .streamClosed)),
                     built?.0,
                     built?.1 ?? []
                 )
@@ -239,7 +239,7 @@ nonisolated final class NowhereClient: Sendable {
             try await existing.ensureReady()
             return existing
         case .transportSpent:
-            throw RuleProxyError.proxy(.nowhere, .streamClosed)
+            throw NaiveFlowError.proxy(.nowhere, .streamClosed)
         case .fresh(let newSession):
             newSession.setOnClose { [self, weak newSession] in
                 guard let newSession else { return }
@@ -285,7 +285,7 @@ nonisolated final class NowhereClient: Sendable {
             initialData: initialData
         )
         guard attempt?.bind(connection) != false else {
-            throw RuleProxyError.proxy(.nowhere, .streamClosed)
+            throw NaiveFlowError.proxy(.nowhere, .streamClosed)
         }
         do {
             try await connection.open()
@@ -306,7 +306,7 @@ nonisolated final class NowhereClient: Sendable {
             destination: destination
         )
         guard attempt?.bind(connection) != false else {
-            throw RuleProxyError.proxy(.nowhere, .streamClosed)
+            throw NaiveFlowError.proxy(.nowhere, .streamClosed)
         }
         do {
             try await connection.open()

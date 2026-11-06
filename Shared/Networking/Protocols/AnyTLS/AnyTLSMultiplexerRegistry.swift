@@ -1,6 +1,6 @@
 //
 //  AnyTLSMultiplexerRegistry.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/16/26.
 //

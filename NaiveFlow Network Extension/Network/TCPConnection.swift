@@ -1,15 +1,15 @@
 //
 //  TCPConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
 
 import Foundation
 import Synchronization
-import RuleProxyIP
+import NaiveFlowIP
 
-nonisolated private let logger = RuleProxyLogger(category: "TCPConnection")
+nonisolated private let logger = NaiveFlowLogger(category: "TCPConnection")
 
 actor TCPConnection: MITMSessionHost {
     nonisolated private var connectionID: ObjectIdentifier { ObjectIdentifier(self) }
@@ -20,12 +20,12 @@ actor TCPConnection: MITMSessionHost {
 
     private weak var stack: TunnelStack?
 
-    private let connection: RuleProxyIP.Stream
+    private let connection: NaiveFlowIP.Stream
     private let stackGeneration: UInt64
     private let interceptDNS: Bool
     let dstPort: UInt16
 
-    let sessionContext = SessionExecutionContext(label: "RuleProxy.TCP.Session")
+    let sessionContext = SessionExecutionContext(label: "NaiveFlow.TCP.Session")
 
     private(set) var dstHost: String
 
@@ -108,7 +108,7 @@ actor TCPConnection: MITMSessionHost {
 
     // MARK: Relay
 
-    private var stream: RuleProxyIP.Stream?
+    private var stream: NaiveFlowIP.Stream?
     private nonisolated let uploadInbox = AsyncInbox<Data>()
     private nonisolated let pressurePhase = Atomic<UInt8>(0)
 
@@ -152,7 +152,7 @@ actor TCPConnection: MITMSessionHost {
 
     init(
         stack: TunnelStack,
-        connection: RuleProxyIP.Stream,
+        connection: NaiveFlowIP.Stream,
         dstHost: String,
         dstPort: UInt16,
         configuration: ProxyConfiguration,
@@ -271,7 +271,7 @@ actor TCPConnection: MITMSessionHost {
     }
 
     private enum Establishment {
-        case relay(ProxyConnection, RuleProxyIP.Stream)
+        case relay(ProxyConnection, NaiveFlowIP.Stream)
         case mitm
         case done
     }
@@ -302,7 +302,7 @@ actor TCPConnection: MITMSessionHost {
         failureReporter.report(
             operation: "Handshake",
             endpoint: endpointDescription,
-            error: RuleProxyError.transport(.timedOut(.connect, endpoint: nil, detail: stage))
+            error: NaiveFlowError.transport(.timedOut(.connect, endpoint: nil, detail: stage))
         )
         abort()
     }
@@ -572,7 +572,7 @@ actor TCPConnection: MITMSessionHost {
         return .relay(connection, installStream(seed: seed))
     }
 
-    private func installStream(seed: Data) -> RuleProxyIP.Stream {
+    private func installStream(seed: Data) -> NaiveFlowIP.Stream {
         if !seed.isEmpty { uploadInbox.yield(seed) }
         stream = connection
         transition(to: .relaying)
@@ -644,7 +644,7 @@ actor TCPConnection: MITMSessionHost {
             endpoint: endpointDescription,
             error: error
         )
-        guard case RuleProxyError.dns(.resolutionFailed) = error else {
+        guard case NaiveFlowError.dns(.resolutionFailed) = error else {
             abort()
             return .done
         }
@@ -666,7 +666,7 @@ actor TCPConnection: MITMSessionHost {
 
     // MARK: - Relay
 
-    private func runRelayAndClose(_ connection: ProxyConnection, stream: RuleProxyIP.Stream) async {
+    private func runRelayAndClose(_ connection: ProxyConnection, stream: NaiveFlowIP.Stream) async {
         let context = RelayContext(meter: stack?.openTrafficMeter(target: routeTarget))
         await runRelay(connection, stream: stream, context: context)
     }
@@ -676,7 +676,7 @@ actor TCPConnection: MITMSessionHost {
     }
 
     @concurrent
-    private nonisolated func runRelay(_ connection: ProxyConnection, stream: RuleProxyIP.Stream, context: RelayContext) async {
+    private nonisolated func runRelay(_ connection: ProxyConnection, stream: NaiveFlowIP.Stream, context: RelayContext) async {
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.runUploadRelay(connection, stream, context: context) }
             group.addTask { await self.runDownloadRelay(connection, stream, context: context) }
@@ -689,7 +689,7 @@ actor TCPConnection: MITMSessionHost {
     private static let downloadPrefetchDepth = 1
 
     @concurrent
-    private nonisolated func runUploadRelay(_ connection: ProxyConnection, _ stream: RuleProxyIP.Stream, context: RelayContext) async {
+    private nonisolated func runUploadRelay(_ connection: ProxyConnection, _ stream: NaiveFlowIP.Stream, context: RelayContext) async {
         while let batch = try? await uploadInbox.nextBatch() {
             var index = 0
             while index < batch.count {
@@ -723,7 +723,7 @@ actor TCPConnection: MITMSessionHost {
     }
 
     @concurrent
-    private nonisolated func runDownloadRelay(_ connection: ProxyConnection, _ stream: RuleProxyIP.Stream, context: RelayContext) async {
+    private nonisolated func runDownloadRelay(_ connection: ProxyConnection, _ stream: NaiveFlowIP.Stream, context: RelayContext) async {
         let handoff = BoundedAsyncQueue<Data>(capacity: Self.downloadPrefetchDepth)
         let ended = await withTaskGroup(of: Void.self, returning: Bool.self) { group in
             group.addTask {
@@ -776,7 +776,7 @@ actor TCPConnection: MITMSessionHost {
 
     private func relayFailed(_ operation: String, error: Error) {
         guard phase != .closed else { return }
-        if !RuleProxyError.isPeerClose(error) {
+        if !NaiveFlowError.isPeerClose(error) {
             reportFailure(operation, error: error)
         }
         abort()
@@ -827,7 +827,7 @@ actor TCPConnection: MITMSessionHost {
         switch error {
         case is CancellationError:
             return
-        case let error as RuleProxyIP.ConnectionError:
+        case let error as NaiveFlowIP.ConnectionError:
             handleError(error)
         default:
             reportFailure("Read", error: error)
@@ -898,7 +898,7 @@ actor TCPConnection: MITMSessionHost {
         close()
     }
 
-    func handleError(_ error: RuleProxyIP.ConnectionError) {
+    func handleError(_ error: NaiveFlowIP.ConnectionError) {
         switch error {
         case .closed, .reset:
             break
@@ -1040,11 +1040,11 @@ actor TCPConnection: MITMSessionHost {
     // MARK: - MITMSessionHost
 
     func mitmDialUpstream(host: String, port: UInt16) async throws -> MITMDialResult {
-        guard phase != .closed else { throw RuleProxyError.transport(.notConnected) }
+        guard phase != .closed else { throw NaiveFlowError.transport(.notConnected) }
         let route: DialRoute
         switch await commitUpstreamRoute(forDialHost: host, port: port) {
         case .reject:
-            throw RuleProxyError.routing(.rejectedByRule(host: host))
+            throw NaiveFlowError.routing(.rejectedByRule(host: host))
         case .route(_, nil):
             route = .direct
         case .route(_, let configuration?):
@@ -1056,7 +1056,7 @@ actor TCPConnection: MITMSessionHost {
         let id = nextDialID
         return try await withCheckedThrowingContinuation { continuation in
             guard phase != .closed else {
-                continuation.resume(throwing: RuleProxyError.transport(.terminated))
+                continuation.resume(throwing: NaiveFlowError.transport(.terminated))
                 return
             }
             dialWaiters[id] = continuation
@@ -1067,7 +1067,7 @@ actor TCPConnection: MITMSessionHost {
     private func runDial(_ job: DialJob) async {
         let result: Result<MITMDialResult, Error>
         if phase == .closed {
-            result = .failure(RuleProxyError.transport(.terminated))
+            result = .failure(NaiveFlowError.transport(.terminated))
         } else {
             do {
                 result = .success(try await performDial(job))
@@ -1089,7 +1089,7 @@ actor TCPConnection: MITMSessionHost {
         waiter.resume(with: result)
     }
 
-    private static var upstreamDialTimeout: RuleProxyError {
+    private static var upstreamDialTimeout: NaiveFlowError {
         .transport(.timedOut(.connect, endpoint: nil, detail: "upstream dial"))
     }
 
@@ -1151,7 +1151,7 @@ actor TCPConnection: MITMSessionHost {
         markActivity()
         activityRecord.addBytesIn(data.count)
         if !connection.enqueue(data) {
-            Task { await self.relayFailed("MITM downlink", error: RuleProxyIP.ConnectionError.bufferLimit) }
+            Task { await self.relayFailed("MITM downlink", error: NaiveFlowIP.ConnectionError.bufferLimit) }
         }
     }
 
@@ -1362,7 +1362,7 @@ actor TCPConnection: MITMSessionHost {
 
     private func teardown(abortive: Bool) {
         for (_, waiter) in dialWaiters {
-            waiter.resume(throwing: RuleProxyError.transport(.terminated))
+            waiter.resume(throwing: NaiveFlowError.transport(.terminated))
         }
         dialWaiters.removeAll()
 

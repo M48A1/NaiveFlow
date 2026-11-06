@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "CB1C10642F23B81500B74CD8"
-               BuildableName = "RuleProxy.app"
-               BlueprintName = "RuleProxy"
-               ReferencedContainer = "container:RuleProxy.xcodeproj">
+               BuildableName = "NaiveFlow.app"
+               BlueprintName = "NaiveFlow"
+               ReferencedContainer = "container:NaiveFlow.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -36,9 +36,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "78B6DF992FE7B70D0084897A"
-               BuildableName = "RuleProxy Tests.xctest"
-               BlueprintName = "RuleProxy Tests"
-               ReferencedContainer = "container:RuleProxy.xcodeproj">
+               BuildableName = "NaiveFlow Tests.xctest"
+               BlueprintName = "NaiveFlow Tests"
+               ReferencedContainer = "container:NaiveFlow.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -58,9 +58,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "CB1C10642F23B81500B74CD8"
-            BuildableName = "RuleProxy.app"
-            BlueprintName = "RuleProxy"
-            ReferencedContainer = "container:RuleProxy.xcodeproj">
+            BuildableName = "NaiveFlow.app"
+            BlueprintName = "NaiveFlow"
+            ReferencedContainer = "container:NaiveFlow.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -75,9 +75,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "CB1C10642F23B81500B74CD8"
-            BuildableName = "RuleProxy.app"
-            BlueprintName = "RuleProxy"
-            ReferencedContainer = "container:RuleProxy.xcodeproj">
+            BuildableName = "NaiveFlow.app"
+            BlueprintName = "NaiveFlow"
+            ReferencedContainer = "container:NaiveFlow.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

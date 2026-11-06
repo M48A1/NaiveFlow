@@ -1,6 +1,6 @@
 //
 //  SudokuMux.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by saba-futai on 10/18/26.
 //
@@ -9,7 +9,7 @@ import Foundation
 import Darwin
 import Synchronization
 
-nonisolated private let sudokuLogger = RuleProxyLogger(category: "SudokuProxyConnection")
+nonisolated private let sudokuLogger = NaiveFlowLogger(category: "SudokuProxyConnection")
 nonisolated private let sudokuMuxMaxQueueBytes = 4 * 1024 * 1024
 
 nonisolated enum SudokuAddress {
@@ -22,7 +22,7 @@ nonisolated enum SudokuAddress {
             withUnsafeBytes(of: ipv4.s_addr) { out.append(contentsOf: $0) }
         } else {
             let bytes = Array(host.utf8)
-            guard bytes.count <= 255 else { throw RuleProxyError.proxy(.sudoku, .invalidConfiguration(detail: "domain too long")) }
+            guard bytes.count <= 255 else { throw NaiveFlowError.proxy(.sudoku, .invalidConfiguration(detail: "domain too long")) }
             out.append(0x03)
             out.append(UInt8(bytes.count))
             out.append(contentsOf: bytes)
@@ -97,7 +97,7 @@ nonisolated final class SudokuMuxClient: Multiplexer, Sendable {
             state.streams[stream.id] = stream
             return false
         }
-        if closed { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil)) }
+        if closed { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil)) }
         do {
             try await sendFrame(type: 0x01, streamID: stream.id, payload: SudokuAddress.encode(host: host, port: port))
         } catch {
@@ -109,9 +109,9 @@ nonisolated final class SudokuMuxClient: Multiplexer, Sendable {
     }
 
     func sendFrame(type: UInt8, streamID: UInt32, payload: Data) async throws {
-        guard payload.count <= 256 * 1024 else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "mux frame too large")) }
+        guard payload.count <= 256 * 1024 else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "mux frame too large")) }
         let isClosed = state.withLock { $0.phase == .closed }
-        guard !isClosed else { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil)) }
+        guard !isClosed else { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil)) }
         var header = Data([type])
         var sid = streamID.bigEndian
         var length = UInt32(payload.count).bigEndian
@@ -168,7 +168,7 @@ nonisolated final class SudokuMuxClient: Multiplexer, Sendable {
                 state.phase == .open && state.lastPong.duration(to: ContinuousClock.now) >= .seconds(Self.keepaliveInterval * 3)
             }
             if timedOut {
-                close(error: RuleProxyError.proxy(.sudoku, .connectionClosed(detail: "mux keepalive timeout")))
+                close(error: NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: "mux keepalive timeout")))
                 return
             }
             Task { [weak self] in try? await self?.sendFrame(type: 0x05, streamID: 0, payload: Data()) }
@@ -189,24 +189,24 @@ nonisolated final class SudokuMuxClient: Multiplexer, Sendable {
                 let type = header.uint8(at: 0)
                 let streamID = header.uint32BE(at: 1)
                 let length = Int(header.uint32BE(at: 5))
-                guard length <= 256 * 1024 else { throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "mux frame too large")) }
+                guard length <= 256 * 1024 else { throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "mux frame too large")) }
                 let payload = try await record.readExact(length)
                 let stream = state.withLock { $0.streams[streamID] }
                 switch type {
                 case 0x05:
                     guard streamID == 0, payload.isEmpty else {
-                        throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "invalid mux ping frame"))
+                        throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "invalid mux ping frame"))
                     }
                     Task { [weak self] in try? await self?.sendFrame(type: 0x06, streamID: 0, payload: Data()) }
                 case 0x06:
                     guard streamID == 0, payload.isEmpty else {
-                        throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "invalid mux pong frame"))
+                        throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "invalid mux pong frame"))
                     }
                     state.withLock { $0.lastPong = ContinuousClock.now }
                 case 0x02:
                     guard let stream, !payload.isEmpty else { continue }
                     if case .overflow = stream.enqueue(payload) {
-                        let error = RuleProxyError.proxy(.sudoku, .connectionClosed(detail: "mux receive queue full"))
+                        let error = NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: "mux receive queue full"))
                         sudokuLogger.warning("[Sudoku] Mux receive queue full")
                         stream.markClosed(discardQueuedData: true, error: error)
                         removeStream(id: streamID)
@@ -225,12 +225,12 @@ nonisolated final class SudokuMuxClient: Multiplexer, Sendable {
                     let message = rawMessage.isEmpty ? "mux stream reset" : rawMessage
                     stream?.markClosed(
                         discardQueuedData: true,
-                        error: RuleProxyError.proxy(.sudoku, .connectionClosed(detail: message))
+                        error: NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: message))
                     )
                     removeStream(id: streamID)
-                default: throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "bad mux frame"))
+                default: throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "bad mux frame"))
                 }
-            } catch RuleProxyError.proxy(.sudoku, .connectionClosed(nil)) {
+            } catch NaiveFlowError.proxy(.sudoku, .connectionClosed(nil)) {
                 close()
                 return
             } catch {
@@ -300,12 +300,12 @@ nonisolated final class SudokuMuxStream: Sendable {
     func send(_ data: Data) async throws {
         if data.isEmpty { return }
         try await chainedSend { [self] in
-            guard let client = clientBox.withLock({ $0.value }) else { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil)) }
+            guard let client = clientBox.withLock({ $0.value }) else { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil)) }
             let (cannotWrite, error) = state.withLock { state in
                 (state.phase.isClosed, state.terminalError)
             }
             if let error { throw error }
-            guard !cannotWrite else { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil)) }
+            guard !cannotWrite else { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil)) }
 
             var offset = 0
             while offset < data.count {
@@ -341,7 +341,7 @@ nonisolated final class SudokuMuxStream: Sendable {
             case .data(let out): return out
             case .eof: return nil
             case .error(let error): throw error
-            case .concurrent: throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "concurrent mux receive"))
+            case .concurrent: throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "concurrent mux receive"))
             case .wait(let stream):
                 for await _ in stream { break }
                 try Task.checkCancellation()

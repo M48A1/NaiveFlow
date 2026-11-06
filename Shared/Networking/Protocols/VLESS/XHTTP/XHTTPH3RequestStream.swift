@@ -1,6 +1,6 @@
 //
 //  XHTTPH3RequestStream.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/26/26.
 //
@@ -63,7 +63,7 @@ nonisolated final class XHTTPH3RequestStream: Sendable {
         self.responseSignal = responseSignal
         self.responseTask = Task {
             for try await status in responseStream { return status }
-            throw RuleProxyError.proxy(.http3, .streamClosed)
+            throw NaiveFlowError.proxy(.http3, .streamClosed)
         }
     }
 
@@ -71,10 +71,10 @@ nonisolated final class XHTTPH3RequestStream: Sendable {
 
     func sendRequest(headerBlock: Data, endStream: Bool) async throws {
         guard let multiplexer = multiplexerBox.withLock({ $0.value }) else {
-            throw RuleProxyError.proxy(.http3, .streamClosed)
+            throw NaiveFlowError.proxy(.http3, .streamClosed)
         }
         guard state.withLock({ $0.transition(to: .opening) }) else {
-            throw RuleProxyError.proxy(.http3, .streamClosed)
+            throw NaiveFlowError.proxy(.http3, .streamClosed)
         }
         try await multiplexer.ensureReady()
 
@@ -88,7 +88,7 @@ nonisolated final class XHTTPH3RequestStream: Sendable {
         )
 
         guard let sid = await multiplexer.openStream(events: events) else {
-            let error: RuleProxyError = multiplexer.isRetired
+            let error: NaiveFlowError = multiplexer.isRetired
                 ? .proxy(.http3, .connectionClosed(detail: "Session retiring"))
                 : .proxy(.http3, .streamIDsExhausted)
             handleStreamError(error)
@@ -101,7 +101,7 @@ nonisolated final class XHTTPH3RequestStream: Sendable {
         }
         guard adopted else {
             detachFromMultiplexer(sid: sid, code: .requestCancelled)
-            throw RuleProxyError.proxy(.http3, .streamClosed)
+            throw NaiveFlowError.proxy(.http3, .streamClosed)
         }
 
         let frame = HTTP3Framer.headersFrame(headerBlock: headerBlock)
@@ -114,25 +114,25 @@ nonisolated final class XHTTPH3RequestStream: Sendable {
     }
 
     func awaitResponseStatus() async throws -> Int {
-        guard multiplexerBox.withLock({ $0.value }) != nil else { throw RuleProxyError.proxy(.http3, .streamClosed) }
+        guard multiplexerBox.withLock({ $0.value }) != nil else { throw NaiveFlowError.proxy(.http3, .streamClosed) }
         return try await responseTask.value
     }
 
     func sendBody(_ data: Data, fin: Bool) async throws {
         guard let multiplexer = multiplexerBox.withLock({ $0.value }) else {
-            throw RuleProxyError.proxy(.http3, .streamClosed)
+            throw NaiveFlowError.proxy(.http3, .streamClosed)
         }
         let sid: Int64? = state.withLock { state in
             state.phase == .closed ? nil : state.quicStreamID
         }
-        guard let sid else { throw RuleProxyError.proxy(.http3, .streamClosed) }
+        guard let sid else { throw NaiveFlowError.proxy(.http3, .streamClosed) }
         if data.isEmpty && !fin { return }
         let frame = data.isEmpty ? Data() : HTTP3Framer.dataFrame(payload: data)
         try await multiplexer.writeStream(sid, data: frame, fin: fin)
     }
 
     func receive() async throws -> Data? {
-        guard multiplexerBox.withLock({ $0.value }) != nil else { throw RuleProxyError.proxy(.http3, .streamClosed) }
+        guard multiplexerBox.withLock({ $0.value }) != nil else { throw NaiveFlowError.proxy(.http3, .streamClosed) }
         let data = try await nextInboxChunk()
         guard let data else {
             closeAndShutdown()
@@ -167,7 +167,7 @@ nonisolated final class XHTTPH3RequestStream: Sendable {
         guard case .closed(let sid, let code, let owed) = outcome else { return }
         ackQuicBytes(owed)
         detachFromMultiplexer(sid: sid, code: code)
-        responseSignal.finish(throwing: RuleProxyError.proxy(.http3, .streamClosed))
+        responseSignal.finish(throwing: NaiveFlowError.proxy(.http3, .streamClosed))
         inbox.finish()
     }
 
@@ -187,8 +187,8 @@ nonisolated final class XHTTPH3RequestStream: Sendable {
     }
 
     private func handleSessionError(_ error: Error) {
-        if case RuleProxyError.quic(.closed(graceful: true)) = error {
-            responseSignal.finish(throwing: RuleProxyError.proxy(.http3, .streamClosed))
+        if case NaiveFlowError.quic(.closed(graceful: true)) = error {
+            responseSignal.finish(throwing: NaiveFlowError.proxy(.http3, .streamClosed))
             inbox.finish()
             return
         }
@@ -257,7 +257,7 @@ nonisolated final class XHTTPH3RequestStream: Sendable {
             responseSignal.yield(status)
             responseSignal.finish()
         case .missingStatus:
-            responseSignal.finish(throwing: RuleProxyError.proxy(.http3, .connectionClosed(detail: "Response missing :status")))
+            responseSignal.finish(throwing: NaiveFlowError.proxy(.http3, .connectionClosed(detail: "Response missing :status")))
         case .failed(let error):
             handleStreamError(error)
         }
@@ -272,10 +272,10 @@ nonisolated final class XHTTPH3RequestStream: Sendable {
 
     private static func processResponseHeaders(_ frame: HTTP3Framer.Frame, state: inout State) -> HeadersOutcome {
         guard frame.type == HTTP3FrameType.headers.rawValue else {
-            return .failed(RuleProxyError.proxy(.http3, .connectionClosed(detail: "Expected HEADERS, got type \(frame.type)")))
+            return .failed(NaiveFlowError.proxy(.http3, .connectionClosed(detail: "Expected HEADERS, got type \(frame.type)")))
         }
         guard let headers = QPACKEncoder.decodeHeaders(from: frame.payload) else {
-            return .failed(RuleProxyError.proxy(.http3, .connectionClosed(detail: "Malformed QPACK header block")))
+            return .failed(NaiveFlowError.proxy(.http3, .connectionClosed(detail: "Malformed QPACK header block")))
         }
 
         let statusValue = headers.first(where: { $0.name == ":status" })?.value
@@ -319,7 +319,7 @@ nonisolated final class XHTTPH3RequestStream: Sendable {
         guard case .closed(let sid, let owed) = outcome else { return }
         ackQuicBytes(owed)
         detachFromMultiplexer(sid: sid, code: code)
-        responseSignal.finish(throwing: RuleProxyError.proxy(.http3, .streamClosed))
+        responseSignal.finish(throwing: NaiveFlowError.proxy(.http3, .streamClosed))
         inbox.finish()
     }
     

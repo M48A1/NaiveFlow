@@ -72,8 +72,8 @@ PROCESS-NAME、USER-AGENT、URL 路由、定时/DNS 脚本、证书导入、其�
 在满足本工程 Swift tools 版本要求的 Mac 上执行（模拟器名按本机替换）：
 
 ```sh
-xcodebuild build -project RuleProxy.xcodeproj -scheme RuleProxy -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
-xcodebuild test -project RuleProxy.xcodeproj -scheme RuleProxy -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:'RuleProxy Tests' CODE_SIGNING_ALLOWED=NO
+xcodebuild build -project NaiveFlow.xcodeproj -scheme NaiveFlow -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
+xcodebuild test -project NaiveFlow.xcodeproj -scheme NaiveFlow -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:'NaiveFlow Tests' CODE_SIGNING_ALLOWED=NO
 ```
 
 真机需覆盖：旧连接切断、新连接使用新规则、MITM CA 未信任时回滚、脚本下载失败、连续切换、应用退出后恢复、重连偏好变更、睡眠/唤醒和网络切换。连通性测试需要受控节点，跳过不能算通过。

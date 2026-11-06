@@ -1,12 +1,12 @@
 //
 //  QUICClientHelloSniffer.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 10/25/26.
 //
 
 import Foundation
-import RuleProxyQUIC
+import NaiveFlowQUIC
 
 nonisolated struct QUICClientHelloSniffer {
     enum State: Equatable {

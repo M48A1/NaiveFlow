@@ -1,6 +1,6 @@
 //
 //  WidgetBundle.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/6/26.
 //
@@ -9,7 +9,7 @@ import WidgetKit
 import SwiftUI
 
 @main
-struct RuleProxyWidgetBundle: WidgetBundle {
+struct NaiveFlowWidgetBundle: WidgetBundle {
     var body: some Widget {
         VPNToggleControl()
         ModeToggleControl()

@@ -1,6 +1,6 @@
 //
 //  ProxyClient+Nowhere.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/30/26.
 //
@@ -11,7 +11,7 @@ import Synchronization
 nonisolated extension ProxyClient {
     func connectWithNowhere(_ request: ProxyRequest) async throws -> ProxyConnection {
         guard case .nowhere(let configuration) = self.configuration.outbound else {
-            throw RuleProxyError.proxy(.nowhere, .protocolViolation(detail: "Invalid Nowhere configuration"))
+            throw NaiveFlowError.proxy(.nowhere, .protocolViolation(detail: "Invalid Nowhere configuration"))
         }
         let runtime = try NowhereRuntimeConfiguration(
             proxyHost: self.configuration.serverAddress,
@@ -25,11 +25,11 @@ nonisolated extension ProxyClient {
             return try await withDialDeadline(
                 .seconds(30),
                 onExpiry: { attempt.cancel() },
-                error: { RuleProxyError.proxy(.nowhere, .openTimeout) },
+                error: { NaiveFlowError.proxy(.nowhere, .openTimeout) },
                 discardingLateResult: { $0.cancel() }
             ) { [self] in
                 try Task.checkCancellation()
-                guard !isCancelled else { throw RuleProxyError.transport(.terminated) }
+                guard !isCancelled else { throw NaiveFlowError.transport(.terminated) }
                 let connection: ProxyConnection
                 switch runtime.network {
                 case .tcp:
@@ -39,7 +39,7 @@ nonisolated extension ProxyClient {
                         tunnel: takeChainTunnel()
                     )
                     guard attempt.bind(carrier) else {
-                        throw RuleProxyError.proxy(.nowhere, .streamClosed)
+                        throw NaiveFlowError.proxy(.nowhere, .streamClosed)
                     }
                     try await carrier.openFresh(
                         destination: destination,
@@ -61,7 +61,7 @@ nonisolated extension ProxyClient {
                 }
                 guard !isCancelled, !Task.isCancelled else {
                     connection.cancel()
-                    throw RuleProxyError.transport(.terminated)
+                    throw NaiveFlowError.transport(.terminated)
                 }
                 return connection
             }

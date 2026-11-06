@@ -1,13 +1,13 @@
 //
 //  MITMHTTP1Serializer.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/15/26.
 //
 
 import Foundation
 
-nonisolated private let logger = RuleProxyLogger(category: "MITMHTTP1Serializer")
+nonisolated private let logger = NaiveFlowLogger(category: "MITMHTTP1Serializer")
 
 nonisolated enum MITMHTTP1Serializer {
     static func requestHead(_ head: MITMRequestHead, host: String) -> Data {

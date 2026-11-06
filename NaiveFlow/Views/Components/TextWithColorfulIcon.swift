@@ -1,6 +1,6 @@
 //
 //  TextWithColorfulIcon.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //

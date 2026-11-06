@@ -1,6 +1,6 @@
 //
 //  CertificatePolicy.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/11/26.
 //
@@ -81,7 +81,7 @@ nonisolated enum CertificatePolicy {
     }
 
     private static let evaluationQueue = DispatchQueue(
-        label: "com.argsment.RuleProxy.CertificatePolicy",
+        label: "com.argsment.NaiveFlow.CertificatePolicy",
         qos: .userInitiated
     )
     

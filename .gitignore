@@ -15,7 +15,7 @@ xcuserdata/
 *.dSYM.zip
 *.dSYM
 
-# Xcode 16+ derived compilation cache (RuleProxy.xcodeproj/-Xcc)
+# Xcode 16+ derived compilation cache (NaiveFlow.xcodeproj/-Xcc)
 -Xcc/
 
 # Xcode workspace/package user settings

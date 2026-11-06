@@ -1,6 +1,6 @@
 //
 //  ProxyClient+Trojan.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/22/26.
 //
@@ -11,7 +11,7 @@ extension ProxyClient {
     func connectWithTrojan(_ request: ProxyRequest) async throws -> ProxyConnection {
         guard case .trojan(let trojan) = configuration.outbound, !trojan.password.isEmpty,
               let tlsConfig = trojan.tlsConfiguration else {
-            throw RuleProxyError.proxy(.trojan, .protocolViolation(detail: "Trojan password not set"))
+            throw NaiveFlowError.proxy(.trojan, .protocolViolation(detail: "Trojan password not set"))
         }
 
         let tlsClient = TLSClient(configuration: tlsConfig)

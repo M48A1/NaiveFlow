@@ -1,6 +1,6 @@
 //
 //  DeepLinkManager.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/24/26.
 //
@@ -17,8 +17,8 @@ final class DeepLinkManager {
 
     func handle(url: URL) {
         switch url.scheme?.lowercased() {
-        case "ruleproxy":
-            handleRuleProxyScheme(url)
+        case "naiveflow":
+            handleNaiveFlowScheme(url)
         case "nowhere", "vless", "hysteria2", "hy2", "sudoku", "trojan", "anytls", "ss", "rfc":
             self.url = url.absoluteString
         default:
@@ -26,7 +26,7 @@ final class DeepLinkManager {
         }
     }
 
-    private func handleRuleProxyScheme(_ url: URL) {
+    private func handleNaiveFlowScheme(_ url: URL) {
         guard let link = Self.extractLink(from: url.absoluteString) else { return }
         switch url.host?.lowercased() {
         case "add-proxy":
@@ -41,11 +41,11 @@ final class DeepLinkManager {
     }
 
     nonisolated static func extractAddProxyLink(from string: String) -> String? {
-        guard string.lowercased().hasPrefix("ruleproxy://add-proxy") else { return nil }
+        guard string.lowercased().hasPrefix("naiveflow://add-proxy") else { return nil }
         return extractLink(from: string)
     }
 
-    /// Every `ruleproxy://` deep link carries exactly one link: everything after
+    /// Every `naiveflow://` deep link carries exactly one link: everything after
     /// `?link=`, taken verbatim, so the inner URL needs no percent-encoding.
     private nonisolated static func extractLink(from string: String) -> String? {
         guard let range = string.range(of: "?link=") else { return nil }

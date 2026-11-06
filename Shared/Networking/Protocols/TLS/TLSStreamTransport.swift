@@ -1,6 +1,6 @@
 //
 //  TLSStreamTransport.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/9/26.
 //
@@ -62,7 +62,7 @@ nonisolated final class TLSStreamTransport: Sendable {
         )
         let client = TLSClient(configuration: configuration)
         let claimed = phase.withLock { Phase.transition(&$0, to: .connecting(client)) }
-        guard claimed else { throw RuleProxyError.transport(.terminated) }
+        guard claimed else { throw NaiveFlowError.transport(.terminated) }
 
         do {
             let connection: TLSRecordConnection
@@ -74,7 +74,7 @@ nonisolated final class TLSStreamTransport: Sendable {
             let published = phase.withLock { Phase.transition(&$0, to: .ready(connection)) }
             guard published else {
                 connection.cancel()
-                throw RuleProxyError.transport(.terminated)
+                throw NaiveFlowError.transport(.terminated)
             }
         } catch {
             _ = phase.withLock { Phase.transition(&$0, to: .cancelled) }
@@ -87,7 +87,7 @@ nonisolated final class TLSStreamTransport: Sendable {
 
     func send(_ data: Data) async throws {
         guard let tlsConnection = phase.withLock({ if case .ready(let c) = $0 { c } else { nil } }) else {
-            throw RuleProxyError.transport(.notConnected)
+            throw NaiveFlowError.transport(.notConnected)
         }
         try await tlsConnection.send(data)
     }
@@ -96,7 +96,7 @@ nonisolated final class TLSStreamTransport: Sendable {
 
     func receive() async throws -> Data? {
         guard let tlsConnection = phase.withLock({ if case .ready(let c) = $0 { c } else { nil } }) else {
-            throw RuleProxyError.transport(.notConnected)
+            throw NaiveFlowError.transport(.notConnected)
         }
         return try await tlsConnection.receive()
     }

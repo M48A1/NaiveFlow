@@ -1,6 +1,6 @@
 //
 //  HysteriaConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/13/26.
 //
@@ -88,7 +88,7 @@ actor HysteriaConnection {
 
     func open() async throws {
         let begin = phase.withLock { Phase.transition(&$0, to: .opening) }
-        guard begin else { throw RuleProxyError.proxy(.hysteria, .streamClosed) }
+        guard begin else { throw NaiveFlowError.proxy(.hysteria, .streamClosed) }
 
         let sid: Int64
         do {
@@ -102,7 +102,7 @@ actor HysteriaConnection {
             session.shutdownStream(sid)
             session.releaseTCPStream(sid)
             releaseCredit(sid)
-            throw RuleProxyError.proxy(.hysteria, .streamClosed)
+            throw NaiveFlowError.proxy(.hysteria, .streamClosed)
         }
 
         let frame = HysteriaProtocol.encodeTCPRequest(address: destination)
@@ -111,25 +111,25 @@ actor HysteriaConnection {
         var buffer = Data()
         while true {
             guard let chunk = try await nextChunk() else {
-                throw RuleProxyError.proxy(.hysteria, .connectionClosed(detail: "Stream closed before response"))
+                throw NaiveFlowError.proxy(.hysteria, .connectionClosed(detail: "Stream closed before response"))
             }
             buffer.append(chunk)
             guard let parsed = HysteriaProtocol.parseTCPResponse(from: buffer) else {
                 if buffer.count > Self.maxTCPResponseLength {
-                    throw RuleProxyError.proxy(.hysteria, .connectionClosed(detail: "Malformed TCP response"))
+                    throw NaiveFlowError.proxy(.hysteria, .connectionClosed(detail: "Malformed TCP response"))
                 }
                 continue
             }
             if parsed.consumed > 0 { returnCredit(sid, count: parsed.consumed) }
             guard parsed.status == HysteriaProtocol.tcpResponseStatusOK else {
-                throw RuleProxyError.proxy(.hysteria, .tunnelRejected(detail: parsed.message))
+                throw NaiveFlowError.proxy(.hysteria, .tunnelRejected(detail: parsed.message))
             }
             pendingData = Data(buffer.dropFirst(parsed.consumed))
             let becameReady = phase.withLock { state -> Bool in
                 guard case .open(let s, false) = state else { return false }
                 return Phase.transition(&state, to: .open(sid: s, ready: true))
             }
-            guard becameReady else { throw RuleProxyError.proxy(.hysteria, .streamClosed) }
+            guard becameReady else { throw NaiveFlowError.proxy(.hysteria, .streamClosed) }
             return
         }
     }
@@ -161,7 +161,7 @@ actor HysteriaConnection {
     }
 
     nonisolated func handleSessionError(_ error: Error) {
-        if case RuleProxyError.quic(.closed(graceful: true)) = error {
+        if case NaiveFlowError.quic(.closed(graceful: true)) = error {
             rawInbox.finish()
         } else {
             rawInbox.finish(throwing: error)
@@ -174,7 +174,7 @@ actor HysteriaConnection {
     func sendRaw(_ data: Data) async throws {
         let sid: Int64? = phase.withLock { if case .open(let s, true) = $0 { s } else { nil } }
         guard let sid else {
-            throw RuleProxyError.proxy(.hysteria, .streamClosed)
+            throw NaiveFlowError.proxy(.hysteria, .streamClosed)
         }
         try await session.writeStream(sid, data: data)
     }

@@ -1,15 +1,15 @@
 //
 //  TunnelStack+Callbacks.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/30/26.
 //
 
 import Foundation
 import Synchronization
-import RuleProxyIP
+import NaiveFlowIP
 
-nonisolated private let logger = RuleProxyLogger(category: "TunnelStack+Callbacks")
+nonisolated private let logger = NaiveFlowLogger(category: "TunnelStack+Callbacks")
 
 extension TunnelStack {
     func makeIPStack() -> IPStack {

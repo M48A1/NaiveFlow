@@ -1,6 +1,6 @@
 //
 //  MITMLeafCertificateCache.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/3/26.
 //
@@ -34,7 +34,7 @@ nonisolated final class MITMLeafCertificateCache: Sendable {
     }
     private let state = Mutex(State())
 
-    private let mintQueue = DispatchQueue(label: "com.argsment.RuleProxy.MITMLeafCertificateCache", qos: .userInitiated)
+    private let mintQueue = DispatchQueue(label: "com.argsment.NaiveFlow.MITMLeafCertificateCache", qos: .userInitiated)
 
     private struct CacheEntry {
         let leaf: Leaf
@@ -47,7 +47,7 @@ nonisolated final class MITMLeafCertificateCache: Sendable {
         case mint
     }
 
-    init(store: MITMCertificateStore) throws(RuleProxyError) {
+    init(store: MITMCertificateStore) throws(NaiveFlowError) {
         self.store = store
         self.leafPrivateKey = P256.Signing.PrivateKey()
     }
@@ -106,7 +106,7 @@ nonisolated final class MITMLeafCertificateCache: Sendable {
 
     private func mintLeaf(for hostname: String) throws -> Leaf {
         guard let (caPrivateKey, caCertificateDER) = store.loadCA() else {
-            throw RuleProxyError.certificate(.missingCAComponents)
+            throw NaiveFlowError.certificate(.missingCAComponents)
         }
 
         let now = Date()

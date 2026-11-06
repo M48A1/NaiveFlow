@@ -1,15 +1,15 @@
 //
 //  UDPFlow.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
 
 import Foundation
 import Synchronization
-import RuleProxyIP
+import NaiveFlowIP
 
-nonisolated private let logger = RuleProxyLogger(category: "UDPFlow")
+nonisolated private let logger = NaiveFlowLogger(category: "UDPFlow")
 
 actor UDPFlow {
     nonisolated private var flowID: ObjectIdentifier { ObjectIdentifier(self) }
@@ -164,9 +164,9 @@ actor UDPFlow {
     }
 
     private func noteTransientSendFailure(_ error: Error) {
-        guard phase != .closed, !didWarnSendFailure, let level = RuleProxyError.logLevel(of: error) else { return }
+        guard phase != .closed, !didWarnSendFailure, let level = NaiveFlowError.logLevel(of: error) else { return }
         didWarnSendFailure = true
-        logger.log("[UDP] \(flowKey): Send failed: \(RuleProxyError.logDescription(error))", level: min(level, .warning))
+        logger.log("[UDP] \(flowKey): Send failed: \(NaiveFlowError.logDescription(error))", level: min(level, .warning))
     }
 
     private func handleProxySendError(_ error: Error, connection: ProxyConnection) async {
@@ -180,7 +180,7 @@ actor UDPFlow {
     }
 
     nonisolated private static func isTerminalProxySendError(_ error: Error, connection: ProxyConnection) -> Bool {
-        if case RuleProxyError.quic(let quicError) = error {
+        if case NaiveFlowError.quic(let quicError) = error {
             switch quicError {
             case .handshakeFailed, .streamReset, .streamClosedWithError, .closed:
                 return true
@@ -188,7 +188,7 @@ actor UDPFlow {
                 return false
             }
         }
-        if case RuleProxyError.proxy(.hysteria, let failure) = error {
+        if case NaiveFlowError.proxy(.hysteria, let failure) = error {
             switch failure {
             case .authenticationRejected, .unsupported, .datagramTooLarge, .streamClosed:
                 return true
@@ -198,7 +198,7 @@ actor UDPFlow {
                 return !connection.isConnected
             }
         }
-        if case RuleProxyError.proxy(.nowhere, let failure) = error {
+        if case NaiveFlowError.proxy(.nowhere, let failure) = error {
             switch failure {
             case .authenticationRejected, .protocolViolation, .datagramTooLarge, .streamClosed,
                     .flowRejected, .openTimeout:
@@ -559,7 +559,7 @@ actor UDPFlow {
 
     private func receiveClosed(operation: String, error: Error?) async {
         guard phase != .closed else { return }
-        if let error, !RuleProxyError.isPeerClose(error) {
+        if let error, !NaiveFlowError.isPeerClose(error) {
             reportFailure(operation, error: error)
         }
         await closeAndRemove()

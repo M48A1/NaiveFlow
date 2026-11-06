@@ -1,6 +1,6 @@
 //
 //  ProxyClient+Sudoku.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by saba-futai on 4/23/26.
 //
@@ -10,7 +10,7 @@ import Foundation
 extension ProxyClient {
     func connectWithSudoku(_ request: ProxyRequest) async throws -> ProxyConnection {
         guard case .sudoku(let sudoku) = configuration.outbound else {
-            throw RuleProxyError.proxy(.sudoku, .protocolViolation(detail: "missing Sudoku protocol settings"))
+            throw NaiveFlowError.proxy(.sudoku, .protocolViolation(detail: "missing Sudoku protocol settings"))
         }
 
         let destinationHost = request.host
@@ -72,7 +72,7 @@ extension ProxyClient {
             for: configuration,
             directDialHost: directDialHost
         ) else {
-            throw RuleProxyError.proxy(.sudoku, .notReady)
+            throw NaiveFlowError.proxy(.sudoku, .notReady)
         }
 
         let (multiplexer, stream) = try await pool.dialTCP(host: destinationHost, port: destinationPort)

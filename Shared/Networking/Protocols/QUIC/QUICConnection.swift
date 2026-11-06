@@ -1,13 +1,13 @@
 //
 //  QUICConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/11/26.
 //
 
 import Foundation
 import Synchronization
-import RuleProxyQUIC
+import NaiveFlowQUIC
 
 nonisolated final class QUICConnection: Sendable {
     enum StreamTerminationCause: Sendable { case closed, reset }
@@ -42,7 +42,7 @@ nonisolated final class QUICConnection: Sendable {
         usesTransport = transport != nil
         let handlers = QUICHandlerStore()
         self.handlers = handlers
-        let executor = BridgeExecutor(label: "com.argsment.RuleProxy.QUICConnection")
+        let executor = BridgeExecutor(label: "com.argsment.NaiveFlow.QUICConnection")
         state = QUICState(
             QUICConnectionCore(
                 host: host,
@@ -70,7 +70,7 @@ nonisolated final class QUICConnection: Sendable {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             update { core in
                 guard core.phase == .idle else {
-                    continuation.resume(throwing: RuleProxyError.quic(.connectionFailed(detail: "Invalid state")))
+                    continuation.resume(throwing: NaiveFlowError.quic(.connectionFailed(detail: "Invalid state")))
                     return
                 }
                 core.transition(to: .connecting)
@@ -84,7 +84,7 @@ nonisolated final class QUICConnection: Sendable {
     func exportKeyingMaterial(label: String, context: Data, length: Int) async throws -> Data {
         try state.read { core in
             guard core.phase == .connected, let engine = core.engine else {
-                throw RuleProxyError.quic(.closed(graceful: false))
+                throw NaiveFlowError.quic(.closed(graceful: false))
             }
             return try engine.exportKeyingMaterial(label: label, context: context, length: length)
         }
@@ -106,7 +106,7 @@ nonisolated final class QUICConnection: Sendable {
         update { core in
             guard let engine = core.engine, streamID >= 0 else { return }
             engine.shutdownStream(QUICStreamID(rawValue: UInt64(streamID)), errorCode: appErrorCode)
-            core.failStreamSendQueue(streamId: streamID, error: RuleProxyError.quic(.closed(graceful: false)))
+            core.failStreamSendQueue(streamId: streamID, error: NaiveFlowError.quic(.closed(graceful: false)))
             core.scheduleFlush()
         }
     }
@@ -117,7 +117,7 @@ nonisolated final class QUICConnection: Sendable {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             update { core in
                 guard core.phase == .connected, core.engine != nil else {
-                    continuation.resume(throwing: RuleProxyError.quic(.closed(graceful: false)))
+                    continuation.resume(throwing: NaiveFlowError.quic(.closed(graceful: false)))
                     return
                 }
                 core.appendStreamWrite(streamID, data: data, fin: fin, continuation: continuation)
@@ -139,7 +139,7 @@ nonisolated final class QUICConnection: Sendable {
     private func writeDatagrams(_ datagrams: [Data], atomically: Bool) async throws {
         let immediate: Result<Void, Error>? = update { core in
             guard core.phase == .connected, core.engine != nil else {
-                return .failure(RuleProxyError.quic(.closed(graceful: false)))
+                return .failure(NaiveFlowError.quic(.closed(graceful: false)))
             }
             if datagrams.isEmpty { return .success(()) }
             guard core.enqueueDatagramsInEngine(datagrams) else { return nil }
@@ -150,7 +150,7 @@ nonisolated final class QUICConnection: Sendable {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             update { core in
                 guard core.phase == .connected, core.engine != nil else {
-                    continuation.resume(throwing: RuleProxyError.quic(.closed(graceful: false)))
+                    continuation.resume(throwing: NaiveFlowError.quic(.closed(graceful: false)))
                     return
                 }
                 if datagrams.isEmpty { continuation.resume(); return }
@@ -163,7 +163,7 @@ nonisolated final class QUICConnection: Sendable {
                     pendingCount: core.pendingDatagrams.count + (core.engine?.pendingDatagramCount ?? 0),
                     batchCount: datagrams.count
                 ) {
-                    continuation.resume(throwing: RuleProxyError.quic(.datagramQueueFull))
+                    continuation.resume(throwing: NaiveFlowError.quic(.datagramQueueFull))
                     return
                 }
                 let latch = QUICConnectionCore.DatagramBatchLatch(count: datagrams.count, continuation: continuation)

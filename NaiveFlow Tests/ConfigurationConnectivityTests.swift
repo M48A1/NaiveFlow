@@ -1,13 +1,13 @@
 //
 //  ConfigurationConnectivityTests.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/21/26.
 //
 
 import Testing
 import Foundation
-@testable import RuleProxy
+@testable import NaiveFlow
 
 @Suite(.enabled(if: TestEnvironment.isConfigured), .serialized)
 struct ConfigurationConnectivityTests {

@@ -1,6 +1,6 @@
 //
 //  MITMBodyReplace.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/31/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 
-nonisolated private let logger = RuleProxyLogger(category: "MITMBodyReplace")
+nonisolated private let logger = NaiveFlowLogger(category: "MITMBodyReplace")
 
 nonisolated enum MITMBodyReplace {
     struct CompiledOperation {

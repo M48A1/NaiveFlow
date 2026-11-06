@@ -1,6 +1,6 @@
 //
 //  MITMGateRegex.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/3/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 
-nonisolated private let logger = RuleProxyLogger(category: "MITMGateRegex")
+nonisolated private let logger = NaiveFlowLogger(category: "MITMGateRegex")
 
 nonisolated final class MITMGateRegex: Sendable {
     typealias Verdict = MITMRegexConcurrencyBridge.GateMatch

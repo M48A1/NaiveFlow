@@ -1,6 +1,6 @@
 //
 //  Shadowsocks2022.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/7/26.
 //
@@ -179,7 +179,7 @@ nonisolated final class Shadowsocks2022Connection: ProxyConnection {
     }
 
     private func sealChunks(plaintext: Data, state: inout WriteState) throws -> Data {
-        guard let subkey = state.subkey else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+        guard let subkey = state.subkey else { throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
         let maxPayload = ShadowsocksAEADWriter.maxPayloadSize
         var output = Data()
         var offset = 0
@@ -258,7 +258,7 @@ nonisolated final class Shadowsocks2022Connection: ProxyConnection {
         )
         
         guard fixedHeader.count == fixedHeaderPlainLen else {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed))
         }
 
         var offset = fixedHeader.startIndex
@@ -266,7 +266,7 @@ nonisolated final class Shadowsocks2022Connection: ProxyConnection {
         offset += 1
 
         guard headerType == headerTypeServer else {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.malformedHeader))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.malformedHeader))
         }
 
         var epochBE: UInt64 = 0
@@ -276,14 +276,14 @@ nonisolated final class Shadowsocks2022Connection: ProxyConnection {
         let epoch = Int64(clamping: UInt64(bigEndian: epochBE))
         let now = Int64(Date().timeIntervalSince1970)
         if abs(now - epoch) > maxTimestampDiff {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.staleTimestamp))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.staleTimestamp))
         }
         offset += 8
 
         let responseSalt = Data(fixedHeader[offset..<offset+keySize])
         offset += keySize
         if let requestSalt, responseSalt != requestSalt {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.replayedSalt))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.replayedSalt))
         }
 
         let varLen = Int(UInt16(fixedHeader[offset]) << 8 | UInt16(fixedHeader[offset + 1]))
@@ -307,7 +307,7 @@ nonisolated final class Shadowsocks2022Connection: ProxyConnection {
         if state.buffer.isEmpty { state.buffer = Data() } else { state.buffer = Data(state.buffer) }
 
         guard let subkey = state.subkey else {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed))
         }
 
         let varData = try ShadowsocksAEADCrypto.open(
@@ -339,7 +339,7 @@ nonisolated final class Shadowsocks2022Connection: ProxyConnection {
                 let lenData = try ShadowsocksAEADCrypto.open(
                     cipher: cipher, key: subkey, nonce: state.nonce.next(), ciphertext: encLen
                 )
-                guard lenData.count == 2 else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+                guard lenData.count == 2 else { throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
                 offset += lenNeeded
 
                 payloadLen = Int(UInt16(lenData[lenData.startIndex]) << 8 | UInt16(lenData[lenData.startIndex + 1]))
@@ -493,7 +493,7 @@ nonisolated final class Shadowsocks2022AESUDPConnection: ProxyConnection {
 
     private func decryptPacket(_ data: Data) throws -> Data {
         guard data.count >= 16 + tagSize else {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed))
         }
         
         let header = try aesECBDecrypt(key: psk, block: data.prefix(16))
@@ -521,7 +521,7 @@ nonisolated final class Shadowsocks2022AESUDPConnection: ProxyConnection {
         )
         
         guard body.count >= 1 + 8 + 8 + 2 else {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed))
         }
 
         var offset = body.startIndex
@@ -529,7 +529,7 @@ nonisolated final class Shadowsocks2022AESUDPConnection: ProxyConnection {
         offset += 1
 
         guard headerType == headerTypeServer else {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.malformedHeader))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.malformedHeader))
         }
 
         var epochBE: UInt64 = 0
@@ -539,7 +539,7 @@ nonisolated final class Shadowsocks2022AESUDPConnection: ProxyConnection {
         let epoch = Int64(clamping: UInt64(bigEndian: epochBE))
         let now = Int64(Date().timeIntervalSince1970)
         if abs(now - epoch) > maxTimestampDiff {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.staleTimestamp))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.staleTimestamp))
         }
         offset += 8
 
@@ -549,18 +549,18 @@ nonisolated final class Shadowsocks2022AESUDPConnection: ProxyConnection {
         }
         let clientSid = UInt64(bigEndian: clientSidBE)
         guard clientSid == sessionID else {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed))
         }
         offset += 8
 
-        guard body.endIndex - offset >= 2 else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+        guard body.endIndex - offset >= 2 else { throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
         let paddingLen = Int(UInt16(body[offset]) << 8 | UInt16(body[offset + 1]))
         offset += 2
-        guard body.endIndex - offset >= paddingLen else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+        guard body.endIndex - offset >= paddingLen else { throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
         offset += paddingLen
 
         guard let parsed = ShadowsocksProtocol.decodeUDPPacket(data: Data(body[offset...])) else {
-            throw RuleProxyError.proxy(.shadowsocks, .protocolViolation(detail: "invalid address header"))
+            throw NaiveFlowError.proxy(.shadowsocks, .protocolViolation(detail: "invalid address header"))
         }
 
         return parsed.payload
@@ -651,7 +651,7 @@ nonisolated final class Shadowsocks2022ChaChaUDPConnection: ProxyConnection {
 
     private func decryptPacket(_ data: Data) throws -> Data {
         guard data.count >= 24 + tagSize else {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed))
         }
 
         let nonce = data.prefix(24)
@@ -660,7 +660,7 @@ nonisolated final class Shadowsocks2022ChaChaUDPConnection: ProxyConnection {
         let body = try XChaCha20Poly1305.open(key: psk, nonce: nonce, ciphertext: ciphertext)
         
         guard body.count >= 8 + 8 + 1 + 8 + 8 + 2 else {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed))
         }
 
         var offset = body.startIndex
@@ -670,7 +670,7 @@ nonisolated final class Shadowsocks2022ChaChaUDPConnection: ProxyConnection {
         let headerType = body[offset]
         offset += 1
         guard headerType == headerTypeServer else {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.malformedHeader))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.malformedHeader))
         }
 
         var epochBE: UInt64 = 0
@@ -680,7 +680,7 @@ nonisolated final class Shadowsocks2022ChaChaUDPConnection: ProxyConnection {
         let epoch = Int64(clamping: UInt64(bigEndian: epochBE))
         let now = Int64(Date().timeIntervalSince1970)
         if abs(now - epoch) > maxTimestampDiff {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.staleTimestamp))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.staleTimestamp))
         }
         offset += 8
 
@@ -690,18 +690,18 @@ nonisolated final class Shadowsocks2022ChaChaUDPConnection: ProxyConnection {
         }
         let clientSid = UInt64(bigEndian: clientSidBE)
         guard clientSid == sessionID else {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed))
         }
         offset += 8
 
-        guard body.endIndex - offset >= 2 else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+        guard body.endIndex - offset >= 2 else { throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
         let paddingLen = Int(UInt16(body[offset]) << 8 | UInt16(body[offset + 1]))
         offset += 2
-        guard body.endIndex - offset >= paddingLen else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+        guard body.endIndex - offset >= paddingLen else { throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
         offset += paddingLen
 
         guard let parsed = ShadowsocksProtocol.decodeUDPPacket(data: Data(body[offset...])) else {
-            throw RuleProxyError.proxy(.shadowsocks, .protocolViolation(detail: "invalid address header"))
+            throw NaiveFlowError.proxy(.shadowsocks, .protocolViolation(detail: "invalid address header"))
         }
 
         return parsed.payload
@@ -711,7 +711,7 @@ nonisolated final class Shadowsocks2022ChaChaUDPConnection: ProxyConnection {
 // MARK: - AES-ECB Single Block
 
 private nonisolated func aesECBEncrypt(key: Data, block: Data) throws -> Data {
-    guard block.count == 16 else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+    guard block.count == 16 else { throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
     var outBytes = [UInt8](repeating: 0, count: 16 + kCCBlockSizeAES128)
     var outLen: Int = 0
     let status = key.withUnsafeBytes { keyPtr in
@@ -728,12 +728,12 @@ private nonisolated func aesECBEncrypt(key: Data, block: Data) throws -> Data {
             )
         }
     }
-    guard status == kCCSuccess else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+    guard status == kCCSuccess else { throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
     return Data(outBytes.prefix(16))
 }
 
 private nonisolated func aesECBDecrypt(key: Data, block: Data) throws -> Data {
-    guard block.count == 16 else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+    guard block.count == 16 else { throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
     var outBytes = [UInt8](repeating: 0, count: 16 + kCCBlockSizeAES128)
     var outLen: Int = 0
     let status = key.withUnsafeBytes { keyPtr in
@@ -750,7 +750,7 @@ private nonisolated func aesECBDecrypt(key: Data, block: Data) throws -> Data {
             )
         }
     }
-    guard status == kCCSuccess else { throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
+    guard status == kCCSuccess else { throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
     return Data(outBytes.prefix(16))
 }
 
@@ -760,7 +760,7 @@ nonisolated enum XChaCha20Poly1305 {
 
     static func seal(key: Data, nonce: Data, plaintext: Data) throws -> Data {
         guard nonce.count == 24, key.count == 32 else {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed))
         }
         
         let subkey = hChaCha20(key: key, nonce: Data(nonce.prefix(16)))
@@ -776,10 +776,10 @@ nonisolated enum XChaCha20Poly1305 {
 
     static func open(key: Data, nonce: Data, ciphertext: Data) throws -> Data {
         guard nonce.count == 24, key.count == 32 else {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed))
         }
         guard ciphertext.count >= 16 else {
-            throw RuleProxyError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed))
         }
 
         let subkey = hChaCha20(key: key, nonce: Data(nonce.prefix(16)))

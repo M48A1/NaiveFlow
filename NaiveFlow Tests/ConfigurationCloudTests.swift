@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import RuleProxy
+@testable import NaiveFlow
 
 struct ConfigurationCloudCodecTests {
     @Test func chunkedUnicodeRoundTripFitsCloudRecordLimit() throws {

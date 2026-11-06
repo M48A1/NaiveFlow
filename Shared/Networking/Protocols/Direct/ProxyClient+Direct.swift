@@ -1,6 +1,6 @@
 //
 //  ProxyClient+Direct.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 10/30/26.
 //
@@ -10,7 +10,7 @@ import Foundation
 extension ProxyClient {
     func connectWithDirect(_ request: ProxyRequest) async throws -> ProxyConnection {
         guard tunnel == nil else {
-            throw RuleProxyError.proxy(
+            throw NaiveFlowError.proxy(
                 .direct,
                 .protocolViolation(
                     detail: "Direct has no server for the previous chain hop to reach"

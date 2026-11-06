@@ -1,6 +1,6 @@
 //
 //  DNSMessage.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/24/26.
 //

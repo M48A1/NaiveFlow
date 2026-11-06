@@ -1,6 +1,6 @@
 //
 //  AddProxyView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 2/16/26.
 //
@@ -310,7 +310,7 @@ struct AddProxyView: View {
             }
             let document = try AJSONParser.parse(body)
             guard !document.configurations.isEmpty else {
-                throw RuleProxyError.subscription(.noConfigurations)
+                throw NaiveFlowError.subscription(.noConfigurations)
             }
             let imported = operations.configurations.importStandalone(document)
             if let first = imported.first { operations.selection.selectIfNone(first) }

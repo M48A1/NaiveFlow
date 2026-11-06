@@ -1,6 +1,6 @@
 //
 //  DNSSettingsView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by Takuma Kirishima on 7/24/26.
 //

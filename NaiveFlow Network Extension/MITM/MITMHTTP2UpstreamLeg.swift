@@ -1,6 +1,6 @@
 //
 //  MITMHTTP2UpstreamLeg.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/15/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 
-nonisolated private let logger = RuleProxyLogger(category: "MITMHTTP2UpstreamLeg")
+nonisolated private let logger = NaiveFlowLogger(category: "MITMHTTP2UpstreamLeg")
 
 nonisolated protocol MITMUpstreamLegDelegate: AnyObject {
     func upstreamLegWriteToOrigin(_ data: Data)

@@ -1,6 +1,6 @@
 //
 //  NowhereProtocol.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/30/26.
 //
@@ -51,7 +51,7 @@ nonisolated enum NowhereProtocol {
 
         init(host: String, port: UInt16) throws {
             try IPv4Only.requireHost(host)
-            guard port != 0 else { throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Invalid zero target port")) }
+            guard port != 0 else { throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Invalid zero target port")) }
             let unwrapped = host.hasPrefix("[") && host.hasSuffix("]")
                 ? String(host.dropFirst().dropLast())
                 : host
@@ -91,14 +91,14 @@ nonisolated enum NowhereProtocol {
         }
 
         private static func asciiWireHost(_ host: String) throws -> String {
-            guard !host.isEmpty else { throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Empty target host")) }
+            guard !host.isEmpty else { throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Empty target host")) }
             if host.unicodeScalars.allSatisfy(\.isASCII) { return host.lowercased() }
             var components = URLComponents()
             components.scheme = "https"
             components.host = host
             guard let converted = components.url?.host,
                   converted.unicodeScalars.allSatisfy(\.isASCII) else {
-                throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Target is not valid IDNA"))
+                throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Target is not valid IDNA"))
             }
             return converted.lowercased()
         }
@@ -106,7 +106,7 @@ nonisolated enum NowhereProtocol {
         private static func validateDomain(_ domain: String) throws {
             let bytes = Array(domain.utf8)
             guard !bytes.isEmpty, bytes.count <= maxDomainLength else {
-                throw RuleProxyError.proxy(.nowhere, .protocolViolation(detail: "invalid target length (\(bytes.count))"))
+                throw NaiveFlowError.proxy(.nowhere, .protocolViolation(detail: "invalid target length (\(bytes.count))"))
             }
             for label in domain.split(separator: ".", omittingEmptySubsequences: false) {
                 let scalars = label.utf8
@@ -114,7 +114,7 @@ nonisolated enum NowhereProtocol {
                       scalars.first != Character("-").asciiValue,
                       scalars.last != Character("-").asciiValue,
                       scalars.allSatisfy({ $0.isASCIIAlphaNumeric || $0 == 0x2d }) else {
-                    throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Invalid DNS target"))
+                    throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Invalid DNS target"))
                 }
             }
         }
@@ -152,7 +152,7 @@ nonisolated enum NowhereProtocol {
         exporter: Data
     ) throws -> Data {
         guard authKey.count == 32, exporter.count == 32 else {
-            throw RuleProxyError.proxy(.nowhere, .authenticationRejected(status: nil, detail: "Invalid authentication material"))
+            throw NaiveFlowError.proxy(.nowhere, .authenticationRejected(status: nil, detail: "Invalid authentication material"))
         }
         var message = Data(capacity: 33)
         message.append(transport.rawValue)
@@ -175,11 +175,11 @@ nonisolated enum NowhereProtocol {
 
     static func udpFlowID(streamID: Int64) throws -> UInt32 {
         guard streamID >= 0, streamID & 3 == 0 else {
-            throw RuleProxyError.proxy(.nowhere, .protocolViolation(detail: "Invalid business stream direction"))
+            throw NaiveFlowError.proxy(.nowhere, .protocolViolation(detail: "Invalid business stream direction"))
         }
         let id = (UInt64(streamID) >> 2) + 1
         guard id <= UInt64(maximumFlowID) else {
-            throw RuleProxyError.proxy(.nowhere, .streamIDsExhausted)
+            throw NaiveFlowError.proxy(.nowhere, .streamIDsExhausted)
         }
         return UInt32(id)
     }
@@ -200,10 +200,10 @@ nonisolated enum NowhereProtocol {
         payload: Data,
         maxDatagramSize: Int
     ) throws -> [Data] {
-        guard (1...maximumFlowID).contains(flowID) else { throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Invalid flow ID")) }
-        guard payload.count <= maxUDPPacketSize else { throw RuleProxyError.proxy(.nowhere, .packetTooLarge) }
+        guard (1...maximumFlowID).contains(flowID) else { throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Invalid flow ID")) }
+        guard payload.count <= maxUDPPacketSize else { throw NaiveFlowError.proxy(.nowhere, .packetTooLarge) }
         guard maxDatagramSize >= udpHeaderSize else {
-            throw RuleProxyError.proxy(.nowhere, .datagramTooLarge(maxFrame: maxDatagramSize, headerSize: udpHeaderSize))
+            throw NaiveFlowError.proxy(.nowhere, .datagramTooLarge(maxFrame: maxDatagramSize, headerSize: udpHeaderSize))
         }
         if payload.count <= maxDatagramSize - udpHeaderSize {
             var frame = Data(capacity: udpHeaderSize + payload.count)
@@ -213,11 +213,11 @@ nonisolated enum NowhereProtocol {
         }
 
         guard packetID != 0, maxDatagramSize > udpFragmentHeaderSize else {
-            throw RuleProxyError.proxy(.nowhere, .datagramTooLarge(maxFrame: maxDatagramSize, headerSize: udpFragmentHeaderSize))
+            throw NaiveFlowError.proxy(.nowhere, .datagramTooLarge(maxFrame: maxDatagramSize, headerSize: udpFragmentHeaderSize))
         }
         let payloadCapacity = maxDatagramSize - udpFragmentHeaderSize
         let count = (payload.count + payloadCapacity - 1) / payloadCapacity
-        guard (2...Int(UInt8.max)).contains(count) else { throw RuleProxyError.proxy(.nowhere, .packetTooLarge) }
+        guard (2...Int(UInt8.max)).contains(count) else { throw NaiveFlowError.proxy(.nowhere, .packetTooLarge) }
 
         var frames: [Data] = []
         frames.reserveCapacity(count)
@@ -280,7 +280,7 @@ nonisolated enum NowhereProtocol {
     // MARK: - UDP over stream
 
     static func encodeUDPStreamPacket(_ payload: Data) throws -> Data {
-        guard payload.count <= maxUDPPacketSize else { throw RuleProxyError.proxy(.nowhere, .packetTooLarge) }
+        guard payload.count <= maxUDPPacketSize else { throw NaiveFlowError.proxy(.nowhere, .packetTooLarge) }
         var output = Data(capacity: 2 + payload.count)
         output.appendUInt16(UInt16(payload.count))
         output.append(payload)

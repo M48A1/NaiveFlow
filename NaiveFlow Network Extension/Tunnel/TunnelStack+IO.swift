@@ -1,6 +1,6 @@
 //
 //  TunnelStack+IO.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/30/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 @preconcurrency import NetworkExtension
-import RuleProxyIP
+import NaiveFlowIP
 
 extension TunnelStack {
 

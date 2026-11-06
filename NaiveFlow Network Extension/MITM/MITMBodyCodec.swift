@@ -1,6 +1,6 @@
 //
 //  MITMBodyCodec.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/8/26.
 //
@@ -9,7 +9,7 @@ import Compression
 import Foundation
 import zlib
 
-nonisolated private let logger = RuleProxyLogger(category: "MITMBodyCodec")
+nonisolated private let logger = NaiveFlowLogger(category: "MITMBodyCodec")
 
 nonisolated enum MITMBodyCodec {
     static let maxBufferedBodyBytes: Int = 4 * 1024 * 1024

@@ -1,6 +1,6 @@
 //
 //  Data+appendCompacting.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/12/26.
 //

@@ -1,6 +1,6 @@
 //
 //  ConfirmButton.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/31/26.
 //

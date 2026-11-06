@@ -14,7 +14,7 @@ nonisolated enum BootstrapDoHClient {
               let portNumber = UInt16(exactly: url.port ?? 443), portNumber > 0,
               let port = NWEndpoint.Port(rawValue: portNumber),
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        else { throw RuleProxyError.dns(.malformedResponse) }
+        else { throw NaiveFlowError.dns(.malformedResponse) }
         let tls = NWProtocolTLS.Options()
         let serverName = DNSName.stripBrackets(host)
         serverName.withCString { sec_protocol_options_set_tls_server_name(tls.securityProtocolOptions, $0) }
@@ -30,16 +30,16 @@ nonisolated enum BootstrapDoHClient {
         return try await withDialDeadline(DNSUpstreamClient.queryTimeout) {
             engine.cancel()
         } error: {
-            RuleProxyError.dns(.timedOut(host: serverName))
+            NaiveFlowError.dns(.timedOut(host: serverName))
         } operation: {
             try await engine.send(wireRequest)
             var response = Data()
             while true {
                 let next = try await engine.receive(atMost: 16_384)
                 response.append(next.content)
-                guard response.count <= maximumWireBytes else { throw RuleProxyError.dns(.malformedResponse) }
+                guard response.count <= maximumWireBytes else { throw NaiveFlowError.dns(.malformedResponse) }
                 if let body = try parseResponse(response, eof: next.endOfStream) { return body }
-                if next.endOfStream { throw RuleProxyError.dns(.malformedResponse) }
+                if next.endOfStream { throw NaiveFlowError.dns(.malformedResponse) }
             }
         }
     }
@@ -47,7 +47,7 @@ nonisolated enum BootstrapDoHClient {
     /// Incremental, bounded HTTP/1.x framing. Redirects, compression, duplicate
     /// framing fields and ambiguous framing are errors, never extra DNS lookups.
     static func parseResponse(_ wire: Data, eof: Bool) throws -> Data? {
-        func invalid() -> RuleProxyError { .dns(.malformedResponse) }
+        func invalid() -> NaiveFlowError { .dns(.malformedResponse) }
         guard wire.count <= maximumWireBytes else { throw invalid() }
         guard let split = wire.range(of: Data("\r\n\r\n".utf8)) else {
             if wire.count > 16_384 || eof { throw invalid() }

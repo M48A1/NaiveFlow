@@ -1,6 +1,6 @@
 //
 //  WebSocketConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
@@ -80,7 +80,7 @@ nonisolated final class WebSocketConnection: Sendable {
         try await withDialDeadline(Self.upgradeDeadline, onExpiry: {
             self.cancel()
         }, error: {
-            RuleProxyError.proxy(.webSocket, .upgradeFailed(detail: "handshake timed out"))
+            NaiveFlowError.proxy(.webSocket, .upgradeFailed(detail: "handshake timed out"))
         }) {
             try await self.sendAndAwaitUpgrade(earlyData: earlyData)
         }
@@ -115,13 +115,13 @@ nonisolated final class WebSocketConnection: Sendable {
         request += "\r\n"
 
         guard let requestData = request.data(using: .utf8) else {
-            throw RuleProxyError.proxy(.webSocket, .upgradeFailed(detail: "Failed to encode upgrade request"))
+            throw NaiveFlowError.proxy(.webSocket, .upgradeFailed(detail: "Failed to encode upgrade request"))
         }
 
         do {
             try await transport.send(requestData)
         } catch {
-            throw RuleProxyError.capture(error, context: "WebSocket upgrade request")
+            throw NaiveFlowError.capture(error, context: "WebSocket upgrade request")
         }
 
         try await receiveUpgradeResponse()
@@ -134,11 +134,11 @@ nonisolated final class WebSocketConnection: Sendable {
             do {
                 chunk = try await transport.receive()
             } catch {
-                throw RuleProxyError.capture(error, context: "WebSocket upgrade response")
+                throw NaiveFlowError.capture(error, context: "WebSocket upgrade response")
             }
 
             guard case .bytes(let data) = chunk, !data.isEmpty else {
-                throw RuleProxyError.proxy(.webSocket, .upgradeFailed(detail: "Empty response from server"))
+                throw NaiveFlowError.proxy(.webSocket, .upgradeFailed(detail: "Empty response from server"))
             }
 
             let headerData: Data? = try self.state.withLock { state in
@@ -147,7 +147,7 @@ nonisolated final class WebSocketConnection: Sendable {
                 let headerEnd: Data = Data([0x0D, 0x0A, 0x0D, 0x0A]) // \r\n\r\n
                 guard let range = state.receiveBuffer.range(of: headerEnd) else {
                     if state.receiveBuffer.count > Self.maxResponseHeaderSize {
-                        throw RuleProxyError.proxy(.webSocket, .upgradeFailed(detail: "response headers too large"))
+                        throw NaiveFlowError.proxy(.webSocket, .upgradeFailed(detail: "response headers too large"))
                     }
                     return nil
                 }
@@ -163,17 +163,17 @@ nonisolated final class WebSocketConnection: Sendable {
             }
 
             guard let headerString = String(data: headerData, encoding: .utf8) else {
-                throw RuleProxyError.proxy(.webSocket, .upgradeFailed(detail: "Cannot decode response headers"))
+                throw NaiveFlowError.proxy(.webSocket, .upgradeFailed(detail: "Cannot decode response headers"))
             }
 
             let firstLine = headerString.split(separator: "\r\n", maxSplits: 1).first ?? ""
             guard firstLine.contains("101") else {
-                throw RuleProxyError.proxy(.webSocket, .upgradeFailed(detail: "Expected HTTP 101, got: \(firstLine)"))
+                throw NaiveFlowError.proxy(.webSocket, .upgradeFailed(detail: "Expected HTTP 101, got: \(firstLine)"))
             }
 
             let opened: Bool = self.state.withLock { $0.transition(to: .open) }
             guard opened else {
-                throw RuleProxyError.proxy(.webSocket, .upgradeFailed(detail: "cancelled during upgrade"))
+                throw NaiveFlowError.proxy(.webSocket, .upgradeFailed(detail: "cancelled during upgrade"))
             }
             self.startHeartbeat()
             return
@@ -190,11 +190,11 @@ nonisolated final class WebSocketConnection: Sendable {
     func receive() async throws -> Data? {
         switch state.withLock({ $0.phase }) {
         case .upgrading:
-            throw RuleProxyError.proxy(.webSocket, .notReady)
+            throw NaiveFlowError.proxy(.webSocket, .notReady)
         case .closed:
             return nil
         case .cancelled:
-            throw RuleProxyError.transport(.terminated)
+            throw NaiveFlowError.transport(.terminated)
         case .open:
             break
         }
@@ -220,7 +220,7 @@ nonisolated final class WebSocketConnection: Sendable {
                     if code == 1000 || code == 1005 {
                         return nil
                     }
-                    throw RuleProxyError.proxy(.webSocket, .webSocketClosed(code: code, reason: reason))
+                    throw NaiveFlowError.proxy(.webSocket, .webSocketClosed(code: code, reason: reason))
                 }
             }
             
@@ -238,7 +238,7 @@ nonisolated final class WebSocketConnection: Sendable {
                 return false
             }
             if overflow {
-                throw RuleProxyError.proxy(.webSocket, .protocolViolation(detail: "invalid frame: Receive buffer exceeded limit"))
+                throw NaiveFlowError.proxy(.webSocket, .protocolViolation(detail: "invalid frame: Receive buffer exceeded limit"))
             }
         }
     }

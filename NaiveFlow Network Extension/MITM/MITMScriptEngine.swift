@@ -1,6 +1,6 @@
 //
 //  MITMScriptEngine.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/9/26.
 //
@@ -11,7 +11,7 @@ import CryptoKit
 import Security
 import Synchronization
 
-nonisolated private let logger = RuleProxyLogger(category: "MITMScriptEngine")
+nonisolated private let logger = NaiveFlowLogger(category: "MITMScriptEngine")
 
 nonisolated private let mitmScriptSuspendedBodyBytes = Atomic<Int>(0)
 
@@ -149,7 +149,7 @@ actor MITMScriptEngine {
 
     private static let maxLiveRuns = 32
 
-    // MARK: RuleProxy.http caps
+    // MARK: NaiveFlow.http caps
 
     private static let httpDefaultTimeout: TimeInterval = 10
     private static let httpMaxTimeout: TimeInterval = 30
@@ -199,7 +199,7 @@ actor MITMScriptEngine {
             defer { run.isFormattingException = false }
             logger.warning("\(run.logPrefix): \(exception.map(Self.describe) ?? "Uncaught exception")")
         }
-        installRuleProxyGlobals(context: context, for: run)
+        installNaiveFlowGlobals(context: context, for: run)
     }
 
     // MARK: - Watchdog tree driver
@@ -276,7 +276,7 @@ actor MITMScriptEngine {
             if original.phase == .httpRequest {
                 return .respond(response)
             }
-            logger.warning("[Script] RuleProxy.respond unavailable in response phase")
+            logger.warning("[Script] NaiveFlow.respond unavailable in response phase")
             return .modified(updated)
         }
     }
@@ -502,7 +502,7 @@ actor MITMScriptEngine {
             case .done: return .done(body: body)
             case .exit: return .exit
             case .respond:
-                logger.warning("\(run.logPrefix): RuleProxy.respond unavailable in streamScript")
+                logger.warning("\(run.logPrefix): NaiveFlow.respond unavailable in streamScript")
                 return .modified(body: body)
             }
         }
@@ -660,7 +660,7 @@ actor MITMScriptEngine {
         return result
     }
 
-    // MARK: - RuleProxy globals
+    // MARK: - NaiveFlow globals
 
     private static let bootstrapSource = #"""
     (function (resolve, control) {
@@ -680,8 +680,8 @@ actor MITMScriptEngine {
           configurable: true
         });
       };
-      var RuleProxy = {};
-      lazy(RuleProxy, "codec", true, function () {
+      var NaiveFlow = {};
+      lazy(NaiveFlow, "codec", true, function () {
         var codec = {};
         ["utf8", "base64", "base64url", "hex", "protobuf", "gzip", "deflate", "brotli"].forEach(function (name) {
           lazy(codec, name, true, function () { return resolve("codec." + name); });
@@ -689,12 +689,12 @@ actor MITMScriptEngine {
         return codec;
       });
       ["crypto", "jwt", "json", "store", "params", "log", "http"].forEach(function (name) {
-        lazy(RuleProxy, name, true, function () { return resolve(name); });
+        lazy(NaiveFlow, name, true, function () { return resolve(name); });
       });
-      RuleProxy.done = function () { control("done"); };
-      RuleProxy.exit = function () { control("exit"); };
-      RuleProxy.respond = function (spec) { control("respond", spec); };
-      globalThis.RuleProxy = RuleProxy;
+      NaiveFlow.done = function () { control("done"); };
+      NaiveFlow.exit = function () { control("exit"); };
+      NaiveFlow.respond = function (spec) { control("respond", spec); };
+      globalThis.NaiveFlow = NaiveFlow;
 
       var textCodecs = null;
       var textCodec = function (name) {
@@ -726,7 +726,7 @@ actor MITMScriptEngine {
     })
     """#
 
-    nonisolated private func installRuleProxyGlobals(context: JSContext, for run: ScriptRun) {
+    nonisolated private func installNaiveFlowGlobals(context: JSContext, for run: ScriptRun) {
         let resolve: @convention(block) (String) -> JSValue = { [weak self, weak run] name in
             let context = JSContext.current()!
             guard let self, let run, let value = self.makeNamespace(name, in: context, for: run) else {
@@ -749,7 +749,7 @@ actor MITMScriptEngine {
               context.exception == nil
         else {
             context.exception = nil
-            logger.error("\(run.logPrefix): RuleProxy API installation failed")
+            logger.error("\(run.logPrefix): NaiveFlow API installation failed")
             return
         }
     }
@@ -869,7 +869,7 @@ actor MITMScriptEngine {
             let context = JSContext.current()!
             guard let bytes = Self.bytesFromValue(value, in: context) else {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.protobuf.decode: expected Uint8Array/ArrayBuffer/string",
+                    newErrorFromMessage: "NaiveFlow.protobuf.decode: expected Uint8Array/ArrayBuffer/string",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
@@ -879,7 +879,7 @@ actor MITMScriptEngine {
                 return Self.makeProtobufEntries(entries, in: context)
             } catch {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.protobuf.decode: \(RuleProxyError.describe(error))",
+                    newErrorFromMessage: "NaiveFlow.protobuf.decode: \(NaiveFlowError.describe(error))",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
@@ -892,7 +892,7 @@ actor MITMScriptEngine {
                 return Self.makeUint8Array(in: context, from: Self.protobufEncodeWire(entries))
             } catch {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.protobuf.encode: \(RuleProxyError.describe(error))",
+                    newErrorFromMessage: "NaiveFlow.protobuf.encode: \(NaiveFlowError.describe(error))",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
@@ -902,7 +902,7 @@ actor MITMScriptEngine {
             let context = JSContext.current()!
             guard let varint = Self.uint64FromJSValue(value) else {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.protobuf.encodeVarint: expected non-negative Number or BigInt",
+                    newErrorFromMessage: "NaiveFlow.protobuf.encodeVarint: expected non-negative Number or BigInt",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
@@ -913,7 +913,7 @@ actor MITMScriptEngine {
             let context = JSContext.current()!
             guard let bytes = Self.bytesFromValue(bytesValue, in: context) else {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.protobuf.decodeVarint: expected Uint8Array/ArrayBuffer/string",
+                    newErrorFromMessage: "NaiveFlow.protobuf.decodeVarint: expected Uint8Array/ArrayBuffer/string",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
@@ -925,14 +925,14 @@ actor MITMScriptEngine {
                 offset = Int(offsetValue.toInt32())
             } else {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.protobuf.decodeVarint: offset must be a Number",
+                    newErrorFromMessage: "NaiveFlow.protobuf.decodeVarint: offset must be a Number",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
             }
             guard offset >= 0, offset <= bytes.count else {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.protobuf.decodeVarint: offset out of range",
+                    newErrorFromMessage: "NaiveFlow.protobuf.decodeVarint: offset out of range",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
@@ -958,13 +958,13 @@ actor MITMScriptEngine {
             let context = JSContext.current()!
             guard let bytes = Self.bytesFromValue(value, in: context) else {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.codec.\(name).encode: expected Uint8Array/ArrayBuffer/string",
+                    newErrorFromMessage: "NaiveFlow.codec.\(name).encode: expected Uint8Array/ArrayBuffer/string",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
             }
             guard let out = MITMBodyCodec.encode(bytes, codec: codecKind) else {
-                context.exception = JSValue(newErrorFromMessage: "RuleProxy.codec.\(name).encode failed", in: context)
+                context.exception = JSValue(newErrorFromMessage: "NaiveFlow.codec.\(name).encode failed", in: context)
                 return JSValue(undefinedIn: context)
             }
             return Self.makeUint8Array(in: context, from: out)
@@ -973,14 +973,14 @@ actor MITMScriptEngine {
             let context = JSContext.current()!
             guard let bytes = Self.bytesFromValue(value, in: context) else {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.codec.\(name).decode: expected Uint8Array/ArrayBuffer/string",
+                    newErrorFromMessage: "NaiveFlow.codec.\(name).decode: expected Uint8Array/ArrayBuffer/string",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
             }
             guard let out = MITMBodyCodec.decode(bytes, codec: codecKind) else {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.codec.\(name).decode failed (malformed input or exceeds \(MITMBodyCodec.maxBufferedBodyBytes) B cap)",
+                    newErrorFromMessage: "NaiveFlow.codec.\(name).decode failed (malformed input or exceeds \(MITMBodyCodec.maxBufferedBodyBytes) B cap)",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
@@ -1052,7 +1052,7 @@ actor MITMScriptEngine {
             let lengthDouble = lengthValue.toDouble()
             guard lengthDouble.isFinite, lengthDouble >= 0, lengthDouble <= 65536, lengthDouble == lengthDouble.rounded() else {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.crypto.randomBytes: length must be an integer in [0, 65536]",
+                    newErrorFromMessage: "NaiveFlow.crypto.randomBytes: length must be an integer in [0, 65536]",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
@@ -1065,7 +1065,7 @@ actor MITMScriptEngine {
             }
             guard status == errSecSuccess else {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.crypto.randomBytes: SecRandomCopyBytes failed (status \(status))",
+                    newErrorFromMessage: "NaiveFlow.crypto.randomBytes: SecRandomCopyBytes failed (status \(status))",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
@@ -1091,27 +1091,27 @@ actor MITMScriptEngine {
         let aesGCMEncryptBlock: @convention(block) (JSValue) -> JSValue = { spec in
             let context = JSContext.current()!
             guard !spec.isUndefined, !spec.isNull else {
-                context.exception = JSValue(newErrorFromMessage: "RuleProxy.crypto.aesGCM.encrypt: expected a spec object", in: context)
+                context.exception = JSValue(newErrorFromMessage: "NaiveFlow.crypto.aesGCM.encrypt: expected a spec object", in: context)
                 return JSValue(undefinedIn: context)
             }
             guard let key = Self.bytesFromValue(spec.objectForKeyedSubscript("key"), in: context),
                   key.count == 16 || key.count == 24 || key.count == 32 else {
-                context.exception = JSValue(newErrorFromMessage: "RuleProxy.crypto.aesGCM.encrypt: key must be a Uint8Array of length 16, 24, or 32", in: context)
+                context.exception = JSValue(newErrorFromMessage: "NaiveFlow.crypto.aesGCM.encrypt: key must be a Uint8Array of length 16, 24, or 32", in: context)
                 return JSValue(undefinedIn: context)
             }
             guard let plaintext = Self.bytesFromValue(spec.objectForKeyedSubscript("plaintext"), in: context) else {
-                context.exception = JSValue(newErrorFromMessage: "RuleProxy.crypto.aesGCM.encrypt: plaintext must be Uint8Array/ArrayBuffer/string", in: context)
+                context.exception = JSValue(newErrorFromMessage: "NaiveFlow.crypto.aesGCM.encrypt: plaintext must be Uint8Array/ArrayBuffer/string", in: context)
                 return JSValue(undefinedIn: context)
             }
             let nonceData: Data?
             let nonceValue = spec.objectForKeyedSubscript("nonce")
             if let nonceValue, !nonceValue.isUndefined, !nonceValue.isNull {
                 guard let nonceBytes = Self.bytesFromValue(nonceValue, in: context) else {
-                    context.exception = JSValue(newErrorFromMessage: "RuleProxy.crypto.aesGCM.encrypt: nonce must be Uint8Array/ArrayBuffer/string", in: context)
+                    context.exception = JSValue(newErrorFromMessage: "NaiveFlow.crypto.aesGCM.encrypt: nonce must be Uint8Array/ArrayBuffer/string", in: context)
                     return JSValue(undefinedIn: context)
                 }
                 guard nonceBytes.count == 12 else {
-                    context.exception = JSValue(newErrorFromMessage: "RuleProxy.crypto.aesGCM.encrypt: nonce must be 12 bytes", in: context)
+                    context.exception = JSValue(newErrorFromMessage: "NaiveFlow.crypto.aesGCM.encrypt: nonce must be 12 bytes", in: context)
                     return JSValue(undefinedIn: context)
                 }
                 nonceData = nonceBytes
@@ -1122,7 +1122,7 @@ actor MITMScriptEngine {
             let aadValue = spec.objectForKeyedSubscript("aad")
             if let aadValue, !aadValue.isUndefined, !aadValue.isNull {
                 guard let aadBytes = Self.bytesFromValue(aadValue, in: context) else {
-                    context.exception = JSValue(newErrorFromMessage: "RuleProxy.crypto.aesGCM.encrypt: aad must be Uint8Array/ArrayBuffer/string", in: context)
+                    context.exception = JSValue(newErrorFromMessage: "NaiveFlow.crypto.aesGCM.encrypt: aad must be Uint8Array/ArrayBuffer/string", in: context)
                     return JSValue(undefinedIn: context)
                 }
                 aadData = aadBytes
@@ -1149,40 +1149,40 @@ actor MITMScriptEngine {
                 out.setObject(Self.makeUint8Array(in: context, from: box.tag), forKeyedSubscript: "tag" as NSString)
                 return out
             } catch {
-                context.exception = JSValue(newErrorFromMessage: "RuleProxy.crypto.aesGCM.encrypt: \(error)", in: context)
+                context.exception = JSValue(newErrorFromMessage: "NaiveFlow.crypto.aesGCM.encrypt: \(error)", in: context)
                 return JSValue(undefinedIn: context)
             }
         }
         let aesGCMDecryptBlock: @convention(block) (JSValue) -> JSValue = { spec in
             let context = JSContext.current()!
             guard !spec.isUndefined, !spec.isNull else {
-                context.exception = JSValue(newErrorFromMessage: "RuleProxy.crypto.aesGCM.decrypt: expected a spec object", in: context)
+                context.exception = JSValue(newErrorFromMessage: "NaiveFlow.crypto.aesGCM.decrypt: expected a spec object", in: context)
                 return JSValue(undefinedIn: context)
             }
             guard let key = Self.bytesFromValue(spec.objectForKeyedSubscript("key"), in: context),
                   key.count == 16 || key.count == 24 || key.count == 32 else {
-                context.exception = JSValue(newErrorFromMessage: "RuleProxy.crypto.aesGCM.decrypt: key must be a Uint8Array of length 16, 24, or 32", in: context)
+                context.exception = JSValue(newErrorFromMessage: "NaiveFlow.crypto.aesGCM.decrypt: key must be a Uint8Array of length 16, 24, or 32", in: context)
                 return JSValue(undefinedIn: context)
             }
             guard let nonce = Self.bytesFromValue(spec.objectForKeyedSubscript("nonce"), in: context),
                   nonce.count == 12 else {
-                context.exception = JSValue(newErrorFromMessage: "RuleProxy.crypto.aesGCM.decrypt: nonce must be a Uint8Array of length 12", in: context)
+                context.exception = JSValue(newErrorFromMessage: "NaiveFlow.crypto.aesGCM.decrypt: nonce must be a Uint8Array of length 12", in: context)
                 return JSValue(undefinedIn: context)
             }
             guard let ciphertext = Self.bytesFromValue(spec.objectForKeyedSubscript("ciphertext"), in: context) else {
-                context.exception = JSValue(newErrorFromMessage: "RuleProxy.crypto.aesGCM.decrypt: ciphertext must be Uint8Array/ArrayBuffer/string", in: context)
+                context.exception = JSValue(newErrorFromMessage: "NaiveFlow.crypto.aesGCM.decrypt: ciphertext must be Uint8Array/ArrayBuffer/string", in: context)
                 return JSValue(undefinedIn: context)
             }
             guard let tag = Self.bytesFromValue(spec.objectForKeyedSubscript("tag"), in: context),
                   tag.count == 16 else {
-                context.exception = JSValue(newErrorFromMessage: "RuleProxy.crypto.aesGCM.decrypt: tag must be a Uint8Array of length 16", in: context)
+                context.exception = JSValue(newErrorFromMessage: "NaiveFlow.crypto.aesGCM.decrypt: tag must be a Uint8Array of length 16", in: context)
                 return JSValue(undefinedIn: context)
             }
             let aadData: Data?
             let aadValue = spec.objectForKeyedSubscript("aad")
             if let aadValue, !aadValue.isUndefined, !aadValue.isNull {
                 guard let aadBytes = Self.bytesFromValue(aadValue, in: context) else {
-                    context.exception = JSValue(newErrorFromMessage: "RuleProxy.crypto.aesGCM.decrypt: aad must be Uint8Array/ArrayBuffer/string", in: context)
+                    context.exception = JSValue(newErrorFromMessage: "NaiveFlow.crypto.aesGCM.decrypt: aad must be Uint8Array/ArrayBuffer/string", in: context)
                     return JSValue(undefinedIn: context)
                 }
                 aadData = aadBytes
@@ -1201,7 +1201,7 @@ actor MITMScriptEngine {
                 }
                 return Self.makeUint8Array(in: context, from: plaintext)
             } catch {
-                context.exception = JSValue(newErrorFromMessage: "RuleProxy.crypto.aesGCM.decrypt: \(error)", in: context)
+                context.exception = JSValue(newErrorFromMessage: "NaiveFlow.crypto.aesGCM.decrypt: \(error)", in: context)
                 return JSValue(undefinedIn: context)
             }
         }
@@ -1218,23 +1218,23 @@ actor MITMScriptEngine {
             let parts = token.split(separator: ".", omittingEmptySubsequences: false)
             guard parts.count == 2 || parts.count == 3 else {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.jwt.decode: expected 2 or 3 dot-separated segments, got \(parts.count)",
+                    newErrorFromMessage: "NaiveFlow.jwt.decode: expected 2 or 3 dot-separated segments, got \(parts.count)",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
             }
             guard let headerBytes = Self.decodeBase64URL(String(parts[0])) else {
-                context.exception = JSValue(newErrorFromMessage: "RuleProxy.jwt.decode: header is not valid base64url", in: context)
+                context.exception = JSValue(newErrorFromMessage: "NaiveFlow.jwt.decode: header is not valid base64url", in: context)
                 return JSValue(undefinedIn: context)
             }
             guard let payloadBytes = Self.decodeBase64URL(String(parts[1])) else {
-                context.exception = JSValue(newErrorFromMessage: "RuleProxy.jwt.decode: payload is not valid base64url", in: context)
+                context.exception = JSValue(newErrorFromMessage: "NaiveFlow.jwt.decode: payload is not valid base64url", in: context)
                 return JSValue(undefinedIn: context)
             }
             let signatureBytes: Data
             if parts.count == 3 {
                 guard let signature = Self.decodeBase64URL(String(parts[2])) else {
-                    context.exception = JSValue(newErrorFromMessage: "RuleProxy.jwt.decode: signature is not valid base64url", in: context)
+                    context.exception = JSValue(newErrorFromMessage: "NaiveFlow.jwt.decode: signature is not valid base64url", in: context)
                     return JSValue(undefinedIn: context)
                 }
                 signatureBytes = signature
@@ -1243,7 +1243,7 @@ actor MITMScriptEngine {
             }
             guard let headerString = String(data: headerBytes, encoding: .utf8),
                   let headerObject = Self.parseJSON(headerString, in: context) else {
-                context.exception = JSValue(newErrorFromMessage: "RuleProxy.jwt.decode: header is not valid JSON", in: context)
+                context.exception = JSValue(newErrorFromMessage: "NaiveFlow.jwt.decode: header is not valid JSON", in: context)
                 return JSValue(undefinedIn: context)
             }
             let payloadValue: JSValue
@@ -1265,21 +1265,21 @@ actor MITMScriptEngine {
             let context = JSContext.current()!
             guard !spec.isUndefined, !spec.isNull else {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.jwt.encode: expected a spec object with {header, payload, signature?}",
+                    newErrorFromMessage: "NaiveFlow.jwt.encode: expected a spec object with {header, payload, signature?}",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
             }
             guard let headerSegment = Self.encodeJWTSegment(spec.objectForKeyedSubscript("header"), in: context) else {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.jwt.encode: header must be an object, string, or Uint8Array",
+                    newErrorFromMessage: "NaiveFlow.jwt.encode: header must be an object, string, or Uint8Array",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
             }
             guard let payloadSegment = Self.encodeJWTSegment(spec.objectForKeyedSubscript("payload"), in: context) else {
                 context.exception = JSValue(
-                    newErrorFromMessage: "RuleProxy.jwt.encode: payload must be an object, string, or Uint8Array",
+                    newErrorFromMessage: "NaiveFlow.jwt.encode: payload must be an object, string, or Uint8Array",
                     in: context
                 )
                 return JSValue(undefinedIn: context)
@@ -1289,7 +1289,7 @@ actor MITMScriptEngine {
             if let signatureValue, !signatureValue.isUndefined, !signatureValue.isNull {
                 guard let signatureBytes = Self.bytesFromValue(signatureValue, in: context) else {
                     context.exception = JSValue(
-                        newErrorFromMessage: "RuleProxy.jwt.encode: signature must be a Uint8Array (the raw signature bytes)",
+                        newErrorFromMessage: "NaiveFlow.jwt.encode: signature must be a Uint8Array (the raw signature bytes)",
                         in: context
                     )
                     return JSValue(undefinedIn: context)
@@ -1311,11 +1311,11 @@ actor MITMScriptEngine {
         let addBlock: @convention(block) (JSValue, String, JSValue) -> JSValue = { body, path, value in
             let context = JSContext.current()!
             guard let resolvedValue = Self.jsonValue(from: value, in: context) else {
-                logger.warning("[Script] RuleProxy.json.add: Value is undefined")
+                logger.warning("[Script] NaiveFlow.json.add: Value is undefined")
                 return Self.jsonPassthrough(body, in: context)
             }
             guard let segments = MITMJSONPatch.parseJSONPath(path) else {
-                logger.warning("[Script] RuleProxy.json.add: Invalid path: \(path)")
+                logger.warning("[Script] NaiveFlow.json.add: Invalid path: \(path)")
                 return Self.jsonPassthrough(body, in: context)
             }
             return Self.runJSONOperation(body, in: context) { root in
@@ -1326,11 +1326,11 @@ actor MITMScriptEngine {
         let replaceBlock: @convention(block) (JSValue, String, JSValue) -> JSValue = { body, path, value in
             let context = JSContext.current()!
             guard let resolvedValue = Self.jsonValue(from: value, in: context) else {
-                logger.warning("[Script] RuleProxy.json.replace: Value is undefined")
+                logger.warning("[Script] NaiveFlow.json.replace: Value is undefined")
                 return Self.jsonPassthrough(body, in: context)
             }
             guard let segments = MITMJSONPatch.parseJSONPath(path) else {
-                logger.warning("[Script] RuleProxy.json.replace: Invalid path: \(path)")
+                logger.warning("[Script] NaiveFlow.json.replace: Invalid path: \(path)")
                 return Self.jsonPassthrough(body, in: context)
             }
             return Self.runJSONOperation(body, in: context) { root in
@@ -1341,7 +1341,7 @@ actor MITMScriptEngine {
         let replaceRecursiveBlock: @convention(block) (JSValue, String, JSValue) -> JSValue = { body, key, value in
             let context = JSContext.current()!
             guard let resolvedValue = Self.jsonValue(from: value, in: context) else {
-                logger.warning("[Script] RuleProxy.json.replaceRecursive: Value is undefined")
+                logger.warning("[Script] NaiveFlow.json.replaceRecursive: Value is undefined")
                 return Self.jsonPassthrough(body, in: context)
             }
             return Self.runJSONOperation(body, in: context) { root in
@@ -1352,7 +1352,7 @@ actor MITMScriptEngine {
         let deleteBlock: @convention(block) (JSValue, String) -> JSValue = { body, path in
             let context = JSContext.current()!
             guard let segments = MITMJSONPatch.parseJSONPath(path) else {
-                logger.warning("[Script] RuleProxy.json.delete: Invalid path: \(path)")
+                logger.warning("[Script] NaiveFlow.json.delete: Invalid path: \(path)")
                 return Self.jsonPassthrough(body, in: context)
             }
             return Self.runJSONOperation(body, in: context) { root in
@@ -1370,7 +1370,7 @@ actor MITMScriptEngine {
         let removeWhereKeyExistsBlock: @convention(block) (JSValue, String, String) -> JSValue = { body, path, key in
             let context = JSContext.current()!
             guard let segments = MITMJSONPatch.parseJSONPath(path) else {
-                logger.warning("[Script] RuleProxy.json.removeWhereKeyExists: Invalid path: \(path)")
+                logger.warning("[Script] NaiveFlow.json.removeWhereKeyExists: Invalid path: \(path)")
                 return Self.jsonPassthrough(body, in: context)
             }
             return Self.runJSONOperation(body, in: context) { root in
@@ -1381,7 +1381,7 @@ actor MITMScriptEngine {
         let removeWhereFieldInBlock: @convention(block) (JSValue, String, String, JSValue) -> JSValue = { body, path, field, valuesValue in
             let context = JSContext.current()!
             guard let segments = MITMJSONPatch.parseJSONPath(path) else {
-                logger.warning("[Script] RuleProxy.json.removeWhereFieldIn: Invalid path: \(path)")
+                logger.warning("[Script] NaiveFlow.json.removeWhereFieldIn: Invalid path: \(path)")
                 return Self.jsonPassthrough(body, in: context)
             }
             let matchValues = Self.jsonArrayValues(from: valuesValue, in: context)
@@ -1400,7 +1400,7 @@ actor MITMScriptEngine {
         return json
     }
 
-    // MARK: - RuleProxy.json internals
+    // MARK: - NaiveFlow.json internals
 
     private static func runJSONOperation(_ body: JSValue, in context: JSContext, _ mutate: (inout Any) -> Bool) -> JSValue {
         let original = bytesFromValue(body, in: context) ?? Data()
@@ -1408,7 +1408,7 @@ actor MITMScriptEngine {
             return makeUint8Array(in: context, from: original)
         }
         guard let out = MITMJSONPatch.serialize(root) else {
-            logger.warning("[Script] RuleProxy.json: Result not serializable")
+            logger.warning("[Script] NaiveFlow.json: Result not serializable")
             return makeUint8Array(in: context, from: original)
         }
         return makeUint8Array(in: context, from: out)
@@ -1454,18 +1454,18 @@ actor MITMScriptEngine {
             let bytes = Self.bytesFromValue(value, in: context) ?? Data()
             do {
                 try MITMScriptStore.shared.setValue(bytes, forKey: key, scope: scope, onDisk: onDisk)
-            } catch RuleProxyError.mitm(.scriptStoreCapacityExceeded) {
+            } catch NaiveFlowError.mitm(.scriptStoreCapacityExceeded) {
                 let cap = onDisk ? MITMScriptDiskStore.maxBytesPerScope : MITMScriptStore.maxBytesPerScope
                 let error = JSValue(
-                    newErrorFromMessage: "RuleProxy.store: capacity exceeded (per-scope cap is \(cap) bytes)",
+                    newErrorFromMessage: "NaiveFlow.store: capacity exceeded (per-scope cap is \(cap) bytes)",
                     in: context
                 )
                 context.exception = error
-            } catch RuleProxyError.mitm(.scriptStoreWriteFailed) {
-                let error = JSValue(newErrorFromMessage: "RuleProxy.store: on-disk write failed", in: context)
+            } catch NaiveFlowError.mitm(.scriptStoreWriteFailed) {
+                let error = JSValue(newErrorFromMessage: "NaiveFlow.store: on-disk write failed", in: context)
                 context.exception = error
             } catch {
-                let exception = JSValue(newErrorFromMessage: "RuleProxy.store: \(error)", in: context)
+                let exception = JSValue(newErrorFromMessage: "NaiveFlow.store: \(error)", in: context)
                 context.exception = exception
             }
         }
@@ -1542,7 +1542,7 @@ actor MITMScriptEngine {
             if (100...599).contains(raw) {
                 status = raw
             } else {
-                logger.warning("[Script] RuleProxy.respond: Invalid status: \(statusDouble)")
+                logger.warning("[Script] NaiveFlow.respond: Invalid status: \(statusDouble)")
                 status = 200
             }
         } else {
@@ -1565,23 +1565,23 @@ actor MITMScriptEngine {
         return SynthesizedResponse(status: status, headers: headers, body: body)
     }
 
-    // MARK: - RuleProxy.http
+    // MARK: - NaiveFlow.http
 
     nonisolated private func makeHTTPNamespace(in context: JSContext, for run: ScriptRun) -> JSValue {
         let http = JSValue(newObjectIn: context)!
         let getBlock: @convention(block) (JSValue, JSValue) -> JSValue = { [weak self, weak run] urlValue, optionsValue in
             let context = JSContext.current()!
-            guard let self, let run else { return Self.rejected("RuleProxy.http: invocation released", in: context) }
+            guard let self, let run else { return Self.rejected("NaiveFlow.http: invocation released", in: context) }
             return self.assumeIsolated { $0.startHTTP(run: run, defaultMethod: "GET", urlValue: urlValue, optionsValue: optionsValue) }
         }
         let postBlock: @convention(block) (JSValue, JSValue) -> JSValue = { [weak self, weak run] urlValue, optionsValue in
             let context = JSContext.current()!
-            guard let self, let run else { return Self.rejected("RuleProxy.http: invocation released", in: context) }
+            guard let self, let run else { return Self.rejected("NaiveFlow.http: invocation released", in: context) }
             return self.assumeIsolated { $0.startHTTP(run: run, defaultMethod: "POST", urlValue: urlValue, optionsValue: optionsValue) }
         }
         let requestBlock: @convention(block) (JSValue) -> JSValue = { [weak self, weak run] specValue in
             let context = JSContext.current()!
-            guard let self, let run else { return Self.rejected("RuleProxy.http: invocation released", in: context) }
+            guard let self, let run else { return Self.rejected("NaiveFlow.http: invocation released", in: context) }
             let urlValue: JSValue = specValue.objectForKeyedSubscript("url") ?? JSValue(undefinedIn: context)
             return self.assumeIsolated { $0.startHTTP(run: run, defaultMethod: "GET", urlValue: urlValue, optionsValue: specValue) }
         }
@@ -1595,7 +1595,7 @@ actor MITMScriptEngine {
         let context = run.context
         guard run.allowsHTTP else {
             return Self.rejected(
-                "RuleProxy.http is only available inside a buffered `script` rule — an `async function process(ctx)` that awaits it. It is unavailable in stream-script.",
+                "NaiveFlow.http is only available inside a buffered `script` rule — an `async function process(ctx)` that awaits it. It is unavailable in stream-script.",
                 in: context
             )
         }
@@ -1605,16 +1605,16 @@ actor MITMScriptEngine {
               let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
               let host = url.host, !host.isEmpty
         else {
-            return Self.rejected("RuleProxy.http: expected an absolute http(s) URL", in: context)
+            return Self.rejected("NaiveFlow.http: expected an absolute http(s) URL", in: context)
         }
         if run.totalFetches >= Self.httpMaxTotalPerInvocation {
-            return Self.rejected("RuleProxy.http: per-invocation request cap (\(Self.httpMaxTotalPerInvocation)) reached", in: context)
+            return Self.rejected("NaiveFlow.http: per-invocation request cap (\(Self.httpMaxTotalPerInvocation)) reached", in: context)
         }
         if run.inFlightFetches >= Self.httpMaxConcurrentPerInvocation {
-            return Self.rejected("RuleProxy.http: too many concurrent requests in this invocation (max \(Self.httpMaxConcurrentPerInvocation))", in: context)
+            return Self.rejected("NaiveFlow.http: too many concurrent requests in this invocation (max \(Self.httpMaxConcurrentPerInvocation))", in: context)
         }
         if Self.globalFetchCount() >= Self.httpMaxConcurrentGlobal {
-            return Self.rejected("RuleProxy.http: global concurrent request cap (\(Self.httpMaxConcurrentGlobal)) reached", in: context)
+            return Self.rejected("NaiveFlow.http: global concurrent request cap (\(Self.httpMaxConcurrentGlobal)) reached", in: context)
         }
 
         let options: JSValue? = optionsValue.isObject ? optionsValue : nil
@@ -1623,7 +1623,7 @@ actor MITMScriptEngine {
             .flatMap { $0.isString ? $0.toString() : nil }?
             .uppercased() ?? defaultMethod
         guard HTTPHeader.isValidName(method) else {
-            return Self.rejected("RuleProxy.http: invalid method token", in: context)
+            return Self.rejected("NaiveFlow.http: invalid method token", in: context)
         }
         request.httpMethod = method
         if let headersValue = options?.objectForKeyedSubscript("headers"), !headersValue.isUndefined, !headersValue.isNull {
@@ -1653,7 +1653,7 @@ actor MITMScriptEngine {
 
         let promise = JSValue(newPromiseIn: context, fromExecutor: { [weak self, weak run] resolve, reject in
             guard let self, let run else {
-                reject?.call(withArguments: [Self.error("RuleProxy.http: invocation released", in: context)])
+                reject?.call(withArguments: [Self.error("NaiveFlow.http: invocation released", in: context)])
                 return
             }
             self.assumeIsolated { engine in
@@ -1681,7 +1681,7 @@ actor MITMScriptEngine {
                 run.pendingFetches[fetchID] = PendingFetch(resolve: resolve, reject: reject, task: task)
             }
         })
-        return promise ?? Self.rejected("RuleProxy.http: could not create Promise", in: context)
+        return promise ?? Self.rejected("NaiveFlow.http: could not create Promise", in: context)
     }
 
     private func completeFetch(
@@ -1711,18 +1711,18 @@ actor MITMScriptEngine {
         }
         armWatchdog(for: run)
         let context = run.context
-        _ = runUserScript("async script (RuleProxy.http resume continuation)") {
+        _ = runUserScript("async script (NaiveFlow.http resume continuation)") {
             switch result {
             case .success(let response):
                 resolve?.call(withArguments: [Self.makeHTTPResponse(response, in: context)])
             case .failure(let error):
-                reject?.call(withArguments: [Self.error("RuleProxy.http: \(RuleProxyError.describe(error))", in: context)])
+                reject?.call(withArguments: [Self.error("NaiveFlow.http: \(NaiveFlowError.describe(error))", in: context)])
             }
         }
         if context.exception != nil { context.exception = nil }
     }
 
-    // MARK: RuleProxy.http helpers
+    // MARK: NaiveFlow.http helpers
 
     private static func error(_ message: String, in context: JSContext) -> JSValue {
         JSValue(newErrorFromMessage: message, in: context) ?? JSValue(newObjectIn: context)!
@@ -1746,7 +1746,7 @@ actor MITMScriptEngine {
         if value.isArray {
             return (headersFromValue(value) ?? []).filter { entry in
                 guard !Self.forbiddenRequestHeaders.contains(entry.name.lowercased()) else {
-                    logger.warning("[Script] RuleProxy.http: Forbidden header: \(entry.name)")
+                    logger.warning("[Script] NaiveFlow.http: Forbidden header: \(entry.name)")
                     return false
                 }
                 return true
@@ -1765,15 +1765,15 @@ actor MITMScriptEngine {
                   let value = valueElement.toString()
             else { continue }
             guard HTTPHeader.isValidName(name) else {
-                logger.warning("[Script] RuleProxy.http: Invalid header name: \(name)")
+                logger.warning("[Script] NaiveFlow.http: Invalid header name: \(name)")
                 continue
             }
             guard HTTPHeader.isValidValue(value) else {
-                logger.warning("[Script] RuleProxy.http: Invalid header value: \(name)")
+                logger.warning("[Script] NaiveFlow.http: Invalid header value: \(name)")
                 continue
             }
             guard !Self.forbiddenRequestHeaders.contains(name.lowercased()) else {
-                logger.warning("[Script] RuleProxy.http: Forbidden header: \(name)")
+                logger.warning("[Script] NaiveFlow.http: Forbidden header: \(name)")
                 continue
             }
             out.append((name: name, value: value))
@@ -1786,7 +1786,7 @@ actor MITMScriptEngine {
         "upgrade", "keep-alive", "te", "trailer", "expect", "proxy-connection",
     ]
 
-    // MARK: Global RuleProxy.http in-flight counter
+    // MARK: Global NaiveFlow.http in-flight counter
 
     private static func reserveGlobalFetchSlot() {
         mitmScriptGlobalFetchCount.wrappingAdd(1, ordering: .relaxed)
@@ -1866,11 +1866,11 @@ actor MITMScriptEngine {
         var iterator = string.unicodeScalars.makeIterator()
         while let highScalar = iterator.next() {
             guard let lowScalar = iterator.next() else {
-                logger.warning("[Script] RuleProxy.hex.decode: Odd-length input")
+                logger.warning("[Script] NaiveFlow.hex.decode: Odd-length input")
                 return Data()
             }
             guard let high = hexNibble(highScalar), let low = hexNibble(lowScalar) else {
-                logger.warning("[Script] RuleProxy.hex.decode: Invalid hex character")
+                logger.warning("[Script] NaiveFlow.hex.decode: Invalid hex character")
                 return Data()
             }
             out.append((high << 4) | low)
@@ -1941,49 +1941,49 @@ actor MITMScriptEngine {
         let end = data.endIndex
         while index < end {
             guard let (tag, next) = readVarint(data, from: index) else {
-                throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "truncated or oversized tag varint at offset \(index - data.startIndex)"))
+                throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "truncated or oversized tag varint at offset \(index - data.startIndex)"))
             }
             index = next
             let wire = UInt8(tag & 0x7)
             let fieldRaw = tag >> 3
             guard fieldRaw > 0, fieldRaw <= 536870911 else {
-                throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "invalid field number \(fieldRaw)"))
+                throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "invalid field number \(fieldRaw)"))
             }
             let field = UInt32(fieldRaw)
             switch wire {
             case 0:
                 guard let (varint, nextIndex) = readVarint(data, from: index) else {
-                    throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "truncated varint for field \(field)"))
+                    throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "truncated varint for field \(field)"))
                 }
                 index = nextIndex
                 entries.append(ProtobufEntry(field: field, wire: 0, value: .varint(varint)))
             case 1:
                 guard index + 8 <= end else {
-                    throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "truncated fixed64 for field \(field)"))
+                    throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "truncated fixed64 for field \(field)"))
                 }
                 entries.append(ProtobufEntry(field: field, wire: 1, value: .bytes(data.subdata(in: index..<index + 8))))
                 index += 8
             case 2:
                 guard let (length, nextIndex) = readVarint(data, from: index) else {
-                    throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "truncated length for field \(field)"))
+                    throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "truncated length for field \(field)"))
                 }
                 index = nextIndex
                 guard length <= UInt64(end - index) else {
-                    throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "length-delimited field \(field) (len=\(length)) exceeds message"))
+                    throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "length-delimited field \(field) (len=\(length)) exceeds message"))
                 }
                 let needed = Int(length)
                 entries.append(ProtobufEntry(field: field, wire: 2, value: .bytes(data.subdata(in: index..<index + needed))))
                 index += needed
             case 5:
                 guard index + 4 <= end else {
-                    throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "truncated fixed32 for field \(field)"))
+                    throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "truncated fixed32 for field \(field)"))
                 }
                 entries.append(ProtobufEntry(field: field, wire: 5, value: .bytes(data.subdata(in: index..<index + 4))))
                 index += 4
             case 3, 4:
-                throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "deprecated group wire type \(wire) is not supported"))
+                throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "deprecated group wire type \(wire) is not supported"))
             default:
-                throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "unknown wire type \(wire)"))
+                throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "unknown wire type \(wire)"))
             }
         }
         return entries
@@ -2009,57 +2009,57 @@ actor MITMScriptEngine {
 
     private static func parseProtobufEntries(_ value: JSValue, in context: JSContext) throws -> [ProtobufEntry] {
         guard value.isArray else {
-            throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "expected an array of {field, wire, value} entries"))
+            throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "expected an array of {field, wire, value} entries"))
         }
         guard let count = Self.validatedArrayLength(value, maxLength: 10_000_000) else {
-            throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "input array length is missing, negative, or too large"))
+            throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "input array length is missing, negative, or too large"))
         }
         var entries: [ProtobufEntry] = []
         entries.reserveCapacity(count)
         for index in 0..<count {
             guard let entryValue = value.objectAtIndexedSubscript(index),
                   !entryValue.isUndefined, !entryValue.isNull else {
-                throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "entry \(index) is null/undefined"))
+                throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "entry \(index) is null/undefined"))
             }
             let fieldValue = entryValue.objectForKeyedSubscript("field")
             guard let fieldValue, fieldValue.isNumber else {
-                throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "entry \(index).field must be a Number"))
+                throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "entry \(index).field must be a Number"))
             }
             let fieldNumber = fieldValue.toInt32()
             guard fieldNumber > 0, fieldNumber <= 536_870_911 else {
-                throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "entry \(index).field \(fieldNumber) out of range (1…2^29-1)"))
+                throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "entry \(index).field \(fieldNumber) out of range (1…2^29-1)"))
             }
             let wireValue = entryValue.objectForKeyedSubscript("wire")
             guard let wireValue, wireValue.isNumber else {
-                throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "entry \(index).wire must be a Number"))
+                throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "entry \(index).wire must be a Number"))
             }
             let wireType = UInt8(truncatingIfNeeded: wireValue.toInt32())
             let valueField = entryValue.objectForKeyedSubscript("value")
             switch wireType {
             case 0:
                 guard let varint = valueField.flatMap({ uint64FromJSValue($0) }) else {
-                    throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "entry \(index).value (wire 0) must be a non-negative integer Number or BigInt"))
+                    throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "entry \(index).value (wire 0) must be a non-negative integer Number or BigInt"))
                 }
                 entries.append(ProtobufEntry(field: UInt32(fieldNumber), wire: 0, value: .varint(varint)))
             case 1:
                 guard let bytes = valueField.flatMap({ bytesFromValue($0, in: context) }), bytes.count == 8 else {
-                    throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "entry \(index).value (wire 1) must be a Uint8Array of length 8"))
+                    throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "entry \(index).value (wire 1) must be a Uint8Array of length 8"))
                 }
                 entries.append(ProtobufEntry(field: UInt32(fieldNumber), wire: 1, value: .bytes(bytes)))
             case 2:
                 guard let bytes = valueField.flatMap({ bytesFromValue($0, in: context) }) else {
-                    throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "entry \(index).value (wire 2) must be Uint8Array/ArrayBuffer/string"))
+                    throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "entry \(index).value (wire 2) must be Uint8Array/ArrayBuffer/string"))
                 }
                 entries.append(ProtobufEntry(field: UInt32(fieldNumber), wire: 2, value: .bytes(bytes)))
             case 5:
                 guard let bytes = valueField.flatMap({ bytesFromValue($0, in: context) }), bytes.count == 4 else {
-                    throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "entry \(index).value (wire 5) must be a Uint8Array of length 4"))
+                    throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "entry \(index).value (wire 5) must be a Uint8Array of length 4"))
                 }
                 entries.append(ProtobufEntry(field: UInt32(fieldNumber), wire: 5, value: .bytes(bytes)))
             case 3, 4:
-                throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "entry \(index).wire = \(wireType): deprecated group wire types not supported"))
+                throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "entry \(index).wire = \(wireType): deprecated group wire types not supported"))
             default:
-                throw RuleProxyError.mitm(.scriptMessageMalformed(detail: "entry \(index).wire = \(wireType): unknown wire type"))
+                throw NaiveFlowError.mitm(.scriptMessageMalformed(detail: "entry \(index).wire = \(wireType): unknown wire type"))
             }
         }
         return entries

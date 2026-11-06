@@ -1,6 +1,6 @@
 //
 //  TunnelStack.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 1/26/26.
 //
@@ -8,9 +8,9 @@
 import Foundation
 import Synchronization
 import NetworkExtension
-import RuleProxyIP
+import NaiveFlowIP
 
-nonisolated private let logger = RuleProxyLogger(category: "TunnelStack")
+nonisolated private let logger = NaiveFlowLogger(category: "TunnelStack")
 
 // MARK: - Traffic Accounting
 
@@ -225,8 +225,8 @@ actor TunnelStack {
     private let _mitmLeafCache = Mutex<MITMLeafCertificateCache?>(nil)
     nonisolated let mitmCertificateStore = MITMCertificateStore()
 
-    nonisolated func mitmLeafCacheCreatingIfNeeded() throws(RuleProxyError) -> MITMLeafCertificateCache {
-        try _mitmLeafCache.withLock { (cache) throws(RuleProxyError) in
+    nonisolated func mitmLeafCacheCreatingIfNeeded() throws(NaiveFlowError) -> MITMLeafCertificateCache {
+        try _mitmLeafCache.withLock { (cache) throws(NaiveFlowError) in
             if let cache { return cache }
             let made = try MITMLeafCertificateCache(store: mitmCertificateStore)
             cache = made

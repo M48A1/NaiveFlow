@@ -1,13 +1,13 @@
 //
 //  LatencyTester.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
 
 import Foundation
 
-nonisolated private let logger = RuleProxyLogger(category: "LatencyTester")
+nonisolated private let logger = NaiveFlowLogger(category: "LatencyTester")
 
 nonisolated enum LatencyTester {
     private static let timeout: Duration = .seconds(10)
@@ -42,7 +42,7 @@ nonisolated enum LatencyTester {
             return .failed
         } catch {
             logger.report("[Latency] \(configuration.name)", error: error)
-            if case RuleProxyError.tls(.certificateValidationFailed) = error {
+            if case NaiveFlowError.tls(.certificateValidationFailed) = error {
                 return .insecure
             }
             return .failed
@@ -89,7 +89,7 @@ nonisolated enum LatencyTester {
                 let statusLine = responseData.flatMap { String(data: $0, encoding: .utf8) }?
                     .split(separator: "\r\n", maxSplits: 1).first.map(String.init)
                 guard let statusLine, statusLine.contains("200") else {
-                    throw RuleProxyError.diagnostics(.latencyProbeFailed(status: statusLine ?? "no response"))
+                    throw NaiveFlowError.diagnostics(.latencyProbeFailed(status: statusLine ?? "no response"))
                 }
 
                 return Int(elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000)
@@ -115,7 +115,7 @@ nonisolated enum LatencyTester {
         let warmupStatus = warmupData.flatMap { String(data: $0, encoding: .utf8) }?
             .split(separator: "\r\n", maxSplits: 1).first.map(String.init)
         guard let warmupStatus, warmupStatus.contains("200") else {
-            throw RuleProxyError.diagnostics(.latencyProbeFailed(status: warmupStatus ?? "no response"))
+            throw NaiveFlowError.diagnostics(.latencyProbeFailed(status: warmupStatus ?? "no response"))
         }
 
         return proxyConnection

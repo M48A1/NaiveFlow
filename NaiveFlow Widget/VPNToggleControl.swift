@@ -1,6 +1,6 @@
 //
 //  VPNToggleControl.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/6/26.
 //
@@ -13,7 +13,7 @@ import WidgetKit
 struct VPNToggleControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(
-            kind: "com.argsment.RuleProxy.Widget.VPNToggle",
+            kind: "com.argsment.NaiveFlow.Widget.VPNToggle",
             provider: VPNStatusProvider()
         ) { isOn in
             ControlWidgetToggle(
@@ -23,7 +23,7 @@ struct VPNToggleControl: ControlWidget {
             ) { isOn in
                 Label(
                     isOn ? "Connected" : "Disconnected",
-                    image: "ruleproxy.fill"
+                    image: "naiveflow.fill"
                 )
             }
         }
@@ -32,12 +32,12 @@ struct VPNToggleControl: ControlWidget {
     }
 }
 
-private let ruleproxyNEBundleIdentifier = "com.argsment.RuleProxy.Network-Extension"
+private let naiveflowNEBundleIdentifier = "com.argsment.NaiveFlow.Network-Extension"
 
 private func loadManager() async throws -> NETunnelProviderManager? {
     let managers = try await NETunnelProviderManager.loadAllFromPreferences()
     return managers.first {
-        ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == ruleproxyNEBundleIdentifier
+        ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == naiveflowNEBundleIdentifier
     }
 }
 

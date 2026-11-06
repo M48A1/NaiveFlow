@@ -1,6 +1,6 @@
 //
 //  InitialCrumbling.swift
-//  RuleProxyQUIC
+//  NaiveFlowQUIC
 //
 //  Created by NodePassProject on 10/5/26.
 //

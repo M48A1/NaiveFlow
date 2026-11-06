@@ -1,6 +1,6 @@
 //
 //  AcknowledgementsView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
@@ -43,7 +43,7 @@ struct AcknowledgementsView: View {
     var body: some View {
         List {
             Section {
-                Text("RuleProxy is an independent project and is not affiliated with, endorsed by, or sponsored by any of the companies listed below.")
+                Text("NaiveFlow is an independent project and is not affiliated with, endorsed by, or sponsored by any of the companies listed below.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

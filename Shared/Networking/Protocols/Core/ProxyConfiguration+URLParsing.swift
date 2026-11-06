@@ -1,6 +1,6 @@
 //
 //  ProxyConfiguration+URLParsing.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
@@ -64,7 +64,7 @@ nonisolated extension ProxyConfiguration {
         if url.hasPrefix("direct://") {
             return try parseDirect(url: url)
         }
-        throw RuleProxyError.parse(.invalidURL("URL must start with nowhere://, vless://, hysteria2://, sudoku://, trojan://, anytls://, ss://, socks5://, rfc://, or direct://"))
+        throw NaiveFlowError.parse(.invalidURL("URL must start with nowhere://, vless://, hysteria2://, sudoku://, trojan://, anytls://, ss://, socks5://, rfc://, or direct://"))
     }
 
     // MARK: - Per-Scheme Parsers
@@ -86,34 +86,34 @@ nonisolated extension ProxyConfiguration {
                 let key = String(keyValue[0])
                 guard validatedKeys.contains(key), seenKeys.insert(key).inserted else { continue }
                 guard keyValue.count == 2 else {
-                    throw RuleProxyError.parse(.invalidURL("Invalid Nowhere \(key) parameter"))
+                    throw NaiveFlowError.parse(.invalidURL("Invalid Nowhere \(key) parameter"))
                 }
             }
         }
         let parameters = parseQueryParams(queryString, keepFirst: true)
         guard let atIndex = remaining.lastIndex(of: "@") else {
-            throw RuleProxyError.parse(.invalidURL("Missing @ separator in Nowhere URL"))
+            throw NaiveFlowError.parse(.invalidURL("Missing @ separator in Nowhere URL"))
         }
         let userInfo = String(remaining[..<atIndex])
         let endpoint = String(remaining[remaining.index(after: atIndex)...])
         guard !userInfo.contains(":"), let key = userInfo.removingPercentEncoding else {
-            throw RuleProxyError.parse(.invalidURL("Invalid Nowhere key encoding"))
+            throw NaiveFlowError.parse(.invalidURL("Invalid Nowhere key encoding"))
         }
         guard !key.isEmpty else {
-            throw RuleProxyError.parse(.invalidURL("Missing Nowhere key"))
+            throw NaiveFlowError.parse(.invalidURL("Missing Nowhere key"))
         }
 
         guard !endpoint.contains("/") else {
-            throw RuleProxyError.parse(.invalidURL("Invalid Nowhere endpoint"))
+            throw NaiveFlowError.parse(.invalidURL("Invalid Nowhere endpoint"))
         }
         let (host, port) = try parseHostPort(endpoint)
         guard !host.isEmpty, port != 0 else {
-            throw RuleProxyError.parse(.invalidURL("Invalid Nowhere endpoint"))
+            throw NaiveFlowError.parse(.invalidURL("Invalid Nowhere endpoint"))
         }
         let network: NowhereNetwork
         if let rawNetwork = parameters["net"] {
             guard let parsed = NowhereNetwork(rawValue: rawNetwork) else {
-                throw RuleProxyError.parse(.invalidURL("Invalid Nowhere net value"))
+                throw NaiveFlowError.parse(.invalidURL("Invalid Nowhere net value"))
             }
             network = parsed
         } else {
@@ -123,7 +123,7 @@ nonisolated extension ProxyConfiguration {
         switch parameters["morph"] {
         case nil, "1": morph = true
         case "0": morph = false
-        default: throw RuleProxyError.parse(.invalidURL("Invalid Nowhere morph value"))
+        default: throw NaiveFlowError.parse(.invalidURL("Invalid Nowhere morph value"))
         }
 
         return ProxyConfiguration(
@@ -144,7 +144,7 @@ nonisolated extension ProxyConfiguration {
         let body = try splitLinkBody(url, scheme: "vless://", label: "vless", allowBase64Body: true)
 
         guard let uuid = UUID(uuidString: body.userInfo) else {
-            throw RuleProxyError.parse(.invalidURL("Invalid UUID: \(body.userInfo)"))
+            throw NaiveFlowError.parse(.invalidURL("Invalid UUID: \(body.userInfo)"))
         }
 
         let parameters = body.parameters
@@ -162,7 +162,7 @@ nonisolated extension ProxyConfiguration {
                     xraySecurityLayer = .none
                 }
             } catch {
-                throw RuleProxyError.parse(.invalidURL("Reality configuration error: \(error.localizedDescription)"))
+                throw NaiveFlowError.parse(.invalidURL("Reality configuration error: \(error.localizedDescription)"))
             }
         } else if security == "tls" {
             do {
@@ -172,7 +172,7 @@ nonisolated extension ProxyConfiguration {
                     xraySecurityLayer = .none
                 }
             } catch {
-                throw RuleProxyError.parse(.invalidURL("TLS configuration error: \(error.localizedDescription)"))
+                throw NaiveFlowError.parse(.invalidURL("TLS configuration error: \(error.localizedDescription)"))
             }
         } else {
             xraySecurityLayer = .none
@@ -214,7 +214,7 @@ nonisolated extension ProxyConfiguration {
             let obfsMax = parameters["obfs-max-packet-size"].flatMap { Int($0) }
             guard let parsed = HysteriaObfuscation.make(type: obfsType, password: parameters["obfs-password"],
                                                         geckoMinPacketSize: obfsMin, geckoMaxPacketSize: obfsMax) else {
-                throw RuleProxyError.parse(.invalidURL("Unsupported Hysteria obfs type: \(obfsType)"))
+                throw NaiveFlowError.parse(.invalidURL("Unsupported Hysteria obfs type: \(obfsType)"))
             }
             obfuscation = parsed
         } else {
@@ -242,7 +242,7 @@ nonisolated extension ProxyConfiguration {
         let encoded = String(url.dropFirst("sudoku://".count))
         guard let payload = Data(base64URLEncoded: encoded),
               let json = try JSONSerialization.jsonObject(with: payload) as? [String: Any] else {
-            throw RuleProxyError.parse(.invalidURL("Invalid Sudoku short link payload"))
+            throw NaiveFlowError.parse(.invalidURL("Invalid Sudoku short link payload"))
         }
 
         guard let host = json["h"] as? String,
@@ -250,7 +250,7 @@ nonisolated extension ProxyConfiguration {
               let key = json["k"] as? String,
               !host.isEmpty,
               !key.isEmpty else {
-            throw RuleProxyError.parse(.invalidURL("Sudoku short link is missing required fields"))
+            throw NaiveFlowError.parse(.invalidURL("Sudoku short link is missing required fields"))
         }
 
         let portInt: Int
@@ -260,7 +260,7 @@ nonisolated extension ProxyConfiguration {
             portInt = Int("\(portValue)") ?? 0
         }
         guard let port = UInt16(exactly: portInt), port > 0 else {
-            throw RuleProxyError.parse(.invalidURL("Invalid Sudoku short link port"))
+            throw NaiveFlowError.parse(.invalidURL("Invalid Sudoku short link port"))
         }
 
         let aead = SudokuAEADMethod(rawValue: (json["e"] as? String) ?? SudokuAEADMethod.none.rawValue) ?? .none
@@ -370,15 +370,15 @@ nonisolated extension ProxyConfiguration {
         } else {
             guard let decoded = Data(base64URLEncoded: urlWithoutScheme),
                   let decodedString = String(data: decoded, encoding: .utf8) else {
-                throw RuleProxyError.parse(.invalidURL("Invalid SS URL encoding"))
+                throw NaiveFlowError.parse(.invalidURL("Invalid SS URL encoding"))
             }
             guard let colonIndex = decodedString.firstIndex(of: ":") else {
-                throw RuleProxyError.parse(.invalidURL("Missing method:password separator"))
+                throw NaiveFlowError.parse(.invalidURL("Missing method:password separator"))
             }
             method = String(decodedString[..<colonIndex])
             let rest = String(decodedString[decodedString.index(after: colonIndex)...])
             guard let atIndex = rest.lastIndex(of: "@") else {
-                throw RuleProxyError.parse(.invalidURL("Missing @ separator in decoded SS URL"))
+                throw NaiveFlowError.parse(.invalidURL("Missing @ separator in decoded SS URL"))
             }
             password = String(rest[..<atIndex])
             let serverPart = String(rest[rest.index(after: atIndex)...])
@@ -386,7 +386,7 @@ nonisolated extension ProxyConfiguration {
         }
 
         guard ShadowsocksCipher(method: method) != nil else {
-            throw RuleProxyError.parse(.invalidURL("Unsupported SS method: \(method)"))
+            throw NaiveFlowError.parse(.invalidURL("Unsupported SS method: \(method)"))
         }
 
         return ProxyConfiguration(
@@ -406,7 +406,7 @@ nonisolated extension ProxyConfiguration {
         guard let decoded = Data(base64URLEncoded: userInfo),
               let decodedString = String(data: decoded, encoding: .utf8),
               let colonIndex = decodedString.firstIndex(of: ":") else {
-            throw RuleProxyError.parse(.invalidURL("Invalid SS user info encoding"))
+            throw NaiveFlowError.parse(.invalidURL("Invalid SS user info encoding"))
         }
         let method = String(decodedString[..<colonIndex])
         let password = String(decodedString[decodedString.index(after: colonIndex)...])
@@ -431,7 +431,7 @@ nonisolated extension ProxyConfiguration {
         } else if url.hasPrefix("socks://") {
             urlWithoutScheme = String(url.dropFirst("socks://".count))
         } else {
-            throw RuleProxyError.parse(.invalidURL("SOCKS5 URL must start with socks5:// or socks://"))
+            throw NaiveFlowError.parse(.invalidURL("SOCKS5 URL must start with socks5:// or socks://"))
         }
 
         var remaining = urlWithoutScheme
@@ -523,7 +523,7 @@ nonisolated extension ProxyConfiguration {
                 username = userInfo.removingPercentEncoding ?? userInfo
             }
             if let username, username.contains(":") {
-                throw RuleProxyError.parse(.invalidURL("RFC username may not contain a colon"))
+                throw NaiveFlowError.parse(.invalidURL("RFC username may not contain a colon"))
             }
             if username?.isEmpty == true, password?.isEmpty == true {
                 username = nil
@@ -534,7 +534,7 @@ nonisolated extension ProxyConfiguration {
         if serverPart.hasSuffix("/") { serverPart.removeLast() }
         if let slashIndex = serverPart.firstIndex(of: "/") {
             guard !rejectsPath else {
-                throw RuleProxyError.parse(.invalidURL("RFC URL may not carry a path"))
+                throw NaiveFlowError.parse(.invalidURL("RFC URL may not carry a path"))
             }
             serverPart = String(serverPart[..<slashIndex])
         }
@@ -608,7 +608,7 @@ nonisolated extension ProxyConfiguration {
         }
 
         guard let atIndex = remaining.lastIndex(of: "@") else {
-            throw RuleProxyError.parse(.invalidURL("Missing @ separator in \(label) URL"))
+            throw NaiveFlowError.parse(.invalidURL("Missing @ separator in \(label) URL"))
         }
         let userInfo = String(remaining[..<atIndex])
         var serverPart = String(remaining[remaining.index(after: atIndex)...])
@@ -731,7 +731,7 @@ nonisolated extension ProxyConfiguration {
         let portString: String?
         if string.hasPrefix("[") {
             guard let closeBracket = string.firstIndex(of: "]") else {
-                throw RuleProxyError.parse(.invalidURL("Unsupported bracketed address"))
+                throw NaiveFlowError.parse(.invalidURL("Unsupported bracketed address"))
             }
             host = String(string[string.index(after: string.startIndex)..<closeBracket])
             let afterBracket = string[string.index(after: closeBracket)...]
@@ -739,7 +739,7 @@ nonisolated extension ProxyConfiguration {
                 portString = String(afterBracket.dropFirst())
             } else {
                 guard afterBracket.isEmpty, defaultPort != nil else {
-                    throw RuleProxyError.parse(.invalidURL("Unsupported bracketed address"))
+                    throw NaiveFlowError.parse(.invalidURL("Unsupported bracketed address"))
                 }
                 portString = nil
             }
@@ -751,16 +751,16 @@ nonisolated extension ProxyConfiguration {
             portString = nil
         }
         guard !host.isEmpty else {
-            throw RuleProxyError.parse(.invalidURL("Missing host"))
+            throw NaiveFlowError.parse(.invalidURL("Missing host"))
         }
         guard let portString else {
             guard let defaultPort else {
-                throw RuleProxyError.parse(.invalidURL("Missing port"))
+                throw NaiveFlowError.parse(.invalidURL("Missing port"))
             }
             return (host, defaultPort)
         }
         guard let port = UInt16(portString) else {
-            throw RuleProxyError.parse(.invalidURL("Invalid port: \(portString)"))
+            throw NaiveFlowError.parse(.invalidURL("Invalid port: \(portString)"))
         }
         return (host, port)
     }

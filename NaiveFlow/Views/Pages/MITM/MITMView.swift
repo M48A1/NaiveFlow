@@ -1,6 +1,6 @@
 //
 //  MITMView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/3/26.
 //
@@ -145,7 +145,7 @@ struct MITMView: View {
                 Text(importError ?? "")
             }
             .alert("Subscribe Rule Set", isPresented: $showSubscribeAlert) {
-                TextField("RuleProxy MITM Rule Set URL", text: $subscribeURL)
+                TextField("NaiveFlow MITM Rule Set URL", text: $subscribeURL)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
@@ -188,7 +188,7 @@ struct MITMView: View {
         do {
             let url = try result.get()
             guard url.pathExtension.lowercased() == "amrs" else {
-                importError = String(localized: "Invalid RuleProxy MITM Rule Set File.")
+                importError = String(localized: "Invalid NaiveFlow MITM Rule Set File.")
                 return
             }
             let isAccessing = url.startAccessingSecurityScopedResource()
@@ -222,7 +222,7 @@ struct MITMView: View {
 
     private func subscribe(to rawValue: String) {
         guard let url = MITMRuleSet.validSubscriptionURL(from: rawValue) else {
-            subscribeError = String(localized: "Invalid RuleProxy MITM Rule Set URL.")
+            subscribeError = String(localized: "Invalid NaiveFlow MITM Rule Set URL.")
             return
         }
         Task {

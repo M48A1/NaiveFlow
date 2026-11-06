@@ -8,25 +8,25 @@
 		CB1C107A2F23B82F00B74CD8 = { "isa" = "PBXBuildFile"; "fileRef" = "CB1C10792F23B82F00B74CD8"; };
 		CB1C10832F23B82F00B74CD8 = { "isa" = "PBXFileSystemSynchronizedBuildFileExceptionSet"; "membershipExceptions" = ( "Info.plist",  ); "target" = "CB1C10762F23B82F00B74CD8"; };
 		CB71CDD42F837D11002B9E1D = { "isa" = "PBXBuildFile"; "fileRef" = "CB71CDC32F837D11002B9E1D"; "settings" = { "ATTRIBUTES" = ( "RemoveHeadersOnCopy",  ); }; };
-		CB71CDC32F837D11002B9E1D = { "path" = "RuleProxy Widget.appex"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.app-extension"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
+		CB71CDC32F837D11002B9E1D = { "path" = "NaiveFlow Widget.appex"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.app-extension"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
 		CB71CDC52F837D11002B9E1D = { "isa" = "PBXBuildFile"; "fileRef" = "CB71CDC42F837D11002B9E1D"; };
 		CB2B54B22F6C3E2800F24AC2 = { "isa" = "PBXBuildFile"; "fileRef" = "CB1C10772F23B82F00B74CD8"; "settings" = { "ATTRIBUTES" = ( "RemoveHeadersOnCopy",  ); }; };
 		CB71CDC42F837D11002B9E1D = { "path" = "System/Library/Frameworks/WidgetKit.framework"; "isa" = "PBXFileReference"; "name" = "WidgetKit.framework"; "lastKnownFileType" = "wrapper.framework"; "sourceTree" = "SDKROOT"; };
 		CB1C10822F23B82F00B74CD8 = { "isa" = "PBXBuildFile"; "fileRef" = "CB1C10772F23B82F00B74CD8"; "settings" = { "ATTRIBUTES" = ( "RemoveHeadersOnCopy",  ); }; };
 		CB1C10792F23B82F00B74CD8 = { "path" = "System/Library/Frameworks/NetworkExtension.framework"; "isa" = "PBXFileReference"; "name" = "NetworkExtension.framework"; "lastKnownFileType" = "wrapper.framework"; "sourceTree" = "SDKROOT"; };
 		CB71CDC62F837D11002B9E1D = { "path" = "System/Library/Frameworks/SwiftUI.framework"; "isa" = "PBXFileReference"; "name" = "SwiftUI.framework"; "lastKnownFileType" = "wrapper.framework"; "sourceTree" = "SDKROOT"; };
-		CB2B549C2F6C3E2700F24AC2 = { "path" = "RuleProxy TV.app"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.application"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
-		78B6DF9E2FE7B70D0084897A = { "isa" = "PBXContainerItemProxy"; "containerPortal" = "CB1C105D2F23B81500B74CD8"; "remoteGlobalIDString" = "CB1C10642F23B81500B74CD8"; "remoteInfo" = "RuleProxy"; "proxyType" = "1"; };
-		78B6DF9A2FE7B70D0084897A = { "path" = "RuleProxy Tests.xctest"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.cfbundle"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
+		CB2B549C2F6C3E2700F24AC2 = { "path" = "NaiveFlow TV.app"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.application"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
+		78B6DF9E2FE7B70D0084897A = { "isa" = "PBXContainerItemProxy"; "containerPortal" = "CB1C105D2F23B81500B74CD8"; "remoteGlobalIDString" = "CB1C10642F23B81500B74CD8"; "remoteInfo" = "NaiveFlow"; "proxyType" = "1"; };
+		78B6DF9A2FE7B70D0084897A = { "path" = "NaiveFlow Tests.xctest"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.cfbundle"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
 		CB71CDC72F837D11002B9E1D = { "isa" = "PBXBuildFile"; "fileRef" = "CB71CDC62F837D11002B9E1D"; };
-		CB1C10772F23B82F00B74CD8 = { "path" = "RuleProxy Network Extension.appex"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.app-extension"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
-		CB1C10652F23B81500B74CD8 = { "path" = "RuleProxy.app"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.application"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
+		CB1C10772F23B82F00B74CD8 = { "path" = "NaiveFlow Network Extension.appex"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.app-extension"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
+		CB1C10652F23B81500B74CD8 = { "path" = "NaiveFlow.app"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.application"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
 
 /* Begin PBXBuildFile section */
-		382A1871306A04490032C2BF /* RuleProxyIP in Frameworks */ = {isa = PBXBuildFile; productRef = 382A1870306A04490032C2BF /* RuleProxyIP */; };
-		3853793F30753251000675B7 /* RuleProxyQUIC in Frameworks */ = {isa = PBXBuildFile; productRef = 3853793E30753251000675B7 /* RuleProxyQUIC */; };
-		3853794130753258000675B7 /* RuleProxyQUIC in Frameworks */ = {isa = PBXBuildFile; productRef = 3853794030753258000675B7 /* RuleProxyQUIC */; };
-		385379433075325D000675B7 /* RuleProxyQUIC in Frameworks */ = {isa = PBXBuildFile; productRef = 385379423075325D000675B7 /* RuleProxyQUIC */; };
+		382A1871306A04490032C2BF /* NaiveFlowIP in Frameworks */ = {isa = PBXBuildFile; productRef = 382A1870306A04490032C2BF /* NaiveFlowIP */; };
+		3853793F30753251000675B7 /* NaiveFlowQUIC in Frameworks */ = {isa = PBXBuildFile; productRef = 3853793E30753251000675B7 /* NaiveFlowQUIC */; };
+		3853794130753258000675B7 /* NaiveFlowQUIC in Frameworks */ = {isa = PBXBuildFile; productRef = 3853794030753258000675B7 /* NaiveFlowQUIC */; };
+		385379433075325D000675B7 /* NaiveFlowQUIC in Frameworks */ = {isa = PBXBuildFile; productRef = 385379423075325D000675B7 /* NaiveFlowQUIC */; };
 		38B2C4186D241EF7A2278F02 /* BLAKE in Frameworks */ = {isa = PBXBuildFile; productRef = 38B2C49B7761D5E2B8BE528B /* BLAKE */; };
 		38B2C41E20D0A1397B879414 /* BLAKE in Frameworks */ = {isa = PBXBuildFile; productRef = 38B2C410032BCA6342DED63E /* BLAKE */; };
 		38B2C426234A7168B56E86CC /* BLAKE in Frameworks */ = {isa = PBXBuildFile; productRef = 38B2C4CE1CDB7A0B75D898C9 /* BLAKE */; };
@@ -62,8 +62,8 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				CB71CDD42F837D11002B9E1D /* RuleProxy Widget.appex in Embed Foundation Extensions */,
-				CB1C10822F23B82F00B74CD8 /* RuleProxy Network Extension.appex in Embed Foundation Extensions */,
+				CB71CDD42F837D11002B9E1D /* NaiveFlow Widget.appex in Embed Foundation Extensions */,
+				CB1C10822F23B82F00B74CD8 /* NaiveFlow Network Extension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -74,7 +74,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				CB2B54B22F6C3E2800F24AC2 /* RuleProxy Network Extension.appex in Embed Foundation Extensions */,
+				CB2B54B22F6C3E2800F24AC2 /* NaiveFlow Network Extension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -82,7 +82,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		CB65476A2F65715600C85E4A /* Exceptions for "Shared" folder in "RuleProxy Network Extension" target */ = {
+		CB65476A2F65715600C85E4A /* Exceptions for "Shared" folder in "NaiveFlow Network Extension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				AWCore.swift,
@@ -325,8 +325,8 @@
 				Networking/TunnelAddress.swift,
 				Networking/TunnelLimits.swift,
 				Protocols/SoftDeletable.swift,
-				Utilities/RuleProxyError.swift,
-				Utilities/RuleProxyLogger.swift,
+				Utilities/NaiveFlowError.swift,
+				Utilities/NaiveFlowLogger.swift,
 				Utilities/Bridges/BridgeContext.swift,
 				Utilities/Bridges/BridgeExecutor.swift,
 				Utilities/Bridges/DNSSyscallConcurrencyBridge.swift,
@@ -342,16 +342,16 @@
 				"Utilities/UUID+VLESSString.swift",
 				Utilities/VPNStatus.swift,
 			);
-			target = CB1C10762F23B82F00B74CD8 /* RuleProxy Network Extension */;
+			target = CB1C10762F23B82F00B74CD8 /* NaiveFlow Network Extension */;
 		};
-		CB71CDD82F837D11002B9E1D /* Exceptions for "RuleProxy Widget" folder in "RuleProxy Widget" target */ = {
+		CB71CDD82F837D11002B9E1D /* Exceptions for "NaiveFlow Widget" folder in "NaiveFlow Widget" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = CB71CDC22F837D11002B9E1D /* RuleProxy Widget */;
+			target = CB71CDC22F837D11002B9E1D /* NaiveFlow Widget */;
 		};
-		CB71D2EE2F838FF3002B9E1D /* Exceptions for "Shared" folder in "RuleProxy Widget" target */ = {
+		CB71D2EE2F838FF3002B9E1D /* Exceptions for "Shared" folder in "NaiveFlow Widget" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				AWCore.swift,
@@ -363,16 +363,16 @@
                 Networking/DNS/DNSName.swift,
 				Models/ProxyMode.swift,
 				Models/QUICPolicy.swift,
-				Utilities/RuleProxyError.swift,
-				Utilities/RuleProxyLogger.swift,
+				Utilities/NaiveFlowError.swift,
+				Utilities/NaiveFlowLogger.swift,
 				Utilities/Bridges/SwiftRegexConcurrencyBridge.swift,
 				Utilities/MonotonicClock.swift,
 				Utilities/Timing/Deadline.swift,
 				Utilities/Timing/TimerPrecision.swift,
 			);
-			target = CB71CDC22F837D11002B9E1D /* RuleProxy Widget */;
+			target = CB71CDC22F837D11002B9E1D /* NaiveFlow Widget */;
 		};
-		CB8632442FB83C1600059EFE /* Exceptions for "RuleProxy" folder in "RuleProxy TV" target */ = {
+		CB8632442FB83C1600059EFE /* Exceptions for "NaiveFlow" folder in "NaiveFlow TV" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				DeepLinkManager.swift,
@@ -380,68 +380,68 @@
 				Views/Pages/Modules/ModuleParser.swift,
 				Views/Pages/Routing/RoutingRuleParser.swift,
 			);
-			target = CB2B549B2F6C3E2700F24AC2 /* RuleProxy TV */;
+			target = CB2B549B2F6C3E2700F24AC2 /* NaiveFlow TV */;
 		};
-		CBE5B8662F62E736003CECEF /* Exceptions for "RuleProxy" folder in "RuleProxy" target */ = {
+		CBE5B8662F62E736003CECEF /* Exceptions for "NaiveFlow" folder in "NaiveFlow" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = CB1C10642F23B81500B74CD8 /* RuleProxy */;
+			target = CB1C10642F23B81500B74CD8 /* NaiveFlow */;
 		};
-		CBE5F58E2F6D0A74003CECEF /* Exceptions for "RuleProxy TV" folder in "RuleProxy TV" target */ = {
+		CBE5F58E2F6D0A74003CECEF /* Exceptions for "NaiveFlow TV" folder in "NaiveFlow TV" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = CB2B549B2F6C3E2700F24AC2 /* RuleProxy TV */;
+			target = CB2B549B2F6C3E2700F24AC2 /* NaiveFlow TV */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		78B6DF9B2FE7B70D0084897A /* RuleProxy Tests */ = {
+		78B6DF9B2FE7B70D0084897A /* NaiveFlow Tests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "RuleProxy Tests";
+			path = "NaiveFlow Tests";
 			sourceTree = "<group>";
 		};
-		CB1C10672F23B81500B74CD8 /* RuleProxy */ = {
+		CB1C10672F23B81500B74CD8 /* NaiveFlow */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				CBE5B8662F62E736003CECEF /* Exceptions for "RuleProxy" folder in "RuleProxy" target */,
-				CB8632442FB83C1600059EFE /* Exceptions for "RuleProxy" folder in "RuleProxy TV" target */,
+				CBE5B8662F62E736003CECEF /* Exceptions for "NaiveFlow" folder in "NaiveFlow" target */,
+				CB8632442FB83C1600059EFE /* Exceptions for "NaiveFlow" folder in "NaiveFlow TV" target */,
 			);
-			path = RuleProxy;
+			path = NaiveFlow;
 			sourceTree = "<group>";
 		};
-		CB1C107B2F23B82F00B74CD8 /* RuleProxy Network Extension */ = {
+		CB1C107B2F23B82F00B74CD8 /* NaiveFlow Network Extension */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				CB1C10832F23B82F00B74CD8 /* Exceptions for "RuleProxy Network Extension" folder in "RuleProxy Network Extension" target */,
+				CB1C10832F23B82F00B74CD8 /* Exceptions for "NaiveFlow Network Extension" folder in "NaiveFlow Network Extension" target */,
 			);
-			path = "RuleProxy Network Extension";
+			path = "NaiveFlow Network Extension";
 			sourceTree = "<group>";
 		};
-		CB2B549D2F6C3E2700F24AC2 /* RuleProxy TV */ = {
+		CB2B549D2F6C3E2700F24AC2 /* NaiveFlow TV */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				CBE5F58E2F6D0A74003CECEF /* Exceptions for "RuleProxy TV" folder in "RuleProxy TV" target */,
+				CBE5F58E2F6D0A74003CECEF /* Exceptions for "NaiveFlow TV" folder in "NaiveFlow TV" target */,
 			);
-			path = "RuleProxy TV";
+			path = "NaiveFlow TV";
 			sourceTree = "<group>";
 		};
-		CB71CDC82F837D11002B9E1D /* RuleProxy Widget */ = {
+		CB71CDC82F837D11002B9E1D /* NaiveFlow Widget */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				CB71CDD82F837D11002B9E1D /* Exceptions for "RuleProxy Widget" folder in "RuleProxy Widget" target */,
+				CB71CDD82F837D11002B9E1D /* Exceptions for "NaiveFlow Widget" folder in "NaiveFlow Widget" target */,
 			);
-			path = "RuleProxy Widget";
+			path = "NaiveFlow Widget";
 			sourceTree = "<group>";
 		};
 		CB7A00022F65700100C85E4A /* Shared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				CB65476A2F65715600C85E4A /* Exceptions for "Shared" folder in "RuleProxy Network Extension" target */,
-				CB71D2EE2F838FF3002B9E1D /* Exceptions for "Shared" folder in "RuleProxy Widget" target */,
+				CB65476A2F65715600C85E4A /* Exceptions for "Shared" folder in "NaiveFlow Network Extension" target */,
+				CB71D2EE2F838FF3002B9E1D /* Exceptions for "Shared" folder in "NaiveFlow Widget" target */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -460,7 +460,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3853794130753258000675B7 /* RuleProxyQUIC in Frameworks */,
+				3853794130753258000675B7 /* NaiveFlowQUIC in Frameworks */,
 				38B2C4A5307A1F0100D4E6F1 /* YAML in Frameworks */,
 				38B2C4186D241EF7A2278F02 /* BLAKE in Frameworks */,
 			);
@@ -471,8 +471,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				CB1C107A2F23B82F00B74CD8 /* NetworkExtension.framework in Frameworks */,
-				382A1871306A04490032C2BF /* RuleProxyIP in Frameworks */,
-				3853793F30753251000675B7 /* RuleProxyQUIC in Frameworks */,
+				382A1871306A04490032C2BF /* NaiveFlowIP in Frameworks */,
+				3853793F30753251000675B7 /* NaiveFlowQUIC in Frameworks */,
 				38B2C426234A7168B56E86CC /* BLAKE in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -481,7 +481,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				385379433075325D000675B7 /* RuleProxyQUIC in Frameworks */,
+				385379433075325D000675B7 /* NaiveFlowQUIC in Frameworks */,
 				38B2C4A6307A1F0100D4E6F1 /* YAML in Frameworks */,
 				38B2C41E20D0A1397B879414 /* BLAKE in Frameworks */,
 			);
@@ -503,11 +503,11 @@
 			isa = PBXGroup;
 			children = (
 				CB7A00022F65700100C85E4A /* Shared */,
-				CB1C10672F23B81500B74CD8 /* RuleProxy */,
-				CB2B549D2F6C3E2700F24AC2 /* RuleProxy TV */,
-				CB1C107B2F23B82F00B74CD8 /* RuleProxy Network Extension */,
-				CB71CDC82F837D11002B9E1D /* RuleProxy Widget */,
-				78B6DF9B2FE7B70D0084897A /* RuleProxy Tests */,
+				CB1C10672F23B81500B74CD8 /* NaiveFlow */,
+				CB2B549D2F6C3E2700F24AC2 /* NaiveFlow TV */,
+				CB1C107B2F23B82F00B74CD8 /* NaiveFlow Network Extension */,
+				CB71CDC82F837D11002B9E1D /* NaiveFlow Widget */,
+				78B6DF9B2FE7B70D0084897A /* NaiveFlow Tests */,
 				CB1C10782F23B82F00B74CD8 /* Frameworks */,
 				CB1C10662F23B81500B74CD8 /* Products */,
 			);
@@ -516,11 +516,11 @@
 		CB1C10662F23B81500B74CD8 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				CB1C10652F23B81500B74CD8 /* RuleProxy.app */,
-				CB1C10772F23B82F00B74CD8 /* RuleProxy Network Extension.appex */,
-				CB2B549C2F6C3E2700F24AC2 /* RuleProxy TV.app */,
-				CB71CDC32F837D11002B9E1D /* RuleProxy Widget.appex */,
-				78B6DF9A2FE7B70D0084897A /* RuleProxy Tests.xctest */,
+				CB1C10652F23B81500B74CD8 /* NaiveFlow.app */,
+				CB1C10772F23B82F00B74CD8 /* NaiveFlow Network Extension.appex */,
+				CB2B549C2F6C3E2700F24AC2 /* NaiveFlow TV.app */,
+				CB71CDC32F837D11002B9E1D /* NaiveFlow Widget.appex */,
+				78B6DF9A2FE7B70D0084897A /* NaiveFlow Tests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -538,9 +538,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		78B6DF992FE7B70D0084897A /* RuleProxy Tests */ = {
+		78B6DF992FE7B70D0084897A /* NaiveFlow Tests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 78B6DFA22FE7B70D0084897A /* Build configuration list for PBXNativeTarget "RuleProxy Tests" */;
+			buildConfigurationList = 78B6DFA22FE7B70D0084897A /* Build configuration list for PBXNativeTarget "NaiveFlow Tests" */;
 			buildPhases = (
 				78B6DF962FE7B70D0084897A /* Sources */,
 				78B6DF972FE7B70D0084897A /* Frameworks */,
@@ -552,18 +552,18 @@
 				78B6DF9F2FE7B70D0084897A /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				78B6DF9B2FE7B70D0084897A /* RuleProxy Tests */,
+				78B6DF9B2FE7B70D0084897A /* NaiveFlow Tests */,
 			);
-			name = "RuleProxy Tests";
+			name = "NaiveFlow Tests";
 			packageProductDependencies = (
 			);
-			productName = "RuleProxy Tests";
-			productReference = 78B6DF9A2FE7B70D0084897A /* RuleProxy Tests.xctest */;
+			productName = "NaiveFlow Tests";
+			productReference = 78B6DF9A2FE7B70D0084897A /* NaiveFlow Tests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		CB1C10642F23B81500B74CD8 /* RuleProxy */ = {
+		CB1C10642F23B81500B74CD8 /* NaiveFlow */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = CB1C10702F23B81600B74CD8 /* Build configuration list for PBXNativeTarget "RuleProxy" */;
+			buildConfigurationList = CB1C10702F23B81600B74CD8 /* Build configuration list for PBXNativeTarget "NaiveFlow" */;
 			buildPhases = (
 				CB1C10612F23B81500B74CD8 /* Sources */,
 				CB1C10622F23B81500B74CD8 /* Frameworks */,
@@ -577,22 +577,22 @@
 				CB71CDD32F837D11002B9E1D /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				CB1C10672F23B81500B74CD8 /* RuleProxy */,
+				CB1C10672F23B81500B74CD8 /* NaiveFlow */,
 				CB7A00022F65700100C85E4A /* Shared */,
 			);
-			name = RuleProxy;
+			name = NaiveFlow;
 			packageProductDependencies = (
-				3853794030753258000675B7 /* RuleProxyQUIC */,
+				3853794030753258000675B7 /* NaiveFlowQUIC */,
 				38B2C4A3307A1F0100D4E6F1 /* YAML */,
 				38B2C49B7761D5E2B8BE528B /* BLAKE */,
 			);
-			productName = RuleProxy;
-			productReference = CB1C10652F23B81500B74CD8 /* RuleProxy.app */;
+			productName = NaiveFlow;
+			productReference = CB1C10652F23B81500B74CD8 /* NaiveFlow.app */;
 			productType = "com.apple.product-type.application";
 		};
-		CB1C10762F23B82F00B74CD8 /* RuleProxy Network Extension */ = {
+		CB1C10762F23B82F00B74CD8 /* NaiveFlow Network Extension */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = CB1C10842F23B82F00B74CD8 /* Build configuration list for PBXNativeTarget "RuleProxy Network Extension" */;
+			buildConfigurationList = CB1C10842F23B82F00B74CD8 /* Build configuration list for PBXNativeTarget "NaiveFlow Network Extension" */;
 			buildPhases = (
 				CB1C10732F23B82F00B74CD8 /* Sources */,
 				CB1C10742F23B82F00B74CD8 /* Frameworks */,
@@ -603,21 +603,21 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				CB1C107B2F23B82F00B74CD8 /* RuleProxy Network Extension */,
+				CB1C107B2F23B82F00B74CD8 /* NaiveFlow Network Extension */,
 			);
-			name = "RuleProxy Network Extension";
+			name = "NaiveFlow Network Extension";
 			packageProductDependencies = (
-				382A1870306A04490032C2BF /* RuleProxyIP */,
-				3853793E30753251000675B7 /* RuleProxyQUIC */,
+				382A1870306A04490032C2BF /* NaiveFlowIP */,
+				3853793E30753251000675B7 /* NaiveFlowQUIC */,
 				38B2C4CE1CDB7A0B75D898C9 /* BLAKE */,
 			);
 			productName = "Network Extension";
-			productReference = CB1C10772F23B82F00B74CD8 /* RuleProxy Network Extension.appex */;
+			productReference = CB1C10772F23B82F00B74CD8 /* NaiveFlow Network Extension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		CB2B549B2F6C3E2700F24AC2 /* RuleProxy TV */ = {
+		CB2B549B2F6C3E2700F24AC2 /* NaiveFlow TV */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = CB2B54AA2F6C3E2800F24AC2 /* Build configuration list for PBXNativeTarget "RuleProxy TV" */;
+			buildConfigurationList = CB2B54AA2F6C3E2800F24AC2 /* Build configuration list for PBXNativeTarget "NaiveFlow TV" */;
 			buildPhases = (
 				CB2B54982F6C3E2700F24AC2 /* Sources */,
 				CB2B54992F6C3E2700F24AC2 /* Frameworks */,
@@ -630,22 +630,22 @@
 				CB2B54B12F6C3E2800F24AC2 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				CB2B549D2F6C3E2700F24AC2 /* RuleProxy TV */,
+				CB2B549D2F6C3E2700F24AC2 /* NaiveFlow TV */,
 				CB7A00022F65700100C85E4A /* Shared */,
 			);
-			name = "RuleProxy TV";
+			name = "NaiveFlow TV";
 			packageProductDependencies = (
-				385379423075325D000675B7 /* RuleProxyQUIC */,
+				385379423075325D000675B7 /* NaiveFlowQUIC */,
 				38B2C4A4307A1F0100D4E6F1 /* YAML */,
 				38B2C410032BCA6342DED63E /* BLAKE */,
 			);
-			productName = RuleProxy;
-			productReference = CB2B549C2F6C3E2700F24AC2 /* RuleProxy TV.app */;
+			productName = NaiveFlow;
+			productReference = CB2B549C2F6C3E2700F24AC2 /* NaiveFlow TV.app */;
 			productType = "com.apple.product-type.application";
 		};
-		CB71CDC22F837D11002B9E1D /* RuleProxy Widget */ = {
+		CB71CDC22F837D11002B9E1D /* NaiveFlow Widget */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = CB71CDD72F837D11002B9E1D /* Build configuration list for PBXNativeTarget "RuleProxy Widget" */;
+			buildConfigurationList = CB71CDD72F837D11002B9E1D /* Build configuration list for PBXNativeTarget "NaiveFlow Widget" */;
 			buildPhases = (
 				CB71CDBF2F837D11002B9E1D /* Sources */,
 				CB71CDC02F837D11002B9E1D /* Frameworks */,
@@ -656,13 +656,13 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				CB71CDC82F837D11002B9E1D /* RuleProxy Widget */,
+				CB71CDC82F837D11002B9E1D /* NaiveFlow Widget */,
 			);
-			name = "RuleProxy Widget";
+			name = "NaiveFlow Widget";
 			packageProductDependencies = (
 			);
 			productName = WidgetExtension;
-			productReference = CB71CDC32F837D11002B9E1D /* RuleProxy Widget.appex */;
+			productReference = CB71CDC32F837D11002B9E1D /* NaiveFlow Widget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
@@ -693,7 +693,7 @@
 					};
 				};
 			};
-			buildConfigurationList = CB1C10602F23B81500B74CD8 /* Build configuration list for PBXProject "RuleProxy" */;
+			buildConfigurationList = CB1C10602F23B81500B74CD8 /* Build configuration list for PBXProject "NaiveFlow" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -710,8 +710,8 @@
 			mainGroup = CB1C105C2F23B81500B74CD8;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				38B2C4A0307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/RuleProxyIP" */,
-				38B2C4A1307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/RuleProxyQUIC" */,
+				38B2C4A0307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/NaiveFlowIP" */,
+				38B2C4A1307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/NaiveFlowQUIC" */,
 				38B2C4A2307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/YAML" */,
 				38B2C44881FD8FEA5EEA4D6E /* XCLocalSwiftPackageReference "Packages/BLAKE" */,
 			);
@@ -720,11 +720,11 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				CB1C10642F23B81500B74CD8 /* RuleProxy */,
-				CB2B549B2F6C3E2700F24AC2 /* RuleProxy TV */,
-				CB1C10762F23B82F00B74CD8 /* RuleProxy Network Extension */,
-				CB71CDC22F837D11002B9E1D /* RuleProxy Widget */,
-				78B6DF992FE7B70D0084897A /* RuleProxy Tests */,
+				CB1C10642F23B81500B74CD8 /* NaiveFlow */,
+				CB2B549B2F6C3E2700F24AC2 /* NaiveFlow TV */,
+				CB1C10762F23B82F00B74CD8 /* NaiveFlow Network Extension */,
+				CB71CDC22F837D11002B9E1D /* NaiveFlow Widget */,
+				78B6DF992FE7B70D0084897A /* NaiveFlow Tests */,
 			);
 		};
 /* End PBXProject section */
@@ -808,22 +808,22 @@
 /* Begin PBXTargetDependency section */
 		78B6DF9F2FE7B70D0084897A /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = CB1C10642F23B81500B74CD8 /* RuleProxy */;
+			target = CB1C10642F23B81500B74CD8 /* NaiveFlow */;
 			targetProxy = 78B6DF9E2FE7B70D0084897A /* PBXContainerItemProxy */;
 		};
 		CB1C10812F23B82F00B74CD8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = CB1C10762F23B82F00B74CD8 /* RuleProxy Network Extension */;
+			target = CB1C10762F23B82F00B74CD8 /* NaiveFlow Network Extension */;
 			targetProxy = CB1C10802F23B82F00B74CD8 /* PBXContainerItemProxy */;
 		};
 		CB2B54B12F6C3E2800F24AC2 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = CB1C10762F23B82F00B74CD8 /* RuleProxy Network Extension */;
+			target = CB1C10762F23B82F00B74CD8 /* NaiveFlow Network Extension */;
 			targetProxy = CB2B54B02F6C3E2800F24AC2 /* PBXContainerItemProxy */;
 		};
 		CB71CDD32F837D11002B9E1D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = CB71CDC22F837D11002B9E1D /* RuleProxy Widget */;
+			target = CB71CDC22F837D11002B9E1D /* NaiveFlow Widget */;
 			targetProxy = CB71CDD22F837D11002B9E1D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -839,7 +839,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy.Tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.NaiveFlow.Tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -851,7 +851,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RuleProxy.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RuleProxy";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NaiveFlow.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NaiveFlow";
 			};
 			name = Debug;
 		};
@@ -865,7 +865,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy.Tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.NaiveFlow.Tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -877,7 +877,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RuleProxy.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RuleProxy";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NaiveFlow.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NaiveFlow";
 			};
 			name = Release;
 		};
@@ -1016,18 +1016,18 @@
 				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-Classic AppIcon-Muted";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = RuleProxy/RuleProxy.entitlements;
+				CODE_SIGN_ENTITLEMENTS = NaiveFlow/NaiveFlow.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 414;
 				DEVELOPMENT_TEAM = C7AS5D38Q8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = RuleProxy/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = RuleProxy;
+				INFOPLIST_FILE = NaiveFlow/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = NaiveFlow;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
-				INFOPLIST_KEY_NSCameraUsageDescription = "RuleProxy need your camera permission to scan QR Code.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "NaiveFlow need your camera permission to scan QR Code.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -1039,7 +1039,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 2.5;
-				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.NaiveFlow;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -1057,18 +1057,18 @@
 				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-Classic AppIcon-Muted";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = RuleProxy/RuleProxy.entitlements;
+				CODE_SIGN_ENTITLEMENTS = NaiveFlow/NaiveFlow.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 414;
 				DEVELOPMENT_TEAM = C7AS5D38Q8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = RuleProxy/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = RuleProxy;
+				INFOPLIST_FILE = NaiveFlow/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = NaiveFlow;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
-				INFOPLIST_KEY_NSCameraUsageDescription = "RuleProxy need your camera permission to scan QR Code.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "NaiveFlow need your camera permission to scan QR Code.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -1080,7 +1080,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 2.5;
-				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.NaiveFlow;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -1096,13 +1096,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = NO;
-				CODE_SIGN_ENTITLEMENTS = "RuleProxy Network Extension/RuleProxy Network Extension.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "NaiveFlow Network Extension/NaiveFlow Network Extension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 414;
 				DEVELOPMENT_TEAM = C7AS5D38Q8;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "RuleProxy Network Extension/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "RuleProxy Network Extension";
+				INFOPLIST_FILE = "NaiveFlow Network Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "NaiveFlow Network Extension";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1111,7 +1111,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 2.5;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.argsment.RuleProxy.Network-Extension";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.argsment.NaiveFlow.Network-Extension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1131,13 +1131,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = NO;
-				CODE_SIGN_ENTITLEMENTS = "RuleProxy Network Extension/RuleProxy Network Extension.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "NaiveFlow Network Extension/NaiveFlow Network Extension.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 414;
 				DEVELOPMENT_TEAM = C7AS5D38Q8;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "RuleProxy Network Extension/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "RuleProxy Network Extension";
+				INFOPLIST_FILE = "NaiveFlow Network Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "NaiveFlow Network Extension";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1146,7 +1146,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 2.5;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.argsment.RuleProxy.Network-Extension";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.argsment.NaiveFlow.Network-Extension";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1167,13 +1167,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "RuleProxy TV/RuleProxy TV.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "NaiveFlow TV/NaiveFlow TV.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 414;
 				DEVELOPMENT_TEAM = C7AS5D38Q8;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "RuleProxy TV/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = RuleProxy;
+				INFOPLIST_FILE = "NaiveFlow TV/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = NaiveFlow;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
@@ -1183,7 +1183,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 2.5;
-				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.NaiveFlow;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1202,13 +1202,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "RuleProxy TV/RuleProxy TV.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "NaiveFlow TV/NaiveFlow TV.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 414;
 				DEVELOPMENT_TEAM = C7AS5D38Q8;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "RuleProxy TV/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = RuleProxy;
+				INFOPLIST_FILE = "NaiveFlow TV/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = NaiveFlow;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
@@ -1218,7 +1218,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 2.5;
-				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.NaiveFlow;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = appletvos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1237,13 +1237,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
-				CODE_SIGN_ENTITLEMENTS = "RuleProxy Widget/RuleProxy Widget.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "NaiveFlow Widget/NaiveFlow Widget.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 414;
 				DEVELOPMENT_TEAM = C7AS5D38Q8;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "RuleProxy Widget/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "RuleProxy Widget";
+				INFOPLIST_FILE = "NaiveFlow Widget/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "NaiveFlow Widget";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1252,7 +1252,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 2.5;
-				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy.Widget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.NaiveFlow.Widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1269,13 +1269,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
-				CODE_SIGN_ENTITLEMENTS = "RuleProxy Widget/RuleProxy Widget.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "NaiveFlow Widget/NaiveFlow Widget.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 414;
 				DEVELOPMENT_TEAM = C7AS5D38Q8;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "RuleProxy Widget/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "RuleProxy Widget";
+				INFOPLIST_FILE = "NaiveFlow Widget/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "NaiveFlow Widget";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1284,7 +1284,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 2.5;
-				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.RuleProxy.Widget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.NaiveFlow.Widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1299,7 +1299,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		78B6DFA22FE7B70D0084897A /* Build configuration list for PBXNativeTarget "RuleProxy Tests" */ = {
+		78B6DFA22FE7B70D0084897A /* Build configuration list for PBXNativeTarget "NaiveFlow Tests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				78B6DFA02FE7B70D0084897A /* Debug */,
@@ -1308,7 +1308,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		CB1C10602F23B81500B74CD8 /* Build configuration list for PBXProject "RuleProxy" */ = {
+		CB1C10602F23B81500B74CD8 /* Build configuration list for PBXProject "NaiveFlow" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				CB1C106E2F23B81600B74CD8 /* Debug */,
@@ -1317,7 +1317,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		CB1C10702F23B81600B74CD8 /* Build configuration list for PBXNativeTarget "RuleProxy" */ = {
+		CB1C10702F23B81600B74CD8 /* Build configuration list for PBXNativeTarget "NaiveFlow" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				CB1C10712F23B81600B74CD8 /* Debug */,
@@ -1326,7 +1326,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		CB1C10842F23B82F00B74CD8 /* Build configuration list for PBXNativeTarget "RuleProxy Network Extension" */ = {
+		CB1C10842F23B82F00B74CD8 /* Build configuration list for PBXNativeTarget "NaiveFlow Network Extension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				CB1C10852F23B82F00B74CD8 /* Debug */,
@@ -1335,7 +1335,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		CB2B54AA2F6C3E2800F24AC2 /* Build configuration list for PBXNativeTarget "RuleProxy TV" */ = {
+		CB2B54AA2F6C3E2800F24AC2 /* Build configuration list for PBXNativeTarget "NaiveFlow TV" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				CB2B54AB2F6C3E2800F24AC2 /* Debug */,
@@ -1344,7 +1344,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		CB71CDD72F837D11002B9E1D /* Build configuration list for PBXNativeTarget "RuleProxy Widget" */ = {
+		CB71CDD72F837D11002B9E1D /* Build configuration list for PBXNativeTarget "NaiveFlow Widget" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				CB71CDD52F837D11002B9E1D /* Debug */,
@@ -1360,13 +1360,13 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/BLAKE;
 		};
-		38B2C4A0307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/RuleProxyIP" */ = {
+		38B2C4A0307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/NaiveFlowIP" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/RuleProxyIP;
+			relativePath = Packages/NaiveFlowIP;
 		};
-		38B2C4A1307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/RuleProxyQUIC" */ = {
+		38B2C4A1307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/NaiveFlowQUIC" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/RuleProxyQUIC;
+			relativePath = Packages/NaiveFlowQUIC;
 		};
 		38B2C4A2307A1F0100D4E6F1 /* XCLocalSwiftPackageReference "Packages/YAML" */ = {
 			isa = XCLocalSwiftPackageReference;
@@ -1375,21 +1375,21 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		382A1870306A04490032C2BF /* RuleProxyIP */ = {
+		382A1870306A04490032C2BF /* NaiveFlowIP */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = RuleProxyIP;
+			productName = NaiveFlowIP;
 		};
-		3853793E30753251000675B7 /* RuleProxyQUIC */ = {
+		3853793E30753251000675B7 /* NaiveFlowQUIC */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = RuleProxyQUIC;
+			productName = NaiveFlowQUIC;
 		};
-		3853794030753258000675B7 /* RuleProxyQUIC */ = {
+		3853794030753258000675B7 /* NaiveFlowQUIC */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = RuleProxyQUIC;
+			productName = NaiveFlowQUIC;
 		};
-		385379423075325D000675B7 /* RuleProxyQUIC */ = {
+		385379423075325D000675B7 /* NaiveFlowQUIC */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = RuleProxyQUIC;
+			productName = NaiveFlowQUIC;
 		};
 		38B2C410032BCA6342DED63E /* BLAKE */ = {
 			isa = XCSwiftPackageProductDependency;

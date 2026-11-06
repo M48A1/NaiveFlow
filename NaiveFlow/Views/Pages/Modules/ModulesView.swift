@@ -1,6 +1,6 @@
 //
 //  ModulesView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 10/9/26.
 //
@@ -99,7 +99,7 @@ struct ModulesView: View {
                 Text(importError ?? "")
             }
             .alert("Subscribe Module", isPresented: $showSubscribeAlert) {
-                TextField("RuleProxy Module URL", text: $subscribeURL)
+                TextField("NaiveFlow Module URL", text: $subscribeURL)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
@@ -159,7 +159,7 @@ struct ModulesView: View {
         do {
             let url = try result.get()
             guard url.pathExtension.lowercased() == "amod" else {
-                importError = String(localized: "Invalid RuleProxy Module File.")
+                importError = String(localized: "Invalid NaiveFlow Module File.")
                 return
             }
             let accessing = url.startAccessingSecurityScopedResource()
@@ -179,7 +179,7 @@ struct ModulesView: View {
 
     private func subscribe(to rawValue: String) {
         guard let url = Module.validSubscriptionURL(from: rawValue) else {
-            subscribeError = String(localized: "Invalid RuleProxy Module URL.")
+            subscribeError = String(localized: "Invalid NaiveFlow Module URL.")
             return
         }
         Task {

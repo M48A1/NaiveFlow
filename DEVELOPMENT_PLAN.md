@@ -1,4 +1,4 @@
-# RuleProxy / RuleProxyS 开发计划
+# NaiveFlow / NaiveFlowS 开发计划
 
 > 当前范围更新（2026-11-06）：首版只支持 IPv4。IPv6 地址、规则、解析、协议地址编码及 IP 栈处理已移除；IPv6 后续规划不再属于本版范围。仅保留 TUN 捕获并丢弃非 IPv4 流量的防绕行处理。以下旧排期中的 IPv6 条目不代表当前能力，最新边界见 Documentations/IPv4Only.md。
 
@@ -7,9 +7,9 @@
 
 ## 1. 目标与依据
 
-本任务是在现有 RuleProxy 项目上增量增加功能。直接沿用现有 Xcode 工程、应用结构、协议栈、隧道和数据存储，不新建应用工程，不安排品牌替换、Bundle ID、签名或 App Group 调整，也不额外拆分独立网络内核。RuleProxy / RuleProxyS 沿用讨论中的称呼。按用户说明的授权前提开展开发，不增加项目内授权声明任务。
+本任务是在现有 NaiveFlow 项目上增量增加功能。直接沿用现有 Xcode 工程、应用结构、协议栈、隧道和数据存储，不新建应用工程，不安排品牌替换、Bundle ID、签名或 App Group 调整，也不额外拆分独立网络内核。NaiveFlow / NaiveFlowS 沿用讨论中的称呼。按用户说明的授权前提开展开发，不增加项目内授权声明任务。
 
-本计划已融合用户粘贴的 ChatGPT 建议。现有项目位于 `Reference/Anywhere`，基线提交为 `9e3790af`（2.5(414) RC）；现已将工程复制到工作区根目录，工作入口为 `RuleProxy.xcodeproj`；后续只修改根目录副本，`Reference/Anywhere` 保留对照。复制排除 `.git`、用户设置和构建缓存，源码已校验一致。对话中提到的“配置解析、正则加载校验和独立匹配器已完成”尚需核实，不据此重复实现或认定已完成。
+本计划已融合用户粘贴的 ChatGPT 建议。现有项目位于 `Reference/Anywhere`，基线提交为 `9e3790af`（2.5(414) RC）；现已将工程复制到工作区根目录，工作入口为 `NaiveFlow.xcodeproj`；后续只修改根目录副本，`Reference/Anywhere` 保留对照。复制排除 `.git`、用户设置和构建缓存，源码已校验一致。对话中提到的“配置解析、正则加载校验和独立匹配器已完成”尚需核实，不据此重复实现或认定已完成。
 
 首版技术目标：
 
@@ -25,7 +25,7 @@
 
 沿用项目现有平台和最低系统版本，优先以 iPhone/iPad 验证新增网络行为，并检查共享代码改动对其他现有 target 的构建影响。首版不承诺完整 Surge 配置兼容，不把新增 GEOSITE 语法描述为 Surge 原生能力。
 
-## 2. 与 RuleProxy 的实际差异
+## 2. 与 NaiveFlow 的实际差异
 
 | 模块 | 已检查的现状 | 计划改动 |
 | --- | --- | --- |
@@ -182,7 +182,7 @@ P0 输出字段级兼容表：字段、默认值、取值、支持状态、运�
 | 重载分级 | `ConfigurationReloadPlan`（`live` / `stackRestart` / `reconnect`） | 完成 |
 | 有序规则与 FINAL | `OrderedRouteMatcher` 作为语义参考实现，编辑器预览与内核将共用 | 匹配器完成，`routing.bin` 载荷未接入 |
 | 导出当前配置 | `ConfigurationExporter`（纯渲染）+ `ConfigurationExporter+Stores`（存储层 → Surge 风格文本，无法表达的项目写入 `notes`） | 完成 |
-| 编辑器 | `Shared/ViewModels/ProfileEditorModel.swift`（会话状态机：缓冲区 / 预览 / 草稿 / `isDirty` / `apply` / `import` / `revert` / `discard` / 状态与错误；经 `ProfileEditing` 协议与流水线解耦，可脱离 SwiftUI 测试）+ `RuleProxy/Views/Pages/Profile/ProfileView.swift`（只负责渲染）+ `ConfigurationDocumentOperations`（存储 ↔ 文本双向） | 完成（2026-11-04）：状态机与页面分离，`ProfileEditorModelTests` 14 例全绿；`ConfigurationReloadPlan` 的分级结果已在「Last Apply」区展示，未保存改动可丢弃/回滚；节点、分组、规则的表单化编辑仍待 07 阶段 |
+| 编辑器 | `Shared/ViewModels/ProfileEditorModel.swift`（会话状态机：缓冲区 / 预览 / 草稿 / `isDirty` / `apply` / `import` / `revert` / `discard` / 状态与错误；经 `ProfileEditing` 协议与流水线解耦，可脱离 SwiftUI 测试）+ `NaiveFlow/Views/Pages/Profile/ProfileView.swift`（只负责渲染）+ `ConfigurationDocumentOperations`（存储 ↔ 文本双向） | 完成（2026-11-04）：状态机与页面分离，`ProfileEditorModelTests` 14 例全绿；`ConfigurationReloadPlan` 的分级结果已在「Last Apply」区展示，未保存改动可丢弃/回滚；节点、分组、规则的表单化编辑仍待 07 阶段 |
 
 仍未完成的部分不影响结论的准确性：`[General]` 键级告警不带行号；`[Script]`、`[MITM]` 证书字段、`loglevel`、`[URL Rewrite]`/`[Header Rewrite]` 属于“已识别未生效”，一律显式告警；有序规则与 FINAL 尚未进入扩展实际执行的载荷；Geo 数据按“自备 `Rules.db` + 可选随包资源”重新确定来源（见“范围与依赖更新记录”）。
 
@@ -256,7 +256,7 @@ P0 输出字段级兼容表：字段、默认值、取值、支持状态、运�
 
 本次交付仅为开发计划，未修改应用源码，未执行编译或真机测试。（2026-11-04 更新：工作副本已完成付费/社群功能清理与依赖收敛，iOS 与 tvOS 无签名构建通过，见 [BASELINE_CHECK.md](BASELINE_CHECK.md) 与 [SCHEDULE.md](SCHEDULE.md)。）
 
-下一步实施顺序（2026-11-04）：先构建并修正 02 新增代码的编译问题、运行 `RuleProxy Tests`，再完成 02 的编辑器入口与验收；随后进入 03，以 Fake-IP → 原始域名 → 有序规则 → DIRECT/PROXY 的可验证闭环为首个核心成果。
+下一步实施顺序（2026-11-04）：先构建并修正 02 新增代码的编译问题、运行 `NaiveFlow Tests`，再完成 02 的编辑器入口与验收；随后进入 03，以 Fake-IP → 原始域名 → 有序规则 → DIRECT/PROXY 的可验证闭环为首个核心成果。
 
 
 ## 8. 后续 UI 改版与 Surge / Quantumult X 脚本兼容
@@ -281,7 +281,7 @@ P0 输出字段级兼容表：字段、默认值、取值、支持状态、运�
 
 ### 8.2 脚本兼容层
 
-保留现有 RuleProxy 的 `process(ctx)` 与原生 API，在当前脚本运行时上增加显式的 Surge / Quantumult X 方言适配器。每次执行仅注入选定方言，避免同时暴露全部全局变量导致脚本错误识别环境。
+保留现有 NaiveFlow 的 `process(ctx)` 与原生 API，在当前脚本运行时上增加显式的 Surge / Quantumult X 方言适配器。每次执行仅注入选定方言，避免同时暴露全部全局变量导致脚本错误识别环境。
 
 Surge 的 API 与触发方式以 [官方脚本概览](https://manual.nssurge.com/scripting/overview.html)、[API 参考](https://manual.nssurge.com/scripting/api.html) 和 [HTTP 请求脚本](https://manual.nssurge.com/scripting/http-request.html) 为核对依据；Quantumult X 以 [官方改写示例](https://github.com/crossutility/Quantumult-X/blob/master/sample-rewrite-with-script.js)、[二进制改写示例](https://github.com/crossutility/Quantumult-X/blob/master/sample-bytes-rewrite.js) 及官方仓库其他样例为依据。实施时固定样例版本，形成可回归的兼容矩阵。
 
@@ -321,7 +321,7 @@ P1 的统一配置模型需预留脚本方言、来源、参数、触发条件�
 
 ## 命名更新记录
 
-按用户后续要求，工作副本内 Anywhere / anywhere / ANYWHERE 已分别替换为 RuleProxy / ruleproxy / RULEPROXY，包括工程、包、类型、文件路径、URL Scheme 与应用标识。Reference/Anywhere 保持原样。重命名不代表同名远程域名、下载地址或签名资源已经创建，相关外部资源需在后续接入时核对。此前关于不调整命名与应用标识的范围说明以本次要求为准。（2026-11-04 更新：Xcode 27.2 下 iOS 与 tvOS scheme 已无签名构建通过，静态校验与编译结果见 [BASELINE_CHECK.md](BASELINE_CHECK.md)。）
+按用户后续要求，工作副本内 Anywhere / anywhere / ANYWHERE 已分别替换为 NaiveFlow / naiveflow / NAIVEFLOW，包括工程、包、类型、文件路径、URL Scheme 与应用标识。Reference/Anywhere 保持原样。重命名不代表同名远程域名、下载地址或签名资源已经创建，相关外部资源需在后续接入时核对。此前关于不调整命名与应用标识的范围说明以本次要求为准。（2026-11-04 更新：Xcode 27.2 下 iOS 与 tvOS scheme 已无签名构建通过，静态校验与编译结果见 [BASELINE_CHECK.md](BASELINE_CHECK.md)。）
 
 
 ## 平台范围最终约束
@@ -335,8 +335,8 @@ P1 的统一配置模型需预留脚本方言、来源、参数、触发条件�
 
 更新于 2026-11-04。本工程只参考上游的核心组件，同时按用户要求移除继承自 Anywhere 的商业化与社群入口：
 
-- **移除付费与会员体系**：删除 StoreKit 内购层（`RuleProxy/Stores/VoyagerStore.swift`）、付费墙与公开测试页面（`VoyagerNotice`、`JoinVoyagerButton`、`JoinBetaView`）、会员卡片与 `isMember` 门禁，以及 `AWCore`/`AppSettings` 中的会员相关 UserDefaults 键；`Localizable.xcstrings` 删除 22 个失效键（478 → 456）。后续阶段的会员、内购与 Telegram 群组入口不在规划范围内，若需要请另立需求。
-- **不再依赖预设路由数据库**：上游私有包 `AnywhereRules`（改名后 `RuleProxyRules`）无法公开获取（匿名 404，上游公开仓库依赖同一私有地址），已从工程移除。工程只保留 `RuleProxyIP`、`RuleProxyQUIC`、`BLAKE`、`YAML` 四个仓库内核心组件包，无远程依赖；`RoutingRulesDatabase` 改为读取 `Bundle.main` 中可选的 `Rules.db`，缺失时预设为空、路由内核不受影响。因此 **03 阶段的 Geo 数据来源、随包基线与更新方式需按“自备数据库 + 可选随包资源”重新确定**，不再假定上游预设库存在。
+- **移除付费与会员体系**：删除 StoreKit 内购层（`NaiveFlow/Stores/VoyagerStore.swift`）、付费墙与公开测试页面（`VoyagerNotice`、`JoinVoyagerButton`、`JoinBetaView`）、会员卡片与 `isMember` 门禁，以及 `AWCore`/`AppSettings` 中的会员相关 UserDefaults 键；`Localizable.xcstrings` 删除 22 个失效键（478 → 456）。后续阶段的会员、内购与 Telegram 群组入口不在规划范围内，若需要请另立需求。
+- **不再依赖预设路由数据库**：上游私有包 `AnywhereRules`（改名后 `NaiveFlowRules`）无法公开获取（匿名 404，上游公开仓库依赖同一私有地址），已从工程移除。工程只保留 `NaiveFlowIP`、`NaiveFlowQUIC`、`BLAKE`、`YAML` 四个仓库内核心组件包，无远程依赖；`RoutingRulesDatabase` 改为读取 `Bundle.main` 中可选的 `Rules.db`，缺失时预设为空、路由内核不受影响。因此 **03 阶段的 Geo 数据来源、随包基线与更新方式需按“自备数据库 + 可选随包资源”重新确定**，不再假定上游预设库存在。
 - **占位资源**：工作副本与上游公开仓库都没有 `.xcassets`，而源码依赖 `Color.homeBackgroundStart` 等资源生成符号，因此在 `Shared/Assets.xcassets` 补了仅用于编译验证的中性占位色板与空 `AppIcon.appiconset`。**07 UI 改版前必须先确定真实品牌资源**，不得把占位视觉当作设计稿。
 - **页面范围变化**：`AboutView` 不再有 Telegram 群组入口；`PersonalizationView` 不再有会员卡片开关；`CustomizeAppIconView`、`CustomizeThemeView` 取消会员门禁，所有用户均可使用。07 的 UI 草案按此范围编写。
 - 验证记录：iOS 主应用（含 Network Extension、Widget）与 tvOS 客户端无签名构建通过，签名与真机验收未做。明细见 [BASELINE_CHECK.md](BASELINE_CHECK.md)，依赖说明见 [Reference/Dependencies.md](Reference/Dependencies.md)。

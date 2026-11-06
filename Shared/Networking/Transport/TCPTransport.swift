@@ -1,6 +1,6 @@
 //
 //  TCPTransport.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/14/26.
 //
@@ -42,7 +42,7 @@ nonisolated final class TCPTransport: ByteTransport, Sendable {
 
         var engine: TCPTransportEngine?
         var flowSlot: FlowSlot?
-        var failure: RuleProxyError?
+        var failure: NaiveFlowError?
         var eofLatched = false
     }
 
@@ -75,7 +75,7 @@ nonisolated final class TCPTransport: ByteTransport, Sendable {
 
     func connect(initialData: Data? = nil) async throws {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
-            throw RuleProxyError.transport(.connectionFailed(endpoint: nil, detail: "invalid port \(port)"))
+            throw NaiveFlowError.transport(.connectionFailed(endpoint: nil, detail: "invalid port \(port)"))
         }
         let endpointHost = try await NWEndpoint.Host.dialHost(for: host, resolution: resolution)
         let endpoint = NWEndpoint.hostPort(host: endpointHost, port: nwPort)
@@ -91,20 +91,20 @@ nonisolated final class TCPTransport: ByteTransport, Sendable {
         }
         guard live else {
             slot.release()
-            throw RuleProxyError.transport(.terminated)
+            throw NaiveFlowError.transport(.terminated)
         }
 
         if let initialData, !initialData.isEmpty {
             do {
                 try await engine.send(initialData)
             } catch {
-                let cause = latchedFailure() ?? RuleProxyError.networkFailure(error, operation: .connect)
+                let cause = latchedFailure() ?? NaiveFlowError.networkFailure(error, operation: .connect)
                 cancel()
                 throw cause
             }
         }
         let published: Bool = state.withLock { $0.transition(to: .ready) }
-        guard published else { throw RuleProxyError.transport(.terminated) }
+        guard published else { throw NaiveFlowError.transport(.terminated) }
     }
 
     // MARK: - ByteTransport
@@ -114,7 +114,7 @@ nonisolated final class TCPTransport: ByteTransport, Sendable {
         do {
             try await engine.send(data)
         } catch {
-            throw latchedFailure() ?? RuleProxyError.networkFailure(error, operation: .send)
+            throw latchedFailure() ?? NaiveFlowError.networkFailure(error, operation: .send)
         }
     }
 
@@ -127,7 +127,7 @@ nonisolated final class TCPTransport: ByteTransport, Sendable {
             do {
                 message = try await engine.receive(atMost: Self.maxReceiveLength)
             } catch {
-                throw latchedFailure() ?? RuleProxyError.networkFailure(error, operation: .receive)
+                throw latchedFailure() ?? NaiveFlowError.networkFailure(error, operation: .receive)
             }
 
             if !message.content.isEmpty {
@@ -160,13 +160,13 @@ nonisolated final class TCPTransport: ByteTransport, Sendable {
     private func activeEngine() throws -> TCPTransportEngine {
         try state.withLock { state in
             if let failure = state.failure { throw failure }
-            if state.phase == .cancelled { throw RuleProxyError.transport(.terminated) }
-            guard let engine = state.engine else { throw RuleProxyError.transport(.notConnected) }
+            if state.phase == .cancelled { throw NaiveFlowError.transport(.terminated) }
+            guard let engine = state.engine else { throw NaiveFlowError.transport(.notConnected) }
             return engine
         }
     }
 
-    private func latchedFailure() -> RuleProxyError? {
+    private func latchedFailure() -> NaiveFlowError? {
         state.withLock { $0.failure }
     }
 }
@@ -175,7 +175,7 @@ nonisolated final class TCPTransport: ByteTransport, Sendable {
 
 nonisolated final class TCPTransportEngine: Sendable {
     private let connection: NWConnection
-    private let queue = DispatchQueue(label: "com.argsment.RuleProxy.TCPTransport", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.argsment.NaiveFlow.TCPTransport", qos: .userInitiated)
     private let stall = NWStallLatch()
 
     init(endpoint: NWEndpoint, connectTimeout: UInt32, tls: NWProtocolTLS.Options? = nil) {

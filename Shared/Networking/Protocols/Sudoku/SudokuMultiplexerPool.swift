@@ -1,6 +1,6 @@
 //
 //  SudokuMultiplexerPool.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/12/26.
 //
@@ -163,7 +163,7 @@ nonisolated final class SudokuMultiplexerPool: TransportPool {
 
     private func reusableMultiplexer() throws -> SudokuMuxClient? {
         try pool.state.withLock { st in
-            if st.phase == .closed { throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil)) }
+            if st.phase == .closed { throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil)) }
             st.multiplexers[Self.bucket]?.removeAll { multiplexer in
                 guard multiplexer.isClosed else { return false }
                 st.lastActivity.removeValue(forKey: ObjectIdentifier(multiplexer))
@@ -200,7 +200,7 @@ nonisolated final class SudokuMultiplexerPool: TransportPool {
         if !wasClosed { pool.noteMultiplexersChanged() }
         if wasClosed {
             multiplexer.close(error: nil)
-            throw RuleProxyError.proxy(.sudoku, .connectionClosed(detail: nil))
+            throw NaiveFlowError.proxy(.sudoku, .connectionClosed(detail: nil))
         }
         return multiplexer
     }

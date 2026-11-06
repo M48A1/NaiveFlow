@@ -1,6 +1,6 @@
 //
 //  QUICConnection+Close.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/18/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 import Network
-import RuleProxyQUIC
+import NaiveFlowQUIC
 
 extension QUICConnectionCore {
 
@@ -44,13 +44,13 @@ extension QUICConnectionCore {
         self.pendingDatagrams.removeAll()
         let closeError: Error
         if let error {
-            if wasEstablished, case RuleProxyError.quic(.connectionFailed(_)) = error {
-                closeError = RuleProxyError.quic(.closed(graceful: false))
+            if wasEstablished, case NaiveFlowError.quic(.connectionFailed(_)) = error {
+                closeError = NaiveFlowError.quic(.closed(graceful: false))
             } else {
                 closeError = error
             }
         } else {
-            closeError = RuleProxyError.quic(.closed(graceful: false))
+            closeError = NaiveFlowError.quic(.closed(graceful: false))
         }
         self.finishConnect(closeError)
         for continuation in failedWriters { continuation.resume(throwing: closeError) }

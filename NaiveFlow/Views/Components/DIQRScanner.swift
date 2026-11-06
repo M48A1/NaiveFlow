@@ -1,6 +1,6 @@
 //
 //  DIQRScanner.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 2/16/26.
 //
@@ -8,7 +8,7 @@
 import SwiftUI
 import AVFoundation
 
-nonisolated private let logger = RuleProxyLogger(category: "DIQRScanner")
+nonisolated private let logger = NaiveFlowLogger(category: "DIQRScanner")
 
 fileprivate struct CameraProperties {
     var session: AVCaptureSession = .init()

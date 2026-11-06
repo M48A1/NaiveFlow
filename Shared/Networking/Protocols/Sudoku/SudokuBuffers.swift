@@ -1,6 +1,6 @@
 //
 //  SudokuBuffers.swift
-//  RuleProxy
+//  NaiveFlow
 //
 
 import Foundation

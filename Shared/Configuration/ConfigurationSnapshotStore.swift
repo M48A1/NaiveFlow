@@ -1,6 +1,6 @@
 //
 //  ConfigurationSnapshotStore.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 11/4/26.
 //

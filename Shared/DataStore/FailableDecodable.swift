@@ -1,6 +1,6 @@
 //
 //  FailableDecodable.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/9/26.
 //

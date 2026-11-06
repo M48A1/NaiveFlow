@@ -1,6 +1,6 @@
 //
 //  HysteriaSession.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/13/26.
 //
@@ -152,7 +152,7 @@ nonisolated final class HysteriaSession: Sendable {
 
             let opened = self.openControlAndAuth()
             if !opened {
-                failSession(RuleProxyError.proxy(.hysteria, .connectionClosed(detail: "Failed to open auth stream")))
+                failSession(NaiveFlowError.proxy(.hysteria, .connectionClosed(detail: "Failed to open auth stream")))
                 return
             }
             armAuthDeadline()
@@ -164,7 +164,7 @@ nonisolated final class HysteriaSession: Sendable {
             guard let self else { return }
             let stalled = self.state.withLock { $0.phase == .authenticating }
             if stalled {
-                self.failSession(RuleProxyError.proxy(.hysteria, .connectionClosed(detail: "Auth response timed out")))
+                self.failSession(NaiveFlowError.proxy(.hysteria, .connectionClosed(detail: "Auth response timed out")))
             }
         }
         let stale: DeadlineToken? = state.withLock { session in
@@ -285,34 +285,34 @@ nonisolated final class HysteriaSession: Sendable {
 
             session.authBuffer.append(data)
             if session.authBuffer.count > Self.authBufferMaxBytes {
-                return .fail(RuleProxyError.proxy(.hysteria, .connectionClosed(detail:
+                return .fail(NaiveFlowError.proxy(.hysteria, .connectionClosed(detail:
                     "Auth response exceeded \(Self.authBufferMaxBytes)-byte buffer cap"
                 )))
             }
 
             guard let (frameType, payload, consumed) = Self.parseNextHTTP3Frame(session.authBuffer) else {
                 if fin {
-                    return .fail(RuleProxyError.proxy(.hysteria, .connectionClosed(detail: "Auth stream ended before HEADERS frame")))
+                    return .fail(NaiveFlowError.proxy(.hysteria, .connectionClosed(detail: "Auth stream ended before HEADERS frame")))
                 }
                 return .needMore
             }
             session.authBuffer = Data(session.authBuffer.dropFirst(consumed))
 
             guard frameType == 0x01 else {
-                return .fail(RuleProxyError.proxy(.hysteria, .connectionClosed(detail: "Auth response wasn't HEADERS")))
+                return .fail(NaiveFlowError.proxy(.hysteria, .connectionClosed(detail: "Auth response wasn't HEADERS")))
             }
             guard let headers = HysteriaHTTP3Codec.decodeHeaderBlock(payload) else {
-                return .fail(RuleProxyError.proxy(.hysteria, .connectionClosed(detail: "Malformed auth QPACK block")))
+                return .fail(NaiveFlowError.proxy(.hysteria, .connectionClosed(detail: "Malformed auth QPACK block")))
             }
 
             session.authHeadersReceived = true
 
             let status = headers.first(where: { $0.name == ":status" })?.value
             guard let statusStr = status, let code = Int(statusStr) else {
-                return .fail(RuleProxyError.proxy(.hysteria, .connectionClosed(detail: "Missing :status on auth response")))
+                return .fail(NaiveFlowError.proxy(.hysteria, .connectionClosed(detail: "Missing :status on auth response")))
             }
             if code != HysteriaProtocol.authSuccessStatus {
-                return .fail(RuleProxyError.proxy(.hysteria, .authenticationRejected(status: code, detail: nil)))
+                return .fail(NaiveFlowError.proxy(.hysteria, .authenticationRejected(status: code, detail: nil)))
             }
 
             session.udpSupported = (headers.first(where: { $0.name == "hysteria-udp" })?.value).map {
@@ -368,7 +368,7 @@ nonisolated final class HysteriaSession: Sendable {
         let effect: Effect = state.withLock { session in
             if sid == session.authStreamID {
                 if session.phase != .ready {
-                    return .failAuth(error ?? RuleProxyError.proxy(.hysteria, .connectionClosed(detail: "Auth stream closed before completion")))
+                    return .failAuth(error ?? NaiveFlowError.proxy(.hysteria, .connectionClosed(detail: "Auth stream closed before completion")))
                 }
                 return .none
             }
@@ -408,9 +408,9 @@ nonisolated final class HysteriaSession: Sendable {
         }
         switch result {
         case .notReady:
-            throw RuleProxyError.proxy(.hysteria, .notReady)
+            throw NaiveFlowError.proxy(.hysteria, .notReady)
         case .openFailed:
-            throw RuleProxyError.proxy(.hysteria, .connectionClosed(detail: "Failed to open TCP stream"))
+            throw NaiveFlowError.proxy(.hysteria, .connectionClosed(detail: "Failed to open TCP stream"))
         case .ok(let sid):
             updateIdleCloseTimer()
             return sid
@@ -440,10 +440,10 @@ nonisolated final class HysteriaSession: Sendable {
 
     func registerUDPSession(_ conn: HysteriaUDPConnection) async throws -> UInt32 {
         let sid: UInt32 = try state.withLock { session in
-            guard session.phase == .ready else { throw RuleProxyError.proxy(.hysteria, .notReady) }
-            guard session.udpSupported else { throw RuleProxyError.proxy(.hysteria, .unsupported(feature: "UDP")) }
+            guard session.phase == .ready else { throw NaiveFlowError.proxy(.hysteria, .notReady) }
+            guard session.udpSupported else { throw NaiveFlowError.proxy(.hysteria, .unsupported(feature: "UDP")) }
             guard session.udpSessions.count < Int(UInt32.max) else {
-                throw RuleProxyError.proxy(.hysteria, .connectionClosed(detail: "UDP session pool exhausted"))
+                throw NaiveFlowError.proxy(.hysteria, .connectionClosed(detail: "UDP session pool exhausted"))
             }
             var sid = session.nextUDPSessionID
             while session.udpSessions[sid] != nil {
@@ -504,8 +504,8 @@ nonisolated final class HysteriaSession: Sendable {
 
     private func closeIfStillIdle() {
         performTeardown(
-            readyError: RuleProxyError.proxy(.hysteria, .streamClosed),
-            connectionError: RuleProxyError.proxy(.hysteria, .connectionClosed(detail: "Session closed")),
+            readyError: NaiveFlowError.proxy(.hysteria, .streamClosed),
+            connectionError: NaiveFlowError.proxy(.hysteria, .connectionClosed(detail: "Session closed")),
             onlyIfIdle: true
         )
     }
@@ -522,8 +522,8 @@ nonisolated final class HysteriaSession: Sendable {
 
     func close() {
         performTeardown(
-            readyError: RuleProxyError.proxy(.hysteria, .streamClosed),
-            connectionError: RuleProxyError.proxy(.hysteria, .connectionClosed(detail: "Session closed"))
+            readyError: NaiveFlowError.proxy(.hysteria, .streamClosed),
+            connectionError: NaiveFlowError.proxy(.hysteria, .connectionClosed(detail: "Session closed"))
         )
     }
 

@@ -1,13 +1,13 @@
 //
-//  RuleProxyError.swift
-//  RuleProxy
+//  NaiveFlowError.swift
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/19/26.
 //
 
 import Foundation
 
-nonisolated enum RuleProxyError: Error {
+nonisolated enum NaiveFlowError: Error {
     case certificate(Certificate)
     case diagnostics(Diagnostics)
     case dns(DNS)
@@ -282,7 +282,7 @@ nonisolated enum RuleProxyError: Error {
 
 // MARK: - Descriptions
 
-nonisolated extension RuleProxyError: LocalizedError {
+nonisolated extension NaiveFlowError: LocalizedError {
     var errorDescription: String? {
         domainTag.isEmpty ? conciseDescription : "\(domainTag): \(conciseDescription)"
     }
@@ -329,7 +329,7 @@ nonisolated extension RuleProxyError: LocalizedError {
     }
 }
 
-nonisolated extension RuleProxyError.DNS {
+nonisolated extension NaiveFlowError.DNS {
     var failureDescription: String {
         switch self {
         case .resolutionFailed(let host, let detail):
@@ -341,7 +341,7 @@ nonisolated extension RuleProxyError.DNS {
     }
 }
 
-nonisolated extension RuleProxyError.Transport {
+nonisolated extension NaiveFlowError.Transport {
     var failureDescription: String {
         switch self {
         case .posix(let op, let errno): "\(op.rawValue) failed: \(String(cString: strerror(errno)))"
@@ -357,7 +357,7 @@ nonisolated extension RuleProxyError.Transport {
     }
 }
 
-nonisolated extension RuleProxyError.TLS {
+nonisolated extension NaiveFlowError.TLS {
     var failureDescription: String {
         switch self {
         case .handshakeFailed(let detail): "handshake failed: \(detail)"
@@ -374,7 +374,7 @@ nonisolated extension RuleProxyError.TLS {
     }
 }
 
-nonisolated extension RuleProxyError.TLS.Record {
+nonisolated extension NaiveFlowError.TLS.Record {
     var failureDescription: String {
         switch self {
         case .ciphertextTooShort: "record ciphertext too short"
@@ -391,7 +391,7 @@ nonisolated extension RuleProxyError.TLS.Record {
     }
 }
 
-nonisolated extension RuleProxyError.TLS.ClientHello {
+nonisolated extension NaiveFlowError.TLS.ClientHello {
     var failureDescription: String {
         switch self {
         case .truncated: "ClientHello truncated"
@@ -403,7 +403,7 @@ nonisolated extension RuleProxyError.TLS.ClientHello {
     }
 }
 
-nonisolated extension RuleProxyError.TLS.ECH {
+nonisolated extension NaiveFlowError.TLS.ECH {
     var failureDescription: String {
         switch self {
         case .malformedConfigList: "ECH config list malformed"
@@ -424,7 +424,7 @@ nonisolated extension RuleProxyError.TLS.ECH {
     }
 }
 
-nonisolated extension RuleProxyError.TLS.Reality {
+nonisolated extension NaiveFlowError.TLS.Reality {
     var failureDescription: String {
         switch self {
         case .invalidPublicKey: "invalid REALITY public key"
@@ -434,7 +434,7 @@ nonisolated extension RuleProxyError.TLS.Reality {
     }
 }
 
-nonisolated extension RuleProxyError.QUIC {
+nonisolated extension NaiveFlowError.QUIC {
     var failureDescription: String {
         switch self {
         case .connectionFailed(let detail): "connection failed: \(detail)"
@@ -450,7 +450,7 @@ nonisolated extension RuleProxyError.QUIC {
     }
 }
 
-nonisolated extension RuleProxyError.Proxy {
+nonisolated extension NaiveFlowError.Proxy {
     var failureDescription: String {
         switch self {
         case .invalidConfiguration(let detail): "invalid configuration: \(detail)"
@@ -484,7 +484,7 @@ nonisolated extension RuleProxyError.Proxy {
     }
 }
 
-nonisolated extension RuleProxyError.Proxy.Cipher {
+nonisolated extension NaiveFlowError.Proxy.Cipher {
     var failureDescription: String {
         switch self {
         case .unsupportedMethod(let name): "unsupported cipher method: \(name)"
@@ -498,7 +498,7 @@ nonisolated extension RuleProxyError.Proxy.Cipher {
     }
 }
 
-nonisolated extension RuleProxyError.Routing {
+nonisolated extension NaiveFlowError.Routing {
     var failureDescription: String {
         switch self {
         case .rejectedByRule(let host): "rejected by routing rule: \(host)"
@@ -508,7 +508,7 @@ nonisolated extension RuleProxyError.Routing {
     }
 }
 
-nonisolated extension RuleProxyError.BinaryPayload {
+nonisolated extension NaiveFlowError.BinaryPayload {
     var label: String {
         switch self {
         case .badMagic: "bad magic"
@@ -519,7 +519,7 @@ nonisolated extension RuleProxyError.BinaryPayload {
     }
 }
 
-nonisolated extension RuleProxyError.MITM {
+nonisolated extension NaiveFlowError.MITM {
     var failureDescription: String {
         switch self {
         case .notHTTP: "stream is not HTTP"
@@ -538,14 +538,14 @@ nonisolated extension RuleProxyError.MITM {
     }
 }
 
-nonisolated extension RuleProxyError.Certificate {
+nonisolated extension NaiveFlowError.Certificate {
     var failureDescription: String {
         switch self {
         case .keyGenerationFailed(let detail): "key generation failed: \(detail)"
         case .keychainWriteFailed(let status): "keychain write failed (OSStatus \(status))"
         case .keychainReadFailed(let status): "keychain read failed (OSStatus \(status))"
         case .missingCAComponents: "CA key or certificate missing"
-        case .buildFailed(let underlying): "certificate build failed: \(RuleProxyError.describe(underlying))"
+        case .buildFailed(let underlying): "certificate build failed: \(NaiveFlowError.describe(underlying))"
         case .signingFailed(let detail): "signing failed: \(detail)"
         case .publicKeyExportFailed: "public key export failed"
         case .invalidPublicKey: "invalid public key"
@@ -554,22 +554,22 @@ nonisolated extension RuleProxyError.Certificate {
     }
 }
 
-nonisolated extension RuleProxyError.Store {
+nonisolated extension NaiveFlowError.Store {
     var failureDescription: String {
         switch self {
         case .loadFailed(let resource, let underlying):
-            "failed to load \(resource.rawValue): \(RuleProxyError.describe(underlying))"
+            "failed to load \(resource.rawValue): \(NaiveFlowError.describe(underlying))"
         case .saveFailed(let resource, let underlying):
-            "failed to save \(resource.rawValue): \(RuleProxyError.describe(underlying))"
+            "failed to save \(resource.rawValue): \(NaiveFlowError.describe(underlying))"
         case .missing(let resource): "\(resource.rawValue) not found"
         case .corrupted(let resource, let detail):
             "\(resource.rawValue) corrupted" + (detail.map { ": \($0)" } ?? "")
-        case .syncFailed(let underlying): "sync failed: \(RuleProxyError.describe(underlying))"
+        case .syncFailed(let underlying): "sync failed: \(NaiveFlowError.describe(underlying))"
         }
     }
 }
 
-nonisolated extension RuleProxyError.Parse {
+nonisolated extension NaiveFlowError.Parse {
     var failureDescription: String {
         switch self {
         case .invalidURL(let string): "invalid URL: \(string)"
@@ -581,7 +581,7 @@ nonisolated extension RuleProxyError.Parse {
     }
 }
 
-nonisolated extension RuleProxyError.Parse.ProxyURI {
+nonisolated extension NaiveFlowError.Parse.ProxyURI {
     var failureDescription: String {
         switch self {
         case .unsupportedScheme(let scheme):
@@ -593,7 +593,7 @@ nonisolated extension RuleProxyError.Parse.ProxyURI {
     }
 }
 
-nonisolated extension RuleProxyError.Subscription {
+nonisolated extension NaiveFlowError.Subscription {
     var failureDescription: String {
         switch self {
         case .invalidURL:
@@ -606,20 +606,20 @@ nonisolated extension RuleProxyError.Subscription {
     }
 }
 
-nonisolated extension RuleProxyError.Tunnel {
+nonisolated extension NaiveFlowError.Tunnel {
     var failureDescription: String {
         switch self {
         case .invalidConfiguration: "invalid or missing configuration"
         case .settingsApplyFailed(let underlying):
-            "failed to apply tunnel settings: \(RuleProxyError.describe(underlying))"
+            "failed to apply tunnel settings: \(NaiveFlowError.describe(underlying))"
         case .ipcFailed(let underlying):
-            "provider message failed: \(RuleProxyError.describe(underlying))"
+            "provider message failed: \(NaiveFlowError.describe(underlying))"
         case .sessionUnavailable: "tunnel session unavailable"
         }
     }
 }
 
-nonisolated extension RuleProxyError.Diagnostics {
+nonisolated extension NaiveFlowError.Diagnostics {
     var failureDescription: String {
         switch self {
         case .latencyProbeFailed(let status): "latency probe returned unexpected status: \(status)"
@@ -629,7 +629,7 @@ nonisolated extension RuleProxyError.Diagnostics {
 
 // MARK: - Classification
 
-nonisolated extension RuleProxyError {
+nonisolated extension NaiveFlowError {
     var isPeerClose: Bool {
         switch self {
         case .transport(.posix(_, errno: EPIPE)),
@@ -659,7 +659,7 @@ nonisolated extension RuleProxyError {
             nil
         }
     }
-    var logLevel: RuleProxyLogger.Level? {
+    var logLevel: NaiveFlowLogger.Level? {
         switch self {
         case .transport(.posix(_, errno: EPIPE)),
              .transport(.terminated),
@@ -677,31 +677,31 @@ nonisolated extension RuleProxyError {
 
 // MARK: - Capture & Interop
 
-nonisolated extension RuleProxyError {
+nonisolated extension NaiveFlowError {
     static func capture(_ error: any Error, context: @autoclosure () -> String) -> any Error {
         switch error {
-        case is CancellationError, is RuleProxyError: error
-        default: RuleProxyError.wrapped(context: context(), underlying: error)
+        case is CancellationError, is NaiveFlowError: error
+        default: NaiveFlowError.wrapped(context: context(), underlying: error)
         }
     }
 
     static func describe(_ error: any Error) -> String {
         switch error {
-        case let error as RuleProxyError: error.conciseDescription
+        case let error as NaiveFlowError: error.conciseDescription
         case is CancellationError: "cancelled"
         default: error.localizedDescription
         }
     }
     static func logDescription(_ error: any Error) -> String {
         switch error {
-        case let error as RuleProxyError: error.errorDescription ?? error.conciseDescription
+        case let error as NaiveFlowError: error.errorDescription ?? error.conciseDescription
         default: describe(error)
         }
     }
 
-    static func logLevel(of error: any Error) -> RuleProxyLogger.Level? {
+    static func logLevel(of error: any Error) -> NaiveFlowLogger.Level? {
         switch error {
-        case let error as RuleProxyError: error.logLevel
+        case let error as NaiveFlowError: error.logLevel
         case is CancellationError: nil
         case let error as URLError where error.code == .cancelled: nil
         default: .error
@@ -709,26 +709,26 @@ nonisolated extension RuleProxyError {
     }
 
     static func isPeerClose(_ error: any Error) -> Bool {
-        (error as? RuleProxyError)?.isPeerClose ?? false
+        (error as? NaiveFlowError)?.isPeerClose ?? false
     }
 
     static func isTermination(_ error: any Error) -> Bool {
         if error is CancellationError { return true }
-        if case RuleProxyError.transport(.terminated) = error { return true }
+        if case NaiveFlowError.transport(.terminated) = error { return true }
         return false
     }
 }
 
-// MARK: - RuleProxyLogger Coordination
+// MARK: - NaiveFlowLogger Coordination
 
-nonisolated extension RuleProxyLogger {
+nonisolated extension NaiveFlowLogger {
     func report(_ message: @autoclosure () -> String, error: any Error) {
-        guard let level = RuleProxyError.logLevel(of: error) else { return }
-        log("\(message()): \(RuleProxyError.logDescription(error))", level: level)
+        guard let level = NaiveFlowError.logLevel(of: error) else { return }
+        log("\(message()): \(NaiveFlowError.logDescription(error))", level: level)
     }
 
     func report(_ error: any Error) {
-        guard let level = RuleProxyError.logLevel(of: error) else { return }
-        log((error as? RuleProxyError)?.logLine ?? RuleProxyError.describe(error), level: level)
+        guard let level = NaiveFlowError.logLevel(of: error) else { return }
+        log((error as? NaiveFlowError)?.logLine ?? NaiveFlowError.describe(error), level: level)
     }
 }

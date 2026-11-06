@@ -1,6 +1,6 @@
 //
 //  ProxyClient+SOCKS5.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/15/26.
 //
@@ -12,7 +12,7 @@ extension ProxyClient {
         let destinationHost = request.host
         let destinationPort = request.port
         guard case .socks5(let socks5) = configuration.outbound else {
-            throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 outbound expected"))
+            throw NaiveFlowError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 outbound expected"))
         }
 
         let transport: any ByteTransport

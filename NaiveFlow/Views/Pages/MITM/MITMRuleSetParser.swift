@@ -1,6 +1,6 @@
 //
 //  MITMRuleSetParser.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/8/26.
 //
@@ -59,7 +59,7 @@ enum MITMRuleSetParser {
                 if let rule = parseRuleLine(line) { rules.append(rule) }
             case .parameter:
                 guard parameters.count < MITMRuleSet.maxParameterCount else { continue }
-                // Drop duplicate names: they'd collide as `RuleProxy.params` keys.
+                // Drop duplicate names: they'd collide as `NaiveFlow.params` keys.
                 if let parameter = parseParameterLine(line),
                    parameterNames.insert(parameter.name).inserted {
                     parameters.append(parameter)

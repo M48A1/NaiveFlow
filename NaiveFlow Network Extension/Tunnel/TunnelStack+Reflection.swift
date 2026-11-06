@@ -1,12 +1,12 @@
 //
 //  TunnelStack+Reflection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/31/26.
 //
 
 import Foundation
-import RuleProxyIP
+import NaiveFlowIP
 
 extension TunnelStack {
     nonisolated enum Reflector {

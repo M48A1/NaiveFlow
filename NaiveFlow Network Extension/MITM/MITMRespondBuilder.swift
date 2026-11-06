@@ -1,6 +1,6 @@
 //
 //  MITMRespondBuilder.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/1/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 
 nonisolated enum MITMRespondBuilder {
-    private static let defaultText = "Success from RuleProxy"
+    private static let defaultText = "Success from NaiveFlow"
     private static let defaultDataBase64 = "QW55d2hlcmU="
     private static let tinyGIF = Data([
         0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00,

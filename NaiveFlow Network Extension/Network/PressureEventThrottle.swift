@@ -1,6 +1,6 @@
 //
 //  PressureEventThrottle.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 9/1/26.
 //
@@ -17,7 +17,7 @@ nonisolated struct PressureEventThrottle {
         self.interval = interval
     }
 
-    mutating func noteDropped(now: TimeInterval, logger: RuleProxyLogger) {
+    mutating func noteDropped(now: TimeInterval, logger: NaiveFlowLogger) {
         guard now - lastEmit >= interval else { return }
         logger.error(message)
         lastEmit = now

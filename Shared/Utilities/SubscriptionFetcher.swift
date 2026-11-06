@@ -1,6 +1,6 @@
 //
 //  SubscriptionFetcher.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
@@ -22,12 +22,12 @@ nonisolated struct SubscriptionFetcher {
 
     static func fetch(url urlString: String) async throws -> Result {
         guard let url = URL(string: urlString) else {
-            throw RuleProxyError.subscription(.invalidURL)
+            throw NaiveFlowError.subscription(.invalidURL)
         }
 
         var request = URLRequest(url: url)
-        request.setValue("RuleProxy", forHTTPHeaderField: "User-Agent")
-        request.setValue(AJSONParser.formatHeaderValue, forHTTPHeaderField: "X-RuleProxy-Format")
+        request.setValue("NaiveFlow", forHTTPHeaderField: "User-Agent")
+        request.setValue(AJSONParser.formatHeaderValue, forHTTPHeaderField: "X-NaiveFlow-Format")
         if AWCore.getRemnawaveHWIDEnabled() {
             request.setValue(AWCore.getRemnawaveHWID(), forHTTPHeaderField: "x-hwid")
         }
@@ -49,7 +49,7 @@ nonisolated struct SubscriptionFetcher {
         } catch let error as URLError where error.code == .cancelled {
             throw error
         } catch {
-            throw RuleProxyError.subscription(.fetchFailed(underlying: error))
+            throw NaiveFlowError.subscription(.fetchFailed(underlying: error))
         }
 
         let httpResponse = response as? HTTPURLResponse
@@ -62,7 +62,7 @@ nonisolated struct SubscriptionFetcher {
         if let rawString = String(data: data, encoding: .utf8), AJSONParser.looksLikeDocument(rawString) {
             let document = try AJSONParser.parse(rawString)
             guard !document.configurations.isEmpty else {
-                throw RuleProxyError.subscription(.noConfigurations)
+                throw NaiveFlowError.subscription(.noConfigurations)
             }
             return Result(
                 configurations: document.configurations,
@@ -85,13 +85,13 @@ nonisolated struct SubscriptionFetcher {
         } else if let rawString = String(data: data, encoding: .utf8) {
             bodyString = rawString
         } else {
-            throw RuleProxyError.subscription(.noConfigurations)
+            throw NaiveFlowError.subscription(.noConfigurations)
         }
 
         if bodyString.contains("proxies:") {
             let result = try ClashProxyParser.parse(yaml: bodyString)
             guard !result.configurations.isEmpty else {
-                throw RuleProxyError.subscription(.noConfigurations)
+                throw NaiveFlowError.subscription(.noConfigurations)
             }
             return Result(
                 configurations: result.configurations,
@@ -113,7 +113,7 @@ nonisolated struct SubscriptionFetcher {
             .compactMap { try? ProxyConfiguration.parseSubscriptionEntry(url: $0) }
 
         guard !configurations.isEmpty else {
-            throw RuleProxyError.subscription(.noConfigurations)
+            throw NaiveFlowError.subscription(.noConfigurations)
         }
 
         return Result(

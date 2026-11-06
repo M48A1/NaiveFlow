@@ -1,6 +1,6 @@
 //
 //  XHTTPConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
@@ -336,13 +336,13 @@ nonisolated final class XHTTPConnection: Sendable {
         }
         if usesSharedH2 {
             let stream = state.withLock { state in (mode == .streamUp) ? state.sharedH2Upload : state.sharedH2Download }
-            guard let stream else { throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)) }
+            guard let stream else { throw NaiveFlowError.proxy(.xhttp, .connectionClosed(detail: nil)) }
             try await stream.sendData(data, endStream: false)
             return
         }
         if useHTTP3 {
             let stream = state.withLock { state in (mode == .streamUp) ? state.h3Upload : state.h3Download }
-            guard let stream else { throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)) }
+            guard let stream else { throw NaiveFlowError.proxy(.xhttp, .connectionClosed(detail: nil)) }
             try await stream.sendBody(data, fin: false)
             return
         }
@@ -396,7 +396,7 @@ nonisolated final class XHTTPConnection: Sendable {
             case .data(let decoded): return decoded
             case .eof: return nil
             case .malformed:
-                throw RuleProxyError.proxy(.xhttp, .protocolViolation(detail: "malformed chunked framing"))
+                throw NaiveFlowError.proxy(.xhttp, .protocolViolation(detail: "malformed chunked framing"))
             case .read: break
             }
 
@@ -473,7 +473,7 @@ nonisolated final class XHTTPConnection: Sendable {
     private func sendPacketUp(_ data: Data) async throws {
         try await packetUpChain.run { [self] in
             let closed = state.withLock { $0.phase == .cancelled }
-            if closed { throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)) }
+            if closed { throw NaiveFlowError.proxy(.xhttp, .connectionClosed(detail: nil)) }
 
             try await rateLimitPacketUp()
 
@@ -991,7 +991,7 @@ nonisolated final class XHTTPH2Multiplexer: XHTTPXMUXMultiplexerPoolable, Sendab
         do {
             try await transport.send(initData)
         } catch {
-            throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "shared H2 preface: \(error.localizedDescription)"))
+            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "shared H2 preface: \(error.localizedDescription)"))
         }
 
         while true {
@@ -999,7 +999,7 @@ nonisolated final class XHTTPH2Multiplexer: XHTTPXMUXMultiplexerPoolable, Sendab
             do {
                 f = try await frameReader.readFrame()
             } catch {
-                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "shared H2 settings read: \(error.localizedDescription)"))
+                throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "shared H2 settings read: \(error.localizedDescription)"))
             }
             switch f.type {
             case XHTTPConnection.h2FrameSettings where f.flags & XHTTPConnection.h2FlagAck == 0:
@@ -1014,7 +1014,7 @@ nonisolated final class XHTTPH2Multiplexer: XHTTPXMUXMultiplexerPoolable, Sendab
                 try? await transport.send(frame(type: XHTTPConnection.h2FramePing,
                                                 flags: XHTTPConnection.h2FlagAck, streamId: 0, payload: f.payload))
             case XHTTPConnection.h2FrameGoaway:
-                throw RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "shared H2: server GOAWAY"))
+                throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "shared H2: server GOAWAY"))
             default:
                 break
             }
@@ -1031,10 +1031,10 @@ nonisolated final class XHTTPH2Multiplexer: XHTTPXMUXMultiplexerPoolable, Sendab
                 do {
                     f = try await self.frameReader.readFrame()
                 } catch {
-                    if case RuleProxyError.proxy(.xhttp, .streamClosed) = error {
+                    if case NaiveFlowError.proxy(.xhttp, .streamClosed) = error {
                         self.failAll(nil)
                     } else {
-                        self.failAll(RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)))
+                        self.failAll(NaiveFlowError.proxy(.xhttp, .connectionClosed(detail: nil)))
                     }
                     return
                 }
@@ -1080,7 +1080,7 @@ nonisolated final class XHTTPH2Multiplexer: XHTTPXMUXMultiplexerPoolable, Sendab
         case XHTTPConnection.h2FrameRstStream:
             if let effect = handleEnd(streamId: decodedFrame.streamId, reset: true) { await apply(effect) }
         case XHTTPConnection.h2FrameGoaway:
-            failAll(RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)))
+            failAll(NaiveFlowError.proxy(.xhttp, .connectionClosed(detail: nil)))
         default:
             break
         }
@@ -1124,7 +1124,7 @@ nonisolated final class XHTTPH2Multiplexer: XHTTPXMUXMultiplexerPoolable, Sendab
             return state.withLock { state in
                 guard var stream = state.streams[streamId] else { return nil }
                 if stream.failure == nil {
-                    stream.failure = RuleProxyError.proxy(.xhttp, .handshakeFailed(detail: "shared H2 stream \(streamId): \(statusError)"))
+                    stream.failure = NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "shared H2 stream \(streamId): \(statusError)"))
                 }
                 if flags & XHTTPConnection.h2FlagEndStream != 0 { stream.endRemote() }
                 wakeReceiverLocked(&stream)
@@ -1189,7 +1189,7 @@ nonisolated final class XHTTPH2Multiplexer: XHTTPXMUXMultiplexerPoolable, Sendab
                 state.streams[streamId]?.endLocal()
                 return frame(type: XHTTPConnection.h2FrameData, flags: XHTTPConnection.h2FlagEndStream, streamId: streamId, payload: Data())
             }
-            guard let f else { throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)) }
+            guard let f else { throw NaiveFlowError.proxy(.xhttp, .connectionClosed(detail: nil)) }
             try await transport.send(f)
             return
         }
@@ -1228,7 +1228,7 @@ nonisolated final class XHTTPH2Multiplexer: XHTTPXMUXMultiplexerPoolable, Sendab
             }
             switch step {
             case .closed:
-                throw RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil))
+                throw NaiveFlowError.proxy(.xhttp, .connectionClosed(detail: nil))
             case .park:
                 await parkForFlow(streamId: streamId)
                 try Task.checkCancellation()
@@ -1272,7 +1272,7 @@ nonisolated final class XHTTPH2Multiplexer: XHTTPXMUXMultiplexerPoolable, Sendab
                     return .eof
                 }
                 if state.phase == .closed {
-                    return .error(RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil)))
+                    return .error(NaiveFlowError.proxy(.xhttp, .connectionClosed(detail: nil)))
                 }
                 let (waitStream, continuation) = AsyncStream<Void>.makeStream()
                 stream.receiveWaiter = continuation
@@ -1343,7 +1343,7 @@ nonisolated final class XHTTPH2Multiplexer: XHTTPXMUXMultiplexerPoolable, Sendab
         }
     }
 
-    func cancel() { failAll(RuleProxyError.proxy(.xhttp, .connectionClosed(detail: nil))) }
+    func cancel() { failAll(NaiveFlowError.proxy(.xhttp, .connectionClosed(detail: nil))) }
 
     private func failAll(_ error: Error?) {
         let (didClose, pumpTask): (Bool, Task<Void, Never>?) = state.withLock { state in

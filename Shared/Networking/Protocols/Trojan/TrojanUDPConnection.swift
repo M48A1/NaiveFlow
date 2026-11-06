@@ -1,6 +1,6 @@
 //
 //  TrojanUDPConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/22/26.
 //
@@ -35,7 +35,7 @@ nonisolated final class TrojanUDPConnection: ProxyConnection {
 
     func sendRaw(_ data: Data) async throws {
         guard data.count <= TrojanProtocol.maxUDPPayloadLength else {
-            throw RuleProxyError.proxy(.trojan, .packetTooLarge)
+            throw NaiveFlowError.proxy(.trojan, .packetTooLarge)
         }
         let header = consumeHeader()
         let packet = TrojanProtocol.encodeUDPPacket(host: destinationHost, port: destinationPort, payload: data)

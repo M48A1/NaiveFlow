@@ -1,6 +1,6 @@
 //
 //  TunneledHTTP.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/21/26.
 //
@@ -51,5 +51,5 @@ struct EchoResponse: Decodable, Equatable {
         case remote
     }
 
-    static let expectedMarker = "ruleproxy-test-backend"
+    static let expectedMarker = "naiveflow-test-backend"
 }

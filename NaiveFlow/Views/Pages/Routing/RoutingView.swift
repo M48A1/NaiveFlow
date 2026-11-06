@@ -1,6 +1,6 @@
 //
 //  RoutingView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/1/26.
 //
@@ -37,7 +37,7 @@ struct RoutingView: View {
                         get: { appSettings.isGlobalMode },
                         set: {
                             appSettings.isGlobalMode = $0
-                            ControlCenter.shared.reloadControls(ofKind: "com.argsment.RuleProxy.Widget.VPNToggle")
+                            ControlCenter.shared.reloadControls(ofKind: "com.argsment.NaiveFlow.Widget.VPNToggle")
                         }
                     )) {
                         TextWithColorfulIcon(title: "Global Mode", systemName: "arrow.merge", foregroundStyle: .white, backgroundStyle: .orange.gradient)
@@ -168,7 +168,7 @@ struct RoutingView: View {
                 Text(importError ?? "")
             }
             .alert("Subscribe Rule Set", isPresented: $showSubscribeAlert) {
-                TextField("RuleProxy Routing Rule Set URL", text: $subscribeURL)
+                TextField("NaiveFlow Routing Rule Set URL", text: $subscribeURL)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
@@ -238,7 +238,7 @@ struct RoutingView: View {
         do {
             let url = try result.get()
             guard url.pathExtension.lowercased() == "arrs" else {
-                importError = String(localized: "Invalid RuleProxy Routing Rule Set File.")
+                importError = String(localized: "Invalid NaiveFlow Routing Rule Set File.")
                 return
             }
             let accessing = url.startAccessingSecurityScopedResource()
@@ -265,7 +265,7 @@ struct RoutingView: View {
 
     private func subscribe(to rawValue: String) {
         guard let url = CustomRoutingRuleSet.validSubscriptionURL(from: rawValue) else {
-            subscribeError = String(localized: "Invalid RuleProxy Routing Rule Set URL.")
+            subscribeError = String(localized: "Invalid NaiveFlow Routing Rule Set URL.")
             return
         }
         Task {

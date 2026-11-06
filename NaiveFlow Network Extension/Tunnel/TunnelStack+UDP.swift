@@ -1,12 +1,12 @@
 //
 //  TunnelStack+UDP.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/23/26.
 //
 
 import Foundation
-import RuleProxyIP
+import NaiveFlowIP
 
 extension TunnelStack {
     static func isSTUNMessage(_ payload: Data) -> Bool {

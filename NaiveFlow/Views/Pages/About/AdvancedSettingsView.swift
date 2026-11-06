@@ -1,6 +1,6 @@
 //
 //  AdvancedSettingsView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/26/26.
 //

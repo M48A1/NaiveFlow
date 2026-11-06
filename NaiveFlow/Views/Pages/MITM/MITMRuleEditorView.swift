@@ -1,6 +1,6 @@
 //
 //  MITMRuleEditorView.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/3/26.
 //
@@ -122,7 +122,7 @@ struct MITMRuleEditorView: View {
                     switch rewriteMode {
                     case .transparent, .redirect302:
                         LabeledContent {
-                            TextField(String("https://argsment.com/ruleproxy"), text: $rewriteURL)
+                            TextField(String("https://argsment.com/naiveflow"), text: $rewriteURL)
                                 .autocorrectionDisabled()
                                 .textInputAutocapitalization(.never)
                                 .multilineTextAlignment(.trailing)
@@ -131,7 +131,7 @@ struct MITMRuleEditorView: View {
                         }
                     case .reject200Text:
                         LabeledContent {
-                            TextField(String("Success from RuleProxy"), text: $rejectText)
+                            TextField(String("Success from NaiveFlow"), text: $rejectText)
                                 .autocorrectionDisabled()
                                 .textInputAutocapitalization(.never)
                                 .multilineTextAlignment(.trailing)
@@ -160,7 +160,7 @@ struct MITMRuleEditorView: View {
                         TextWithColorfulIcon(title: "Header Name", systemName: "tag.fill", foregroundStyle: .white, backgroundStyle: .gray.gradient)
                     }
                     LabeledContent {
-                        TextField(String("RuleProxy"), text: $headerValue)
+                        TextField(String("NaiveFlow"), text: $headerValue)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
                             .multilineTextAlignment(.trailing)
@@ -195,7 +195,7 @@ struct MITMRuleEditorView: View {
                     }
                 case .bodyReplace:
                     LabeledContent {
-                        TextField(String("RuleProxy"), text: $searchText)
+                        TextField(String("NaiveFlow"), text: $searchText)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
                             .multilineTextAlignment(.trailing)

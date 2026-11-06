@@ -1,6 +1,6 @@
 //
 //  TrojanProtocol.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/22/26.
 //
@@ -106,7 +106,7 @@ nonisolated enum TrojanProtocol {
             offset += 1
             addrLen = domainLen
         default:
-            throw RuleProxyError.proxy(.trojan, .protocolViolation(detail: "Trojan: unknown ATYP \(atyp)"))
+            throw NaiveFlowError.proxy(.trojan, .protocolViolation(detail: "Trojan: unknown ATYP \(atyp)"))
         }
 
         // Need address + port (2) + length (2) + CRLF (2) before the payload.
@@ -119,7 +119,7 @@ nonisolated enum TrojanProtocol {
         offset += 2
 
         guard length <= maxUDPPayloadLength else {
-            throw RuleProxyError.proxy(.trojan, .protocolViolation(detail: "Trojan: oversize UDP payload (\(length))"))
+            throw NaiveFlowError.proxy(.trojan, .protocolViolation(detail: "Trojan: oversize UDP payload (\(length))"))
         }
 
         guard buffer.endIndex - offset >= length else { return nil }

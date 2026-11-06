@@ -1,6 +1,6 @@
 //
 //  ClashProxyParser.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 3/2/26.
 //
@@ -19,14 +19,14 @@ nonisolated enum ClashProxyParser {
         do {
             root = try YAML.Node(yaml: yaml)
         } catch {
-            throw RuleProxyError.parse(.yaml(detail: error.description))
+            throw NaiveFlowError.parse(.yaml(detail: error.description))
         }
 
         guard case .mapping = root else {
-            throw RuleProxyError.parse(.yaml(detail: "root document is not a mapping"))
+            throw NaiveFlowError.parse(.yaml(detail: "root document is not a mapping"))
         }
         guard let proxies = root["proxies"]?.sequence else {
-            throw RuleProxyError.parse(.clashConfigMissingProxies)
+            throw NaiveFlowError.parse(.clashConfigMissingProxies)
         }
 
         let configurations = proxies.compactMap(parseProxy)

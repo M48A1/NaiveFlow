@@ -1,6 +1,6 @@
 //
 //  ProxyClient+AnyTLS.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/16/26.
 //
@@ -11,7 +11,7 @@ extension ProxyClient {
     func connectWithAnyTLS(_ request: ProxyRequest) async throws -> ProxyConnection {
         guard let anytls = configuration.anytls, !anytls.password.isEmpty,
               let tlsConfig = anytls.tlsConfiguration else {
-            throw RuleProxyError.proxy(.anyTLS, .protocolViolation(detail: "AnyTLS password not set"))
+            throw NaiveFlowError.proxy(.anyTLS, .protocolViolation(detail: "AnyTLS password not set"))
         }
 
         let directHost = directDialHost
@@ -52,18 +52,18 @@ extension ProxyClient {
                 multiplexer?.close(error: nil)
             }) else {
                 multiplexer.close(error: nil)
-                throw RuleProxyError.proxy(.anyTLS, .connectionClosed(detail: "Failed to open AnyTLS stream"))
+                throw NaiveFlowError.proxy(.anyTLS, .connectionClosed(detail: "Failed to open AnyTLS stream"))
             }
             stream = opened
         } else {
             guard let pool = AnyTLSMultiplexerRegistry.shared.pool(for: configuration, dialOut: dialOut) else {
-                throw RuleProxyError.proxy(.anyTLS, .notReady)
+                throw NaiveFlowError.proxy(.anyTLS, .notReady)
             }
             stream = try await pool.acquireStream()
         }
         guard !isCancelled else {
             stream.cancel()
-            throw RuleProxyError.transport(.terminated)
+            throw NaiveFlowError.transport(.terminated)
         }
 
         switch request.network {

@@ -1,6 +1,6 @@
 //
 //  BridgeContext.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 7/15/26.
 //

@@ -1,6 +1,6 @@
 //
 //  MITMScriptDiskStore.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/10/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 
-nonisolated private let logger = RuleProxyLogger(category: "MITMScriptDiskStore")
+nonisolated private let logger = NaiveFlowLogger(category: "MITMScriptDiskStore")
 
 nonisolated final class MITMScriptDiskStore: Sendable {
     static let shared = MITMScriptDiskStore()
@@ -32,7 +32,7 @@ nonisolated final class MITMScriptDiskStore: Sendable {
 
     private let directory: URL?
 
-    private let writeQueue = DispatchQueue(label: "com.argsment.RuleProxy.MITMScriptDiskStore", qos: .utility)
+    private let writeQueue = DispatchQueue(label: "com.argsment.NaiveFlow.MITMScriptDiskStore", qos: .utility)
 
     init(appGroup: String = AWCore.Identifier.appGroupSuite) {
         if let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) {
@@ -49,19 +49,19 @@ nonisolated final class MITMScriptDiskStore: Sendable {
         return state.withLock { $0.cache[scope]?[key] }
     }
 
-    func setValue(_ value: Data, forKey key: String, scope: UUID) throws(RuleProxyError) {
-        guard ensureLoaded(scope) else { throw RuleProxyError.mitm(.scriptStoreWriteFailed) }
-        let didChange = try state.withLock { (state) throws(RuleProxyError) -> Bool in
+    func setValue(_ value: Data, forKey key: String, scope: UUID) throws(NaiveFlowError) {
+        guard ensureLoaded(scope) else { throw NaiveFlowError.mitm(.scriptStoreWriteFailed) }
+        let didChange = try state.withLock { (state) throws(NaiveFlowError) -> Bool in
             let current = state.cache[scope]?[key]
             if current == value { return false }
             let keyBytes = key.utf8.count
             let delta = value.count + keyBytes - (current.map { $0.count + keyBytes } ?? 0)
             let projected = (state.scopeBytes[scope] ?? 0) + delta
             if projected > Self.maxBytesPerScope {
-                throw RuleProxyError.mitm(.scriptStoreCapacityExceeded)
+                throw NaiveFlowError.mitm(.scriptStoreCapacityExceeded)
             }
             if state.totalBytes + delta > Self.maxTotalBytes {
-                throw RuleProxyError.mitm(.scriptStoreCapacityExceeded)
+                throw NaiveFlowError.mitm(.scriptStoreCapacityExceeded)
             }
             state.cache[scope, default: [:]][key] = value
             state.scopeBytes[scope] = projected
@@ -188,10 +188,10 @@ nonisolated final class MITMScriptDiskStore: Sendable {
                     if let dictionary = object as? [String: Data] {
                         bucket = dictionary
                     } else {
-                        logger.report(RuleProxyError.store(.corrupted(.scripts, detail: "\(scope): unexpected plist shape")))
+                        logger.report(NaiveFlowError.store(.corrupted(.scripts, detail: "\(scope): unexpected plist shape")))
                     }
                 } catch {
-                    logger.report(RuleProxyError.store(.corrupted(.scripts, detail: "\(scope): \(RuleProxyError.describe(error))")))
+                    logger.report(NaiveFlowError.store(.corrupted(.scripts, detail: "\(scope): \(NaiveFlowError.describe(error))")))
                 }
             }
         }
@@ -212,7 +212,7 @@ nonisolated final class MITMScriptDiskStore: Sendable {
             return (try Data(contentsOf: url), false)
         } catch {
             guard !Self.isFileNotFound(error as NSError) else { return (nil, false) }
-            logger.report("[Script] RuleProxy.store read failed", error: error)
+            logger.report("[Script] NaiveFlow.store read failed", error: error)
             return (nil, true)
         }
     }
@@ -229,7 +229,7 @@ nonisolated final class MITMScriptDiskStore: Sendable {
             try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
             return true
         } catch {
-            logger.report("[Script] RuleProxy.store write failed", error: error)
+            logger.report("[Script] NaiveFlow.store write failed", error: error)
             return false
         }
     }

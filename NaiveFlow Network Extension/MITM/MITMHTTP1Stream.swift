@@ -1,6 +1,6 @@
 //
 //  MITMHTTP1Stream.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/4/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 
-nonisolated private let logger = RuleProxyLogger(category: "MITMHTTP1Stream")
+nonisolated private let logger = NaiveFlowLogger(category: "MITMHTTP1Stream")
 
 nonisolated protocol MITMHTTP1ResponseIRSink: AnyObject, Sendable {
     func http1ResponseHead(status: Int, headers: [(name: String, value: String)], endStream: Bool)
@@ -1878,10 +1878,10 @@ actor MITMHTTP1Stream {
         let reason = canonicalReasonPhrase(for: response.status)
         let startLine = "HTTP/1.1 \(response.status) \(reason)"
         var headers = response.sanitizedHeaders(lowercaseNames: false) { name in
-            logger.warning("[Script] RuleProxy.respond: Invalid header: \(name)")
+            logger.warning("[Script] NaiveFlow.respond: Invalid header: \(name)")
         }
         let body = response.truncatedBody(cap: Self.maxSynthesizedResponseBodyBytes) {
-            logger.warning("[Script] RuleProxy.respond: Body too large")
+            logger.warning("[Script] NaiveFlow.respond: Body too large")
         }
         headers = response.withDateStamp(headers, lowercaseName: false)
         headers.append((name: "Content-Length", value: String(body.count)))

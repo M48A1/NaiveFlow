@@ -1,6 +1,6 @@
 //
 //  VLESSEncryptionCTR.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/13/26.
 //
@@ -14,7 +14,7 @@ nonisolated final class VLESSEncryptionCTR {
 
     init(key: Data, iv: Data) throws {
         guard iv.count == 16 else {
-            throw RuleProxyError.proxy(.vlessEncryption, .protocolViolation(detail: "framing: VLESS CTR IV must be 16 bytes, got \(iv.count)"))
+            throw NaiveFlowError.proxy(.vlessEncryption, .protocolViolation(detail: "framing: VLESS CTR IV must be 16 bytes, got \(iv.count)"))
         }
         let derivedKey = BLAKE3.deriveKey(context: "VLESS", keyMaterial: key, outputByteCount: 32)
 
@@ -37,7 +37,7 @@ nonisolated final class VLESSEncryptionCTR {
             }
         }
         guard status == kCCSuccess, let ref else {
-            throw RuleProxyError.proxy(.vlessEncryption, .protocolViolation(detail: "framing: CCCryptorCreateWithMode failed: \(status)"))
+            throw NaiveFlowError.proxy(.vlessEncryption, .protocolViolation(detail: "framing: CCCryptorCreateWithMode failed: \(status)"))
         }
         self.cryptor = ref
     }

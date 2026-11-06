@@ -1,6 +1,6 @@
 //
 //  RFCHTTP2Multiplexer.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 9/11/26.
 //
@@ -155,7 +155,7 @@ nonisolated final class RFCHTTP2Multiplexer: Multiplexer, Sendable {
             guard let self else { return }
             do {
                 try await self.readLoop()
-                self.close(error: RuleProxyError.proxy(.http2, .connectionClosed(detail: "RFC session closed by peer")))
+                self.close(error: NaiveFlowError.proxy(.http2, .connectionClosed(detail: "RFC session closed by peer")))
             } catch {
                 self.close(error: error)
             }
@@ -189,7 +189,7 @@ nonisolated final class RFCHTTP2Multiplexer: Multiplexer, Sendable {
 
         for open in teardown.pending {
             open.watchdog?.cancel()
-            open.inbox.finish(throwing: error ?? RuleProxyError.proxy(.http2, .connectionClosed(detail: "RFC session closed")))
+            open.inbox.finish(throwing: error ?? NaiveFlowError.proxy(.http2, .connectionClosed(detail: "RFC session closed")))
         }
         for stream in teardown.streams {
             stream.deliverClose(error: error)
@@ -214,7 +214,7 @@ nonisolated final class RFCHTTP2Multiplexer: Multiplexer, Sendable {
             headersSent: SerialSender.Pending
         )
         let headerBlock = RFCProtocol.http2ConnectHeaders(authority: authority, credentials: credentials)
-        let outcome: Result<Opened, RuleProxyError> = state.withLock { state in
+        let outcome: Result<Opened, NaiveFlowError> = state.withLock { state in
             guard state.phase.acceptsNewStreams else { return .failure(.proxy(.http2, .notReady)) }
             guard state.nextStreamID <= 0x7FFF_FFFF else { return .failure(.proxy(.http2, .streamIDsExhausted)) }
             guard headerBlock.count <= state.peerMaxFrameSize else {
@@ -260,7 +260,7 @@ nonisolated final class RFCHTTP2Multiplexer: Multiplexer, Sendable {
         let status: Int
         do {
             guard let awaited = try await opened.handshake.next() else {
-                throw RuleProxyError.proxy(.http2, .connectionClosed(detail: "RFC session closed during CONNECT"))
+                throw NaiveFlowError.proxy(.http2, .connectionClosed(detail: "RFC session closed during CONNECT"))
             }
             status = awaited
         } catch {
@@ -278,7 +278,7 @@ nonisolated final class RFCHTTP2Multiplexer: Multiplexer, Sendable {
 
     private func armOpenWatchdog(streamID: UInt32) {
         let watchdog = TickScheduler.shared.schedule(in: .seconds(Self.openTimeout), precision: .relaxed) { [weak self] in
-            self?.failOpen(streamID: streamID, error: RuleProxyError.proxy(.http2, .openTimeout))
+            self?.failOpen(streamID: streamID, error: NaiveFlowError.proxy(.http2, .openTimeout))
         }
         let stale: DeadlineToken? = state.withLock { state in
             guard state.pendingOpens[streamID] != nil else { return watchdog }
@@ -331,10 +331,10 @@ nonisolated final class RFCHTTP2Multiplexer: Multiplexer, Sendable {
         while true {
             let outcome: Outcome = state.withLock { state in
                 guard state.phase != .closed else {
-                    return .failed(RuleProxyError.proxy(.http2, .connectionClosed(detail: "RFC session closed")))
+                    return .failed(NaiveFlowError.proxy(.http2, .connectionClosed(detail: "RFC session closed")))
                 }
                 guard let flow = state.flow[streamID] else {
-                    return .failed(RuleProxyError.proxy(.http2, .streamClosed))
+                    return .failed(NaiveFlowError.proxy(.http2, .streamClosed))
                 }
                 if state.connectionSendWindow <= 0 {
                     return .waitConnection(state.connectionGate.enroll())
@@ -459,7 +459,7 @@ nonisolated extension RFCHTTP2Multiplexer {
                 var frames: [HTTP2Frame] = []
                 while let declaredLength = HTTP2Framer.declaredPayloadLength(in: state.receiveBuffer) {
                     guard declaredLength <= RFCProtocol.http2MaxFrameSize else {
-                        throw RuleProxyError.proxy(.http2, .protocolViolation(
+                        throw NaiveFlowError.proxy(.http2, .protocolViolation(
                             detail: "Frame of \(declaredLength) bytes exceeds SETTINGS_MAX_FRAME_SIZE"
                         ))
                     }
@@ -502,7 +502,7 @@ nonisolated extension RFCHTTP2Multiplexer {
 
     private func handleData(_ frame: HTTP2Frame) throws {
         guard frame.streamID != 0 else {
-            throw RuleProxyError.proxy(.http2, .protocolViolation(detail: "DATA on stream 0"))
+            throw NaiveFlowError.proxy(.http2, .protocolViolation(detail: "DATA on stream 0"))
         }
         let flowBytes = frame.payload.count
         let payload = try strippedPadding(of: frame)
@@ -511,7 +511,7 @@ nonisolated extension RFCHTTP2Multiplexer {
             guard let stream = state.streams[frame.streamID] else { return nil }
             let unconsumed = (state.flow[frame.streamID]?.unconsumed ?? 0) + flowBytes
             guard unconsumed <= Int(RFCProtocol.http2StreamWindowSize) else {
-                throw RuleProxyError.proxy(.http2, .protocolViolation(detail: "Peer exceeded the stream flow-control window"))
+                throw NaiveFlowError.proxy(.http2, .protocolViolation(detail: "Peer exceeded the stream flow-control window"))
             }
             state.flow[frame.streamID]?.unconsumed = unconsumed
             return stream
@@ -549,13 +549,13 @@ nonisolated extension RFCHTTP2Multiplexer {
         if frame.hasFlag(HTTP2FrameFlags.padded) {
             guard let padLength = payload.first.map({ Int($0) }),
                   payload.count >= padLength + 1 else {
-                throw RuleProxyError.proxy(.http2, .protocolViolation(detail: "Padding longer than frame payload"))
+                throw NaiveFlowError.proxy(.http2, .protocolViolation(detail: "Padding longer than frame payload"))
             }
             payload = Data(payload.dropFirst().dropLast(padLength))
         }
         if frame.type == .headers, frame.hasFlag(Self.headersPriorityFlag) {
             guard payload.count >= 5 else {
-                throw RuleProxyError.proxy(.http2, .protocolViolation(detail: "HEADERS shorter than its priority field"))
+                throw NaiveFlowError.proxy(.http2, .protocolViolation(detail: "HEADERS shorter than its priority field"))
             }
             payload = Data(payload.dropFirst(5))
         }
@@ -566,7 +566,7 @@ nonisolated extension RFCHTTP2Multiplexer {
 
     private func handleHeaders(_ frame: HTTP2Frame, decoder: HPACKDecoder) throws {
         guard frame.streamID != 0 else {
-            throw RuleProxyError.proxy(.http2, .protocolViolation(detail: "HEADERS on stream 0"))
+            throw NaiveFlowError.proxy(.http2, .protocolViolation(detail: "HEADERS on stream 0"))
         }
         let block = try strippedPadding(of: frame)
         let endStream = frame.hasFlag(HTTP2FrameFlags.endStream)
@@ -607,9 +607,9 @@ nonisolated extension RFCHTTP2Multiplexer {
         case .pending:
             return
         case .unexpected:
-            throw RuleProxyError.proxy(.http2, .protocolViolation(detail: "Unexpected CONTINUATION on stream \(frame.streamID)"))
+            throw NaiveFlowError.proxy(.http2, .protocolViolation(detail: "Unexpected CONTINUATION on stream \(frame.streamID)"))
         case .oversize:
-            throw RuleProxyError.proxy(.http2, .protocolViolation(
+            throw NaiveFlowError.proxy(.http2, .protocolViolation(
                 detail: "Header block exceeded \(HPACKDecoder.maxDecodedHeaderListSize) bytes"
             ))
         case .complete(let streamID, let endStream, let block):
@@ -619,7 +619,7 @@ nonisolated extension RFCHTTP2Multiplexer {
     
     private func completeHeaders(streamID: UInt32, endStream: Bool, block: Data, decoder: HPACKDecoder) throws {
         guard let decoded = decoder.decodeHeaders(from: block) else {
-            throw RuleProxyError.proxy(.http2, .protocolViolation(detail: "Undecodable HPACK header block"))
+            throw NaiveFlowError.proxy(.http2, .protocolViolation(detail: "Undecodable HPACK header block"))
         }
 
         let pending: PendingOpen? = state.withLock { $0.pendingOpens.removeValue(forKey: streamID) }
@@ -628,7 +628,7 @@ nonisolated extension RFCHTTP2Multiplexer {
         if let pending {
             pending.watchdog?.cancel()
             guard let status = RFCProtocol.http2Status(from: decoded.fields) else {
-                pending.inbox.finish(throwing: RuleProxyError.proxy(.http2, .protocolViolation(
+                pending.inbox.finish(throwing: NaiveFlowError.proxy(.http2, .protocolViolation(
                     detail: "CONNECT response carried no :status"
                 )))
                 return
@@ -652,12 +652,12 @@ nonisolated extension RFCHTTP2Multiplexer {
         let code = HTTP2Framer.parseRstStream(payload: frame.payload) ?? RFCProtocol.HTTP2ErrorCode.cancel
         let error: Error? = code == RFCProtocol.HTTP2ErrorCode.noError
             ? nil
-            : RuleProxyError.proxy(.http2, .streamReset(code: code))
+            : NaiveFlowError.proxy(.http2, .streamReset(code: code))
 
         let pending: PendingOpen? = state.withLock { $0.pendingOpens.removeValue(forKey: frame.streamID) }
         if let pending {
             pending.watchdog?.cancel()
-            pending.inbox.finish(throwing: error ?? RuleProxyError.proxy(.http2, .streamClosed))
+            pending.inbox.finish(throwing: error ?? NaiveFlowError.proxy(.http2, .streamClosed))
         }
         
         let detached = detachStream(streamID: frame.streamID)
@@ -735,10 +735,10 @@ nonisolated extension RFCHTTP2Multiplexer {
 
         for open in abandoned.pending {
             open.watchdog?.cancel()
-            open.inbox.finish(throwing: RuleProxyError.proxy(.http2, .goaway))
+            open.inbox.finish(throwing: NaiveFlowError.proxy(.http2, .goaway))
         }
         for stream in abandoned.streams {
-            stream.deliverClose(error: RuleProxyError.proxy(.http2, .goaway))
+            stream.deliverClose(error: NaiveFlowError.proxy(.http2, .goaway))
         }
     }
 
@@ -747,7 +747,7 @@ nonisolated extension RFCHTTP2Multiplexer {
     private func handleWindowUpdate(_ frame: HTTP2Frame) throws {
         guard let increment = HTTP2Framer.parseWindowUpdate(payload: frame.payload), increment > 0 else {
             guard frame.streamID != 0 else {
-                throw RuleProxyError.proxy(.http2, .protocolViolation(detail: "WINDOW_UPDATE with a zero increment"))
+                throw NaiveFlowError.proxy(.http2, .protocolViolation(detail: "WINDOW_UPDATE with a zero increment"))
             }
             resetStream(streamID: frame.streamID, errorCode: RFCProtocol.HTTP2ErrorCode.cancel)
             return
@@ -778,7 +778,7 @@ nonisolated extension RFCHTTP2Multiplexer {
             return
         case .overflow:
             guard frame.streamID != 0 else {
-                throw RuleProxyError.proxy(.http2, .protocolViolation(detail: "Connection send window overflowed"))
+                throw NaiveFlowError.proxy(.http2, .protocolViolation(detail: "Connection send window overflowed"))
             }
             resetStream(streamID: frame.streamID, errorCode: RFCProtocol.HTTP2ErrorCode.cancel)
         }

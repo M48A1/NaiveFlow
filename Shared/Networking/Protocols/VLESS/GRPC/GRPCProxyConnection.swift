@@ -1,6 +1,6 @@
 //
 //  GRPCProxyConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 4/23/26.
 //

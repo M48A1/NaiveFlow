@@ -1,12 +1,12 @@
 //
 //  TestEnvironment.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 6/21/26.
 //
 
 import Foundation
-@testable import RuleProxy
+@testable import NaiveFlow
 
 enum TestConfigError: Error, CustomStringConvertible {
     case missing(String)
@@ -24,22 +24,22 @@ enum TestEnvironment {
         return value
     }
     
-    static let defaultTargetHost = "test.ruleproxy-proxy.com"
+    static let defaultTargetHost = "test.naiveflow-proxy.com"
     static let defaultHTTPPort: UInt16 = 30080
     static let defaultHTTPSPort: UInt16 = 30443
 
-    static var proxyURL: String? { string("RULEPROXY_TEST_PROXY_URL") }
-    static var targetHost: String { string("RULEPROXY_TEST_TARGET_HOST") ?? defaultTargetHost }
-    static var httpPort: UInt16 { string("RULEPROXY_TEST_HTTP_PORT").flatMap(UInt16.init) ?? defaultHTTPPort }
-    static var httpsPort: UInt16 { string("RULEPROXY_TEST_HTTPS_PORT").flatMap(UInt16.init) ?? defaultHTTPSPort }
-    static var allowInsecure: Bool { string("RULEPROXY_TEST_ALLOW_INSECURE") != "0" }
+    static var proxyURL: String? { string("NAIVEFLOW_TEST_PROXY_URL") }
+    static var targetHost: String { string("NAIVEFLOW_TEST_TARGET_HOST") ?? defaultTargetHost }
+    static var httpPort: UInt16 { string("NAIVEFLOW_TEST_HTTP_PORT").flatMap(UInt16.init) ?? defaultHTTPPort }
+    static var httpsPort: UInt16 { string("NAIVEFLOW_TEST_HTTPS_PORT").flatMap(UInt16.init) ?? defaultHTTPSPort }
+    static var allowInsecure: Bool { string("NAIVEFLOW_TEST_ALLOW_INSECURE") != "0" }
     
     static var isConfigured: Bool { proxyURL != nil }
     
     static func requireTargetHost() throws -> String { targetHost }
     
     static func proxyConfiguration() throws -> ProxyConfiguration {
-        guard let url = proxyURL else { throw TestConfigError.missing("RULEPROXY_TEST_PROXY_URL") }
+        guard let url = proxyURL else { throw TestConfigError.missing("NAIVEFLOW_TEST_PROXY_URL") }
         return try ProxyConfiguration.parse(url: url)
     }
     

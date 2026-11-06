@@ -1,6 +1,6 @@
 //
 //  TunnelStack+Runtime.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 11/5/26.
 //
@@ -8,7 +8,7 @@
 import Foundation
 import Synchronization
 
-nonisolated private let logger = RuleProxyLogger(category: "TunnelStack+Runtime")
+nonisolated private let logger = NaiveFlowLogger(category: "TunnelStack+Runtime")
 
 /// Hot reload.
 ///
@@ -148,7 +148,7 @@ extension TunnelStack {
         do {
             active = try ActiveConfiguration.load()
         } catch {
-            logger.report(RuleProxyError.store(.corrupted(.configurations, detail: RuleProxyError.describe(error))))
+            logger.report(NaiveFlowError.store(.corrupted(.configurations, detail: NaiveFlowError.describe(error))))
             runtime.fail(ticket, message: "Could not load the outbound configuration.")
             return
         }

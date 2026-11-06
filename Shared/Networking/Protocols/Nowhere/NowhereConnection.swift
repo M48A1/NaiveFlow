@@ -1,6 +1,6 @@
 //
 //  NowhereConnection.swift
-//  RuleProxy
+//  NaiveFlow
 //
 //  Created by NodePassProject on 5/30/26.
 //
@@ -87,7 +87,7 @@ actor NowhereConnection {
 
     func open() async throws {
         let begin = phase.withLock { Phase.transition(&$0, to: .opening) }
-        guard begin else { throw RuleProxyError.proxy(.nowhere, .streamClosed) }
+        guard begin else { throw NaiveFlowError.proxy(.nowhere, .streamClosed) }
         do {
             try await withTaskCancellationHandler {
                 try Task.checkCancellation()
@@ -108,24 +108,24 @@ actor NowhereConnection {
         var buffer = Data()
         while true {
             guard let chunk = try await nextChunk() else {
-                throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Stream closed before complete READY"))
+                throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Stream closed before complete READY"))
             }
             buffer.append(chunk)
             guard buffer.count >= NowhereProtocol.flowResultSize else { continue }
             guard let result = NowhereProtocol.decodeFlowResult(buffer) else {
-                throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Invalid flow result"))
+                throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Invalid flow result"))
             }
             session.consumeTCPBytes(sid, count: NowhereProtocol.flowResultSize)
             switch result {
             case .ready:
                 pendingData = Data(buffer.dropFirst(NowhereProtocol.flowResultSize))
-                guard becomeReady() else { throw RuleProxyError.proxy(.nowhere, .streamClosed) }
+                guard becomeReady() else { throw NaiveFlowError.proxy(.nowhere, .streamClosed) }
                 if let initialData, !initialData.isEmpty {
                     try await session.writeStream(sid, data: initialData)
                 }
                 return
             case .reject(let code):
-                throw RuleProxyError.proxy(.nowhere, .flowRejected(code: code.rawValue))
+                throw NaiveFlowError.proxy(.nowhere, .flowRejected(code: code.rawValue))
             }
         }
     }
@@ -150,7 +150,7 @@ actor NowhereConnection {
     }
 
     nonisolated func handleSessionError(_ error: Error) {
-        if case RuleProxyError.quic(.closed(graceful: true)) = error {
+        if case NaiveFlowError.quic(.closed(graceful: true)) = error {
             rawInbox.finish()
         } else {
             rawInbox.finish(throwing: error)
@@ -163,7 +163,7 @@ actor NowhereConnection {
     func sendRaw(_ data: Data) async throws {
         let sid: Int64? = phase.withLock { if case .open(let s, true) = $0 { s } else { nil } }
         guard let sid else {
-            throw RuleProxyError.proxy(.nowhere, .streamClosed)
+            throw NaiveFlowError.proxy(.nowhere, .streamClosed)
         }
         try await withTaskCancellationHandler {
             try Task.checkCancellation()
@@ -176,7 +176,7 @@ actor NowhereConnection {
     func receiveRaw() async throws -> Data? {
         try Task.checkCancellation()
         guard !receiveInProgress else {
-            throw RuleProxyError.proxy(.nowhere, .protocolViolation(detail: "Overlapping receive on Nowhere stream"))
+            throw NaiveFlowError.proxy(.nowhere, .protocolViolation(detail: "Overlapping receive on Nowhere stream"))
         }
         receiveInProgress = true
         defer { receiveInProgress = false }
@@ -261,7 +261,7 @@ nonisolated final class NowhereTCPUDPConnection: ProxyConnection {
         let frame: Data
         do {
             frame = try NowhereProtocol.encodeUDPStreamPacket(data)
-        } catch RuleProxyError.proxy(.nowhere, .packetTooLarge) {
+        } catch NaiveFlowError.proxy(.nowhere, .packetTooLarge) {
             return
         }
         try await inner.sendRaw(frame)
@@ -294,7 +294,7 @@ nonisolated final class NowhereTCPUDPConnection: ProxyConnection {
     func receiveRaw() async throws -> Data? {
         let begin = try state.withLock { state in
             guard !state.receiveInProgress else {
-                throw RuleProxyError.proxy(.nowhere, .protocolViolation(detail: "Overlapping receive on Nowhere UDP framing"))
+                throw NaiveFlowError.proxy(.nowhere, .protocolViolation(detail: "Overlapping receive on Nowhere UDP framing"))
             }
             guard !state.closed else { return false }
             state.receiveInProgress = true
@@ -328,7 +328,7 @@ nonisolated final class NowhereTCPUDPConnection: ProxyConnection {
                     }
                     cancel()
                     if truncated {
-                        throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Truncated UoT packet"))
+                        throw NaiveFlowError.proxy(.nowhere, .connectionClosed(detail: "Truncated UoT packet"))
                     }
                     return nil
                 }
