@@ -20,6 +20,7 @@ nonisolated struct ConfigurationDocument: Equatable, Sendable {
     /// reported as `unknownSection` instead of being silently dropped.
     enum SectionKind: String, CaseIterable, Sendable {
         case general
+        case dns
         case geoIP, geoSite
         case proxy
         case proxyGroup
@@ -41,6 +42,7 @@ nonisolated struct ConfigurationDocument: Equatable, Sendable {
         var displayName: String {
             switch self {
             case .general: return "General"
+            case .dns: return "DNS"
             case .geoIP: return "GeoIP"
             case .geoSite: return "GeoSite"
             case .proxy: return "Proxy"
@@ -67,7 +69,7 @@ nonisolated struct ConfigurationDocument: Equatable, Sendable {
             switch self {
             case .rule, .urlRewrite, .headerRewrite, .bodyRewrite, .mapLocal, .rewrite:
                 return true
-            case .geoIP, .geoSite, .mitmSet, .general, .proxy, .proxyGroup, .host, .mitm, .script, .panel, .ssidSetting, .misc:
+            case .dns, .geoIP, .geoSite, .mitmSet, .general, .proxy, .proxyGroup, .host, .mitm, .script, .panel, .ssidSetting, .misc:
                 return false
             }
         }
@@ -81,6 +83,7 @@ nonisolated struct ConfigurationDocument: Equatable, Sendable {
                 .replacingOccurrences(of: " ", with: "")
             switch normalized {
             case "general": return .general
+            case "dns": return .dns
             case "geoip": return .geoIP
             case "geosite": return .geoSite
             case "proxy", "proxies": return .proxy

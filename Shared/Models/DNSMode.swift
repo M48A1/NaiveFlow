@@ -98,7 +98,9 @@ nonisolated enum DNSUpstream: Sendable, Equatable {
         guard !trimmed.isEmpty,
               let url = URL(string: trimmed),
               url.scheme?.lowercased() == "https",
-              let host = url.host, !host.isEmpty
+              let host = url.host, !host.isEmpty,
+              url.user == nil, url.password == nil, url.fragment == nil,
+              (1...65_535).contains(url.port ?? 443)
         else { return nil }
         return .doh(url)
     }

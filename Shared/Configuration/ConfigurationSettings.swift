@@ -71,6 +71,7 @@ nonisolated struct ConfigurationSettingKey: Identifiable, Sendable {
         case plainServer
         /// A DoH endpoint that must parse as an `https://` URL.
         case dohURL
+        case bootstrapDNS
     }
 
     let name: String
@@ -119,6 +120,10 @@ nonisolated struct ConfigurationSettingKey: Identifiable, Sendable {
         case .plainServer:
             guard !trimmed.isEmpty, DNSUpstream.parsePlain(trimmed) != nil else { return nil }
             return .text(trimmed)
+
+        case .bootstrapDNS:
+            guard let policy = DNSBootstrapPolicy.parse(trimmed) else { return nil }
+            return .text(policy.rendered)
 
         case .dohURL:
             guard !trimmed.isEmpty, DNSUpstream.parseDoH(trimmed) != nil else { return nil }
@@ -253,6 +258,9 @@ nonisolated enum ConfigurationSettings {
 
         // MARK: DNS
 
+        ConfigurationSettingKey(name: "bootstrap-dns", kind: .bootstrapDNS,
+            scope: .stackRestart, applies: true,
+            summary: "System or numeric seed servers used only for named DoH endpoint resolution."),
         ConfigurationSettingKey(
             name: "dns-mode",
             kind: .enumeration(["default", "plain", "doh"]),
@@ -669,6 +677,10 @@ nonisolated enum ConfigurationSettingsBindings {
         // server switches the mode to match, so `dns-server = 1.1.1.1` is enough
         // and `dns-mode` only has to be written to go back to the system
         // resolver.
+
+        bind("bootstrap-dns", read: { .text(AWCore.getBootstrapDNS().rendered) }, write: { value in
+            if let value = text(value), let policy = DNSBootstrapPolicy.parse(value) { AWCore.setBootstrapDNS(policy) }
+        }),
 
         bind("dns-mode", read: { .text(AWCore.getLocalRequestDNSMode().rawValue) }, write: { value in
             if let mode = DNSMode(rawValue: text(value) ?? "") { AWCore.setLocalRequestDNSMode(mode) }

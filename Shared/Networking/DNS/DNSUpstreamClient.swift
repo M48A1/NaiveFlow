@@ -19,8 +19,10 @@ nonisolated enum DNSUpstreamClient {
     static func resolve(
         _ host: String,
         via upstream: DNSUpstream,
-        family: DNSAddressFamily = .preferIPv4
+        family: DNSAddressFamily = .preferIPv4,
+        bootstrap: DNSBootstrapPolicy? = nil
     ) async throws -> [String] {
+        let policy = bootstrap ?? AWCore.getBootstrapDNS()
         let addresses: [String]
         do {
             switch upstream {
@@ -32,7 +34,7 @@ nonisolated enum DNSUpstreamClient {
                 }
             case .doh(let url):
                 addresses = try await queryAll(host, family: family) { name, type in
-                    try await queryDoH(name, type: type, url: url)
+                    try await queryDoH(name, type: type, url: url, bootstrap: policy)
                 }
             }
         } catch {
@@ -50,6 +52,7 @@ nonisolated enum DNSUpstreamClient {
         _ host: String,
         type: UInt16,
         via upstream: DNSUpstream,
+        bootstrap: DNSBootstrapPolicy? = nil,
         accept: @escaping @Sendable (Data) -> Data?
     ) async throws -> (payload: Data, ttl: UInt32)? {
         do {
@@ -59,7 +62,7 @@ nonisolated enum DNSUpstreamClient {
             case .plain(let server, let port):
                 return try await queryRecordPlain(host, type: type, server: server, port: port, accept: accept)
             case .doh(let url):
-                return try await queryRecordDoH(host, type: type, url: url, accept: accept)
+                return try await queryRecordDoH(host, type: type, url: url, bootstrap: bootstrap ?? AWCore.getBootstrapDNS(), accept: accept)
             }
         } catch {
             logger.report("[DNS] \(host) type \(type) via \(describe(upstream))", error: error)
@@ -160,7 +163,7 @@ nonisolated enum DNSUpstreamClient {
 
     // MARK: - DoH
 
-    private static func queryDoH(_ name: String, type: UInt16, url: URL) async throws -> [String] {
+    private static func queryDoH(_ name: String, type: UInt16, url: URL, bootstrap: DNSBootstrapPolicy) async throws -> [String] {
         let id: UInt16 = 0
         guard let query = DNSMessage.makeQuery(domain: name, type: type, id: id) else {
             throw RuleProxyError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
@@ -175,11 +178,7 @@ nonisolated enum DNSUpstreamClient {
         request.timeoutInterval = TimeInterval(queryTimeout.components.seconds)
         request.cachePolicy = .reloadIgnoringLocalCacheData
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-        guard status == 200 else {
-            throw RuleProxyError.dns(.resolutionFailed(host: name, detail: "DoH HTTP \(status)"))
-        }
+        let data = try await sendDoH(request, bootstrap: bootstrap)
         guard let addresses = try decode(data, id: id) else {
             throw RuleProxyError.dns(.malformedResponse)
         }
@@ -190,6 +189,7 @@ nonisolated enum DNSUpstreamClient {
         _ name: String,
         type: UInt16,
         url: URL,
+        bootstrap: DNSBootstrapPolicy,
         accept: @escaping @Sendable (Data) -> Data?
     ) async throws -> (payload: Data, ttl: UInt32)? {
         let id: UInt16 = 0
@@ -206,15 +206,39 @@ nonisolated enum DNSUpstreamClient {
         request.timeoutInterval = TimeInterval(queryTimeout.components.seconds)
         request.cachePolicy = .reloadIgnoringLocalCacheData
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-        guard status == 200 else {
-            throw RuleProxyError.dns(.resolutionFailed(host: name, detail: "DoH HTTP \(status)"))
-        }
+        let data = try await sendDoH(request, bootstrap: bootstrap)
         guard let records = try decodeRecords(data, id: id, type: type) else {
             throw RuleProxyError.dns(.malformedResponse)
         }
         return firstAccepted(records, accept: accept)
+    }
+
+    private static func sendDoH(_ request: URLRequest, bootstrap: DNSBootstrapPolicy) async throws -> Data {
+        guard let url = request.url, let host = url.host else { throw RuleProxyError.dns(.malformedResponse) }
+        // Literal endpoints do not need a bootstrap query, including IPv6 URLs.
+        if bootstrap.isSystem || DNSName.isIPAddress(DNSName.stripBrackets(host)) {
+            let (bytes, response) = try await URLSession.shared.bytes(for: request, delegate: DNSDoHRedirectPolicy.shared)
+            guard let response = response as? HTTPURLResponse, response.statusCode == 200,
+                  response.url?.scheme?.lowercased() == "https",
+                  response.mimeType?.lowercased() == "application/dns-message" else { throw RuleProxyError.dns(.malformedResponse) }
+            var data = Data()
+            for try await byte in bytes {
+                guard data.count < BootstrapDoHClient.maximumBodyBytes else { throw RuleProxyError.dns(.malformedResponse) }
+                data.append(byte)
+            }
+            return data
+        }
+        let addresses = try await bootstrap.endpointAddresses(for: host) { name, server in
+            try await resolve(name, via: .plain(host: server, port: 53), bootstrap: .system)
+        }
+        var failure: (any Error)?
+        for address in addresses {
+            try Task.checkCancellation()
+            do { return try await BootstrapDoHClient.request(url: url, address: address, body: request.httpBody ?? Data()) }
+            catch is CancellationError { throw CancellationError() }
+            catch { failure = error }
+        }
+        throw failure ?? RuleProxyError.dns(.noAddresses(host: host))
     }
 
     // MARK: - Shared decoding
@@ -263,5 +287,15 @@ nonisolated enum DNSUpstreamClient {
         case .plain(let host, let port): return "\(host):\(port)"
         case .doh(let url): return "DoH \(url.host ?? "?")"
         }
+    }
+}
+
+/// Endpoint redirects must not introduce an unconfigured bootstrap dependency.
+nonisolated private final class DNSDoHRedirectPolicy: NSObject, URLSessionTaskDelegate, Sendable {
+    static let shared = DNSDoHRedirectPolicy()
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
 }

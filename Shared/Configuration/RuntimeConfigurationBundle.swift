@@ -31,8 +31,13 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
         guard schemaVersion == Self.schema, selectedNode != nil,
               Set(nodes.map(\.id)).count == nodes.count,
               nodes.count <= 10_000, (rules?.count ?? 0) <= 100_000,
-              Set(preferences.keys) == Set(AWCore.runtimePreferenceKeys)
+              Set(preferences.keys).subtracting(["bootstrapDNS"]) == Set(AWCore.runtimePreferenceKeys).subtracting(["bootstrapDNS"])
         else { throw RuntimeConfigurationFailure.invalidBundle }
+        if let value = preferences["bootstrapDNS"], value != .absent {
+            guard case .string(let raw) = value, DNSBootstrapPolicy.parse(raw) != nil else {
+                throw RuntimeConfigurationFailure.invalidBundle
+            }
+        }
         let ids = Set(nodes.map(\.id))
         for rule in rules ?? [] {
             if case .proxy(let id) = rule.action, !ids.contains(id) { throw RuntimeConfigurationFailure.invalidBundle }

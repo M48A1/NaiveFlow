@@ -31,6 +31,7 @@ nonisolated final class DNSResolver: Sendable {
     private struct Query: Hashable, Sendable {
         let name: String
         let family: DNSAddressFamily
+        let bootstrap: String
     }
 
     private let upstreamSource: @Sendable () -> DNSUpstream
@@ -65,10 +66,11 @@ nonisolated final class DNSResolver: Sendable {
         let bare = DNSName.stripBrackets(host)
         if DNSName.isIPAddress(bare) { return family.admits(bare) ? [bare] : [] }
         if let mapped = hosts?.addresses(for: bare, family: family) { return mapped }
-        let query = Query(name: DNSName.cacheKey(for: bare), family: family)
+        let bootstrap = AWCore.getBootstrapDNS()
+        let query = Query(name: DNSName.cacheKey(for: bare), family: family, bootstrap: bootstrap.rendered)
         let upstream = upstreamSource()
         return await cache.value(for: query, from: upstream, forceFresh: forceFresh) { [self] in
-            await lookup(bare, family: family, upstream: upstream)
+            await lookup(bare, family: family, upstream: upstream, bootstrap: bootstrap)
         }
     }
 
@@ -79,10 +81,11 @@ nonisolated final class DNSResolver: Sendable {
     func prewarm(_ host: String, family: DNSAddressFamily = .preferIPv4) {
         let bare = DNSName.stripBrackets(host)
         guard !DNSName.isIPAddress(bare), hosts?.addresses(for: bare, family: family) == nil else { return }
-        let query = Query(name: DNSName.cacheKey(for: bare), family: family)
+        let bootstrap = AWCore.getBootstrapDNS()
+        let query = Query(name: DNSName.cacheKey(for: bare), family: family, bootstrap: bootstrap.rendered)
         let upstream = upstreamSource()
         cache.warm(query, from: upstream) { [self] in
-            await lookup(bare, family: family, upstream: upstream)
+            await lookup(bare, family: family, upstream: upstream, bootstrap: bootstrap)
         }
     }
 
@@ -90,7 +93,7 @@ nonisolated final class DNSResolver: Sendable {
         let bare = DNSName.stripBrackets(host)
         if DNSName.isIPAddress(bare) { return family.admits(bare) ? [bare] : nil }
         if let mapped = hosts?.addresses(for: bare, family: family) { return mapped }
-        return cache.cachedValue(for: Query(name: DNSName.cacheKey(for: bare), family: family), from: upstreamSource())
+        return cache.cachedValue(for: Query(name: DNSName.cacheKey(for: bare), family: family, bootstrap: AWCore.getBootstrapDNS().rendered), from: upstreamSource())
     }
 
     func flush() {
@@ -102,11 +105,15 @@ nonisolated final class DNSResolver: Sendable {
     private func lookup(
         _ host: String,
         family: DNSAddressFamily,
-        upstream: DNSUpstream
+        upstream: DNSUpstream,
+        bootstrap: DNSBootstrapPolicy
     ) async -> (value: [String], ttl: TimeInterval)? {
         var resolved: [String] = []
         if !upstream.isSystem {
-            resolved = (try? await DNSUpstreamClient.resolve(host, via: upstream, family: family)) ?? []
+            resolved = (try? await DNSUpstreamClient.resolve(host, via: upstream, family: family, bootstrap: bootstrap)) ?? []
+            // An explicit DoH bootstrap failure must not silently resolve the
+            // original business domain through the system resolver.
+            if case .doh = upstream, !bootstrap.isSystem { return Self.cacheable(resolved) }
             guard resolved.isEmpty, fallsBackToSystem else { return Self.cacheable(resolved) }
         }
         resolved = await blockingBridge.resolveAddresses(host, family: family)

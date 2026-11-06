@@ -37,6 +37,9 @@ extension TunnelStack {
         where interceptedDNSServers[host] == .publicResolver {
             addresses.insert(host)
         }
+        if case .servers(let seeds) = AWCore.getBootstrapDNS() {
+            addresses.formUnion(seeds.filter { interceptedDNSServers[$0] == .publicResolver })
+        }
         return addresses
     }
     

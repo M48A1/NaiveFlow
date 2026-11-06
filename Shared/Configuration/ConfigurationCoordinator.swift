@@ -61,6 +61,7 @@ nonisolated extension ConfigurationModule {
     /// the engine, so nothing has to be reloaded for them.
     static let settingOwners: [String: ConfigurationModule] = [
         // DNS: which servers resolve what, and how names become addresses.
+        "bootstrap-dns": .dns,
         "dns-mode": .dns,
         "dns-server": .dns,
         "encrypted-dns-server": .dns,
@@ -136,7 +137,7 @@ nonisolated extension ConfigurationModule {
             return .outbound
         case .rule, .geoIP, .geoSite:
             return .rule
-        case .host:
+        case .dns, .host:
             return .dns
         case .mitmSet, .mitm, .script, .urlRewrite, .headerRewrite, .bodyRewrite, .mapLocal, .rewrite:
             // The rewrite sections only do anything while interception is on, and

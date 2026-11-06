@@ -27,8 +27,9 @@ nonisolated final class ECHResolver: Sendable {
         if bare.isEmpty || DNSName.isIPAddress(bare) { return nil }
 
         let upstream = AWCore.getECHDNSUpstream()
-        return await cache.value(for: DNSName.cacheKey(for: bare), from: upstream) { [self] in
-            let result = await lookup(bare, upstream: upstream)
+        let bootstrap = AWCore.getBootstrapDNS()
+        return await cache.value(for: DNSName.cacheKey(for: bare) + "|" + bootstrap.rendered, from: upstream) { [self] in
+            let result = await lookup(bare, upstream: upstream, bootstrap: bootstrap)
             let ttl = result
                 .map { min(max(TimeInterval($0.ttl), Self.minTTL), Self.maxTTL) }
                 ?? Self.negativeTTL
@@ -42,7 +43,7 @@ nonisolated final class ECHResolver: Sendable {
 
     // MARK: - Internal
 
-    private func lookup(_ host: String, upstream: DNSUpstream) async -> (payload: Data, ttl: UInt32)? {
+    private func lookup(_ host: String, upstream: DNSUpstream, bootstrap: DNSBootstrapPolicy) async -> (payload: Data, ttl: UInt32)? {
         if upstream.isSystem {
             return await blockingBridge.queryFirstRecord(
                 host: host,
@@ -55,6 +56,7 @@ nonisolated final class ECHResolver: Sendable {
             host,
             type: DNSMessage.typeHTTPS,
             via: upstream,
+            bootstrap: bootstrap,
             accept: { echParseSVCBECH($0) }
         )) ?? nil
     }

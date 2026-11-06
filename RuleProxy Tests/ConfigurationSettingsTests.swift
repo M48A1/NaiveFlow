@@ -209,6 +209,8 @@ struct ConfigurationSettingsTests {
             return [.list(["one", "two"])]
         case .plainServer:
             return [.text("1.1.1.1"), .text("1.1.1.1:5353")]
+        case .bootstrapDNS:
+            return [.text("system"), .text("1.1.1.1, 2001:db8::53")]
         case .dohURL:
             return [.text("https://dns.example.com/dns-query")]
         }

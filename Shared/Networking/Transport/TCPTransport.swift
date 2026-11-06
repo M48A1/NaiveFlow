@@ -178,7 +178,7 @@ nonisolated final class TCPTransportEngine: Sendable {
     private let queue = DispatchQueue(label: "com.argsment.RuleProxy.TCPTransport", qos: .userInitiated)
     private let stall = NWStallLatch()
 
-    init(endpoint: NWEndpoint, connectTimeout: UInt32) {
+    init(endpoint: NWEndpoint, connectTimeout: UInt32, tls: NWProtocolTLS.Options? = nil) {
         let tcpOptions = NWProtocolTCP.Options()
         tcpOptions.noDelay = true
         tcpOptions.enableKeepalive = true
@@ -186,7 +186,7 @@ nonisolated final class TCPTransportEngine: Sendable {
         tcpOptions.keepaliveCount = 3
         tcpOptions.keepaliveInterval = 10
         tcpOptions.connectionTimeout = Int(connectTimeout)
-        connection = NWConnection(to: endpoint, using: NWParameters(tls: nil, tcp: tcpOptions))
+        connection = NWConnection(to: endpoint, using: NWParameters(tls: tls, tcp: tcpOptions))
         stall.watch(connection)
         connection.start(queue: queue)
     }

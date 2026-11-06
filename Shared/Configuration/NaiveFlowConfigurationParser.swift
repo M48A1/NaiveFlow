@@ -40,6 +40,7 @@ nonisolated enum NaiveFlowConfigurationParser {
         var configuration = ParsedConfiguration()
         var diagnostics = document.diagnostics
 
+        var dnsEntries: [ConfigurationDocument.Entry] = []
         for section in document.sections {
             switch section.kind {
             case .geoIP, .geoSite:
@@ -48,6 +49,8 @@ nonisolated enum NaiveFlowConfigurationParser {
                     if section.kind == .geoIP { configuration.geoIP.set(key, entry.value) }
                     else { configuration.geoSite.set(key, entry.value) }
                 }
+            case .dns:
+                dnsEntries.append(contentsOf: section.entries)
             case .general:
                 for entry in section.entries {
                     guard let key = entry.key else { continue }
@@ -81,6 +84,32 @@ nonisolated enum NaiveFlowConfigurationParser {
             case .panel, .ssidSetting, .misc:
                 configuration.unsupportedSections.append(section.rawName)
             }
+        }
+
+        // Fold the dedicated section into the existing DNS setting bindings.
+        // Reject duplicate sources instead of guessing which section wins.
+        let aliases = ["mode": "dns-mode", "server": "dns-server", "doh": "encrypted-dns-server"]
+        for entry in dnsEntries {
+            guard let key = entry.key else { continue }
+            let name = aliases[key.lowercased()] ?? key.lowercased()
+            guard ConfigurationModule.settingOwners[name] == .dns else {
+                diagnostics.append(.init(severity: .error, code: .unknownDirective, line: entry.line,
+                    section: "DNS", message: "Unknown DNS setting '\(key)'."))
+                continue
+            }
+            guard configuration.general[name] == nil else {
+                diagnostics.append(.init(severity: .error, code: .duplicateName, line: entry.line,
+                    section: "DNS", message: "DNS setting '\(name)' is defined more than once."))
+                continue
+            }
+            var value = ConfigurationDocument.unquoted(entry.value)
+            if name.hasSuffix("dns-mode"), value.lowercased() == "system" { value = "default" }
+            guard ConfigurationSettings.key(named: name)?.parse(value) != nil else {
+                diagnostics.append(.init(severity: .error, code: .invalidValue, line: entry.line,
+                    section: "DNS", message: "Invalid value for DNS setting '\(key)'."))
+                continue
+            }
+            configuration.general.set(name, value)
         }
 
         return ParseResult(

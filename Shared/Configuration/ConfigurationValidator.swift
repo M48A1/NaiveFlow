@@ -100,6 +100,16 @@ nonisolated enum ConfigurationValidator {
         _ configuration: ParsedConfiguration,
         diagnostics: inout [ConfigurationDiagnostic]
     ) {
+        for prefix in ["", "proxy-", "subscription-", "ech-"] {
+            let plain = prefix + "dns-server"
+            let encrypted = prefix + "encrypted-dns-server"
+            let mode = prefix + "dns-mode"
+            if configuration.general[plain] != nil, configuration.general[encrypted] != nil,
+               configuration.general[mode] == nil {
+                diagnostics.append(.init(severity: .error, code: .invalidValue, section: "DNS",
+                    message: "Set \(mode) explicitly when both plain DNS and DoH addresses are configured."))
+            }
+        }
         for key in configuration.general.keys {
             guard let definition = ConfigurationSettings.key(named: key) else {
                 diagnostics.append(
@@ -145,6 +155,8 @@ nonisolated enum ConfigurationValidator {
             return "expects a comma-separated list"
         case .plainServer:
             return "must be an IPv4/IPv6 address, optionally with a port"
+        case .bootstrapDNS:
+            return "must be system or a comma-separated list of up to eight IPv4/IPv6 addresses"
         case .dohURL:
             return "must be an https:// URL"
         }

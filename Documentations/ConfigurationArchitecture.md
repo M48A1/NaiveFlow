@@ -12,6 +12,10 @@
 
 编辑器通过唯一的 ConfigurationPublisher 应用文档。旧的逐 Store 写入安装路径已经移除。手工节点、分组和规则库作为独立资料保留，文本版本控制实际流量；首页显示版本中的默认出站节点。节点库页面提示当前由文本版本控制，不能用库里的选中动作悄悄覆盖运行版本。需要修改活动路由时编辑配置并应用。
 
+## DNS 配置
+
+`[DNS]` 集中配置传统 DNS、DoH 及 bootstrap-dns；见 [DNSConfiguration.md](DNSConfiguration.md)。Bootstrap 随运行版本切换，显式 mode 优先于端点字段。
+
 ## iCloud 文本同步
 
 配置页仅在点击上传或下载时传输配置文本；编辑、应用和启动不自动传输。上传新增云端副本，下载后需确认载入并在本机单独应用；详见 [ConfigurationCloudSync.md](ConfigurationCloudSync.md)。

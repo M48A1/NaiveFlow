@@ -76,7 +76,14 @@ struct ConfigurationPublisher {
         let selected = nodes.first { $0.id == previous.selectedNodeID }
             ?? nodes.first { $0.name == previous.selectedNode?.name } ?? nodes[0]
         let preferences = try AWCore.captureRuntimePreferences(base: previous.preferences) {
-            for (key, value) in compiled.settings.values { ConfigurationSettingsBindings.write(key, value) }
+            // Server fields select their transport; explicit mode fields run last.
+            let keys = compiled.settings.values.keys.sorted {
+                let a = $0.hasSuffix("dns-mode"), b = $1.hasSuffix("dns-mode")
+                return a == b ? $0 < $1 : !a
+            }
+            for key in keys {
+                if let value = compiled.settings.values[key] { ConfigurationSettingsBindings.write(key, value) }
+            }
             HostMapping.store(compiled.hosts)
             try ActiveConfiguration.store(selected)
         }

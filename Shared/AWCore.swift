@@ -51,7 +51,7 @@ nonisolated final class AWCore {
     private static let userDefaults = RuntimePreferences(defaults: rawUserDefaults)
 
     static let runtimePreferenceKeys = [
-        "activeConfiguration", "allowInsecure", "alwaysOnEnabled", "alwaysTrustCellular",
+        "bootstrapDNS", "activeConfiguration", "allowInsecure", "alwaysOnEnabled", "alwaysTrustCellular",
         "alwaysUntrustCellular", "blockUDP", "blockWebRTC", "bypassCountryCode",
         "echDNSDoHURL", "echDNSMode", "echDNSPlainServer", "experimentalEnabled",
         "fallbackDNSMode", "fallbackDNSServer", "hideVPNIcon", "hostMappings",
@@ -70,13 +70,17 @@ nonisolated final class AWCore {
     }
 
     static func installRuntimePreferences(_ values: [String: RuntimePreferenceValue]?) {
-        userDefaults.install(values)
+        var pinned = values
+        if pinned != nil, pinned?["bootstrapDNS"] == nil { pinned?["bootstrapDNS"] = .absent }
+        userDefaults.install(pinned)
     }
 
     static func captureRuntimePreferences(
         base: [String: RuntimePreferenceValue]? = nil, _ write: () throws -> Void
     ) rethrows -> [String: RuntimePreferenceValue] {
-        let capture = RuntimePreferenceCapture(base ?? runtimePreferences())
+        var values = base ?? runtimePreferences()
+        if values["bootstrapDNS"] == nil { values["bootstrapDNS"] = .absent }
+        let capture = RuntimePreferenceCapture(values)
         try RuntimePreferenceContext.$capture.withValue(capture, operation: write)
         return capture.values.withLock { $0 }
     }
@@ -522,6 +526,13 @@ nonisolated final class AWCore {
         } else {
             userDefaults.removeObject(forKey: UserDefaultsKey.hostMappings)
         }
+    }
+
+    static func getBootstrapDNS() -> DNSBootstrapPolicy {
+        DNSBootstrapPolicy.parse(userDefaults.string(forKey: "bootstrapDNS") ?? "system") ?? .system
+    }
+    static func setBootstrapDNS(_ policy: DNSBootstrapPolicy) {
+        userDefaults.set(policy.rendered, forKey: "bootstrapDNS")
     }
 
     static func getFallbackDNSMode() -> FallbackDNSMode {
