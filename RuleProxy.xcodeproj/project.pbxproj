@@ -112,6 +112,7 @@
 				Networking/DNS/DNSHosts.swift,
 				Networking/DNS/DNSLookupCache.swift,
 				Networking/DNS/DNSMessage.swift,
+				Networking/DNS/DNSPacket.swift,
 				Networking/DNS/DNSName.swift,
 				Networking/DNS/DNSResolver.swift,
 				Networking/DNS/DNSUpstreamClient.swift,

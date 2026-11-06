@@ -50,7 +50,8 @@ nonisolated enum ConfigurationCompiler {
         _ sourceConfiguration: ParsedConfiguration,
         capabilities: ConfigurationValidator.Capabilities = .current,
         parsingDiagnostics: [ConfigurationDiagnostic] = [],
-        ruleSetContents: [String: String] = [:]
+        ruleSetContents: [String: String] = [:],
+        geoResources: NativeGeoDatabase? = nil
     ) -> CompiledConfiguration {
         var diagnostics = parsingDiagnostics
         let configuration = NativeRuleSet.expand(sourceConfiguration, contents: ruleSetContents, diagnostics: &diagnostics)
@@ -94,7 +95,7 @@ nonisolated enum ConfigurationCompiler {
                 if let matcher { ordered.rules.append(.init(line: line, matcher: matcher, action: .direct, noResolve: true)); line += 1 }
             }
         }
-        let geo = compileGeo(configuration, rules: ordered.rules, diagnostics: &diagnostics)
+        let geo = compileGeo(configuration, rules: ordered.rules, resources: geoResources, diagnostics: &diagnostics)
 
         let textMITM = TextMITMCompiler.compile(configuration, diagnostics: &diagnostics)
         return CompiledConfiguration(
@@ -647,9 +648,16 @@ nonisolated extension ConfigurationCompiler {
 
 
 nonisolated extension ConfigurationCompiler {
-    static func compileGeo(_ parsed: ParsedConfiguration, rules: [OrderedRoutingRule], diagnostics: inout [ConfigurationDiagnostic]) -> NativeGeoDatabase {
-        var result = NativeGeoDatabase()
+    static func compileGeo(_ parsed: ParsedConfiguration, rules: [OrderedRoutingRule], resources: NativeGeoDatabase? = nil, diagnostics: inout [ConfigurationDiagnostic]) -> NativeGeoDatabase {
+        var result = resources ?? NativeGeoDatabase()
+        var pending = false
+        do {
+            let refs = try NativeGeoResources.references(parsed)
+            pending = !refs.isEmpty && resources == nil
+            if pending { diagnostics.append(.init(severity: .warning, code: .notApplied, section: "GeoIP/GeoSite", message: "External Geo data will be downloaded and validated when applying; preview is incomplete.")) }
+        } catch { diagnostics.append(.init(severity: .error, code: .invalidValue, section: "GeoIP/GeoSite", message: error.localizedDescription)) }
         for (key, raw) in parsed.geoIP.pairs {
+            if NativeGeoResources.isExternal(raw) { continue }
             let token = key.uppercased()
             let asn = token.hasPrefix("AS") ? Int(token.dropFirst(2)) : nil
             guard asn != nil || (token.count == 2 && token.allSatisfy(\.isLetter)) else {
@@ -665,6 +673,7 @@ nonisolated extension ConfigurationCompiler {
             }
         }
         for (tag, raw) in parsed.geoSite.pairs {
+            if NativeGeoResources.isExternal(raw) { continue }
             var suffixes: [String] = []
             for suffix in ConfigurationDocument.splitList(raw) {
                 guard let host = DNSName.normalizedHost(suffix), !host.contains("*") else {
@@ -673,21 +682,41 @@ nonisolated extension ConfigurationCompiler {
                 }
                 suffixes.append(host)
             }
-            result.sites[tag] = suffixes
+            result.sites[tag.lowercased()] = suffixes
         }
+        let countries = Set(result.networks.compactMap(\.country))
+        let asns = Set(result.networks.compactMap(\.asn))
         func check(_ matcher: OrderedRoutingRule.Matcher) {
             let exists: Bool
             switch matcher {
             case .geoSite(let tag): exists = result.contains(tag: tag)
-            case .geoIP(let country): exists = result.networks.contains { $0.country == country }
-            case .geoASN(let asn), .ipASN(let asn): exists = result.networks.contains { $0.asn == asn }
+            case .geoIP(let country): exists = countries.contains(country)
+            case .geoASN(let asn), .ipASN(let asn): exists = asns.contains(asn)
             case .allOf(let children), .anyOf(let children): children.forEach(check); return
             case .negated(let child): check(child); return
             default: return
             }
-            if !exists { diagnostics.append(.init(severity: .error, code: .missingValue, section: "Rule", message: "Geo rule references data absent from [GeoIP] or [GeoSite].")) }
+            if !exists && !pending { diagnostics.append(.init(severity: .error, code: .missingValue, section: "Rule", message: "Geo rule references data absent from [GeoIP] or [GeoSite].")) }
         }
         rules.forEach { check($0.matcher) }
+        do { try result.validate(); result.prepareIndex() }
+        catch { diagnostics.append(.init(severity: .error, code: .invalidValue, section: "GeoIP/GeoSite", message: error.localizedDescription)) }
         return result
+    }
+}
+
+nonisolated extension ConfigurationCompiler {
+    /// Provider conditions receive the same load-time regex/depth validation.
+    static func validateExpression(_ matcher: OrderedRoutingRule.Matcher, depth: Int = 0) throws {
+        guard depth <= 16 else { throw NativeGeoFailure("Rule expression nesting exceeds 16 levels.") }
+        switch matcher {
+        case .domainRegex(let pattern), .urlRegex(let pattern):
+            _ = try NSRegularExpression(pattern: pattern)
+        case .allOf(let children), .anyOf(let children):
+            guard !children.isEmpty else { throw NativeGeoFailure("Logical rule has no conditions.") }
+            for child in children { try validateExpression(child, depth: depth + 1) }
+        case .negated(let child): try validateExpression(child, depth: depth + 1)
+        default: break
+        }
     }
 }

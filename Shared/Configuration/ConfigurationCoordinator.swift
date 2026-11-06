@@ -213,14 +213,14 @@ nonisolated extension ConfigurationCoordinator {
 
     /// The single compilation boundary, including syntax diagnostics. A parser
     /// error must never disappear merely because an invalid entry was omitted.
-    func compile(text: String, ruleSetContents: [String: String] = [:]) -> TextConfigurationPipeline.Result {
+    func compile(text: String, ruleSetContents: [String: String] = [:], geoResources: NativeGeoDatabase? = nil) -> TextConfigurationPipeline.Result {
         let parsed = RuleManager.parse(text)
         return TextConfigurationPipeline.Result(
             document: parsed.document,
             parsed: parsed.configuration,
             compiled: ConfigurationCompiler.compile(
                 parsed.configuration, capabilities: capabilities,
-                parsingDiagnostics: parsed.diagnostics, ruleSetContents: ruleSetContents
+                parsingDiagnostics: parsed.diagnostics, ruleSetContents: ruleSetContents, geoResources: geoResources
             )
         )
     }
@@ -373,7 +373,7 @@ nonisolated extension ConfigurationCoordinator {
 
         case .rule:
             let count = compiled.orderedRules.count
-            let data = compiled.geo.networks.count + compiled.geo.sites.values.reduce(0) { $0 + $1.count }
+            let data = compiled.geo.entryCount
             return count + data == 0 ? (0, "") : (count + data, "\(count) rule(s), \(data) geo entry/entries")
 
         case .dns:
@@ -487,7 +487,7 @@ nonisolated extension ConfigurationCoordinator {
                 payloadChanged = Self.payloadChanged(from: previous, to: next, module: module)
             } else {
                 switch module {
-                case .rule: payloadChanged = !next.orderedRules.isEmpty || !next.geo.networks.isEmpty || !next.geo.sites.isEmpty
+                case .rule: payloadChanged = !next.orderedRules.isEmpty || next.geo.entryCount > 0
                 case .dns: payloadChanged = !next.hosts.isEmpty
                 case .outbound: payloadChanged = !next.proxies.isEmpty || !next.proxyGroups.isEmpty
                 case .mitm: payloadChanged = !next.textMITM.suffixes.isEmpty || !next.textMITM.embeddedSets.isEmpty

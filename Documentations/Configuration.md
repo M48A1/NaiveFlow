@@ -579,9 +579,10 @@ These are deliberate, documented gaps, not silent failures:
   tiered, one-policy-per-rule-set model. Until the payload carries rule order,
   FINAL, GeoIP/GeoSite and the extra rule types, the tunnel keeps using
   `TieredRouteMatcher`; the editor reports those rules as not compiled.
-- **Geo databases.** No GeoIP/GeoSite data ships yet, so geo rules validate but
-  cannot be evaluated. Geo lookups are injected into `OrderedRouteMatcher`, so
-  wiring the databases later does not change the matcher.
+- **Geo databases.** Explicit external V2Ray GeoIP/GeoSite and CIDR/domain text
+  sources are downloaded and validated on apply, pinned into runtime versions,
+  and indexed at compilation/decode. Refresh is manual; performance and runtime
+  acceptance are unverified. See [Geo databases](GeoDatabases.md).
 - **Scripts.** `[Script]` is parsed and validated only.
 - **MITM host list.** Only `[MITM] enable` is applied; the certificate and host
   fields are stored and reported.

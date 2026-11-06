@@ -9,6 +9,7 @@ struct ConfigurationPublisher {
     let tunnel: TunnelController?
     var runningOverride: Bool? = nil
     var ruleSetLoader: NativeRuleSet.Loader? = nil
+    var geoLoader: NativeGeoResources.Loader? = nil
     var deliveryOverride: (@MainActor (RuntimeConfigurationBundle, Bool) async throws -> RuntimeConfigurationReceipt?)? = nil
     var preferencesSink: @MainActor ([String: RuntimePreferenceValue]?) -> Void = { AWCore.installRuntimePreferences($0) }
 
@@ -46,8 +47,10 @@ struct ConfigurationPublisher {
             throw ConfigurationActivation.Failure.notActivatable(errors: result.errorCount, warnings: result.warningCount)
         }
         let ruleSetContents = try await NativeRuleSet.resolve(result.parsed, loader: ruleSetLoader)
-        if !ruleSetContents.isEmpty {
-            result = ConfigurationCoordinator().compile(text: text, ruleSetContents: ruleSetContents)
+        let geoResources = try await NativeGeoResources.resolve(result.parsed,
+            cacheDirectory: activation.store.directory.appendingPathComponent("geo-sources", isDirectory: true), loader: geoLoader)
+        if !ruleSetContents.isEmpty || geoResources != nil {
+            result = ConfigurationCoordinator().compile(text: text, ruleSetContents: ruleSetContents, geoResources: geoResources)
             guard result.isActivatable else {
                 throw NativeRuleSet.Failure(message: result.diagnostics.filter { $0.severity == .error }
                     .map(\.localizedDescription).joined(separator: "\n"))
@@ -116,6 +119,9 @@ struct ConfigurationPublisher {
             try activation.store.activate(snapshot.id, confirmed: receipt != nil)
             stateSink(bundle)
             var notes: [String] = []
+            if !compiled.geo.sources.isEmpty {
+                notes.append("Geo data: \(compiled.geo.sources.count) source(s), \(compiled.geo.entryCount) entries pinned to this version. Reapply to refresh; rollback uses saved data.")
+            }
             if receipt == nil { notes.append("Version saved. The stopped tunnel will validate and confirm it at its next start.") }
             notes.append("Text configuration is authoritative for this version; manual node and rule stores are preserved for rollback.")
             let installed = ConfigurationInstallation(snapshotId: snapshot.id)

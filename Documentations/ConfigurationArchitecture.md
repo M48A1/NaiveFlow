@@ -52,7 +52,7 @@ DNS 读取固定在一个设置视图，缓存有代际隔离；旧路由编译�
 | --- | --- |
 | 路由 | 顺序首条命中、每条策略、FINAL；精确域名、后缀、关键字、通配符、正则；IPv4 CIDR、来源 IP/端口、目标端口、TCP/UDP；AND/OR/NOT |
 | 外部规则集 | RULE-SET 引用 HTTPS 或 App 可读的绝对 file:/// 文件；发布前展开、校验并固定到运行包，详见 [RuleSets.md](RuleSets.md) |
-| Geo | [GeoIP] 中的国家/ASN 前缀和 [GeoSite] 的域名后缀列表，随版本固定；不附带外部数据库 |
+| Geo | 配置内国家/ASN 前缀与域名后缀；外部 V2Ray geoip.dat/geosite.dat、CIDR/域名文本；手动应用时下载、校验、随版本固定；前缀/域名/关键字索引，见 [GeoDatabases.md](GeoDatabases.md) |
 | 分组 | select，支持嵌套、内置动作和 selected=成员；不支持自动延迟选择/负载均衡 |
 | Host | 精确域名 → IPv4 字面量。没有把 server:、通配符或别名当作有效绑定 |
 | MITM | enable、hostname 后缀；URL、Header、Body、JSON 改写、Map Local；必须先安装并信任既有 CA |
@@ -61,7 +61,7 @@ DNS 读取固定在一个设置视图，缓存有代际隔离；旧路由编译�
 
 PROCESS-NAME、USER-AGENT、URL 路由、定时/DNS 脚本、证书导入、其他客户端脚本 API、未实现 General 字段会明确拒绝。bypass-country 只有本机存在对应预设数据库时才接受；也可使用文档内的 Geo 数据。规则匹配可能先等待 DNS；no-resolve 不触发额外查询。
 
-文本文档最多 16 MiB，脚本源最多 1 MB，运行包最多 16 MiB。请求/响应完整消息、流式脚本和 JSON path 的行为遵循现有 MITM 引擎，见 MITM.md。
+文本文档最多 16 MiB，脚本源最多 1 MB，运行包最多 64 MiB。请求/响应完整消息、流式脚本和 JSON path 的行为遵循现有 MITM 引擎，见 MITM.md。
 
 ## 验证状态
 

@@ -58,9 +58,7 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
             if case .proxy(let id) = rule.action, !ids.contains(id) { throw RuntimeConfigurationFailure.invalidBundle }
             try validateMatcher(rule.matcher, depth: 0)
         }
-        guard geo.networks.count <= 100_000, geo.sites.values.reduce(0, { $0 + $1.count }) <= 100_000 else {
-            throw RuntimeConfigurationFailure.invalidBundle
-        }
+        try geo.validate()
         for network in geo.networks { try validateMatcher(.ipCIDR(network.prefix), depth: 0) }
 
         if case .proxy(let id) = finalAction, !ids.contains(id) { throw RuntimeConfigurationFailure.invalidBundle }
@@ -102,9 +100,9 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
         case .geoSite(let tag):
             guard geo.contains(tag: tag) else { throw RuntimeConfigurationFailure.invalidBundle }
         case .geoIP(let country):
-            guard geo.networks.contains(where: { $0.country == country }) else { throw RuntimeConfigurationFailure.invalidBundle }
+            guard geo.hasCountry(country) else { throw RuntimeConfigurationFailure.invalidBundle }
         case .geoASN(let asn), .ipASN(let asn):
-            guard asn > 0, geo.networks.contains(where: { $0.asn == asn }) else { throw RuntimeConfigurationFailure.invalidBundle }
+            guard asn > 0, geo.hasASN(asn) else { throw RuntimeConfigurationFailure.invalidBundle }
         case .domain, .domainSuffix, .domainKeyword, .domainWildcard, .sourcePort, .destinationPort: break
         default: throw RuntimeConfigurationFailure.invalidBundle
         }
@@ -167,9 +165,9 @@ nonisolated struct RuntimeBundleStore: Sendable {
     func load(_ id: UUID) throws -> RuntimeConfigurationBundle {
         let url = directory.appendingPathComponent("\(id.uuidString).json")
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size <= 24 * 1024 * 1024 else { throw RuntimeConfigurationFailure.corruptedBundle }
+        guard size <= 96 * 1024 * 1024 else { throw RuntimeConfigurationFailure.corruptedBundle }
         let envelope = try JSONDecoder().decode(Envelope.self, from: Data(contentsOf: url))
-        guard digest(envelope.payload) == envelope.sha256 else { throw RuntimeConfigurationFailure.corruptedBundle }
+        guard envelope.payload.count <= 64 * 1024 * 1024, digest(envelope.payload) == envelope.sha256 else { throw RuntimeConfigurationFailure.corruptedBundle }
         let bundle = try JSONDecoder().decode(RuntimeConfigurationBundle.self, from: envelope.payload)
         guard bundle.id == id else { throw RuntimeConfigurationFailure.corruptedBundle }
         try bundle.validate()
@@ -180,7 +178,7 @@ nonisolated struct RuntimeBundleStore: Sendable {
         try bundle.validate()
         try ensureDirectory()
         let data = try JSONEncoder().encode(bundle)
-        guard data.count <= 16 * 1024 * 1024 else { throw RuntimeConfigurationFailure.invalidBundle }
+        guard data.count <= 64 * 1024 * 1024 else { throw RuntimeConfigurationFailure.invalidBundle }
         let url = directory.appendingPathComponent("\(bundle.id.uuidString).json")
         // IDs are immutable: never overwrite a version another process may hold.
         guard !FileManager.default.fileExists(atPath: url.path) else { throw RuntimeConfigurationFailure.superseded }

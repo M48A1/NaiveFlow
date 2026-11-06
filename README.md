@@ -29,6 +29,7 @@ DNS 分流无需安装 MITM CA，也不会自动启用 MITM。通用 HTTPS 解�
 - [DNS 配置与接管边界](Documentations/DNSConfiguration.md)
 - [配置规范](Documentations/Configuration.md)与[配置架构](Documentations/ConfigurationArchitecture.md)
 - [RULE-SET](Documentations/RuleSets.md)
+- [GeoIP / GeoSite 外部数据库、手动更新与索引](Documentations/GeoDatabases.md)
 - [iCloud 手动同步](Documentations/ConfigurationCloudSync.md)
 - [MITM 改写与脚本](Documentations/MITM.md)
 - [IPv4 范围](Documentations/IPv4Only.md)
