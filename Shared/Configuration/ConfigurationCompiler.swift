@@ -629,14 +629,14 @@ nonisolated extension ConfigurationCompiler {
     ) -> [HostMapping] {
         var mappings: [HostMapping] = []
         for entry in configuration.hosts {
-            guard let host = DNSName.normalizedHost(entry.host) else {
+            guard let host = Self.normalizeHostMappingPattern(entry.host) else {
                 diagnostics.append(
                     ConfigurationDiagnostic(
                         severity: .error,
                         code: .invalidValue,
                         line: entry.line,
                         section: ConfigurationDocument.SectionKind.host.displayName,
-                        message: "Host '\(entry.host)' is a wildcard or invalid; the DNS override table only matches exact hosts."
+                        message: "Host '\(entry.host)' is not a valid domain or wildcard."
                     )
                 )
                 continue
@@ -664,6 +664,17 @@ nonisolated extension ConfigurationCompiler {
             mappings.append(HostMapping(host: host, address: canonical))
         }
         return mappings
+    }
+
+    /// Accepts exact domains and `*.suffix` wildcards; the wildcard marker is
+    /// kept so `DNSHosts` can match subdomains.
+    static func normalizeHostMappingPattern(_ raw: String) -> String? {
+        var host = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        if host.hasPrefix("*.") {
+            guard let suffix = DNSName.normalizedHost(String(host.dropFirst(2))) else { return nil }
+            return "*." + suffix
+        }
+        return DNSName.normalizedHost(host)
     }
 
     static func compileSettings(_ configuration: ParsedConfiguration) -> CompiledSettings {

@@ -39,7 +39,7 @@ nonisolated enum ConfigurationValidator {
                         .ipCIDR, .sourceIP, .sourcePort, .destinationPort, .protocolType,
                         .processName, .userAgent,
                         .ruleSet, .geoIP, .geoASN, .ipASN, .geoSite, .logicalAnd, .logicalOr, .logicalNot],
-            groupKinds: [.select],
+            groupKinds: [.select, .urlTest, .fallback, .loadBalance],
             preservesRuleOrder: true,
             supportsPerRulePolicy: true,
             supportsFinal: true,
@@ -350,7 +350,10 @@ nonisolated extension ConfigurationValidator {
                 )
             }
 
-            for (key, _) in group.parameters.pairs where key != "selected" {
+            let supportedParameters: Set<String> = kind == .select
+                ? ["selected"]
+                : ["selected", "interval", "tolerance", "url"]
+            for (key, _) in group.parameters.pairs where !supportedParameters.contains(key) {
                 diagnostics.append(.init(severity: .error, code: .notApplied, line: group.line,
                     section: "Proxy Group", message: "Unsupported native group option '\(key)'."))
             }

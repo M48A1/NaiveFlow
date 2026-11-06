@@ -172,13 +172,14 @@
 4. 如需内置服务/国家预设，把自备且符合表结构的 `Rules.db`（`rules(type,value,source)`、`metadata(key,value)`）加入主应用资源即可自动加载。
 5. 真机验证配置页的四个动作：`Load from Current Setup` → 编辑 → `Apply to App` → 隧道按 `ConfigurationReloadPlan` 重载；节点、分组、规则的表单化编辑与设计稿仍属 07，进入 **03** 前先确定有序规则载荷格式与 Geo 数据来源。后续每完成一项更新本文件，并记录验证结果及未解决问题。
 6. **让 profile 成为唯一真相源（按 Surge 语义逐节补齐）**，顺序按投入产出排：
-   - [x] `[General]` 全量目录化：54 个键，加参数只需在 `ConfigurationSettings.catalog` 与 `ConfigurationSettingsBindings.all` 各加一条（2026-11-04 完成）。
-   - [ ] `routing.bin` 有序规则 + `FINAL`：`CompiledConfiguration.orderedRules` / `finalAction` 已存在，缺的是载荷格式；这是「规则完全等同 Surge」的唯一硬缺口。
-   - [ ] 补齐可编译规则类型：`DOMAIN`、`DOMAIN-WILDCARD`、`DOMAIN-REGEX`、`URL-REGEX`（匹配器已在 `OrderedRouteMatcher`），再谈 `RULE-SET`/`GEOIP`/`PROCESS-NAME`/逻辑规则。
-   - [ ] `[Proxy Group]` 增加 `url-test` / `fallback` / `load-balance`，并把 `interval`、`tolerance`、`url` 变成参数。
-   - [ ] `[MITM] hostname` 接进拦截列表（当前只应用 `enable`），`[Script]` 从“仅解析”到可执行。
-   - [ ] `[Host]` 通配符、`[URL Rewrite]`/`[Header Rewrite]`/`[Map Local]`、`[SSID Setting]`、`[Module]`/`[Subscription]`/`[Chain]` 各节。
-   - [ ] 语义待定：profile 是否完全取代页面（页面改动回写文本），或维持“文本 = 全量投影 + 页面保留选择状态/外观”。
+   - [x] `[General]` 全量目录化：54 个键（2026-11-04 完成）。
+   - [ ] `routing.bin` 有序规则 + `FINAL`：有序语义已走 `RuntimeConfigurationBundle`；旧 `routing.bin` 载荷仍是分 tier，未改。
+   - [x] 补齐可编译规则类型：`DOMAIN`/`DOMAIN-WILDCARD`/`DOMAIN-REGEX`/`URL-REGEX`/`PROCESS-NAME`/`USER-AGENT`（2026-11-06 补齐）。
+   - [x] `[Proxy Group]` 增加 `url-test`/`fallback`/`load-balance`：`groupKinds` 已启用，`interval`/`tolerance`/`url` 参数放行；执行语义暂退化为 select（延迟测试/健康检查/负载均衡待后续）。
+   - [x] `[MITM] hostname` 接进拦截列表，`[Script]` 可执行（`TextMITMCompiler` + 阶段 08 方言）。
+   - [x] `[Host]` 通配符、`[URL Rewrite]`/`[Header Rewrite]`/`[Map Local]`（`TextMITMCompiler` + `DNSHosts` 通配符）。
+   - [ ] `[SSID Setting]`、`[Module]`/`[Subscription]`/`[Chain]` 各节。
+   - [x] 语义：维持「文本 = 全量投影 + 页面保留选择状态/外观」，与 Surge / Loon / Quantumult X 一致；页面不反向改写文本，选择/外观不入 profile。
 
 
 

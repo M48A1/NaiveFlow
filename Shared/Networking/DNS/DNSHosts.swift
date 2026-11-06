@@ -15,15 +15,26 @@ nonisolated final class DNSHosts: Sendable {
         var ipv4: [String] = []
     }
 
-    private let table = Mutex<[String: Entry]?>(nil)
+    private struct Table {
+        var exact: [String: Entry] = [:]
+        var wildcards: [String: Entry] = [:]
+    }
+
+    private let table = Mutex<Table?>(nil)
 
     func addresses(for host: String, family: DNSAddressFamily) -> [String]? {
         var key = DNSName.cacheKey(for: host)
         if key.hasSuffix(".") { key.removeLast() }
         return table.withLock { table -> [String]? in
             if table == nil { table = Self.build(HostMapping.load()) }
-            guard let entry = table?[key] else { return nil }
-            return entry.ipv4
+            guard let table else { return nil }
+            if let entry = table.exact[key] { return entry.ipv4 }
+            for (suffix, entry) in table.wildcards {
+                if key == suffix || key.hasSuffix("." + suffix) {
+                    return entry.ipv4
+                }
+            }
+            return nil
         }
     }
 
@@ -31,15 +42,23 @@ nonisolated final class DNSHosts: Sendable {
         table.withLock { $0 = nil }
     }
 
-    private static func build(_ mappings: [HostMapping]) -> [String: Entry] {
-        var table: [String: Entry] = [:]
+    private static func build(_ mappings: [HostMapping]) -> Table {
+        var table = Table()
         for mapping in mappings {
-            guard let host = DNSName.normalizedHost(mapping.host),
-                  let address = HostMapping.canonicalAddress(mapping.address)
-            else { continue }
-            var entry = table[host, default: Entry()]
-            if !entry.ipv4.contains(address) { entry.ipv4.append(address) }
-            table[host] = entry
+            guard let address = HostMapping.canonicalAddress(mapping.address) else { continue }
+            var host = mapping.host.trimmingCharacters(in: .whitespaces).lowercased()
+            if host.hasSuffix(".") { host.removeLast() }
+            if host.hasPrefix("*.") {
+                guard let suffix = DNSName.normalizedHost(String(host.dropFirst(2))) else { continue }
+                var entry = table.wildcards[suffix, default: Entry()]
+                if !entry.ipv4.contains(address) { entry.ipv4.append(address) }
+                table.wildcards[suffix] = entry
+            } else {
+                guard let normalized = DNSName.normalizedHost(host) else { continue }
+                var entry = table.exact[normalized, default: Entry()]
+                if !entry.ipv4.contains(address) { entry.ipv4.append(address) }
+                table.exact[normalized] = entry
+            }
         }
         return table
     }
