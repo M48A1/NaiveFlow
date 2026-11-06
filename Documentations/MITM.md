@@ -12,6 +12,16 @@ expressions, and JavaScript, and does not cover the settings UI.
 > leaf fails); this is expected. Plain **HTTP** carries no certificate and needs
 > no CA trust.
 
+## DNS scope
+
+Application-owned DoH and DoH3 are routed as ordinary HTTPS and QUIC traffic.
+A dedicated MITM DNS handler that decrypts queries, performs replacement DNS
+lookups, and synthesizes DoH responses is out of scope, rather than a pending
+feature. DNS routing does not automatically enable MITM or require a CA.
+General HTTP rewrite and script features remain controlled by explicit MITM
+configuration. The core's own DoH upstream resolver is retained separately;
+see [DNS configuration](DNSConfiguration.md).
+
 ## Contents
 
 - [How it works](#how-it-works)
