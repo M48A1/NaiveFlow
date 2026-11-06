@@ -274,6 +274,13 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
         ipv4Settings.excludedRoutes = excludedIPv4Routes
         settings.ipv4Settings = ipv4Settings
 
+        // Capture the unsupported family solely to discard it at packet intake.
+        // Removing this route would let applications bypass the IPv4 tunnel.
+        let blocked = NEIPv6Settings(addresses: ["fd00:6e61:6976::1"], networkPrefixLengths: [128])
+        blocked.includedRoutes = [NEIPv6Route.default()]
+        blocked.excludedRoutes = []
+        settings.ipv6Settings = blocked
+
         settings.dnsSettings = NEDNSSettings(servers: [tunnelAddressIPv4])
         settings.mtu = NSNumber(value: mtu)
 

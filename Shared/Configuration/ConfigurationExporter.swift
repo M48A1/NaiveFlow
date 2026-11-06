@@ -403,7 +403,6 @@ nonisolated extension ConfigurationExporter {
         case .domainSuffix: return "DOMAIN-SUFFIX"
         case .domainKeyword: return "DOMAIN-KEYWORD"
         case .ipCIDR: return "IP-CIDR"
-        case .ipCIDR6: return "IP-CIDR6"
         }
     }
 

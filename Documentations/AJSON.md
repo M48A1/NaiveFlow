@@ -99,7 +99,7 @@ Each element of `proxies` takes one of three forms.
 | Key        | Type    | Meaning |
 | ---------- | ------- | ------- |
 | `name`     | string  | **Required**, non-empty. Display name. |
-| `server`   | string  | **Required** except for `direct`. Host name or IP address; brackets around an IPv6 address are removed. |
+| `server`   | string  | **Required** except for `direct`. Host name or IP address; IPv4 only; unsupported address families are rejected. |
 | `port`     | integer | **Required** except for `direct`. 1–65535. |
 | `protocol` | string  | **Required.** One of `nowhere`, `vless`, `hysteria`, `sudoku`, `trojan`, `anytls`, `shadowsocks`, `socks5`, `rfc`, `direct`. |
 | `id`       | string  | Stable key, unique in the document. See [Stable identities](#stable-identities). |

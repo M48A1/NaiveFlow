@@ -92,9 +92,7 @@ struct NativeConfigurationTests {
         let prefix = try #require(CIDRPrefix.parse("192.0.2.128/25"))
         #expect(prefix.contains("192.0.2.129"))
         #expect(!prefix.contains("192.0.2.127"))
-        let v6 = try #require(CIDRPrefix.parse("2001:db8::/33"))
-        #expect(v6.contains("2001:db8::1"))
-        #expect(!v6.contains("2001:db8:8000::1"))
+        #expect(CIDRPrefix.parse("2001:db8::/33") == nil)
     }
 
     @Test func invalidNestedRegexOrMetadataIsRejectedBeforePublish() {

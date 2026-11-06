@@ -119,7 +119,7 @@ final class ControlBlock {
         self.key = key
         self.delaysAcknowledgment = delaysAcknowledgment
         self.growth = growth
-        receiveMSS = min(Int(Constants.maximumSegmentSize), Constants.mtu - (key.local.address.isIPv6 ? IPv6Header.length : IPv4Header.length) - TCPHeader.length)
+        receiveMSS = min(Int(Constants.maximumSegmentSize), Constants.mtu - IPv4Header.length - TCPHeader.length)
         source = key.remote
         destination = key.local
         tmr = stack.ticks
@@ -264,7 +264,7 @@ final class ControlBlock {
     }
 
     private func effectiveSendMSS(_ value: UInt16) -> UInt16 {
-        let overhead = (destination.address.isIPv6 ? IPv6Header.length : IPv4Header.length) + TCPHeader.length
+        let overhead = IPv4Header.length + TCPHeader.length
         return min(value, UInt16(Constants.mtu - overhead))
     }
 

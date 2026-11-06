@@ -136,7 +136,10 @@ nonisolated final class ProxyClient: Sendable {
     }
     
     func dial(_ request: ProxyRequest) async throws -> ProxyConnection {
-        try await withOutboundMetrics {
+        if !request.isMultiplexerCarrier { try IPv4Only.requireHost(request.host) }
+        if !configuration.isDirect { try IPv4Only.requireHost(configuration.serverAddress) }
+        if let resolved = configuration.resolvedIP { try IPv4Only.requireHost(resolved) }
+        return try await withOutboundMetrics {
             try await self.deliver {
                 try await self.connectThroughChainIfNeeded(request)
             }

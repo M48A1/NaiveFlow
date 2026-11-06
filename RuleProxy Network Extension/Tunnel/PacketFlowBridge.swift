@@ -15,7 +15,6 @@ nonisolated final class PacketFlowWriter: @unchecked Sendable {
 
     private static let selector = NSSelectorFromString("writePackets:withProtocols:")
     private static let ipv4 = NSNumber(value: AF_INET)
-    private static let ipv6 = NSNumber(value: AF_INET6)
 
     private let flow: NEPacketTunnelFlow
     private let writePackets: WritePackets?
@@ -31,9 +30,11 @@ nonisolated final class PacketFlowWriter: @unchecked Sendable {
         objects.reserveCapacity(packets.count)
         protocols.reserveCapacity(packets.count)
         for packet in packets {
+            guard packet.data.length > 0, CFDataGetBytePtr(packet.data)[0] >> 4 == 4 else { continue }
             objects.append(packet.data)
-            protocols.append(packet.isIPv6 ? Self.ipv6 : Self.ipv4)
+            protocols.append(Self.ipv4)
         }
+        if objects.isEmpty { return true }
         if let writePackets {
             return writePackets(flow, Self.selector, objects as NSArray, protocols as NSArray).boolValue
         }
@@ -56,7 +57,9 @@ nonisolated final class InboundBatch: @unchecked Sendable {
         for index in 0..<count {
             let packet = Unmanaged<CFData>.fromOpaque(CFArrayGetValueAtIndex(array, index)).takeUnretainedValue()
             let length = CFDataGetLength(packet)
-            packets.append(UnsafeRawBufferPointer(start: CFDataGetBytePtr(packet), count: length))
+            let bytes = UnsafeRawBufferPointer(start: CFDataGetBytePtr(packet), count: length)
+            guard bytes.first.map({ $0 >> 4 == 4 }) == true else { continue }
+            packets.append(bytes)
             byteCount += length
         }
         self.packets = packets
@@ -208,7 +211,10 @@ nonisolated final class PacketReader: @unchecked Sendable {
 
     private func receive(_ packets: NSArray?) {
         guard !stopped.load(ordering: .acquiring) else { return }
-        if let packets, packets.count > 0, !deliver(InboundBatch(packets)) { return }
+        if let packets, packets.count > 0 {
+            let batch = InboundBatch(packets)
+            if !batch.packets.isEmpty, !deliver(batch) { return }
+        }
         guard !stopped.load(ordering: .acquiring) else { return }
         arm()
     }

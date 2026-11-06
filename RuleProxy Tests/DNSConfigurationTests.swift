@@ -14,7 +14,7 @@ struct DNSConfigurationTests {
             mode = doh
             server = 223.5.5.5
             doh = https://resolver.example/dns-query
-            bootstrap-dns = 1.1.1.1, 2001:db8::53
+            bootstrap-dns = 1.1.1.1, 8.8.8.8
             proxy-dns-mode = system
             [Rule]
             FINAL,DIRECT
@@ -23,7 +23,7 @@ struct DNSConfigurationTests {
         #expect(result.compiled.settings.values["dns-mode"] == .text("doh"))
         #expect(result.compiled.settings.values["dns-server"] == .text("223.5.5.5"))
         #expect(result.compiled.settings.values["proxy-dns-mode"] == .text("default"))
-        #expect(result.compiled.settings.values["bootstrap-dns"] == .text("1.1.1.1, 2001:db8::53"))
+        #expect(result.compiled.settings.values["bootstrap-dns"] == .text("1.1.1.1, 8.8.8.8"))
         #expect(ConfigurationModule.owning(section: "DNS") == .dns)
     }
 
@@ -41,7 +41,7 @@ struct DNSConfigurationTests {
 
     @Test func bootstrapAcceptsOnlySystemOrNumericSeedList() {
         #expect(DNSBootstrapPolicy.parse("SYSTEM") == .system)
-        #expect(DNSBootstrapPolicy.parse("1.1.1.1, 1.1.1.1, [2001:db8::53]") == .servers(["1.1.1.1", "2001:db8::53"]))
+        #expect(DNSBootstrapPolicy.parse("1.1.1.1, 1.1.1.1, 8.8.8.8") == .servers(["1.1.1.1", "8.8.8.8"]))
         for value in ["", "1.1.1.1,", "1.1.1.1:5353", "https://resolver.example", "invalid", "system,1.1.1.1"] {
             #expect(DNSBootstrapPolicy.parse(value) == nil)
         }
@@ -50,11 +50,11 @@ struct DNSConfigurationTests {
     @Test func numericEndpointsSkipBootstrapAndNamesUseOnlyConfiguredSeeds() async throws {
         let calls = BootstrapCalls()
         let policy = DNSBootstrapPolicy.servers(["192.0.2.1", "192.0.2.2"])
-        let ipv6 = try await policy.endpointAddresses(for: "[2001:db8::1]") { name, seed in
+        let numeric = try await policy.endpointAddresses(for: "203.0.113.53") { name, seed in
             calls.entries.withLock { $0.append((name, seed)) }
             return []
         }
-        #expect(ipv6 == ["2001:db8::1"])
+        #expect(numeric == ["203.0.113.53"])
         #expect(calls.entries.withLock { $0.isEmpty })
         let resolved = try await policy.endpointAddresses(for: "resolver.example") { name, seed in
             calls.entries.withLock { $0.append((name, seed)) }

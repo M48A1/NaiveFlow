@@ -16,18 +16,15 @@ public struct QUICTransportParameters: Hashable, Sendable {
 
     public struct PreferredAddress: Sendable {
         public var ipv4: (address: UInt32, port: UInt16)?
-        public var ipv6: (address: [UInt8], port: UInt16)?
         public var connectionID: QUICConnectionID
         public var statelessResetToken: QUICStatelessResetToken
 
         public init(
             ipv4: (address: UInt32, port: UInt16)?,
-            ipv6: (address: [UInt8], port: UInt16)?,
             connectionID: QUICConnectionID,
             statelessResetToken: QUICStatelessResetToken
         ) {
             self.ipv4 = ipv4
-            self.ipv6 = ipv6
             self.connectionID = connectionID
             self.statelessResetToken = statelessResetToken
         }
@@ -118,8 +115,6 @@ extension QUICTransportParameters.PreferredAddress: Hashable {
     public static func == (lhs: Self, rhs: Self) -> Bool {
         return lhs.ipv4?.address == rhs.ipv4?.address
             && lhs.ipv4?.port == rhs.ipv4?.port
-            && lhs.ipv6?.address == rhs.ipv6?.address
-            && lhs.ipv6?.port == rhs.ipv6?.port
             && lhs.connectionID == rhs.connectionID
             && lhs.statelessResetToken == rhs.statelessResetToken
     }
@@ -127,8 +122,6 @@ extension QUICTransportParameters.PreferredAddress: Hashable {
     public func hash(into hasher: inout Hasher) {
         hasher.combine(self.ipv4?.address)
         hasher.combine(self.ipv4?.port)
-        hasher.combine(self.ipv6?.address)
-        hasher.combine(self.ipv6?.port)
         hasher.combine(self.connectionID)
         hasher.combine(self.statelessResetToken)
     }
@@ -362,8 +355,9 @@ extension InputBuffer {
     mutating func readPreferredAddress() throws(DecodeError) -> QUICTransportParameters.PreferredAddress {
         let ipv4Address = try self.readInteger(as: UInt32.self)
         let ipv4Port = try self.readInteger(as: UInt16.self)
-        let ipv6Address = try self.readBytes(length: 16)
-        let ipv6Port = try self.readInteger(as: UInt16.self)
+        // Fixed wire layout includes an unsupported-family slot; consume it
+        // without exposing a usable address or changing subsequent offsets.
+        _ = try self.readBytes(length: 18)
         let idLength = Int(try self.readInteger(as: UInt8.self))
         guard idLength <= QUICConnectionID.maxLength else {
             throw DecodeError.malformed
@@ -375,11 +369,8 @@ extension InputBuffer {
         }
         let ipv4: (address: UInt32, port: UInt16)? =
             (ipv4Address == 0 && ipv4Port == 0) ? nil : (ipv4Address, ipv4Port)
-        let ipv6: (address: [UInt8], port: UInt16)? =
-            (ipv6Address.allSatisfy { $0 == 0 } && ipv6Port == 0) ? nil : (ipv6Address, ipv6Port)
         return QUICTransportParameters.PreferredAddress(
             ipv4: ipv4,
-            ipv6: ipv6,
             connectionID: id,
             statelessResetToken: token
         )
@@ -470,8 +461,7 @@ extension ByteBuffer {
             var body = ByteBuffer(capacity: 64)
             body.writeInteger(preferredAddress.ipv4?.address ?? 0)
             body.writeInteger(preferredAddress.ipv4?.port ?? 0)
-            body.writeBytes(preferredAddress.ipv6?.address ?? [UInt8](repeating: 0, count: 16))
-            body.writeInteger(preferredAddress.ipv6?.port ?? 0)
+            body.writeBytes([UInt8](repeating: 0, count: 18))
             body.writeInteger(UInt8(preferredAddress.connectionID.count))
             body.writeBytes(preferredAddress.connectionID.bytes)
             body.writeBytes(preferredAddress.statelessResetToken.bytes)

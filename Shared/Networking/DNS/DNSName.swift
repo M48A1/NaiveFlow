@@ -17,8 +17,7 @@ nonisolated enum DNSName {
     static func isIPAddress(_ host: String) -> Bool {
         var v4 = in_addr()
         if inet_pton(AF_INET, host, &v4) == 1 { return true }
-        var v6 = in6_addr()
-        return inet_pton(AF_INET6, host, &v6) == 1
+        return false
     }
 
     static func cacheKey(for host: String) -> String {
@@ -32,7 +31,7 @@ nonisolated enum DNSName {
     static func normalizedHost(_ host: String) -> String? {
         var name = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if name.hasSuffix(".") { name.removeLast() }
-        guard !name.isEmpty, name.utf8.count <= 253, !isIPAddress(name) else { return nil }
+        guard IPv4Only.supportsHost(name), name.utf8.count <= 253, !isIPAddress(name) else { return nil }
         for label in name.split(separator: ".", omittingEmptySubsequences: false) {
             guard !label.isEmpty, label.utf8.count <= 63,
                   label.utf8.first != UInt8(ascii: "-"), label.utf8.last != UInt8(ascii: "-"),
@@ -57,5 +56,18 @@ nonisolated enum DNSName {
             || (byte >= UInt8(ascii: "0") && byte <= UInt8(ascii: "9"))
             || byte == UInt8(ascii: "-")
             || byte == UInt8(ascii: "_")
+    }
+}
+
+/// Common IPv4-only guard. Colons/brackets identify unsupported numeric address
+/// forms and must never be reinterpreted as a domain name.
+nonisolated enum IPv4Only {
+    static func supportsHost(_ host: String) -> Bool {
+        !host.isEmpty && !host.contains(":") && !host.contains("[") && !host.contains("]")
+    }
+    static func requireHost(_ host: String) throws {
+        guard supportsHost(host) else {
+            throw RuleProxyError.dns(.resolutionFailed(host: host, detail: "IPv4-only build: unsupported address family"))
+        }
     }
 }

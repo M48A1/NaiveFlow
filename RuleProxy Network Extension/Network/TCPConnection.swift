@@ -1213,8 +1213,6 @@ actor TCPConnection: MITMSessionHost {
         }
         var v4 = in_addr()
         if inet_pton(AF_INET, bare, &v4) == 1 { return bare }
-        var v6 = in6_addr()
-        if inet_pton(AF_INET6, bare, &v6) == 1 { return bare }
         return nil
     }
 

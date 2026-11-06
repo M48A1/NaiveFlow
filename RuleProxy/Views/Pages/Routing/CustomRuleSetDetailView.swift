@@ -317,7 +317,6 @@ private struct AddRoutingRuleView: View {
                     Text("Domain Suffix").tag(RoutingRuleType.domainSuffix)
                     Text("Domain Keyword").tag(RoutingRuleType.domainKeyword)
                     Text("IPv4 CIDR").tag(RoutingRuleType.ipCIDR)
-                    Text("IPv6 CIDR").tag(RoutingRuleType.ipCIDR6)
                 }
                 TextField(placeholder, text: $routingRuleValue)
                     .autocorrectionDisabled()
@@ -351,7 +350,6 @@ private struct AddRoutingRuleView: View {
         case .domainSuffix: return "example.com"
         case .domainKeyword: return "example"
         case .ipCIDR: return "10.0.0.0/8"
-        case .ipCIDR6: return "2001:db8::/32"
         }
     }
 }

@@ -82,21 +82,13 @@ struct InternetChecksum: Sendable {
 
 extension InternetChecksum {
     mutating func update(pseudoHeaderFor source: IPAddress, destination: IPAddress, protocol: UInt8, length: Int) {
-        withUnsafeTemporaryAllocation(byteCount: 40, alignment: 8) { buffer in
+        withUnsafeTemporaryAllocation(byteCount: 12, alignment: 8) { buffer in
             let base = buffer.baseAddress!
             source.write(to: base)
             destination.write(to: base + source.byteCount)
-            let count: Int
-            if source.isIPv6 {
-                base.storeBytes(of: UInt32(length).bigEndian, toByteOffset: 32, as: UInt32.self)
-                base.storeBytes(of: UInt32(`protocol`).bigEndian, toByteOffset: 36, as: UInt32.self)
-                count = 40
-            } else {
-                base.storeBytes(of: UInt16(`protocol`).bigEndian, toByteOffset: 8, as: UInt16.self)
-                base.storeBytes(of: UInt16(length).bigEndian, toByteOffset: 10, as: UInt16.self)
-                count = 12
-            }
-            update(bufferPointer: UnsafeRawBufferPointer(start: base, count: count))
+            base.storeBytes(of: UInt16(`protocol`).bigEndian, toByteOffset: 8, as: UInt16.self)
+            base.storeBytes(of: UInt16(length).bigEndian, toByteOffset: 10, as: UInt16.self)
+            update(bufferPointer: UnsafeRawBufferPointer(start: base, count: 12))
         }
     }
 }

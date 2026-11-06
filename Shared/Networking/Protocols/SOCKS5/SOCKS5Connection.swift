@@ -19,7 +19,7 @@ nonisolated private enum SOCKS5 {
     static let cmdUDPAssociate: UInt8 = 0x03
     static let addrIPv4: UInt8 = 0x01
     static let addrDomain: UInt8 = 0x03
-    static let addrIPv6: UInt8 = 0x04
+    static let unsupportedAddress: UInt8 = 0x04
     static let statusSuccess: UInt8 = 0x00
 }
 
@@ -222,17 +222,8 @@ nonisolated enum SOCKS5Handshake {
             let port = UInt16(addrData[4]) << 8 | UInt16(addrData[5])
             return UDPRelayInfo(host: ip, port: port)
 
-        case SOCKS5.addrIPv6:
-            guard let addrData = try await buffer.readExact(count: 16 + 2) else {
-                throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "SOCKS5 server closed reading bound address"))
-            }
-            var parts: [String] = []
-            for i in stride(from: 0, to: 16, by: 2) {
-                parts.append(String(format: "%x", UInt16(addrData[i]) << 8 | UInt16(addrData[i + 1])))
-            }
-            let ip = parts.joined(separator: ":")
-            let port = UInt16(addrData[16]) << 8 | UInt16(addrData[17])
-            return UDPRelayInfo(host: ip, port: port)
+        case SOCKS5.unsupportedAddress:
+            throw RuleProxyError.proxy(.socks5, .protocolViolation(detail: "IPv4-only build: unsupported relay address"))
 
         case SOCKS5.addrDomain:
             guard let lenData = try await buffer.readExact(count: 1) else {
@@ -254,14 +245,10 @@ nonisolated enum SOCKS5Handshake {
     // MARK: - Address Encoding
     
     static func encodeAddress(host: String) -> Data {
+        guard IPv4Only.supportsHost(host) else { return Data() }
         if let ipv4 = parseIPv4(host) {
             var data = Data([SOCKS5.addrIPv4])
             data.append(ipv4)
-            return data
-        }
-        if let ipv6 = parseIPv6(host) {
-            var data = Data([SOCKS5.addrIPv6])
-            data.append(ipv6)
             return data
         }
         let domainBytes = Data(host.utf8)
@@ -281,20 +268,6 @@ nonisolated enum SOCKS5Handshake {
         return bytes
     }
 
-    private static func parseIPv6(_ string: String) -> Data? {
-        var buffer = Data(count: 16)
-        let host = string.hasPrefix("[") && string.hasSuffix("]")
-            ? String(string.dropFirst().dropLast()) : string
-        guard host.contains(":") else { return nil }
-        var result = in6_addr()
-        guard inet_pton(AF_INET6, host, &result) == 1 else { return nil }
-        buffer.withUnsafeMutableBytes { pointer in
-            withUnsafeBytes(of: &result) { source in
-                pointer.copyBytes(from: source)
-            }
-        }
-        return buffer
-    }
 }
 
 // MARK: - SOCKS5UDPProxyConnection
@@ -377,7 +350,7 @@ nonisolated final class SOCKS5UDPProxyConnection: ProxyConnection, Sendable {
         let headerEnd: Int
         switch data[base + 3] {
         case SOCKS5.addrIPv4:   headerEnd = 4 + 4 + 2
-        case SOCKS5.addrIPv6:   headerEnd = 4 + 16 + 2
+        case SOCKS5.unsupportedAddress: return nil
         case SOCKS5.addrDomain:
             guard data.count >= 5 else { return nil }
             headerEnd = 4 + 1 + Int(data[base + 4]) + 2

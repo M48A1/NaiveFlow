@@ -115,7 +115,6 @@ a domain or a CIDR.
 | ID  | Type           | Value example      | Matches against  |
 | --- | -------------- | ------------------ | ---------------- |
 | `0` | IPv4 CIDR      | `10.0.0.0/8`       | destination IP   |
-| `1` | IPv6 CIDR      | `2001:db8::/32`    | destination IP   |
 | `2` | Domain Suffix  | `example.com`      | destination host |
 | `3` | Domain Keyword | `example`          | destination host |
 
@@ -134,10 +133,10 @@ Raw **substring** match ruleproxy in the host (an Aho–Corasick automaton).
 alike. Far more prone to false positives than a suffix — reserve keywords for
 tokens that float in the middle of the host.
 
-### IPv4 / IPv6 CIDR (`0` / `1`)
+### IPv4 CIDR (`0` / `1`)
 
 Standard CIDR notation. A bare address is normalized to a single-host route
-(`/32` for IPv4, `/128` for IPv6) at parse time. Host bits below the prefix
+(`/32` for IPv4) at parse time. Host bits below the prefix
 are zeroed when the rule is loaded, so `10.0.0.5/8` and `10.0.0.0/8` are
 equivalent. A value that does not parse as a valid CIDR survives import but is
 dropped silently at load, so it never matches.
@@ -212,7 +211,6 @@ routing = 1
 
 # IP rules
 0, 10.0.0.0/8
-1, 2001:db8::/32
 ```
 
 ### Header lines
@@ -251,7 +249,7 @@ Shape:
 ```
 
 - **Type** is one of the IDs in [Rule types](#rule-types) (`0`–`3`).
-- **Value** is the domain or CIDR. A bare IPv4 / IPv6 address is normalized to
+- **Value** is the domain or CIDR. A bare IPv4 address is normalized to
   `/32` / `/128`; domains are kept verbatim.
 
 A line whose type is not `0`–`3`, or whose value is empty, is dropped. CIDR

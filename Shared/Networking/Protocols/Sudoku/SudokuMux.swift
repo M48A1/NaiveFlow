@@ -14,15 +14,12 @@ nonisolated private let sudokuMuxMaxQueueBytes = 4 * 1024 * 1024
 
 nonisolated enum SudokuAddress {
     static func encode(host: String, port: UInt16) throws -> Data {
+        try IPv4Only.requireHost(host)
         var out = Data()
         var ipv4 = in_addr()
-        var ipv6 = in6_addr()
         if host.withCString({ inet_pton(AF_INET, $0, &ipv4) }) == 1 {
             out.append(0x01)
             withUnsafeBytes(of: ipv4.s_addr) { out.append(contentsOf: $0) }
-        } else if host.withCString({ inet_pton(AF_INET6, $0, &ipv6) }) == 1 {
-            out.append(0x04)
-            withUnsafeBytes(of: ipv6) { out.append(contentsOf: $0) }
         } else {
             let bytes = Array(host.utf8)
             guard bytes.count <= 255 else { throw RuleProxyError.proxy(.sudoku, .invalidConfiguration(detail: "domain too long")) }

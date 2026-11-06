@@ -9,7 +9,6 @@ import Foundation
 
 nonisolated enum DNSMessage {
     static let typeA: UInt16 = 1
-    static let typeAAAA: UInt16 = 28
     static let typeHTTPS: UInt16 = 65
 
     private static let typeOPT: UInt16 = 41
@@ -63,15 +62,12 @@ nonisolated enum DNSMessage {
     
     static func parseAddresses(_ response: Data, expectedID: UInt16) throws(ParseFailure) -> [String] {
         var ipv4: [String] = []
-        var ipv6: [String] = []
         try walkAnswers(response, expectedID: expectedID) { type, _, rdata in
             if type == typeA, rdata.count == 4 {
                 if let address = formatIPv4(Array(rdata)) { ipv4.append(address) }
-            } else if type == typeAAAA, rdata.count == 16 {
-                if let address = formatIPv6(Array(rdata)) { ipv6.append(address) }
             }
         }
-        return ipv4 + ipv6
+        return ipv4
     }
     
     static func parseRecords(
@@ -162,11 +158,4 @@ nonisolated enum DNSMessage {
         return String(nulTerminated: buffer)
     }
 
-    private static func formatIPv6(_ octets: [UInt8]) -> String? {
-        var address = in6_addr()
-        memcpy(&address, octets, 16)
-        var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
-        guard inet_ntop(AF_INET6, &address, &buffer, socklen_t(INET6_ADDRSTRLEN)) != nil else { return nil }
-        return String(nulTerminated: buffer)
-    }
 }

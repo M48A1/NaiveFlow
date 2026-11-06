@@ -62,10 +62,6 @@ nonisolated final class DomainRouter: Sendable {
             matcher.tiers[tierIndex].reserveIPv4(additionalPrefixes: additionalPrefixes)
         }
 
-        mutating func reserveCIDRv6(tierIndex: Int, additionalPrefixes: Int) {
-            matcher.tiers[tierIndex].reserveIPv6(additionalPrefixes: additionalPrefixes)
-        }
-
         mutating func ingestRule(tierIndex: Int, payload: RulePayload, type: RoutingRuleType,
                                  valueStart: Int, length: Int, base: UnsafeBufferPointer<UInt8>) {
             switch type {
@@ -77,10 +73,7 @@ nonisolated final class DomainRouter: Sendable {
                 if let parsed = RouteMatching.parseIPv4CIDR(String(decoding: base[valueStart..<valueStart + length], as: UTF8.self)) {
                     matcher.tiers[tierIndex].insertIPv4(network: parsed.network, prefixLen: parsed.prefixLen, payload: payload)
                 }
-            case .ipCIDR6:
-                if let parsed = RouteMatching.parseIPv6CIDR(String(decoding: base[valueStart..<valueStart + length], as: UTF8.self)) {
-                    matcher.tiers[tierIndex].insertIPv6(network: parsed.network, prefixLen: parsed.prefixLen, payload: payload)
-                }
+
             }
         }
     }
@@ -213,19 +206,18 @@ nonisolated final class DomainRouter: Sendable {
             var remainingRules = try u32()
             let reserveHint = min(Int(remainingRules), count / 3)
             var reservedV4 = false
-            var reservedV6 = false
             while remainingRules > 0 {
                 let typeByte = try u8()
                 let length = Int(try u16())
                 let valueStart = cursor
                 try advance(length)
+                // Type 1 was the removed address-family rule. Reject old
+                // payloads containing it rather than silently dropping policy.
+                guard typeByte != 1 else { throw RuleProxyError.routing(.payloadCorrupted(.malformed)) }
                 if let type = RoutingRuleType(rawValue: Int(typeByte)) {
                     if type == .ipCIDR, !reservedV4 {
                         state.reserveCIDRv4(tierIndex: Int(tier.rawValue), additionalPrefixes: reserveHint)
                         reservedV4 = true
-                    } else if type == .ipCIDR6, !reservedV6 {
-                        state.reserveCIDRv6(tierIndex: Int(tier.rawValue), additionalPrefixes: reserveHint)
-                        reservedV6 = true
                     }
                     state.ingestRule(tierIndex: Int(tier.rawValue), payload: payload, type: type,
                                      valueStart: valueStart, length: length, base: bytes)

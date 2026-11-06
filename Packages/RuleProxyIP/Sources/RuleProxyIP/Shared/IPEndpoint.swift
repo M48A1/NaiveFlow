@@ -17,6 +17,6 @@ public struct IPEndpoint: Hashable, Sendable {
 
 extension IPEndpoint: CustomStringConvertible {
     public var description: String {
-        address.isIPv6 ? "[\(address)]:\(port)" : "\(address):\(port)"
+        "\(address):\(port)"
     }
 }

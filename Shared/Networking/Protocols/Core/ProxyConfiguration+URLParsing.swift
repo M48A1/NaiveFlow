@@ -28,6 +28,12 @@ nonisolated extension ProxyConfiguration {
     }
     
     static func parse(url: String) throws -> ProxyConfiguration {
+        let node = try parseSupportedURL(url: url)
+        if !node.isDirect { try IPv4Only.requireHost(node.serverAddress) }
+        return node
+    }
+
+    private static func parseSupportedURL(url: String) throws -> ProxyConfiguration {
         if url.hasPrefix("nowhere://") {
             return try parseNowhere(url: url)
         }
@@ -725,7 +731,7 @@ nonisolated extension ProxyConfiguration {
         let portString: String?
         if string.hasPrefix("[") {
             guard let closeBracket = string.firstIndex(of: "]") else {
-                throw RuleProxyError.parse(.invalidURL("Missing closing bracket for IPv6"))
+                throw RuleProxyError.parse(.invalidURL("Unsupported bracketed address"))
             }
             host = String(string[string.index(after: string.startIndex)..<closeBracket])
             let afterBracket = string[string.index(after: closeBracket)...]
@@ -733,7 +739,7 @@ nonisolated extension ProxyConfiguration {
                 portString = String(afterBracket.dropFirst())
             } else {
                 guard afterBracket.isEmpty, defaultPort != nil else {
-                    throw RuleProxyError.parse(.invalidURL("Missing port after IPv6 address"))
+                    throw RuleProxyError.parse(.invalidURL("Unsupported bracketed address"))
                 }
                 portString = nil
             }

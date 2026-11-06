@@ -27,7 +27,6 @@ nonisolated enum VLESSCommand: UInt8 {
 nonisolated enum VLESSAddressType: UInt8 {
     case ipv4 = 0x01
     case domain = 0x02
-    case ipv6 = 0x03
 }
 
 nonisolated struct VLESSProtocol {
@@ -57,6 +56,7 @@ nonisolated struct VLESSProtocol {
         destinationPort: UInt16,
         flow: String? = nil
     ) -> Data {
+        guard command == .mux || IPv4Only.supportsHost(destinationAddress) else { return Data() }
         return encodeRequestHeaderSwift(
             uuid: uuid,
             command: command,
@@ -100,9 +100,6 @@ nonisolated struct VLESSProtocol {
             if let ipv4 = parseIPv4(destinationAddress) {
                 data.append(VLESSAddressType.ipv4.rawValue)
                 data.append(contentsOf: ipv4)
-            } else if let ipv6 = parseIPv6(destinationAddress) {
-                data.append(VLESSAddressType.ipv6.rawValue)
-                data.append(contentsOf: ipv6)
             } else {
                 let domainData = destinationAddress.data(using: .utf8) ?? Data()
                 data.append(VLESSAddressType.domain.rawValue)
@@ -142,13 +139,4 @@ nonisolated struct VLESSProtocol {
         return withUnsafeBytes(of: &addr) { Array($0) }
     }
     
-    private static func parseIPv6(_ address: String) -> [UInt8]? {
-        var clean = address
-        if clean.hasPrefix("[") && clean.hasSuffix("]") {
-            clean = String(clean.dropFirst().dropLast())
-        }
-        var addr = in6_addr()
-        guard inet_pton(AF_INET6, clean, &addr) == 1 else { return nil }
-        return withUnsafeBytes(of: &addr) { Array($0) }
-    }
 }

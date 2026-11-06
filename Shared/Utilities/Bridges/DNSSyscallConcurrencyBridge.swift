@@ -10,6 +10,7 @@ import Synchronization
 import dnssd
 
 nonisolated final class DNSSyscallConcurrencyBridge: Sendable {
+    static let shared = DNSSyscallConcurrencyBridge()
     private static let maxConcurrentCalls = 16
 
     private let queue: DispatchQueue = DispatchQueue(
@@ -66,11 +67,8 @@ nonisolated final class DNSSyscallConcurrencyBridge: Sendable {
 
     private static func resolveAddressesBlocking(_ host: String, family: DNSAddressFamily) -> [String] {
         var hints = addrinfo()
-        switch family {
-        case .ipv4: hints.ai_family = AF_INET
-        case .ipv6: hints.ai_family = AF_INET6
-        case .preferIPv4: hints.ai_family = AF_UNSPEC
-        }
+        guard IPv4Only.supportsHost(host) else { return [] }
+        hints.ai_family = AF_INET
         hints.ai_socktype = SOCK_STREAM
 
         var result: UnsafeMutablePointer<addrinfo>?
@@ -79,7 +77,6 @@ nonisolated final class DNSSyscallConcurrencyBridge: Sendable {
         defer { freeaddrinfo(res) }
 
         var ipv4: [String] = []
-        var ipv6: [String] = []
         var current: UnsafeMutablePointer<addrinfo>? = res
         while let info = current {
             if info.pointee.ai_family == AF_INET {
@@ -89,17 +86,10 @@ nonisolated final class DNSSyscallConcurrencyBridge: Sendable {
                     let ip = String(nulTerminated: buffer)
                     if !ipv4.contains(ip) { ipv4.append(ip) }
                 }
-            } else if info.pointee.ai_family == AF_INET6 {
-                var address = info.pointee.ai_addr.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { $0.pointee }
-                var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
-                if inet_ntop(AF_INET6, &address.sin6_addr, &buffer, socklen_t(INET6_ADDRSTRLEN)) != nil {
-                    let ip = String(nulTerminated: buffer)
-                    if !ipv6.contains(ip) { ipv6.append(ip) }
-                }
             }
             current = info.pointee.ai_next
         }
-        return ipv4.isEmpty ? ipv6 : ipv4
+        return ipv4
     }
 
     // MARK: - Record query

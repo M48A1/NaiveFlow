@@ -16,7 +16,7 @@ struct Segment: Equatable {
         var isQueued: Bool
     }
 
-    static let headroom = IPv6Header.length + TCPHeader.length + 8
+    static let headroom = IPv4Header.length + TCPHeader.length + 8
     static let capacity = Int(Constants.maximumSegmentSize)
 
     static var bufferOffset: Int {
@@ -91,7 +91,7 @@ struct Segment: Equatable {
     }
 
     var payloadOffset: Int {
-        IPv6Header.length + TCPHeader.length + options.encodedLength
+        IPv4Header.length + TCPHeader.length + options.encodedLength
     }
 
     var payload: UnsafeMutableRawBufferPointer {

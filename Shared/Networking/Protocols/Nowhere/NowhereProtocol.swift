@@ -47,10 +47,10 @@ nonisolated enum NowhereProtocol {
 
     enum Target: Equatable {
         case ipv4([UInt8], UInt16)
-        case ipv6([UInt8], UInt16)
         case domain(String, UInt16)
 
         init(host: String, port: UInt16) throws {
+            try IPv4Only.requireHost(host)
             guard port != 0 else { throw RuleProxyError.proxy(.nowhere, .connectionClosed(detail: "Invalid zero target port")) }
             let unwrapped = host.hasPrefix("[") && host.hasSuffix("]")
                 ? String(host.dropFirst().dropLast())
@@ -63,13 +63,6 @@ nonisolated enum NowhereProtocol {
                 return
             }
 
-            var ipv6 = in6_addr()
-            if unwrapped.withCString({ inet_pton(AF_INET6, $0, &ipv6) }) == 1 {
-                let bytes = withUnsafeBytes(of: &ipv6) { Array($0.prefix(16)) }
-                self = .ipv6(bytes, port)
-                return
-            }
-
             let wireHost = try Self.asciiWireHost(unwrapped)
             try Self.validateDomain(wireHost)
             self = .domain(wireHost, port)
@@ -78,7 +71,6 @@ nonisolated enum NowhereProtocol {
         var encodedLength: Int {
             switch self {
             case .ipv4: return 7
-            case .ipv6: return 19
             case .domain(let host, _): return 4 + host.utf8.count
             }
         }
@@ -94,10 +86,7 @@ nonisolated enum NowhereProtocol {
                 output.append(UInt8(host.utf8.count))
                 output.append(contentsOf: host.utf8)
                 output.appendUInt16(port)
-            case .ipv6(let address, let port):
-                output.append(0x04)
-                output.append(contentsOf: address)
-                output.appendUInt16(port)
+
             }
         }
 

@@ -10,14 +10,12 @@ import Foundation
 nonisolated enum ShadowsocksProtocol {
 
     static func buildAddressHeader(host: String, port: UInt16) -> Data {
+        guard IPv4Only.supportsHost(host) else { return Data() }
         var data = Data()
 
         if let ipv4 = parseIPv4(host) {
             data.append(0x01)
             data.append(contentsOf: ipv4)
-        } else if let ipv6 = parseIPv6(host) {
-            data.append(0x04)
-            data.append(contentsOf: ipv6)
         } else {
             let domainBytes = Array(host.utf8.prefix(255))
             data.append(0x03)
@@ -32,6 +30,7 @@ nonisolated enum ShadowsocksProtocol {
     }
 
     static func encodeUDPPacket(host: String, port: UInt16, payload: Data) -> Data {
+        guard IPv4Only.supportsHost(host) else { return Data() }
         var data = buildAddressHeader(host: host, port: port)
         data.append(payload)
         return data
@@ -60,15 +59,7 @@ nonisolated enum ShadowsocksProtocol {
             host = domain
             offset += domainLen
 
-        case 0x04:
-            guard data.endIndex - offset >= 16 + 2 else { return nil }
-            let bytes = Array(data[offset..<(offset + 16)])
-            var parts: [String] = []
-            for i in stride(from: 0, to: 16, by: 2) {
-                parts.append(String(format: "%x", UInt16(bytes[i]) << 8 | UInt16(bytes[i+1])))
-            }
-            host = parts.joined(separator: ":")
-            offset += 16
+        case 0x04: return nil // Unsupported address family.
 
         default:
             return nil
@@ -90,13 +81,4 @@ nonisolated enum ShadowsocksProtocol {
         return withUnsafeBytes(of: &addr) { Array($0) }
     }
 
-    private static func parseIPv6(_ address: String) -> [UInt8]? {
-        var clean = address
-        if clean.hasPrefix("[") && clean.hasSuffix("]") {
-            clean = String(clean.dropFirst().dropLast())
-        }
-        var addr = in6_addr()
-        guard inet_pton(AF_INET6, clean, &addr) == 1 else { return nil }
-        return withUnsafeBytes(of: &addr) { Array($0) }
-    }
 }

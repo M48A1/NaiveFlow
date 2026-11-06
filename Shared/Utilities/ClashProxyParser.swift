@@ -54,7 +54,7 @@ nonisolated enum ClashProxyParser {
     private static func parseBasics(_ node: YAML.Node) -> (name: String, server: String, port: UInt16)? {
         guard
             let name = node.string(forKey: "name"),
-            let server = node.string(forKey: "server"),
+            let server = node.string(forKey: "server"), IPv4Only.supportsHost(server),
             let port = node.int(forKey: "port"),
             let validPort = UInt16(exactly: port), validPort > 0
         else { return nil }

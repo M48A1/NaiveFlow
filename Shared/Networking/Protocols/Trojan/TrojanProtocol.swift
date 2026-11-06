@@ -11,7 +11,7 @@ import CommonCrypto
 /// TCP request header: `hex(sha224(password))` (56 ASCII bytes) + CRLF
 ///                   + cmd(1) + ATYP(1) + address(var) + port(2 BE) + CRLF
 /// UDP packet format: ATYP(1) + address(var) + port(2 BE) + length(2 BE) + CRLF + payload
-/// Address encoding matches SOCKS5 / Shadowsocks: ATYP 0x01 IPv4, 0x03 domain, 0x04 IPv6.
+/// Address encoding matches SOCKS5 / Shadowsocks: ATYP 0x01 IPv4, 0x03 domain.
 nonisolated enum TrojanProtocol {
 
     static let commandTCP: UInt8 = 0x01
@@ -47,6 +47,7 @@ nonisolated enum TrojanProtocol {
         host: String,
         port: UInt16
     ) -> Data {
+        guard IPv4Only.supportsHost(host) else { return Data() }
         var data = Data(capacity: passwordKey.count + 4 + host.utf8.count + 4)
         data.append(passwordKey)
         data.append(0x0D); data.append(0x0A)
@@ -57,13 +58,11 @@ nonisolated enum TrojanProtocol {
     }
 
     static func encodeAddressPort(host: String, port: UInt16) -> Data {
+        guard IPv4Only.supportsHost(host) else { return Data() }
         var data = Data()
         if let ipv4 = parseIPv4(host) {
             data.append(0x01)
             data.append(contentsOf: ipv4)
-        } else if let ipv6 = parseIPv6(host) {
-            data.append(0x04)
-            data.append(contentsOf: ipv6)
         } else {
             let domainBytes = Array(host.utf8)
             data.append(0x03)
@@ -76,6 +75,7 @@ nonisolated enum TrojanProtocol {
     }
 
     static func encodeUDPPacket(host: String, port: UInt16, payload: Data) -> Data {
+        guard IPv4Only.supportsHost(host) else { return Data() }
         let address = encodeAddressPort(host: host, port: port)
         var out = Data(capacity: address.count + 4 + payload.count)
         out.append(address)
@@ -99,7 +99,7 @@ nonisolated enum TrojanProtocol {
         let addrLen: Int
         switch atyp {
         case 0x01: addrLen = 4
-        case 0x04: addrLen = 16
+        case 0x04: return nil
         case 0x03:
             guard offset < buffer.endIndex else { return nil }
             let domainLen = Int(buffer[offset])
@@ -136,13 +136,4 @@ nonisolated enum TrojanProtocol {
         return withUnsafeBytes(of: &addr) { Array($0) }
     }
 
-    private static func parseIPv6(_ address: String) -> [UInt8]? {
-        var clean = address
-        if clean.hasPrefix("[") && clean.hasSuffix("]") {
-            clean = String(clean.dropFirst().dropLast())
-        }
-        var addr = in6_addr()
-        guard inet_pton(AF_INET6, clean, &addr) == 1 else { return nil }
-        return withUnsafeBytes(of: &addr) { Array($0) }
-    }
 }

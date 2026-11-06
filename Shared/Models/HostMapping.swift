@@ -16,8 +16,7 @@ nonisolated struct HostMapping: Codable, Hashable, Sendable {
     }
 
     static func canonicalAddress(_ address: String) -> String? {
-        let bare = DNSName.stripBrackets(address.trimmingCharacters(in: .whitespacesAndNewlines))
-        return DNSUpstream.canonicalIPv4(bare) ?? DNSUpstream.canonicalIPv6(bare)
+        return DNSUpstream.canonicalIPv4(address.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     static func load() -> [HostMapping] {

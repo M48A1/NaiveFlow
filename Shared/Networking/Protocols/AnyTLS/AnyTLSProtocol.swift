@@ -50,13 +50,11 @@ nonisolated enum AnyTLSProtocol {
     // MARK: - Address
     
     static func encodeAddrPort(host: String, port: UInt16) -> Data {
+        guard IPv4Only.supportsHost(host) else { return Data() }
         var data = Data()
         if let ipv4 = parseIPv4(host) {
             data.append(0x01)
             data.append(contentsOf: ipv4)
-        } else if let ipv6 = parseIPv6(host) {
-            data.append(0x04)
-            data.append(contentsOf: ipv6)
         } else {
             let domainBytes = Array(host.utf8)
             data.append(0x03)
@@ -138,13 +136,4 @@ nonisolated enum AnyTLSProtocol {
         return withUnsafeBytes(of: &addr) { Array($0) }
     }
 
-    private static func parseIPv6(_ address: String) -> [UInt8]? {
-        var clean = address
-        if clean.hasPrefix("[") && clean.hasSuffix("]") {
-            clean = String(clean.dropFirst().dropLast())
-        }
-        var addr = in6_addr()
-        guard inet_pton(AF_INET6, clean, &addr) == 1 else { return nil }
-        return withUnsafeBytes(of: &addr) { Array($0) }
-    }
 }

@@ -45,18 +45,10 @@ nonisolated enum DNSUpstream: Sendable, Equatable {
     static let defaultPlain = DNSUpstream.plain(host: defaultPlainServer, port: defaultPort)
     static let defaultDoH = DNSUpstream.doh(URL(string: defaultDoHURL)!)
     
-    static func forwardingServers(preferring preferred: DNSUpstream, includeIPv6: Bool) -> [String] {
-        let builtIn = builtInServers(includeIPv6: includeIPv6)
-        guard case .plain(let host, _) = preferred,
-              includeIPv6 || !isIPv6Literal(host)
-        else { return builtIn }
+    static func forwardingServers(preferring preferred: DNSUpstream) -> [String] {
+        let builtIn = ["1.1.1.1", "1.0.0.1"]
+        guard case .plain(let host, _) = preferred, canonicalIPv4(host) != nil else { return builtIn }
         return [host] + builtIn.filter { $0 != host }
-    }
-
-    private static func builtInServers(includeIPv6: Bool) -> [String] {
-        includeIPv6
-            ? ["1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001"]
-            : ["1.1.1.1", "1.0.0.1"]
     }
 
     init(mode: DNSMode, plainServer: String, dohURL: String) {
@@ -73,19 +65,7 @@ nonisolated enum DNSUpstream: Sendable, Equatable {
         let trimmed = server.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        // Bracketed IPv6, optionally with a port: [::1] / [::1]:53.
-        if trimmed.hasPrefix("["), let close = trimmed.firstIndex(of: "]") {
-            let host = String(trimmed[trimmed.index(after: trimmed.startIndex)..<close])
-            let rest = trimmed[trimmed.index(after: close)...]
-            guard let canonicalHost = canonicalIPv6(host) else { return nil }
-            if rest.isEmpty { return .plain(host: canonicalHost, port: defaultPort) }
-            guard rest.hasPrefix(":"), let port = parsePort(rest.dropFirst()) else { return nil }
-            return .plain(host: canonicalHost, port: port)
-        }
-
-        // Bare IPv6 carries colons of its own, so it can't also carry a port.
-        if let canonicalHost = canonicalIPv6(trimmed) { return .plain(host: canonicalHost, port: defaultPort) }
-
+        guard !trimmed.contains("["), !trimmed.contains("]") else { return nil }
         let parts = trimmed.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
         guard let canonicalHost = canonicalIPv4(String(parts[0])) else { return nil }
         guard parts.count == 2 else { return .plain(host: canonicalHost, port: defaultPort) }
@@ -98,7 +78,7 @@ nonisolated enum DNSUpstream: Sendable, Equatable {
         guard !trimmed.isEmpty,
               let url = URL(string: trimmed),
               url.scheme?.lowercased() == "https",
-              let host = url.host, !host.isEmpty,
+              let host = url.host, !host.isEmpty, IPv4Only.supportsHost(host),
               url.user == nil, url.password == nil, url.fragment == nil,
               (1...65_535).contains(url.port ?? 443)
         else { return nil }
@@ -110,9 +90,6 @@ nonisolated enum DNSUpstream: Sendable, Equatable {
         return port
     }
 
-    static func isIPv6Literal(_ host: String) -> Bool {
-        canonicalIPv6(host) != nil
-    }
     
     static func canonicalIPv4(_ host: String) -> String? {
         var address = in_addr()
@@ -120,12 +97,6 @@ nonisolated enum DNSUpstream: Sendable, Equatable {
         return format(&address, family: AF_INET, capacity: INET_ADDRSTRLEN)
     }
     
-    static func canonicalIPv6(_ host: String) -> String? {
-        var address = in6_addr()
-        guard inet_pton(AF_INET6, host, &address) == 1 else { return nil }
-        return format(&address, family: AF_INET6, capacity: INET6_ADDRSTRLEN)
-    }
-
     private static func format(_ address: UnsafeRawPointer, family: Int32, capacity: Int32) -> String? {
         var buffer = [CChar](repeating: 0, count: Int(capacity))
         guard inet_ntop(family, address, &buffer, socklen_t(capacity)) != nil else { return nil }

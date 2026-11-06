@@ -62,6 +62,7 @@ nonisolated enum OutboundConnector {
     // MARK: - Dial
 
     static func dial(host: String, port: UInt16) async throws -> Dialed {
+        try IPv4Only.requireHost(host)
         let (route, ruleSetName) = await resolveRoute(host: host)
         let context = routingContext()
         context?.requestLog.record(
@@ -124,8 +125,6 @@ nonisolated enum OutboundConnector {
     static func isIPLiteral(_ host: String) -> Bool {
         var v4 = in_addr()
         if inet_pton(AF_INET, host, &v4) == 1 { return true }
-        var v6 = in6_addr()
-        if inet_pton(AF_INET6, host, &v6) == 1 { return true }
         return false
     }
 
@@ -143,22 +142,7 @@ nonisolated enum OutboundConnector {
             return false
         }
 
-        var v6 = in6_addr()
-        if inet_pton(AF_INET6, host, &v6) == 1 {
-            return withUnsafeBytes(of: &v6) { raw -> Bool in
-                var isLoopback = raw[15] == 1
-                if isLoopback {
-                    for i in 0..<15 where raw[i] != 0 {
-                        isLoopback = false
-                        break
-                    }
-                }
-                if isLoopback { return true }
-                if raw[0] == 0xFE && (raw[1] & 0xC0) == 0x80 { return true } // fe80::/10 link-local
-                if (raw[0] & 0xFE) == 0xFC { return true }                  // fc00::/7 unique local
-                return false
-            }
-        }
+
         return false
     }
 }

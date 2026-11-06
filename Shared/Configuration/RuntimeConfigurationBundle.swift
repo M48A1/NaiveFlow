@@ -38,6 +38,21 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
                 throw RuntimeConfigurationFailure.invalidBundle
             }
         }
+        for prefix in ["localRequest", "proxy", "subscription", "ech"] {
+            if preferences[prefix + "DNSMode"] == .string("plain"),
+               case .string(let server) = preferences[prefix + "DNSPlainServer"], DNSUpstream.parsePlain(server) == nil {
+                throw RuntimeConfigurationFailure.invalidBundle
+            }
+            if preferences[prefix + "DNSMode"] == .string("doh"),
+               case .string(let url) = preferences[prefix + "DNSDoHURL"], DNSUpstream.parseDoH(url) == nil {
+                throw RuntimeConfigurationFailure.invalidBundle
+            }
+        }
+        for node in nodes where !node.isDirect {
+            try IPv4Only.requireHost(node.serverAddress)
+            if let address = node.resolvedIP { try IPv4Only.requireHost(address) }
+            for hop in node.chain ?? [] { try IPv4Only.requireHost(hop.serverAddress) }
+        }
         let ids = Set(nodes.map(\.id))
         for rule in rules ?? [] {
             if case .proxy(let id) = rule.action, !ids.contains(id) { throw RuntimeConfigurationFailure.invalidBundle }
@@ -80,7 +95,7 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
         case .domainRegex(let pattern): _ = try NSRegularExpression(pattern: pattern)
         case .ipCIDR(let cidr), .sourceIP(let cidr):
             guard cidr.bytes.count == cidr.family.byteCount,
-                  (0...(cidr.family == .v4 ? 32 : 128)).contains(cidr.prefixLength)
+                  (0...32).contains(cidr.prefixLength)
             else { throw RuntimeConfigurationFailure.invalidBundle }
         case .protocolName(let name):
             guard ["TCP", "UDP"].contains(name.uppercased()) else { throw RuntimeConfigurationFailure.invalidBundle }

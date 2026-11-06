@@ -17,8 +17,7 @@ nonisolated enum DNSBootstrapPolicy: Equatable, Sendable {
         guard !values.isEmpty, values.count <= 8 else { return nil }
         var servers: [String] = []
         for value in values {
-            let bare = DNSName.stripBrackets(value)
-            guard let address = DNSUpstream.canonicalIPv4(bare) ?? DNSUpstream.canonicalIPv6(bare) else { return nil }
+            guard let address = DNSUpstream.canonicalIPv4(value) else { return nil }
             if !servers.contains(address) { servers.append(address) }
         }
         return .servers(servers)
@@ -26,7 +25,8 @@ nonisolated enum DNSBootstrapPolicy: Equatable, Sendable {
 
     func endpointAddresses(for host: String,
         lookup: @Sendable (String, String) async throws -> [String]) async throws -> [String] {
-        let bare = DNSName.stripBrackets(host)
+        try IPv4Only.requireHost(host)
+        let bare = host
         if DNSName.isIPAddress(bare) { return [bare] }
         guard case .servers(let seeds) = self else { return [bare] }
         var lastFailure: (any Error)?

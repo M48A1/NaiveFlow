@@ -9,7 +9,6 @@ import Foundation
 
 nonisolated enum RoutingRuleType: Int, Codable {
     case ipCIDR = 0
-    case ipCIDR6 = 1
     case domainSuffix = 2
     case domainKeyword = 3
 }
@@ -20,7 +19,6 @@ extension RoutingRuleType {
         case .domainSuffix: return String(localized: "Domain Suffix")
         case .domainKeyword: return String(localized: "Domain Keyword")
         case .ipCIDR: return String(localized: "IPv4 CIDR")
-        case .ipCIDR6: return String(localized: "IPv6 CIDR")
         }
     }
     
@@ -28,7 +26,7 @@ extension RoutingRuleType {
         switch self {
         case .domainSuffix: return "globe"
         case .domainKeyword: return "magnifyingglass"
-        case .ipCIDR, .ipCIDR6: return "network"
+        case .ipCIDR: return "network"
         }
     }
     
@@ -37,11 +35,6 @@ extension RoutingRuleType {
         case .ipCIDR:
             if !value.contains("/") {
                 return value + "/32"
-            }
-            return value
-        case .ipCIDR6:
-            if !value.contains("/") {
-                return value + "/128"
             }
             return value
         case .domainSuffix, .domainKeyword:

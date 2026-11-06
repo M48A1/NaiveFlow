@@ -17,10 +17,7 @@ struct ConnectionKey: Hashable, Sendable {
         switch (remote.address, local.address) {
         case (.v4(let remote), .v4(let local)):
             fingerprint = Self.mix(ports ^ (UInt64(remote.rawValue) << 32 | UInt64(local.rawValue)))
-        case (.v6(let remote), .v6(let local)):
-            fingerprint = Self.mix(Self.mix(Self.mix(Self.mix(ports ^ remote.high) ^ remote.low) ^ local.high) ^ local.low)
-        default:
-            fingerprint = Self.mix(ports)
+
         }
     }
 

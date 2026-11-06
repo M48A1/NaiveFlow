@@ -376,9 +376,7 @@ nonisolated enum X509Builder {
         if Self.isDottedQuadIPv4(trimmed), let v4 = IPv4Address(trimmed) {
             return v4.rawValue
         }
-        if trimmed.contains(":"), let v6 = IPv6Address(trimmed) {
-            return v6.rawValue
-        }
+
         return nil
     }
 

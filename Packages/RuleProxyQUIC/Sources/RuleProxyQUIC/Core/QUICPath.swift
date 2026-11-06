@@ -26,12 +26,6 @@ public struct QUICSocketAddress: Sendable {
         addressLength: MemoryLayout<in_addr>.size
     )
 
-    private static let inet6Fields = Self.fields(
-        port: MemoryLayout<sockaddr_in6>.offset(of: \.sin6_port)!,
-        address: MemoryLayout<sockaddr_in6>.offset(of: \.sin6_addr)!,
-        addressLength: MemoryLayout<in6_addr>.size
-    )
-
     private static func fields(port: Int, address: Int, addressLength: Int) -> Fields {
         return (port..<port + MemoryLayout<in_port_t>.size, address..<address + addressLength)
     }
@@ -49,10 +43,6 @@ public struct QUICSocketAddress: Sendable {
 
     #if canImport(Darwin)
     public init(_ address: sockaddr_in) {
-        self.init(copying: address)
-    }
-
-    public init(_ address: sockaddr_in6) {
         self.init(copying: address)
     }
 
@@ -74,8 +64,6 @@ public struct QUICSocketAddress: Sendable {
         switch Int32(value) {
         case AF_INET:
             fields = Self.inetFields
-        case AF_INET6:
-            fields = Self.inet6Fields
         default:
             return nil
         }

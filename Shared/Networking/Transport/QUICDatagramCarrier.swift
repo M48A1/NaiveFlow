@@ -355,17 +355,6 @@ nonisolated final class QUICDatagramCarrierCore: QUICPublishingState {
                     return NWEndpoint.hostPort(host: .ipv4(ip), port: port)
                 }
             }
-        case AF_INET6:
-            return withUnsafePointer(to: &storage) { pointer in
-                pointer.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { sin6 in
-                    let rawPort = UInt16(bigEndian: sin6.pointee.sin6_port)
-                    var address = sin6.pointee.sin6_addr
-                    let bytes = withUnsafeBytes(of: &address) { Data($0) }
-                    guard let ip = IPv6Address(bytes),
-                          let port = NWEndpoint.Port(rawValue: rawPort) else { return nil }
-                    return NWEndpoint.hostPort(host: .ipv6(ip), port: port)
-                }
-            }
         default:
             return nil
         }
@@ -379,15 +368,6 @@ nonisolated final class QUICDatagramCarrierCore: QUICPublishingState {
                     sin.pointee.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
                     sin.pointee.sin_family = sa_family_t(AF_INET)
                     sin.pointee.sin_addr.s_addr = INADDR_ANY
-                }
-            }
-        } else {
-            withUnsafeMutablePointer(to: &localAddr) { storage in
-                storage.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { sin6 in
-                    sin6.pointee = sockaddr_in6()
-                    sin6.pointee.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
-                    sin6.pointee.sin6_family = sa_family_t(AF_INET6)
-                    sin6.pointee.sin6_addr = in6addr_any
                 }
             }
         }

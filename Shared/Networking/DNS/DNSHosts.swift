@@ -13,7 +13,6 @@ nonisolated final class DNSHosts: Sendable {
 
     private struct Entry {
         var ipv4: [String] = []
-        var ipv6: [String] = []
     }
 
     private let table = Mutex<[String: Entry]?>(nil)
@@ -24,11 +23,7 @@ nonisolated final class DNSHosts: Sendable {
         return table.withLock { table -> [String]? in
             if table == nil { table = Self.build(HostMapping.load()) }
             guard let entry = table?[key] else { return nil }
-            switch family {
-            case .ipv4: return entry.ipv4
-            case .ipv6: return entry.ipv6
-            case .preferIPv4: return entry.ipv4 + entry.ipv6
-            }
+            return entry.ipv4
         }
     }
 
@@ -43,11 +38,7 @@ nonisolated final class DNSHosts: Sendable {
                   let address = HostMapping.canonicalAddress(mapping.address)
             else { continue }
             var entry = table[host, default: Entry()]
-            if address.contains(":") {
-                if !entry.ipv6.contains(address) { entry.ipv6.append(address) }
-            } else if !entry.ipv4.contains(address) {
-                entry.ipv4.append(address)
-            }
+            if !entry.ipv4.contains(address) { entry.ipv4.append(address) }
             table[host] = entry
         }
         return table

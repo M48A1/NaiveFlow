@@ -29,26 +29,12 @@ extension QUICConnectionCore {
         let tag = migrationCounter == 0 ? 1 : migrationCounter
         var storage = sockaddr_storage()
         withUnsafeMutablePointer(to: &storage) { sp in
-            if Int32(remoteAddr.ss_family) == AF_INET6 {
-                sp.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { sin6 in
-                    sin6.pointee = sockaddr_in6()
-                    sin6.pointee.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
-                    sin6.pointee.sin6_family = sa_family_t(AF_INET6)
-                    var a = in6addr_any
-                    withUnsafeMutableBytes(of: &a) { bytes in
-                        bytes[0] = 0xfd          // unique-local prefix
-                        bytes[15] = tag
-                    }
-                    sin6.pointee.sin6_addr = a
-                }
-            } else {
                 sp.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { sin in
                     sin.pointee = sockaddr_in()
                     sin.pointee.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
                     sin.pointee.sin_family = sa_family_t(AF_INET)
                     sin.pointee.sin_addr.s_addr = UInt32(tag).bigEndian  // 0.0.0.tag
                 }
-            }
         }
         return storage
     }

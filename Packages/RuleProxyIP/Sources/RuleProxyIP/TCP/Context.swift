@@ -52,8 +52,8 @@ final class Context {
 
     func transmit(_ segment: Segment, acknowledgmentNumber: UInt32, window: UInt16) {
         defer { if !segment.isQueued { arena.recycle(segment) } }
-        let start = IPv6Header.length - template.headerLength
-        let end = IPv6Header.length + TCPHeader.length + segment.options.encodedLength + segment.length
+        let start = IPv4Header.length - template.headerLength
+        let end = IPv4Header.length + TCPHeader.length + segment.options.encodedLength + segment.length
         let packet = UnsafeMutableRawBufferPointer(rebasing: segment.buffer[start..<end])
         template.encode(
             into: packet,
@@ -65,6 +65,6 @@ final class Context {
             payloadLength: segment.length,
             payloadSum: segment.payloadSum
         )
-        effects.append(.packet(OutboundPacket(copying: UnsafeRawBufferPointer(packet), isIPv6: template.isIPv6)))
+        effects.append(.packet(OutboundPacket(copying: UnsafeRawBufferPointer(packet))))
     }
 }

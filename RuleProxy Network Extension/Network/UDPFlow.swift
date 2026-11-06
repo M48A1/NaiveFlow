@@ -495,9 +495,7 @@ actor UDPFlow {
         }
         var v4 = in_addr()
         if inet_pton(AF_INET, bare, &v4) == 1 { return false }
-        var v6 = in6_addr()
-        if inet_pton(AF_INET6, bare, &v6) == 1 { return false }
-        return !bare.isEmpty
+        return IPv4Only.supportsHost(host)
     }
 
     // MARK: ProxyClient

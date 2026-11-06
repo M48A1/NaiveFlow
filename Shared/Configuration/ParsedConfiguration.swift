@@ -167,7 +167,6 @@ nonisolated struct ParsedRule: Equatable, Sendable, Identifiable {
         case domainRegex
         case urlRegex
         case ipCIDR
-        case ipCIDR6
         case ipASN
         case geoIP
         case geoASN
@@ -198,7 +197,6 @@ nonisolated struct ParsedRule: Equatable, Sendable, Identifiable {
             case "domain-regex": self = .domainRegex
             case "url-regex": self = .urlRegex
             case "ip-cidr": self = .ipCIDR
-            case "ip-cidr6": self = .ipCIDR6
             case "ip-asn": self = .ipASN
             case "geoip": self = .geoIP
             case "geoasn": self = .geoASN
@@ -228,7 +226,6 @@ nonisolated struct ParsedRule: Equatable, Sendable, Identifiable {
             case .domainRegex: return "DOMAIN-REGEX"
             case .urlRegex: return "URL-REGEX"
             case .ipCIDR: return "IP-CIDR"
-            case .ipCIDR6: return "IP-CIDR6"
             case .ipASN: return "IP-ASN"
             case .geoIP: return "GEOIP"
             case .geoASN: return "GEOASN"

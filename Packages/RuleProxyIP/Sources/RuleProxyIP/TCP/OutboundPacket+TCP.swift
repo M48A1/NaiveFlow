@@ -9,9 +9,8 @@ import Foundation
 
 extension OutboundPacket {
     init?(resetFrom local: IPEndpoint, to remote: IPEndpoint, sequenceNumber: UInt32, acknowledgmentNumber: UInt32) {
-        let isIPv6 = local.address.isIPv6
         var encoded = false
-        self.init(byteCount: (isIPv6 ? IPv6Header.length : IPv4Header.length) + TCPHeader.length, isIPv6: isIPv6) { packet in
+        self.init(byteCount: IPv4Header.length + TCPHeader.length) { packet in
             encoded = Self.encodeTCP(
                 into: packet,
                 from: local,
@@ -50,17 +49,7 @@ extension OutboundPacket {
                 destination: destination,
                 identification: PacketIdentification.next()
             ).write(to: packet)
-        case (.v6(let source), .v6(let destination)):
-            ipLength = IPv6Header.length
-            IPv6Header(
-                payloadLength: tcpLength,
-                nextHeader: 6,
-                hopLimit: Constants.hopLimit,
-                source: source,
-                destination: destination
-            ).write(to: packet)
-        default:
-            return false
+
         }
         let tcp = UnsafeMutableRawBufferPointer(rebasing: packet[ipLength...])
         TCPHeader(

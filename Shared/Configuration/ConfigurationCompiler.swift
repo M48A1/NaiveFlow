@@ -89,7 +89,7 @@ nonisolated enum ConfigurationCompiler {
                 switch rule.type {
                 case .domainSuffix: matcher = .domainSuffix(rule.value)
                 case .domainKeyword: matcher = .domainKeyword(rule.value)
-                case .ipCIDR, .ipCIDR6: matcher = CIDRPrefix.parse(rule.value).map { .ipCIDR($0) }
+                case .ipCIDR: matcher = CIDRPrefix.parse(rule.value).map { .ipCIDR($0) }
                 }
                 if let matcher { ordered.rules.append(.init(line: line, matcher: matcher, action: .direct, noResolve: true)); line += 1 }
             }
@@ -121,7 +121,13 @@ nonisolated extension ConfigurationCompiler {
         diagnostics: inout [ConfigurationDiagnostic]
     ) -> [ProxyConfiguration] {
         configuration.proxies.compactMap { proxy in
-            compileProxy(proxy, diagnostics: &diagnostics)
+            guard let node = compileProxy(proxy, diagnostics: &diagnostics) else { return nil }
+            if !node.isDirect, !IPv4Only.supportsHost(node.serverAddress) {
+                diagnostics.append(.init(severity: .error, code: .invalidValue, line: proxy.line,
+                    section: "Proxy", message: "This build accepts IPv4 node addresses or host names only."))
+                return nil
+            }
+            return node
         }
     }
 
@@ -553,7 +559,6 @@ nonisolated extension ConfigurationCompiler {
         case .domainSuffix: return .domainSuffix
         case .domainKeyword: return .domainKeyword
         case .ipCIDR: return .ipCIDR
-        case .ipCIDR6: return .ipCIDR6
         default: return nil
         }
     }
@@ -564,171 +569,6 @@ nonisolated extension ConfigurationCompiler {
         switch type {
         case .ipCIDR:
             return value.contains("/") ? value : value + "/32"
-        case .ipCIDR6:
-            return value.contains("/") ? value : value + "/128"
-        case .domainSuffix, .domainKeyword:
-            return value
-        }
-    }
-}
-
-// MARK: - Hosts
-
-nonisolated extension ConfigurationCompiler {
-
-    /// The DNS override table matches exact hosts only, so wildcard entries are
-    /// reported and skipped instead of being silently stored.
-    static func compileHosts(
-        _ configuration: ParsedConfiguration,
-        diagnostics: inout [ConfigurationDiagnostic]
-    ) -> [HostMapping] {
-        var mappings: [HostMapping] = []
-        for entry in configuration.hosts {
-            guard let host = DNSName.normalizedHost(entry.host) else {
-                diagnostics.append(
-                    ConfigurationDiagnostic(
-                        severity: .error,
-                        code: .invalidValue,
-                        line: entry.line,
-                        section: ConfigurationDocument.SectionKind.host.displayName,
-                        message: "Host '\(entry.host)' is a wildcard or invalid; the DNS override table only matches exact hosts."
-                    )
-                )
-                continue
-            }
-
-            guard entry.mode == .replace else {
-                diagnostics.append(.init(severity: .error, code: .notApplied, line: entry.line, section: "Host",
-                    message: "Host entries use exact names and IPv4/IPv6 values; append/insert markers are not native syntax."))
-                continue
-            }
-            let address = entry.address
-            guard let canonical = HostMapping.canonicalAddress(address) else {
-                diagnostics.append(
-                    ConfigurationDiagnostic(
-                        severity: .error,
-                        code: .invalidValue,
-                        line: entry.line,
-                        section: ConfigurationDocument.SectionKind.host.displayName,
-                        message: "Host '\(entry.host)' maps to invalid address '\(entry.address)'."
-                    )
-                )
-                continue
-            }
-
-            mappings.append(HostMapping(host: host, address: canonical))
-        }
-        return mappings
-    }
-}
-
-
-// MARK: - Settings
-
-nonisolated extension ConfigurationCompiler {
-
-    /// Every `[General]` key the catalog knows, parsed through the kind the
-    /// catalog declares for it.
-    ///
-    /// A key the document does not mention stays absent, so installing the
-    /// document leaves the app's current value alone. Keys with `applies: false`
-    /// are compiled too: the diagnostics report them, and recording the value
-    /// keeps the reload summary honest about what changed in the text.
-    static func compileSettings(_ configuration: ParsedConfiguration) -> CompiledSettings {
-        var settings = CompiledSettings()
-
-        for key in ConfigurationSettings.catalog {
-            guard let raw = configuration.general[key.name] else { continue }
-            if let value = key.parse(raw) {
-                settings.values[key.name] = value
-            }
-        }
-
-        // `[MITM] enable` wins over `[General] mitm` when both appear: the
-        // dedicated section is the more specific statement.
-        if let enable = configuration.mitm.bool("enable") {
-            settings.values["mitm"] = .flag(enable)
-        }
-
-        return settings
-    }
-}
-
-
-// MARK: - Ordered rules
-
-nonisolated extension ConfigurationCompiler {
-
-    /// Builds the ordered rule list used by `OrderedRouteMatcher`.
-    ///
-    /// Unlike the grouped inventory, this is the authoritative runtime order.
-    /// Expanded provider entries share the reference line for diagnostics.
-    static func compileOrderedRules(
-        _ configuration: ParsedConfiguration,
-        policies: [String: RouteTarget],
-        diagnostics: inout [ConfigurationDiagnostic]
-    ) -> (rules: [OrderedRoutingRule], finalAction: RouteMatchAction) {
-        var rules: [OrderedRoutingRule] = []
-        rules.reserveCapacity(configuration.rules.count)
-
-        for rule in configuration.rules where !rule.isFinal {
-            guard let action = routeMatchAction(for: rule.policy, policies: policies) else { continue }
-            guard let matcher = matcher(for: rule) else {
-                diagnostics.append(ConfigurationDiagnostic(severity: .error, code: .invalidValue,
-                    line: rule.line, section: "Rule", message: "The rule expression cannot be compiled."))
-                continue
-            }
-            do { try validateExpression(matcher)
-            } catch {
-                diagnostics.append(.init(severity: .error, code: .invalidValue, line: rule.line,
-                    section: "Rule", message: "Invalid regular expression or protocol value."))
-            }
-            rules.append(
-                OrderedRoutingRule(
-                    line: rule.line,
-                    matcher: matcher,
-                    action: action,
-                    noResolve: rule.hasOption(.noResolve)
-                )
-            )
-        }
-
-        let finalAction = configuration.finalRule
-            .flatMap { routeMatchAction(for: $0.policy, policies: policies) } ?? .defaultProxy
-
-        return (rules, finalAction)
-    }
-
-    static func routeMatchAction(
-        for policy: ParsedRule.Policy,
-        policies: [String: RouteTarget]
-    ) -> RouteMatchAction? {
-        switch policy {
-        case .direct:
-            return .direct
-        case .reject, .rejectTinyGIF:
-            return .reject
-        case .defaultProxy:
-            return .defaultProxy
-        case .named(let name):
-            guard let target = policies[name] else { return nil }
-            switch target {
-            case .direct: return .direct
-            case .reject: return .reject
-            case .proxy(let id): return .proxy(id)
-            case .default, .defaultProxy: return .defaultProxy
-            }
-        }
-    }
-
-    static func validateExpression(_ matcher: OrderedRoutingRule.Matcher) throws {
-        switch matcher {
-        case .allOf(let children), .anyOf(let children):
-            for child in children { try validateExpression(child) }
-        case .negated(let child): try validateExpression(child)
-        case .domainRegex(let pattern): _ = try NSRegularExpression(pattern: pattern)
-        case .protocolName(let name):
-            guard ["TCP", "UDP"].contains(name) else { throw RuntimeConfigurationFailure.invalidBundle }
         default: break
         }
     }
@@ -749,7 +589,7 @@ nonisolated extension ConfigurationCompiler {
             return .domainRegex(value)
         case .urlRegex:
             return .urlRegex(value)
-        case .ipCIDR, .ipCIDR6:
+        case .ipCIDR:
             return CIDRPrefix.parse(value).map { .ipCIDR($0) }
         case .sourceIP:
             return CIDRPrefix.parse(value).map { .sourceIP($0) }

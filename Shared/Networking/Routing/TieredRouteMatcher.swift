@@ -28,7 +28,6 @@ nonisolated extension PayloadTable: Sendable where Payload: Sendable {}
 nonisolated extension TierMatchers: Sendable where Payload: Sendable {}
 nonisolated extension TieredRouteMatcher: Sendable where Payload: Sendable {}
 nonisolated extension CIDRv4Trie: Sendable {}
-nonisolated extension CIDRv6Trie: Sendable {}
 
 nonisolated struct PayloadTable<Payload: Hashable> {
     private var payloads: [Payload] = []
@@ -289,7 +288,6 @@ nonisolated struct TierMatchers<Payload: Hashable> {
     /// in this (shared, `Sendable`) state — mirroring ``suffixRecords``.
     var keywordRecords: [(pattern: String, actionID: Int16)] = []
     var ipv4Trie = CIDRv4Trie()
-    var ipv6Trie = CIDRv6Trie()
     var domainRuleCount = 0
     var ipRuleCount = 0
 
@@ -314,15 +312,8 @@ nonisolated struct TierMatchers<Payload: Hashable> {
     }
 
     mutating func reserveIPv4(additionalPrefixes: Int) { ipv4Trie.reserveForAdditionalPrefixes(additionalPrefixes) }
-    mutating func reserveIPv6(additionalPrefixes: Int) { ipv6Trie.reserveForAdditionalPrefixes(additionalPrefixes) }
-
     mutating func insertIPv4(network: UInt32, prefixLen: Int, payload: Payload) {
         ipv4Trie.insert(network: network, prefixLen: prefixLen, actionID: payloadTable.intern(payload))
-        ipRuleCount += 1
-    }
-
-    mutating func insertIPv6(network: [UInt8], prefixLen: Int, payload: Payload) {
-        ipv6Trie.insert(network: network, prefixLen: prefixLen, actionID: payloadTable.intern(payload))
         ipRuleCount += 1
     }
 
@@ -351,10 +342,6 @@ nonisolated struct TierMatchers<Payload: Hashable> {
         return id == MatcherID.none ? nil : payloadTable.resolve(id)
     }
 
-    func lookupIPv6(hi: UInt64, lo: UInt64) -> Payload? {
-        let id = ipv6Trie.lookup(hi: hi, lo: lo)
-        return id == MatcherID.none ? nil : payloadTable.resolve(id)
-    }
 }
 
 // MARK: - Tiered matcher
@@ -396,24 +383,11 @@ nonisolated struct TieredRouteMatcher<Payload: Hashable> {
     func matchIP(_ ip: String) -> Payload? {
         guard !ip.isEmpty else { return nil }
 
-        if ip.contains(":") {
-            var address = in6_addr()
-            guard inet_pton(AF_INET6, ip, &address) == 1 else { return nil }
-            // Pack to a 128-bit pair once; reuse across tiers.
-            let (hi, lo) = withUnsafeBytes(of: &address) { raw -> (UInt64, UInt64) in
-                CIDRv6Trie.pack16(raw.bindMemory(to: UInt8.self))
-            }
-            for i in tiers.indices {
-                if let payload = tiers[i].lookupIPv6(hi: hi, lo: lo) { return payload }
-            }
-            return nil
-        } else {
             guard let ipv4Address = RouteMatching.parseIPv4(ip) else { return nil }
             for i in tiers.indices {
                 if let payload = tiers[i].lookupIPv4(ipv4Address) { return payload }
             }
             return nil
-        }
     }
 }
 
@@ -453,28 +427,6 @@ nonisolated enum RouteMatching {
         return result
     }
 
-    static func parseIPv6CIDR(_ cidr: String) -> (network: [UInt8], prefixLen: Int)? {
-        let parts = cidr.split(separator: "/", maxSplits: 1)
-        guard parts.count == 2,
-              let prefixLen = Int(parts[1]),
-              prefixLen >= 0, prefixLen <= 128 else { return nil }
-
-        var address = in6_addr()
-        guard inet_pton(AF_INET6, String(parts[0]), &address) == 1 else { return nil }
-
-        var network = withUnsafeBytes(of: &address) { Array($0.bindMemory(to: UInt8.self)) }
-        // Zero host bits
-        for i in 0..<16 {
-            let bitPos = i * 8
-            if bitPos >= prefixLen {
-                network[i] = 0
-            } else if bitPos + 8 > prefixLen {
-                let keep = prefixLen - bitPos
-                network[i] &= ~UInt8(0) << (8 - keep)
-            }
-        }
-        return (network: network, prefixLen: prefixLen)
-    }
 }
 
 // MARK: - CIDR Patricia tries
@@ -637,197 +589,5 @@ nonisolated struct CIDRv4Trie {
         let d = a ^ b
         if d == 0 { return cap }
         return min(cap, UInt8(d.leadingZeroBitCount))
-    }
-}
-
-nonisolated struct CIDRv6Trie {
-    /// 8 + 8 + 4 + 4 + 2 + 1 + 5 padding = 32 bytes, 8-byte aligned. Edge bits are
-    /// MSB-first across (bitsHi, bitsLo); bits past `bitLen` stay zero by invariant.
-    private struct Node {
-        var bitsHi: UInt64 = 0
-        var bitsLo: UInt64 = 0
-        var left: Int32 = -1
-        var right: Int32 = -1
-        var actionID: Int16 = MatcherID.none
-        var bitLen: UInt8 = 0       // 0…128
-    }
-
-    private var nodes: [Node] = [Node()]
-
-    /// Reserves headroom for `prefixes` more insertions ahead of a bulk load; see the v4 counterpart.
-    mutating func reserveForAdditionalPrefixes(_ prefixes: Int) {
-        guard prefixes > 0 else { return }
-        nodes.reserveCapacity(nodes.count + 2 * prefixes)
-    }
-
-    // MARK: - Insert
-
-    mutating func insert(network: [UInt8], prefixLen: Int, actionID: Int16) {
-        let (hi, lo) = network.withUnsafeBufferPointer { Self.pack16($0) }
-        let length = UInt8(prefixLen)
-        let (mHi, mLo) = Self.maskTop(hi, lo, length)
-        insertCore(bitsHi: mHi, bitsLo: mLo, bitLen: length, actionID: actionID)
-    }
-
-    // MARK: - Lookup
-
-    /// Deepest action along the path for a packed 128-bit address, or `MatcherID.none`.
-    func lookup(hi hi0: UInt64, lo lo0: UInt64) -> Int16 {
-        nodes.withUnsafeBufferPointer { buffer in
-            var hi = hi0
-            var lo = lo0
-            var remaining: UInt8 = 128
-            var nodeID = 0
-            var deepest = buffer[0].actionID
-
-            while remaining > 0 {
-                let firstBit = hi >> 63
-                let childID = (firstBit == 0) ? buffer[nodeID].left : buffer[nodeID].right
-                if childID < 0 { return deepest }
-
-                let child = buffer[Int(childID)]
-                let lcp = Self.lcp(
-                    aHi: hi, aLo: lo, aLen: remaining,
-                    bHi: child.bitsHi, bLo: child.bitsLo, bLen: child.bitLen
-                )
-                if lcp < child.bitLen { return deepest }
-
-                (hi, lo) = Self.shiftLeft(hi, lo, child.bitLen)
-                remaining -= child.bitLen
-                nodeID = Int(childID)
-                if child.actionID != MatcherID.none { deepest = child.actionID }
-            }
-
-            return deepest
-        }
-    }
-
-    // MARK: - Patricia core
-
-    private mutating func insertCore(bitsHi: UInt64, bitsLo: UInt64, bitLen: UInt8, actionID: Int16) {
-        var hi = bitsHi
-        var lo = bitsLo
-        var remaining = bitLen
-        var nodeID: Int32 = 0
-
-        while remaining > 0 {
-            let firstBit = UInt8(hi >> 63)
-            let childID = (firstBit == 0) ? nodes[Int(nodeID)].left : nodes[Int(nodeID)].right
-
-            if childID < 0 {
-                let leafID = makeLeaf(bitsHi: hi, bitsLo: lo, bitLen: remaining, actionID: actionID)
-                if firstBit == 0 { nodes[Int(nodeID)].left = leafID }
-                else { nodes[Int(nodeID)].right = leafID }
-                return
-            }
-
-            let childBitsHi = nodes[Int(childID)].bitsHi
-            let childBitsLo = nodes[Int(childID)].bitsLo
-            let childBitLen = nodes[Int(childID)].bitLen
-            let lcp = Self.lcp(
-                aHi: hi, aLo: lo, aLen: remaining,
-                bHi: childBitsHi, bLo: childBitsLo, bLen: childBitLen
-            )
-
-            if lcp == childBitLen {
-                (hi, lo) = Self.shiftLeft(hi, lo, lcp)
-                remaining -= lcp
-                nodeID = childID
-                continue
-            }
-
-            let (midHi, midLo) = Self.maskTop(childBitsHi, childBitsLo, lcp)
-            let (existingNewHi, existingNewLo) = Self.shiftLeft(childBitsHi, childBitsLo, lcp)
-
-            var mid = Node()
-            mid.bitsHi = midHi
-            mid.bitsLo = midLo
-            mid.bitLen = lcp
-            let midID = Int32(nodes.count)
-            nodes.append(mid)
-
-            nodes[Int(childID)].bitsHi = existingNewHi
-            nodes[Int(childID)].bitsLo = existingNewLo
-            nodes[Int(childID)].bitLen = childBitLen - lcp
-
-            if UInt8(existingNewHi >> 63) == 0 { nodes[Int(midID)].left = childID }
-            else { nodes[Int(midID)].right = childID }
-
-            let (newHi, newLo) = Self.shiftLeft(hi, lo, lcp)
-            let newRemaining = remaining - lcp
-            if newRemaining == 0 {
-                nodes[Int(midID)].actionID = actionID
-            } else {
-                let leafID = makeLeaf(bitsHi: newHi, bitsLo: newLo, bitLen: newRemaining, actionID: actionID)
-                if UInt8(newHi >> 63) == 0 { nodes[Int(midID)].left = leafID }
-                else { nodes[Int(midID)].right = leafID }
-            }
-
-            if firstBit == 0 { nodes[Int(nodeID)].left = midID }
-            else { nodes[Int(nodeID)].right = midID }
-            return
-        }
-
-        nodes[Int(nodeID)].actionID = actionID
-    }
-
-    private mutating func makeLeaf(bitsHi: UInt64, bitsLo: UInt64, bitLen: UInt8, actionID: Int16) -> Int32 {
-        var leaf = Node()
-        leaf.bitsHi = bitsHi
-        leaf.bitsLo = bitsLo
-        leaf.bitLen = bitLen
-        leaf.actionID = actionID
-        let id = Int32(nodes.count)
-        nodes.append(leaf)
-        return id
-    }
-
-    // MARK: - 128-bit bit ops
-
-    private static func shiftLeft(_ hi: UInt64, _ lo: UInt64, _ amount: UInt8) -> (UInt64, UInt64) {
-        let n = Int(amount)
-        if n == 0 { return (hi, lo) }
-        if n >= 128 { return (0, 0) }
-        if n >= 64 { return (lo << (n - 64), 0) }
-        return ((hi << n) | (lo >> (64 - n)), lo << n)
-    }
-
-    private static func maskTop(_ hi: UInt64, _ lo: UInt64, _ n: UInt8) -> (UInt64, UInt64) {
-        let count = Int(n)
-        if count == 0 { return (0, 0) }
-        if count >= 128 { return (hi, lo) }
-        if count <= 64 {
-            let mask: UInt64 = (count == 64) ? ~0 : ~UInt64(0) << (64 - count)
-            return (hi & mask, 0)
-        }
-        let mask = ~UInt64(0) << (128 - count)
-        return (hi, lo & mask)
-    }
-
-    private static func lcp(aHi: UInt64, aLo: UInt64, aLen: UInt8,
-                            bHi: UInt64, bLo: UInt64, bLen: UInt8) -> UInt8 {
-        let cap = min(aLen, bLen)
-        if cap == 0 { return 0 }
-        let dHi = aHi ^ bHi
-        if dHi != 0 { return min(cap, UInt8(dHi.leadingZeroBitCount)) }
-        let dLo = aLo ^ bLo
-        if dLo != 0 { return min(cap, 64 + UInt8(dLo.leadingZeroBitCount)) }
-        return cap
-    }
-
-    /// Packs up to 16 big-endian bytes into a (hi, lo) 128-bit pair.
-    static func pack16(_ buf: UnsafeBufferPointer<UInt8>) -> (UInt64, UInt64) {
-        var hi: UInt64 = 0
-        var lo: UInt64 = 0
-        let count = min(16, buf.count)
-        for i in 0..<count {
-            let byte = UInt64(buf[i])
-            if i < 8 {
-                hi |= byte << ((7 - i) * 8)
-            } else {
-                lo |= byte << ((7 - (i - 8)) * 8)
-            }
-        }
-        return (hi, lo)
     }
 }

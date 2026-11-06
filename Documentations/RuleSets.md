@@ -21,7 +21,6 @@ UTF-8 纯文本，一行一个条件，不写策略、不写 `[Rule]` 标题：
 DOMAIN, ads.example.com
 DOMAIN-SUFFIX, tracker.example
 IP-CIDR, 192.0.2.0/24
-IP-CIDR6, 2001:db8::/32, no-resolve
 AND,((PROTOCOL,UDP),(DEST-PORT,443))
 ```
 

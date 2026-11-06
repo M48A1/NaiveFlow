@@ -208,7 +208,7 @@ nonisolated struct RoutingBinaryWriter {
                 let value: String
                 switch rule.type {
                 case .domainSuffix, .domainKeyword: value = rule.value.lowercased()
-                case .ipCIDR, .ipCIDR6: value = rule.value
+                case .ipCIDR: value = rule.value
                 }
                 let utf8 = Array(value.utf8)
                 guard utf8.count <= Int(UInt16.max) else { continue }

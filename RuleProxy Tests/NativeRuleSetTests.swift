@@ -53,7 +53,7 @@ struct NativeRuleSetTests {
     }
 
     @Test func providerSupportsCommentsBOMCRLFAndNativeLogicalConditions() throws {
-        let rules = try NativeRuleSet.parse("\u{FEFF}# test\r\n; comment\r\n// comment\r\nAND,((PROTOCOL,TCP),(DEST-PORT,443))\r\nIP-CIDR6,2001:db8::/32,no-resolve # note\r\n", source: source)
+        let rules = try NativeRuleSet.parse("\u{FEFF}# test\r\n; comment\r\n// comment\r\nAND,((PROTOCOL,TCP),(DEST-PORT,443))\r\nIP-CIDR,192.0.2.0/24,no-resolve # note\r\n", source: source)
         #expect(rules.count == 2)
         #expect(rules[0].kind == .logicalAnd)
         #expect(rules[1].hasOption(.noResolve))

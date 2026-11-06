@@ -648,7 +648,7 @@ actor UDPPlane {
             return sendNODATA(answering: datagram, qtype: qtype)
         }
 
-        if qtype == 65 {
+        if qtype == 65 || qtype == 28 {
             return sendNODATA(answering: datagram, qtype: qtype)
         }
 
@@ -663,20 +663,16 @@ actor UDPPlane {
                     ruleSetName: ruleMatch.ruleSetName
                 )
             }
-            guard qtype == 1 || qtype == 28 else {
+            guard qtype == 1 else {
                 return sendNODATA(answering: datagram, qtype: qtype)
             }
-            let zeroIP = [UInt8](repeating: 0, count: qtype == 1 ? 4 : 16)
+            let zeroIP = [UInt8](repeating: 0, count: 4)
             return sendAddressAnswer(
                 answering: datagram,
                 ip: zeroIP,
                 qtype: qtype,
                 ttl: TunnelConstants.dnsBlockedAnswerTTL
             )
-        }
-
-        if qtype == 28 {
-            return sendNODATA(answering: datagram, qtype: qtype)
         }
 
         guard qtype == 1 else {
@@ -714,7 +710,7 @@ actor UDPPlane {
         guard let defaultConfiguration = udpConfig.configuration else { return false }
 
         let upstream = DNSUpstream.forwardingServers(
-            preferring: AWCore.getFallbackDNSUpstream(), includeIPv6: false
+            preferring: AWCore.getFallbackDNSUpstream()
         ).first ?? DNSUpstream.defaultPlainServer
         let payload = datagram.payload
         let dstPort = datagram.destination.port

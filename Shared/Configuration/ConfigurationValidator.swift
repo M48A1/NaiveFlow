@@ -36,7 +36,7 @@ nonisolated enum ConfigurationValidator {
         /// The preserved manual baseline continues using its original matcher.
         static let current = Capabilities(
             ruleKinds: [.domain, .domainSuffix, .domainKeyword, .domainWildcard, .domainRegex,
-                        .ipCIDR, .ipCIDR6, .sourceIP, .sourcePort, .destinationPort, .protocolType,
+                        .ipCIDR, .sourceIP, .sourcePort, .destinationPort, .protocolType,
                         .ruleSet, .geoIP, .geoASN, .ipASN, .geoSite, .logicalAnd, .logicalOr, .logicalNot],
             groupKinds: [.select],
             preservesRuleOrder: true,
@@ -100,6 +100,12 @@ nonisolated enum ConfigurationValidator {
         _ configuration: ParsedConfiguration,
         diagnostics: inout [ConfigurationDiagnostic]
     ) {
+        for name in ["tun-included-routes", "tun-excluded-routes"] {
+            if let raw = configuration.general[name], ConfigurationDocument.splitList(raw).contains(where: { IPRoute($0) == nil }) {
+                diagnostics.append(.init(severity: .error, code: .invalidValue, section: "General",
+                    message: "Tunnel routes accept valid IPv4 CIDRs only."))
+            }
+        }
         for prefix in ["", "proxy-", "subscription-", "ech-"] {
             let plain = prefix + "dns-server"
             let encrypted = prefix + "encrypted-dns-server"
@@ -154,9 +160,9 @@ nonisolated enum ConfigurationValidator {
         case .list:
             return "expects a comma-separated list"
         case .plainServer:
-            return "must be an IPv4/IPv6 address, optionally with a port"
+            return "must be an IPv4 address, optionally with a port"
         case .bootstrapDNS:
-            return "must be system or a comma-separated list of up to eight IPv4/IPv6 addresses"
+            return "must be system or a comma-separated list of up to eight IPv4 addresses"
         case .dohURL:
             return "must be an https:// URL"
         }
@@ -651,7 +657,7 @@ nonisolated extension ConfigurationValidator {
     ) {
         let isIPRule: Bool
         switch rule.kind {
-        case .ruleSet, .ipCIDR, .ipCIDR6, .ipASN, .geoIP, .geoASN, .logicalAnd, .logicalOr, .logicalNot:
+        case .ruleSet, .ipCIDR, .ipASN, .geoIP, .geoASN, .logicalAnd, .logicalOr, .logicalNot:
             isIPRule = true
         default:
             isIPRule = false

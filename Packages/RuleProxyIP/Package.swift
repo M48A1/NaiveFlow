@@ -19,5 +19,6 @@ let package = Package(
         .target(
             name: "RuleProxyIP"
         ),
+        .testTarget(name: "RuleProxyIPTests", dependencies: ["RuleProxyIP"]),
     ]
 )

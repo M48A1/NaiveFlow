@@ -9,7 +9,7 @@ nonisolated enum BootstrapDoHClient {
     static let maximumWireBytes = 131_072
 
     static func request(url: URL, address: String, body: Data) async throws -> Data {
-        guard url.scheme?.lowercased() == "https", let host = url.host,
+        guard url.scheme?.lowercased() == "https", let host = url.host, IPv4Only.supportsHost(host),
               DNSName.isIPAddress(DNSName.stripBrackets(address)),
               let portNumber = UInt16(exactly: url.port ?? 443), portNumber > 0,
               let port = NWEndpoint.Port(rawValue: portNumber),

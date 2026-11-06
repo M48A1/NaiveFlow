@@ -36,6 +36,7 @@ extension QUICConnectionCore {
 
     func setupDirectCarrier(resolvedIPs: [String]) {
         do {
+            try IPv4Only.requireHost(host)
             populateRemoteAddr(resolvedIPs: resolvedIPs)
             guard remoteAddr.ss_family != 0 else {
                 throw RuleProxyError.quic(.connectionFailed(detail: "DNS lookup failed for \(host)"))
@@ -197,34 +198,9 @@ extension QUICConnectionCore {
             return
         }
 
-        var addr6 = in6_addr()
-        if inet_pton(AF_INET6, host, &addr6) == 1 {
-            configureIPv6(addr6)
-            return
-        }
-
-        var found4: in_addr?
-        var found6: in6_addr?
         for ip in resolvedIPs {
-            if found4 == nil {
-                var a4 = in_addr()
-                if inet_pton(AF_INET, ip, &a4) == 1 {
-                    found4 = a4
-                    continue
-                }
-            }
-            if found6 == nil {
-                var a6 = in6_addr()
-                if inet_pton(AF_INET6, ip, &a6) == 1 {
-                    found6 = a6
-                }
-            }
-        }
-
-        if let a4 = found4 {
-            configureIPv4(a4)
-        } else if let a6 = found6 {
-            configureIPv6(a6)
+            var address = in_addr()
+            if inet_pton(AF_INET, ip, &address) == 1 { configureIPv4(address); return }
         }
     }
 
@@ -248,28 +224,6 @@ extension QUICConnectionCore {
             }
         }
     }
-
-    func configureIPv6(_ addr: in6_addr) {
-        addrLen = MemoryLayout<sockaddr_in6>.size
-        withUnsafeMutablePointer(to: &remoteAddr) { storage in
-            storage.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { sin6 in
-                sin6.pointee = sockaddr_in6()
-                sin6.pointee.sin6_len = UInt8(addrLen)
-                sin6.pointee.sin6_family = sa_family_t(AF_INET6)
-                sin6.pointee.sin6_port = port.bigEndian
-                sin6.pointee.sin6_addr = addr
-            }
-        }
-        withUnsafeMutablePointer(to: &localAddr) { storage in
-            storage.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { sin6 in
-                sin6.pointee = sockaddr_in6()
-                sin6.pointee.sin6_len = UInt8(addrLen)
-                sin6.pointee.sin6_family = sa_family_t(AF_INET6)
-                sin6.pointee.sin6_addr = in6addr_any
-            }
-        }
-    }
-
 
     // MARK: QUIC engine
 

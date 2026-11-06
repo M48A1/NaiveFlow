@@ -60,14 +60,13 @@ nonisolated enum RouteMatchAction: Hashable, Codable, Sendable {
     }
 }
 
-/// An IPv4/IPv6 network prefix, parsed once and matched without allocations.
+/// An IPv4 network prefix, parsed once and matched without allocations.
 nonisolated struct CIDRPrefix: Hashable, Codable, Sendable {
     enum Family: Hashable, Codable, Sendable {
         case v4
-        case v6
 
-        var byteCount: Int { self == .v4 ? 4 : 16 }
-        var addressFamily: Int32 { self == .v4 ? AF_INET : AF_INET6 }
+        var byteCount: Int { 4 }
+        var addressFamily: Int32 { AF_INET }
     }
 
     let family: Family
@@ -75,7 +74,7 @@ nonisolated struct CIDRPrefix: Hashable, Codable, Sendable {
     let bytes: [UInt8]
     let prefixLength: Int
 
-    /// Accepts `1.2.3.0/24`, `1.2.3.4` (treated as `/32`), and `2001:db8::/32`.
+    /// Accepts `1.2.3.0/24`, `1.2.3.4` (treated as `/32`), with a maximum prefix of /32.
     static func parse(_ text: String) -> CIDRPrefix? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
@@ -87,16 +86,12 @@ nonisolated struct CIDRPrefix: Hashable, Codable, Sendable {
             guard let parsed = Int(parts[1]), parsed >= 0 else { return nil }
             prefixLength = parsed
         } else {
-            prefixLength = addressText.contains(":") ? 128 : 32
+            prefixLength = 32
         }
 
         if let v4 = canonicalBytes(addressText, family: .v4) {
             guard prefixLength <= 32 else { return nil }
             return CIDRPrefix(family: .v4, bytes: mask(v4, prefixLength: prefixLength, family: .v4), prefixLength: prefixLength)
-        }
-        if let v6 = canonicalBytes(addressText, family: .v6) {
-            guard prefixLength <= 128 else { return nil }
-            return CIDRPrefix(family: .v6, bytes: mask(v6, prefixLength: prefixLength, family: .v6), prefixLength: prefixLength)
         }
         return nil
     }

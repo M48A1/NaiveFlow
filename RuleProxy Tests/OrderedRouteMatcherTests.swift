@@ -57,15 +57,8 @@ struct OrderedRouteMatcherTests {
         #expect(matcher.match(RouteQuery(ip: "192.168.1.1")).action == .direct)
     }
 
-    @Test func ipv6PrefixMatches() throws {
-        let prefix = try #require(CIDRPrefix.parse("2001:db8::/32"))
-        let matcher = OrderedRouteMatcher(
-            rules: [rule(1, .ipCIDR(prefix), .reject)],
-            finalAction: .direct
-        )
-
-        #expect(matcher.match(RouteQuery(ip: "2001:db8::1")).action == .reject)
-        #expect(matcher.match(RouteQuery(ip: "2001:db9::1")).action == .direct)
+    @Test func unsupportedAddressPrefixIsRejected() {
+        #expect(CIDRPrefix.parse("2001:db8::/32") == nil)
     }
 
     @Test func wildcardKeywordAndRegexRules() {

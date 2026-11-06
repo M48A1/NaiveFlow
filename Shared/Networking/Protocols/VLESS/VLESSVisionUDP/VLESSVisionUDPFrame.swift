@@ -30,7 +30,6 @@ nonisolated enum VLESSVisionUDPNetwork: UInt8 {
 nonisolated private enum MuxAddressType: UInt8 {
     case ipv4   = 0x01
     case domain = 0x02
-    case ipv6   = 0x03
 }
 
 // MARK: - VLESSVisionUDPFrameMetadata
@@ -123,9 +122,6 @@ nonisolated struct VLESSVisionUDPFrameMetadata {
         if let ipv4Bytes = parseIPv4(host) {
             buf.append(MuxAddressType.ipv4.rawValue)
             buf.append(contentsOf: ipv4Bytes)
-        } else if let ipv6Bytes = parseIPv6(host) {
-            buf.append(MuxAddressType.ipv6.rawValue)
-            buf.append(contentsOf: ipv6Bytes)
         } else {
             let domainData = host.data(using: .utf8) ?? Data()
             buf.append(MuxAddressType.domain.rawValue)
@@ -157,15 +153,7 @@ nonisolated struct VLESSVisionUDPFrameMetadata {
             let domain = String(data: data[(base + offset + position)..<(base + offset + position + domainLen)], encoding: .utf8) ?? ""
             return (domain, position + domainLen)
 
-        case .ipv6:
-            guard data.count >= offset + position + 16 else { return nil }
-            var address = in6_addr()
-            withUnsafeMutableBytes(of: &address) { pointer in
-                for i in 0..<16 { pointer[i] = data[base + offset + position + i] }
-            }
-            var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
-            inet_ntop(AF_INET6, &address, &buffer, socklen_t(buffer.count))
-            return (String(nulTerminated: buffer), position + 16)
+
         }
     }
 
@@ -177,15 +165,6 @@ nonisolated struct VLESSVisionUDPFrameMetadata {
         return withUnsafeBytes(of: &addr) { Array($0) }
     }
 
-    private func parseIPv6(_ address: String) -> [UInt8]? {
-        var clean = address
-        if clean.hasPrefix("[") && clean.hasSuffix("]") {
-            clean = String(clean.dropFirst().dropLast())
-        }
-        var addr = in6_addr()
-        guard inet_pton(AF_INET6, clean, &addr) == 1 else { return nil }
-        return withUnsafeBytes(of: &addr) { Array($0) }
-    }
 }
 
 // MARK: - Frame Encoding

@@ -30,8 +30,7 @@ nonisolated final class ConnectionRouter: Sendable {
 
     private struct RejectedIPs {
         var v4: Set<UInt32> = []
-        var v6: Set<SIMD16<UInt8>> = []
-        var count: Int { v4.count + v6.count }
+        var count: Int { v4.count }
     }
     private let rejectedIPs = Mutex(RejectedIPs())
     private static let rejectedIPCap = 4096
@@ -46,6 +45,7 @@ nonisolated final class ConnectionRouter: Sendable {
 
     func decision(forIP ip: String, sourceIP: String? = nil, sourcePort: UInt16? = nil,
                   destinationPort: UInt16? = nil, protocolName: String? = nil, allowAddressResolution: Bool = true) -> RouteDecision {
+        guard IPv4Only.supportsHost(ip) else { return RouteDecision(host: ip, hostIsResolvedDomain: false, action: .unreachable) }
         if domainRouter.usesNativeRules {
             let synthetic = SyntheticAddressPool.isSyntheticAddress(ip)
             let host = synthetic ? syntheticAddressPool.lookup(ip: ip)?.domain : nil
@@ -144,18 +144,11 @@ nonisolated final class ConnectionRouter: Sendable {
 
     private func markIPRejected(_ ip: String) {
         var v4 = in_addr()
-        var v6 = in6_addr()
         if inet_pton(AF_INET, ip, &v4) == 1 {
             let key = UInt32(bigEndian: v4.s_addr)
             rejectedIPs.withLock { set in
                 if set.count >= Self.rejectedIPCap { set = RejectedIPs() }
                 set.v4.insert(key)
-            }
-        } else if inet_pton(AF_INET6, ip, &v6) == 1 {
-            let key = withUnsafeBytes(of: v6) { $0.loadUnaligned(as: SIMD16<UInt8>.self) }
-            rejectedIPs.withLock { set in
-                if set.count >= Self.rejectedIPCap { set = RejectedIPs() }
-                set.v6.insert(key)
             }
         }
     }
@@ -180,11 +173,7 @@ nonisolated final class ConnectionRouter: Sendable {
 
     // MARK: - Reject-mark intake checks
 
-    func isRejectMarkedDestination(rawIP: UnsafeRawPointer, isIPv6: Bool) -> Bool {
-        if isIPv6 {
-            let key = rawIP.loadUnaligned(as: SIMD16<UInt8>.self)
-            return rejectedIPs.withLock { $0.v6.contains(key) }
-        }
+    func isRejectMarkedDestination(rawIP: UnsafeRawPointer) -> Bool {
         let key = (UInt32(rawIP.load(fromByteOffset: 0, as: UInt8.self)) << 24)
                 | (UInt32(rawIP.load(fromByteOffset: 1, as: UInt8.self)) << 16)
                 | (UInt32(rawIP.load(fromByteOffset: 2, as: UInt8.self)) << 8)

@@ -121,18 +121,18 @@ apart.
 | `tun-included-routes` | comma list | live | applied |
 | `tun-excluded-routes` | comma list | live | applied |
 | `dns-mode` | `default`, `plain`, `doh` | data-plane restart | applied |
-| `dns-server` | IPv4/IPv6, optional port | data-plane restart | applied; also sets `dns-mode = plain` |
+| `dns-server` | IPv4, optional port | data-plane restart | applied; also sets `dns-mode = plain` |
 | `encrypted-dns-server` | `https://` URL | data-plane restart | applied; also sets `dns-mode = doh` |
 | `proxy-dns-mode` | `default`, `plain`, `doh` | data-plane restart | applied |
-| `proxy-dns-server` | IPv4/IPv6, optional port | data-plane restart | applied |
+| `proxy-dns-server` | IPv4, optional port | data-plane restart | applied |
 | `proxy-encrypted-dns-server` | `https://` URL | data-plane restart | applied |
 | `subscription-dns-mode` | `default`, `plain`, `doh` | live | applied |
-| `subscription-dns-server` | IPv4/IPv6, optional port | live | applied |
+| `subscription-dns-server` | IPv4, optional port | live | applied |
 | `subscription-encrypted-dns-server` | `https://` URL | live | applied |
 | `fallback-dns-mode` | `default`, `plain` | data-plane restart | applied |
-| `fallback-dns-server` | IPv4/IPv6, optional port | data-plane restart | applied |
+| `fallback-dns-server` | IPv4, optional port | data-plane restart | applied |
 | `ech-dns-mode` | `default`, `plain`, `doh` | data-plane restart | applied |
-| `ech-dns-server` | IPv4/IPv6, optional port | data-plane restart | applied |
+| `ech-dns-server` | IPv4, optional port | data-plane restart | applied |
 | `ech-encrypted-dns-server` | `https://` URL | data-plane restart | applied |
 | `synthetic-address-excluded-suffix` | comma list | data-plane restart | applied |
 | `mitm` | boolean | live | applied; `[MITM] enable` wins when both appear |
@@ -144,9 +144,7 @@ apart.
 | `reflection` | boolean | live | applied |
 | `experimental` | boolean | live | applied |
 | `loglevel` | `debug`, `info`, `warn`, `error` | live | reported; recorded in the snapshot, nothing to apply it to yet |
-| `ipv6` | boolean | data-plane restart | reported |
-| `ipv6-vif` | `auto`, `always`, `never` | data-plane restart | reported |
-| `dns-server-fallback` | IPv4/IPv6, optional port | data-plane restart | reported; use `fallback-dns-server` |
+| `dns-server-fallback` | IPv4, optional port | data-plane restart | reported; use `fallback-dns-server` |
 | `dns-fallback-system` | boolean | data-plane restart | reported |
 | `dns-direct-system` | boolean | data-plane restart | reported; use `dns-mode` |
 | `hijack-dns` | comma list | data-plane restart | reported |
@@ -278,7 +276,6 @@ today:
 | `DOMAIN-SUFFIX` | `example.com` | policy |
 | `DOMAIN-KEYWORD` | `example` | policy |
 | `IP-CIDR` | `10.0.0.0/8` | policy |
-| `IP-CIDR6` | `2001:db8::/32` | policy |
 
 Policy is `DIRECT`, `REJECT`, `REJECT-TINYGIF`, `PROXY`, or a node/group name.
 `no-resolve` is parsed and kept per rule.

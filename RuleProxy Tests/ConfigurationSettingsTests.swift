@@ -170,7 +170,7 @@ struct ConfigurationSettingsTests {
     @Test func reportsEveryUnappliedKeyOnceWithTheRightCode() {
         let result = TextConfigurationPipeline.process(text: """
             [General]
-            ipv6 = true
+            allow-hotspot-access = true
             skip-proxy = 10.0.0.0/8
             """)
 
@@ -210,7 +210,7 @@ struct ConfigurationSettingsTests {
         case .plainServer:
             return [.text("1.1.1.1"), .text("1.1.1.1:5353")]
         case .bootstrapDNS:
-            return [.text("system"), .text("1.1.1.1, 2001:db8::53")]
+            return [.text("system"), .text("1.1.1.1, 8.8.8.8")]
         case .dohURL:
             return [.text("https://dns.example.com/dns-query")]
         }

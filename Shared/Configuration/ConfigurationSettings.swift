@@ -67,7 +67,7 @@ nonisolated struct ConfigurationSettingKey: Identifiable, Sendable {
         /// Comma list, trimmed, order preserved. An empty list clears the value.
         case list
         /// A single DNS server that must parse as `1.1.1.1`, `1.1.1.1:53` or
-        /// `[::1]:53`.
+        /// `1.1.1.1:53`.
         case plainServer
         /// A DoH endpoint that must parse as an `https://` URL.
         case dohURL
@@ -442,20 +442,6 @@ nonisolated enum ConfigurationSettings {
         // They stay in the catalog so the parser accepts them and the validator
         // reports each one instead of silently dropping it.
 
-        ConfigurationSettingKey(
-            name: "ipv6",
-            kind: .flag,
-            scope: .stackRestart,
-            applies: false,
-            summary: "IPv6 handling is not configurable in this build."
-        ),
-        ConfigurationSettingKey(
-            name: "ipv6-vif",
-            kind: .enumeration(["auto", "always", "never"]),
-            scope: .stackRestart,
-            applies: false,
-            summary: "IPv6 virtual interface mode is not implemented."
-        ),
         ConfigurationSettingKey(
             name: "dns-server-fallback",
             kind: .plainServer,

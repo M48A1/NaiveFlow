@@ -90,39 +90,25 @@ extension RuleProxyError {
 
 extension NWEndpoint.Host {
     nonisolated init?(ipLiteral ip: String) {
-        if ip.contains(":") {
-            guard let address = IPv6Address(ip) else { return nil }
-            self = .ipv6(address)
-        } else {
-            guard let address = IPv4Address(ip) else { return nil }
-            self = .ipv4(address)
-        }
+        guard let address = IPv4Address(ip) else { return nil }
+        self = .ipv4(address)
     }
-    
+
     nonisolated static func dialHost(for host: String, resolution: DialResolution) async throws -> NWEndpoint.Host {
+        try IPv4Only.requireHost(host)
         if let literal = NWEndpoint.Host(ipLiteral: host) { return literal }
+        let addresses: [String]
         switch resolution {
-        case .system:
-            return .name(host, nil)
-        case .proxies:
-            let resolver = DNSResolver.proxies
-            guard !resolver.usesSystemUpstream,
-                  let resolved = await resolver.resolveHost(host),
-                  let literal = NWEndpoint.Host(ipLiteral: resolved)
-            else { return .name(host, nil) }
-            return literal
-        case .localRequests:
-            let resolver = DNSResolver.localRequests
-            var address = await resolver.resolveHost(host, family: .ipv4)
-            if address == nil {
-                address = await resolver.resolveHost(host, family: .ipv6)
-            }
-            guard let resolved = address, let literal = NWEndpoint.Host(ipLiteral: resolved) else {
-                throw RuleProxyError.dns(.resolutionFailed(host: host, detail: nil))
-            }
-            return literal
+        case .system: addresses = await DNSSyscallConcurrencyBridge.shared.resolveAddresses(host, family: .ipv4)
+        case .proxies: addresses = await DNSResolver.proxies.resolveAll(host, family: .ipv4)
+        case .localRequests: addresses = await DNSResolver.localRequests.resolveAll(host, family: .ipv4)
         }
+        guard let address = addresses.first, let literal = NWEndpoint.Host(ipLiteral: address) else {
+            throw RuleProxyError.dns(.noAddresses(host: host))
+        }
+        return literal
     }
+
 }
 
 // MARK: - Dial resolution

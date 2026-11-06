@@ -51,7 +51,7 @@ extension TunnelStack {
     nonisolated func isRejectMarked(_ address: IPAddress) -> Bool {
         withUnsafeTemporaryAllocation(byteCount: 16, alignment: 8) { bytes in
             address.write(to: bytes.baseAddress!)
-            return connectionRouter.isRejectMarkedDestination(rawIP: bytes.baseAddress!, isIPv6: address.isIPv6)
+            return connectionRouter.isRejectMarkedDestination(rawIP: bytes.baseAddress!)
         }
     }
 

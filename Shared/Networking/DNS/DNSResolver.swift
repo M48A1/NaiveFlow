@@ -62,8 +62,9 @@ nonisolated final class DNSResolver: Sendable {
 
     var usesSystemUpstream: Bool { upstreamSource().isSystem }
 
-    func resolveAll(_ host: String, family: DNSAddressFamily = .preferIPv4, forceFresh: Bool = false) async -> [String] {
-        let bare = DNSName.stripBrackets(host)
+    func resolveAll(_ host: String, family: DNSAddressFamily = .ipv4, forceFresh: Bool = false) async -> [String] {
+        let bare = host
+        guard IPv4Only.supportsHost(bare) else { return [] }
         if DNSName.isIPAddress(bare) { return family.admits(bare) ? [bare] : [] }
         if let mapped = hosts?.addresses(for: bare, family: family) { return mapped }
         let bootstrap = AWCore.getBootstrapDNS()
@@ -74,13 +75,13 @@ nonisolated final class DNSResolver: Sendable {
         }
     }
 
-    func resolveHost(_ host: String, family: DNSAddressFamily = .preferIPv4, forceFresh: Bool = false) async -> String? {
+    func resolveHost(_ host: String, family: DNSAddressFamily = .ipv4, forceFresh: Bool = false) async -> String? {
         await resolveAll(host, family: family, forceFresh: forceFresh).first
     }
     
-    func prewarm(_ host: String, family: DNSAddressFamily = .preferIPv4) {
-        let bare = DNSName.stripBrackets(host)
-        guard !DNSName.isIPAddress(bare), hosts?.addresses(for: bare, family: family) == nil else { return }
+    func prewarm(_ host: String, family: DNSAddressFamily = .ipv4) {
+        let bare = host
+        guard IPv4Only.supportsHost(bare), !DNSName.isIPAddress(bare), hosts?.addresses(for: bare, family: family) == nil else { return }
         let bootstrap = AWCore.getBootstrapDNS()
         let query = Query(name: DNSName.cacheKey(for: bare), family: family, bootstrap: bootstrap.rendered)
         let upstream = upstreamSource()
@@ -89,8 +90,9 @@ nonisolated final class DNSResolver: Sendable {
         }
     }
 
-    func cachedIPs(for host: String, family: DNSAddressFamily = .preferIPv4) -> [String]? {
-        let bare = DNSName.stripBrackets(host)
+    func cachedIPs(for host: String, family: DNSAddressFamily = .ipv4) -> [String]? {
+        let bare = host
+        guard IPv4Only.supportsHost(bare) else { return nil }
         if DNSName.isIPAddress(bare) { return family.admits(bare) ? [bare] : nil }
         if let mapped = hosts?.addresses(for: bare, family: family) { return mapped }
         return cache.cachedValue(for: Query(name: DNSName.cacheKey(for: bare), family: family, bootstrap: AWCore.getBootstrapDNS().rendered), from: upstreamSource())

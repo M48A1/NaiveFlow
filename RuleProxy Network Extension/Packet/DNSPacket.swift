@@ -71,9 +71,6 @@ nonisolated enum DNSPacket {
             if qtype == 1 {
                 rdLength = 4
                 ansType = 1
-            } else if qtype == 28 {
-                rdLength = 16
-                ansType = 28
             }
         }
 

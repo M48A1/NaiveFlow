@@ -1,5 +1,8 @@
 # NaiveFlow 原生配置与版本发布
 
+当前首版为 IPv4-only；范围与阻断说明见 [IPv4Only.md](IPv4Only.md)。
+
+
 配置形式参考分段、键值与规则列表；字段和运行语义属于 NaiveFlow。本文描述原生 v1，不承诺导入其他客户端配置。
 
 ## 三层职责
@@ -47,11 +50,11 @@ DNS 读取固定在一个设置视图，缓存有代际隔离；旧路由编译�
 
 | 项目 | 原生 v1 |
 | --- | --- |
-| 路由 | 顺序首条命中、每条策略、FINAL；精确域名、后缀、关键字、通配符、正则；IPv4/IPv6 CIDR、来源 IP/端口、目标端口、TCP/UDP；AND/OR/NOT |
+| 路由 | 顺序首条命中、每条策略、FINAL；精确域名、后缀、关键字、通配符、正则；IPv4 CIDR、来源 IP/端口、目标端口、TCP/UDP；AND/OR/NOT |
 | 外部规则集 | RULE-SET 引用 HTTPS 或 App 可读的绝对 file:/// 文件；发布前展开、校验并固定到运行包，详见 [RuleSets.md](RuleSets.md) |
 | Geo | [GeoIP] 中的国家/ASN 前缀和 [GeoSite] 的域名后缀列表，随版本固定；不附带外部数据库 |
 | 分组 | select，支持嵌套、内置动作和 selected=成员；不支持自动延迟选择/负载均衡 |
-| Host | 精确域名 → IPv4/IPv6 字面量。没有把 server:、通配符或别名当作有效绑定 |
+| Host | 精确域名 → IPv4 字面量。没有把 server:、通配符或别名当作有效绑定 |
 | MITM | enable、hostname 后缀；URL、Header、Body、JSON 改写、Map Local；必须先安装并信任既有 CA |
 | 脚本 | http-request/http-response；普通或逐帧 process(ctx)，复用已有原生脚本 ABI；HTTPS 或 base64 源，固定字节；支持 $argument |
 | 无损导出 | [MITM Set] 保存原生规则集的 Base64 JSON，保留作用域 ID、参数和脚本字节；不把多个作用域扁平化 |
