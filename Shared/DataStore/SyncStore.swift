@@ -53,6 +53,7 @@ nonisolated final class SyncStore: Sendable {
 
     enum Key: String, CaseIterable {
         case configurations
+        case configurationDocuments
         case chains
         case groups
         case subscriptions

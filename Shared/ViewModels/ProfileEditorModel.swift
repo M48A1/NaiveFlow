@@ -34,9 +34,13 @@ protocol ProfileEditing {
     func lastAppliedAt() -> Date?
     /// Recently applied documents, newest first.
     func appliedHistory() -> [ConfigurationSnapshot]
+    func backupBeforeCloudLoad(_ text: String) throws
+    func draftBeforeCloudLoad() -> String?
 }
 
 extension ProfileEditing {
+    func backupBeforeCloudLoad(_ text: String) throws {}
+    func draftBeforeCloudLoad() -> String? { nil }
     func rollbackDocument() async throws -> ProfileApplyOutcome {
         throw ConfigurationActivation.Failure.nothingToRollBack
     }
@@ -96,6 +100,7 @@ final class ProfileEditorModel {
     private(set) var errorMessage: String?
     private(set) var isApplying = false
     private(set) var isLoaded = false
+    private(set) var cloudDraftBackup: String?
 
     @ObservationIgnored private let document: any ProfileEditing
     @ObservationIgnored private let previewDelay: Duration
@@ -149,6 +154,7 @@ final class ProfileEditorModel {
         preview = document.previewDocument(text)
         lastAppliedAt = document.lastAppliedAt()
         history = document.appliedHistory()
+        cloudDraftBackup = document.draftBeforeCloudLoad()
     }
 
     // MARK: - Editing
@@ -244,6 +250,23 @@ final class ProfileEditorModel {
         }
     }
 
+    /// Receiving cloud content never applies it or overwrites this buffer.
+    /// Loading is an explicit editor action; keep the old buffer recoverable.
+    func loadCloudDocument(_ document: CloudConfigurationDocument) {
+        guard !isApplying else { return }
+        do { try self.document.backupBeforeCloudLoad(text) }
+        catch { errorMessage = error.localizedDescription; return }
+        cloudDraftBackup = text
+        replaceText(with: document.text)
+        statusMessage = "Loaded the configuration from \(document.deviceName). Review it, then press Apply."
+    }
+
+    func restoreDraftBeforeCloudLoad() {
+        guard !isApplying, let backup = cloudDraftBackup else { return }
+        replaceText(with: backup)
+        statusMessage = "Restored the draft from before loading iCloud content."
+    }
+
     /// Puts an already applied document back into the buffer for review.
     func revert(to snapshot: ConfigurationSnapshot) {
         replaceText(with: snapshot.text)
@@ -324,6 +347,15 @@ final class ProfileEditorModel {
 /// The pipeline already offers these crossings; the model reaches them through
 /// `ProfileEditing` so a test can substitute a stub.
 extension ConfigurationDocumentOperations: ProfileEditing {
+
+    func backupBeforeCloudLoad(_ text: String) throws {
+        try FileManager.default.createDirectory(at: activation.store.directory, withIntermediateDirectories: true)
+        try Data(text.utf8).write(to: activation.store.directory.appendingPathComponent("before-cloud-load.txt"), options: .atomic)
+    }
+
+    func draftBeforeCloudLoad() -> String? {
+        try? String(contentsOf: activation.store.directory.appendingPathComponent("before-cloud-load.txt"), encoding: .utf8)
+    }
 
     func loadDraft() -> String {
         draft()

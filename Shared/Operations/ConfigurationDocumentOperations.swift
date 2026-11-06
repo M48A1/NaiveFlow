@@ -30,6 +30,7 @@ struct ConfigurationDocumentOperations {
     let activation: ConfigurationActivation
     var tunnel: TunnelController? = nil
     var selection: ProxySelection? = nil
+    var cloud: ConfigurationCloudStore? = nil
     private var publisher: ConfigurationPublisher {
         ConfigurationPublisher(activation: activation, tunnel: tunnel, stateSink: { selection?.showRuntimeVersion($0) })
     }
@@ -79,6 +80,7 @@ struct ConfigurationDocumentOperations {
     /// half-finished document with errors stays on disk.
     func saveDraft(_ text: String) throws {
         try ruleManager.saveDraft(text)
+        cloud?.schedule(text)
     }
 
     // MARK: - Text to stores
@@ -92,11 +94,15 @@ struct ConfigurationDocumentOperations {
     /// stores are touched, and if installation fails halfway the manifest is
     /// rolled back and the previous snapshot installed again.
     func apply(_ text: String) async throws -> ConfigurationInstaller.Outcome {
-        try await publisher.publish(text: text).1
+        let outcome = try await publisher.publish(text: text).1
+        cloud?.schedule(activation.draft())
+        await cloud?.saveApplied(text)
+        return outcome
     }
 
     func rollbackRuntimeVersion() async throws -> ProfileApplyOutcome {
         let outcome = try await publisher.rollback()
+        await cloud?.saveApplied(exportCurrent().text)
         return ProfileApplyOutcome(summary: outcome.summary, notes: outcome.notes, plan: outcome.plan)
     }
 

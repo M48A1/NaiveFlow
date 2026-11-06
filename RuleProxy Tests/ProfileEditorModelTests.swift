@@ -286,6 +286,36 @@ struct ProfileEditorModelTests {
         #expect(model.statusMessage == nil)
     }
 
+    @Test func cloudLoadBacksUpDraftAndNeverAppliesIt() {
+        let document = ProfileDocumentStub()
+        let model = ProfileEditorModel(document: document, previewDelay: .zero)
+        model.load()
+        model.edit("# local edits\n[Rule]\nFINAL,DIRECT")
+        let previous = model.text
+        let cloud = CloudConfigurationDocument(id: UUID(), deviceName: "Other device", updatedAt: .now, text: "[Rule]\nFINAL,REJECT")
+        model.loadCloudDocument(cloud)
+        #expect(document.cloudBackup == previous)
+        #expect(model.text == cloud.text)
+        #expect(model.isDirty)
+        #expect(model.lastOutcome == nil)
+        model.restoreDraftBeforeCloudLoad()
+        #expect(model.text == previous)
+        let reopened = ProfileEditorModel(document: document)
+        reopened.load()
+        #expect(reopened.cloudDraftBackup == previous)
+    }
+
+    @Test func cloudLoadBackupFailurePreservesEditor() {
+        let document = ProfileDocumentStub()
+        document.backupFails = true
+        let model = ProfileEditorModel(document: document, previewDelay: .zero)
+        model.load()
+        let previous = model.text
+        model.loadCloudDocument(.init(id: UUID(), deviceName: "Other", updatedAt: .now, text: "new"))
+        #expect(model.text == previous)
+        #expect(model.errorMessage != nil)
+    }
+
     // MARK: - Helpers
 
     static func snapshot(_ text: String, createdAt: Date = .now) -> ConfigurationSnapshot {
@@ -329,6 +359,14 @@ private final class ProfileDocumentStub: ProfileEditing {
     var fileText: Result<String, any Error> = .success("[Rule]\nFINAL, DIRECT\n")
     var snapshots: [ConfigurationSnapshot] = []
     var appliedAt: Date?
+
+    var cloudBackup: String?
+    var backupFails = false
+    func backupBeforeCloudLoad(_ text: String) throws {
+        if backupFails { throw Failure.unreadable }
+        cloudBackup = text
+    }
+    func draftBeforeCloudLoad() -> String? { cloudBackup }
 
     func loadDraft() -> String {
         draft

@@ -29,6 +29,7 @@ final class AppContainer {
     let mitmRuleSetStore: MITMRuleSetStore
     let moduleStore: ModuleStore
     let certificateStore: CertificateStore
+    let configurationCloud: ConfigurationCloudStore
 
     private let routingExportDebouncer = Debouncer(interval: .seconds(2))
     private let mitmExportDebouncer = Debouncer(interval: .milliseconds(500))
@@ -46,6 +47,7 @@ final class AppContainer {
         mitmRuleSetStore = MITMRuleSetStore(syncStore: syncStore)
         moduleStore = ModuleStore(syncStore: syncStore)
         certificateStore = CertificateStore()
+        configurationCloud = ConfigurationCloudStore(store: syncStore)
         do {
             let publisher = ConfigurationPublisher(activation: ConfigurationActivation(), tunnel: tunnel,
                 stateSink: { [selection] in selection.showRuntimeVersion($0) })
@@ -98,6 +100,12 @@ final class AppContainer {
     func start() {
         guard !started else { return }
         started = true
+        Task {
+            await configurationCloud.reload()
+            let activation = ConfigurationActivation()
+            if activation.hasDraft() { configurationCloud.schedule(activation.draft()) }
+            if let active = activation.active { await configurationCloud.saveApplied(active.text) }
+        }
 
         Task { await LoadOperation(configurationStore: configurationStore, reaction: mutationReaction).run() }
         observeTunnelStatus()

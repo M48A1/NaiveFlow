@@ -62,6 +62,13 @@ actor CloudSync {
         }
     }
 
+    func refresh() async throws {
+        guard AWCore.getICloudSyncEnabled(), let engine else {
+            throw ConfigurationCloudCodec.Failure(message: "Enable iCloud Sync in Data settings to fetch configurations.")
+        }
+        try await engine.fetchChanges()
+    }
+
     private func startEngine() {
         let state = Self.loadState()
         let configuration = CKSyncEngine.Configuration(

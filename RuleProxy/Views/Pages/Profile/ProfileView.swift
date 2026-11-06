@@ -21,9 +21,11 @@ import UniformTypeIdentifiers
 /// text document that describes the whole setup.
 struct ProfileView: View {
     @Environment(Operations.self) private var operations
+    @Environment(AppSettings.self) private var appSettings
 
     @State private var modelBox = ViewScoped<ProfileEditorModel>()
     @State private var showImporter = false
+    @State private var pendingCloudDocument: CloudConfigurationDocument?
 
     private var model: ProfileEditorModel {
         modelBox {
@@ -38,10 +40,11 @@ struct ProfileView: View {
                 resultSection
                 reloadSection
                 actionSection
+                cloudSection
                 historySection
             }
             .navigationTitle("Configuration")
-            .task { model.load() }
+            .task { model.load(); await operations.configurationCloud.reload() }
             .onDisappear { model.dismissMessages() }
             .fileImporter(
                 isPresented: $showImporter,
@@ -53,6 +56,15 @@ struct ProfileView: View {
                 case .failure(let error):
                     model.report(error)
                 }
+            }
+            .confirmationDialog("Load iCloud Configuration?", isPresented: Binding(
+                get: { pendingCloudDocument != nil },
+                set: { if !$0 { pendingCloudDocument = nil } }
+            ), presenting: pendingCloudDocument) { item in
+                Button("Load into Editor") { model.loadCloudDocument(item); pendingCloudDocument = nil }
+                Button("Cancel", role: .cancel) { pendingCloudDocument = nil }
+            } message: { _ in
+                Text("Your current draft will be backed up. Loading does not apply the configuration to this device.")
             }
             .alert("Configuration Not Applied", isPresented: errorBinding) {
                 Button("OK", role: .cancel) { model.dismissError() }
@@ -198,6 +210,47 @@ private extension ProfileView {
         }
     }
 
+    var cloudSection: some View {
+        Section {
+            Toggle("iCloud Sync", isOn: Binding(get: { appSettings.iCloudSyncEnabled }, set: { appSettings.iCloudSyncEnabled = $0 }))
+            Button("Save for iCloud Sync") {
+                let text = model.text
+                Task { await operations.configurationCloud.saveNow(text) }
+            }
+            .disabled(model.isApplying)
+            Button("Refresh iCloud Configurations") {
+                Task { await operations.configurationCloud.refresh() }
+            }
+            .disabled(!appSettings.iCloudSyncEnabled || operations.configurationCloud.isRefreshing)
+            ForEach(operations.configurationCloud.documents) { item in
+                Button {
+                    pendingCloudDocument = item
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.deviceName)
+                        Text(item.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(model.isApplying)
+            }
+            if model.cloudDraftBackup != nil {
+                Button("Restore Draft Before iCloud Load") { model.restoreDraftBeforeCloudLoad() }
+                    .disabled(model.isApplying)
+            }
+            if let message = operations.configurationCloud.statusMessage {
+                Text(message).font(.footnote).foregroundStyle(.secondary)
+            }
+            if let error = operations.configurationCloud.errorMessage {
+                Text(error).font(.footnote).foregroundStyle(.red)
+            }
+        } header: {
+            Text("iCloud Configurations")
+        } footer: {
+            Text("Drafts sync after editing pauses. Each device keeps its draft and last applied text separately. Load a copy to review, then press Apply on this device. Certificates and running tunnel state stay local.")
+        }
+    }
+
     @ViewBuilder
     var historySection: some View {
         if !model.history.isEmpty {
@@ -290,5 +343,6 @@ private extension ProfileView {
     let container = AppContainer.preview()
     return ProfileView()
         .environment(Operations(container: container))
+        .environment(AppSettings())
 }
 #endif
