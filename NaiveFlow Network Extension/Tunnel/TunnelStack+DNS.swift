@@ -72,7 +72,12 @@ extension TunnelStack {
                 return answer(type == 1 ? [0, 0, 0, 0] : nil, ttl: TunnelConstants.dnsBlockedAnswerTTL)
             }
             guard type == 1, !udpConfig().syntheticAddressExcludedDomains.contains(domain) else { return nil }
-            let offset = syntheticAddressPool.allocate(domain: domain, verdict: match, verdictVersion: version)
+            // nil means the pool cannot hand out a safe address right now (every
+            // reclaimed address is still inside the client's DNS cache window);
+            // fall through to a real upstream instead of risking cross-domain reuse.
+            guard let offset = syntheticAddressPool.allocate(domain: domain, verdict: match, verdictVersion: version) else {
+                return nil
+            }
             let ip = SyntheticAddressPool.ipv4Bytes(offset: offset)
             return answer([ip.0, ip.1, ip.2, ip.3])
         }

@@ -134,22 +134,26 @@ nonisolated final class DNSResolver: Sendable {
         purpose: DNSResolutionPurpose
     ) async -> (value: [String], ttl: TimeInterval)? {
         var resolved: [String] = []
+        var resolvedTTL: TimeInterval = Self.defaultTTL
         if !upstream.isSystem {
             // A proxy-side resolver only routes its DoH through the tunnel for
             // business lookups; proxy bootstrap resolves its own node and must
             // stay direct so the proxy cannot depend on itself.
             let viaProxy = transport == .proxy && purpose != .proxyBootstrap
-            resolved = (try? await DNSUpstreamClient.resolve(host, via: upstream, family: family, bootstrap: bootstrap, viaProxy: viaProxy)) ?? []
+            if let result = try? await DNSUpstreamClient.resolveWithTTL(host, via: upstream, family: family, bootstrap: bootstrap, viaProxy: viaProxy) {
+                resolved = result.addresses
+                resolvedTTL = result.ttl
+            }
             // An explicit DoH bootstrap failure must not silently resolve the
             // original business domain through the system resolver.
-            if case .doh = upstream, !bootstrap.isSystem { return Self.cacheable(resolved) }
-            guard resolved.isEmpty, fallsBackToSystem else { return Self.cacheable(resolved) }
+            if case .doh = upstream, !bootstrap.isSystem { return Self.cacheable(resolved, ttl: resolvedTTL) }
+            guard resolved.isEmpty, fallsBackToSystem else { return Self.cacheable(resolved, ttl: resolvedTTL) }
         }
         resolved = await blockingBridge.resolveAddresses(host, family: family)
-        return Self.cacheable(resolved)
+        return Self.cacheable(resolved, ttl: Self.defaultTTL)
     }
 
-    private static func cacheable(_ addresses: [String]) -> (value: [String], ttl: TimeInterval)? {
-        addresses.isEmpty ? nil : (value: addresses, ttl: defaultTTL)
+    private static func cacheable(_ addresses: [String], ttl: TimeInterval = defaultTTL) -> (value: [String], ttl: TimeInterval)? {
+        addresses.isEmpty ? nil : (value: addresses, ttl: ttl)
     }
 }

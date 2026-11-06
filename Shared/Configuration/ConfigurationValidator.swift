@@ -349,6 +349,19 @@ nonisolated extension ConfigurationValidator {
                         message: "Proxy group '\(group.name)' uses '\(group.kindToken)'; this build treats it as a manual selection group."
                     )
                 )
+            } else if kind != .select {
+                // Accepted but degraded: there is no latency probing, failover or
+                // load balancing yet, so state the fallback instead of implying
+                // those capabilities exist.
+                diagnostics.append(
+                    ConfigurationDiagnostic(
+                        severity: .warning,
+                        code: .notApplied,
+                        line: group.line,
+                        section: ConfigurationDocument.SectionKind.proxyGroup.displayName,
+                        message: "Proxy group '\(group.name)' is '\(group.kindToken)'; this build resolves it as a manual selection group (no latency probing, failover or load balancing)."
+                    )
+                )
             }
 
             let supportedParameters: Set<String> = kind == .select
@@ -647,6 +660,21 @@ nonisolated extension ConfigurationValidator {
                     line: rule.line,
                     section: ConfigurationDocument.SectionKind.rule.displayName,
                     message: "Geo databases are not bundled yet, so '\(rule.kind.token)' cannot be evaluated."
+                )
+            )
+        }
+
+        // These kinds compile into the ordered matcher, but the Network Extension
+        // entry points do not populate the matching field yet, so a rule of this
+        // kind can never actually match. Say so instead of implying it works.
+        if rule.kind == .processName || rule.kind == .userAgent || rule.kind == .urlRegex {
+            diagnostics.append(
+                ConfigurationDiagnostic(
+                    severity: .warning,
+                    code: .notApplied,
+                    line: rule.line,
+                    section: ConfigurationDocument.SectionKind.rule.displayName,
+                    message: "Rule type '\(rule.kind.token)' needs flow metadata the tunnel does not fill in yet; it will never match."
                 )
             )
         }

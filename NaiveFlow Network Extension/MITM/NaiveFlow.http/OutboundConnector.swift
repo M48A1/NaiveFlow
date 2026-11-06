@@ -40,11 +40,39 @@ nonisolated enum OutboundConnector {
 
     // MARK: - Route resolution
 
-    static func resolveRoute(host: String) async -> (target: RouteTarget, ruleSetName: String?) {
+    static func resolveRoute(host: String, port: UInt16, protocolName: String) async -> (target: RouteTarget, ruleSetName: String?) {
         guard let context = routingContext() else { return (.direct, nil) }
         let router = context.domainRouter
-
         let isLiteral = isIPLiteral(host)
+
+        if router.usesNativeRules {
+            // Full ordered evaluation — domain, IP, port, protocol and FINAL in one
+            // pass — instead of matching the domain and IP separately. This keeps
+            // port/protocol rules, no-resolve semantics and the native FINAL intact.
+            var query = RouteQuery(
+                host: isLiteral ? nil : host,
+                ip: isLiteral ? host : nil,
+                destinationPort: port,
+                protocolName: protocolName
+            )
+            var evaluation = router.nativeDecision(query, allowResolution: !context.preventDNSLeak)
+            if case .needsAddress = evaluation, !isLiteral, !context.preventDNSLeak,
+               let ip = await DNSResolver.localRequests.resolveHost(host, family: .ipv4, purpose: .ruleEvaluation) {
+                query.ip = ip
+                evaluation = router.nativeDecision(query, allowResolution: false)
+            }
+            if case .matched(let result) = evaluation {
+                let match = DomainRouter.nativeMatch(result)
+                // Private/loopback destinations keep the legacy direct fallback unless
+                // an explicit (non-FINAL) rule claimed them.
+                if result.isFinal, isLoopbackOrPrivate(host) { return (.direct, nil) }
+                return (match.action, match.ruleSetName)
+            }
+            if isLoopbackOrPrivate(host) { return (.direct, nil) }
+            return (.default, nil)
+        }
+
+        // Legacy tiered matcher path.
         let matched = isLiteral ? router.matchIP(host) : router.matchDomain(host)
         if let matched { return (matched.action, matched.ruleSetName) }
 
@@ -61,9 +89,9 @@ nonisolated enum OutboundConnector {
 
     // MARK: - Dial
 
-    static func dial(host: String, port: UInt16) async throws -> Dialed {
+    static func dial(host: String, port: UInt16, protocolName: String = "TCP") async throws -> Dialed {
         try IPv4Only.requireHost(host)
-        let (route, ruleSetName) = await resolveRoute(host: host)
+        let (route, ruleSetName) = await resolveRoute(host: host, port: port, protocolName: protocolName)
         let context = routingContext()
         context?.requestLog.record(
             protocol: .unknown,
@@ -80,7 +108,9 @@ nonisolated enum OutboundConnector {
         case .proxy(let id):
             guard let context,
                   let configuration = resolveConfiguration(for: id, context: context) else {
-                return try await dialDirect(host: host, port: port)
+                // Never silently fall back to direct when a rule chose a proxy:
+                // that would bypass the user's explicit routing choice.
+                throw NaiveFlowError.routing(.proxyUnavailable(host: host))
             }
             return try await dialProxy(configuration: configuration, host: host, port: port)
         }

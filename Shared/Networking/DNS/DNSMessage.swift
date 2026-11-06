@@ -69,6 +69,18 @@ nonisolated enum DNSMessage {
         }
         return ipv4
     }
+
+    /// Like `parseAddresses`, but keeps each record's TTL so the resolver can
+    /// cache for the upstream's own lifetime instead of a fixed window.
+    static func parseAddressesWithTTL(_ response: Data, expectedID: UInt16) throws(ParseFailure) -> [(address: String, ttl: UInt32)] {
+        var results: [(address: String, ttl: UInt32)] = []
+        try walkAnswers(response, expectedID: expectedID) { type, ttl, rdata in
+            if type == typeA, rdata.count == 4 {
+                if let address = formatIPv4(Array(rdata)) { results.append((address, ttl)) }
+            }
+        }
+        return results
+    }
     
     static func parseRecords(
         _ response: Data,

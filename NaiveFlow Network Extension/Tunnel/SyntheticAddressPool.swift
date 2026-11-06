@@ -43,6 +43,11 @@ nonisolated final class SyntheticAddressPool: Sendable {
         /// refresh so a caller can tell a fresh mapping from a stale one.
         var generation: UInt64 = 0
 
+        /// Reclaimed offsets cooling down before reuse, keyed by offset →
+        /// monotonic time at which reuse becomes safe. Prevents handing a
+        /// still-cached address to a different domain.
+        var cooling: [Int: TimeInterval] = [:]
+
         mutating func nextGeneration() -> UInt64 {
             generation &+= 1
             return generation
@@ -62,7 +67,7 @@ nonisolated final class SyntheticAddressPool: Sendable {
             insertAtHead(node)
         }
 
-        mutating func evictLRU() -> Int {
+        mutating func evictLRU(now: TimeInterval) -> Int {
             guard let tail = lruTail else {
                 // Unreachable (pool is full ⇒ LRU nonempty); fall back rather than crash.
                 return 1
@@ -72,6 +77,10 @@ nonisolated final class SyntheticAddressPool: Sendable {
             offsetToNode.removeValue(forKey: offset)
             if let entry = offsetToEntry.removeValue(forKey: offset) {
                 domainToOffset.removeValue(forKey: entry.domain)
+                // Cool down until the client's cached answer has expired, so this
+                // address is never handed to a second domain while the first may
+                // still be requested.
+                cooling[offset] = max(entry.expiresAt, now)
             }
             return offset
         }
@@ -115,12 +124,13 @@ nonisolated final class SyntheticAddressPool: Sendable {
     // MARK: - Pool Operations
 
     func allocate(domain: String, verdict: DomainRouter.Match?, verdictVersion: UInt64,
-                  ttl: TimeInterval = TimeInterval(TunnelConstants.dnsSyntheticAddressAnswerTTL)) -> Int {
+                  ttl: TimeInterval = TimeInterval(TunnelConstants.dnsSyntheticAddressAnswerTTL)) -> Int? {
         state.withLock { state in
             let now = MonotonicClock.now
             let generation = state.nextGeneration()
             let expiresAt = now + ttl
             if let offset = state.domainToOffset[domain] {
+                state.cooling.removeValue(forKey: offset)
                 state.touchLRU(offset)
                 state.offsetToEntry[offset]?.verdict = verdict
                 state.offsetToEntry[offset]?.verdictVersion = verdictVersion
@@ -133,8 +143,20 @@ nonisolated final class SyntheticAddressPool: Sendable {
             if state.nextOffset <= TunnelConstants.syntheticAddressPoolSize {
                 offset = state.nextOffset
                 state.nextOffset += 1
+                state.cooling.removeValue(forKey: offset)
             } else {
-                offset = state.evictLRU()
+                // Pool is full: reuse a cooled-down offset first; otherwise reclaim
+                // the LRU and, if it is still within the client's DNS cache window,
+                // decline to allocate rather than hand out a second domain's address.
+                if let ready = state.cooling.first(where: { $0.value <= now }) {
+                    offset = ready.key
+                    state.cooling.removeValue(forKey: ready.key)
+                } else {
+                    let reclaimed = state.evictLRU(now: now)
+                    guard state.cooling[reclaimed] ?? 0 <= now else { return nil }
+                    offset = reclaimed
+                    state.cooling.removeValue(forKey: reclaimed)
+                }
             }
 
             state.domainToOffset[domain] = offset

@@ -164,6 +164,9 @@ nonisolated enum NaiveFlowError: Error {
         case rejectedByRule(host: String)
         case dropped
         case payloadCorrupted(BinaryPayload)
+        /// A rule selected a proxy that could not be resolved. Failing loudly is
+        /// safer than silently dialing direct and bypassing the user's choice.
+        case proxyUnavailable(host: String)
     }
     
     // MARK: Store
@@ -504,6 +507,7 @@ nonisolated extension NaiveFlowError.Routing {
         case .rejectedByRule(let host): "rejected by routing rule: \(host)"
         case .dropped: "dropped by routing policy"
         case .payloadCorrupted(let issue): "routing payload corrupted (\(issue.label))"
+        case .proxyUnavailable(let host): "proxy selected by rule is unavailable: \(host)"
         }
     }
 }

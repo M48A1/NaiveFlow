@@ -13,6 +13,9 @@ nonisolated private let logger = NaiveFlowLogger(category: "DNSUpstreamClient")
 nonisolated enum DNSUpstreamClient {
     static let queryTimeout: Duration = .seconds(4)
 
+    /// TTL used when the upstream returns no A records with a usable TTL.
+    static let fallbackAddressTTL: TimeInterval = 120
+
     /// A transport for proxy-side DoH that routes through the tunnel's outbound
     /// connector (rules + selected proxy) instead of dialing the resolver
     /// directly. The Network Extension installs one while a routing context is
@@ -40,19 +43,29 @@ nonisolated enum DNSUpstreamClient {
         bootstrap: DNSBootstrapPolicy? = nil,
         viaProxy: Bool = false
     ) async throws -> [String] {
+        try await resolveWithTTL(host, via: upstream, family: family, bootstrap: bootstrap, viaProxy: viaProxy).addresses
+    }
+
+    static func resolveWithTTL(
+        _ host: String,
+        via upstream: DNSUpstream,
+        family: DNSAddressFamily = .ipv4,
+        bootstrap: DNSBootstrapPolicy? = nil,
+        viaProxy: Bool = false
+    ) async throws -> (addresses: [String], ttl: TimeInterval) {
         try IPv4Only.requireHost(host)
         let policy = bootstrap ?? AWCore.getBootstrapDNS()
-        let addresses: [String]
+        let result: (addresses: [String], ttl: TimeInterval)
         do {
             switch upstream {
             case .system:
                 throw NaiveFlowError.dns(.resolutionFailed(host: host, detail: "no upstream configured"))
             case .plain(let server, let port):
-                addresses = try await queryAll(host, family: family) { name, type in
+                result = try await queryAll(host, family: family) { name, type in
                     try await queryPlain(name, type: type, server: server, port: port)
                 }
             case .doh(let url):
-                addresses = try await queryAll(host, family: family) { name, type in
+                result = try await queryAll(host, family: family) { name, type in
                     try await queryDoH(name, type: type, url: url, bootstrap: policy, viaProxy: viaProxy)
                 }
             }
@@ -61,10 +74,10 @@ nonisolated enum DNSUpstreamClient {
             throw error
         }
 
-        guard !addresses.isEmpty else {
+        guard !result.addresses.isEmpty else {
             throw NaiveFlowError.dns(.noAddresses(host: host))
         }
-        return addresses
+        return result
     }
     
     static func queryRecord(
@@ -182,8 +195,8 @@ nonisolated enum DNSUpstreamClient {
     private static func queryAll(
         _ host: String,
         family: DNSAddressFamily,
-        query: @escaping @Sendable (String, UInt16) async throws -> [String]
-    ) async throws -> [String] {
+        query: @escaping @Sendable (String, UInt16) async throws -> (addresses: [String], ttl: TimeInterval)
+    ) async throws -> (addresses: [String], ttl: TimeInterval) {
         try await query(host, DNSMessage.typeA)
     }
 
@@ -194,7 +207,7 @@ nonisolated enum DNSUpstreamClient {
         type: UInt16,
         server: String,
         port: UInt16
-    ) async throws -> [String] {
+    ) async throws -> (addresses: [String], ttl: TimeInterval) {
         let id = UInt16.random(in: UInt16.min...UInt16.max)
         guard let query = DNSMessage.makeQuery(domain: name, type: type, id: id) else {
             throw NaiveFlowError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
@@ -212,7 +225,13 @@ nonisolated enum DNSUpstreamClient {
             try await transport.send(query)
             while true {
                 let datagram = try await transport.receive()
-                if let addresses = try decode(datagram, id: id) { return addresses }
+                // Truncated over UDP (TC bit set): retry over TCP with the same
+                // query, matching how the TCP/53 exchange handles truncation.
+                if datagram.count >= 3, datagram[2] & 0x02 != 0 {
+                    let reply = try await exchangeTCP(query, host: server, port: port)
+                    return try decodeWithTTL(reply, id: id) ?? ([], fallbackAddressTTL)
+                }
+                if let result = try decodeWithTTL(datagram, id: id) { return result }
             }
         }
     }
@@ -255,7 +274,7 @@ nonisolated enum DNSUpstreamClient {
 
     // MARK: - DoH
 
-    private static func queryDoH(_ name: String, type: UInt16, url: URL, bootstrap: DNSBootstrapPolicy, viaProxy: Bool = false) async throws -> [String] {
+    private static func queryDoH(_ name: String, type: UInt16, url: URL, bootstrap: DNSBootstrapPolicy, viaProxy: Bool = false) async throws -> (addresses: [String], ttl: TimeInterval) {
         let id: UInt16 = 0
         guard let query = DNSMessage.makeQuery(domain: name, type: type, id: id) else {
             throw NaiveFlowError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
@@ -271,10 +290,10 @@ nonisolated enum DNSUpstreamClient {
         request.cachePolicy = .reloadIgnoringLocalCacheData
 
         let data = try await sendDoH(request, bootstrap: bootstrap, viaProxy: viaProxy)
-        guard let addresses = try decode(data, id: id) else {
+        guard let result = try decodeWithTTL(data, id: id) else {
             throw NaiveFlowError.dns(.malformedResponse)
         }
-        return addresses
+        return result
     }
 
     private static func queryRecordDoH(
@@ -312,7 +331,12 @@ nonisolated enum DNSUpstreamClient {
         // Proxy-side DoH routes through the tunnel when requested; bootstrap and
         // host-app lookups keep the direct path (the proxy cannot carry its own
         // bootstrap without looping).
-        if viaProxy, let transport = activeProxyDoHTransport() {
+        if viaProxy {
+            guard let transport = activeProxyDoHTransport() else {
+                // The caller asked for the tunnel path; silently dialing the
+                // resolver directly here would bypass the selected proxy.
+                throw NaiveFlowError.dns(.resolutionFailed(host: host, detail: "proxy DoH transport not installed"))
+            }
             return try await transport(url, request.httpBody ?? Data())
         }
         let addresses: [String]
@@ -342,6 +366,21 @@ nonisolated enum DNSUpstreamClient {
             return nil
         } catch DNSMessage.ParseFailure.serverFailure {
             return []
+        } catch {
+            throw NaiveFlowError.dns(.malformedResponse)
+        }
+    }
+
+    private static func decodeWithTTL(_ message: Data, id: UInt16) throws -> (addresses: [String], ttl: TimeInterval)? {
+        do {
+            let records = try DNSMessage.parseAddressesWithTTL(message, expectedID: id)
+            let addresses = records.map(\.address)
+            let minTTL = records.map(\.ttl).min().map(TimeInterval.init) ?? fallbackAddressTTL
+            return (addresses, minTTL)
+        } catch DNSMessage.ParseFailure.identifierMismatch {
+            return nil
+        } catch DNSMessage.ParseFailure.serverFailure {
+            return ([], fallbackAddressTTL)
         } catch {
             throw NaiveFlowError.dns(.malformedResponse)
         }

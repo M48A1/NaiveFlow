@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Synchronization
 
 /// Sends a DoH query through the tunnel's outbound path — respecting the rules
 /// and the selected proxy exactly like any other connection — instead of dialing
@@ -24,29 +25,34 @@ nonisolated enum ProxyDoHClient {
             throw NaiveFlowError.dns(.malformedResponse)
         }
 
-        let dialed = try await OutboundConnector.dial(host: host, port: portNumber)
-        let tlsClient = TLSClient(configuration: TLSConfiguration(serverName: host, alpn: ["http/1.1"], insecureSkipVerify: false))
-        let tlsConnection: TLSRecordConnection
-        do {
-            tlsConnection = try await tlsClient.connect(overTunnel: dialed.connection)
-        } catch {
-            dialed.connection.cancel()
-            await dialed.proxyClient?.cancel()
-            throw error
-        }
-        let connection = TLSProxyConnection(tlsConnection: tlsConnection)
-        defer {
-            connection.cancel()
-            tlsClient.cancel()
-            dialed.proxyClient?.cancel()
-        }
-
-        let wire = Self.wireRequest(url: url, host: host, body: body)
+        // The whole exchange — outbound dial, TLS handshake, send and read — sits
+        // under one deadline. A cancel handle lets the timeout tear down whatever
+        // stage is in flight instead of leaving a half-open connection behind.
+        let cancelHandle = Mutex<(@Sendable () -> Void)?>(nil)
         return try await withDialDeadline(DNSUpstreamClient.queryTimeout) {
-            connection.cancel()
+            cancelHandle.withLock { $0?() }
         } error: {
             NaiveFlowError.dns(.timedOut(host: host))
         } operation: {
+            let dialed = try await OutboundConnector.dial(host: host, port: portNumber)
+            let tlsClient = TLSClient(configuration: TLSConfiguration(serverName: host, alpn: ["http/1.1"], insecureSkipVerify: false))
+            let tlsConnection: TLSRecordConnection
+            do {
+                tlsConnection = try await tlsClient.connect(overTunnel: dialed.connection)
+            } catch {
+                dialed.connection.cancel()
+                await dialed.proxyClient?.cancel()
+                throw error
+            }
+            let connection = TLSProxyConnection(tlsConnection: tlsConnection)
+            cancelHandle.withLock { $0 = { connection.cancel(); tlsClient.cancel(); dialed.proxyClient?.cancel() } }
+            defer {
+                connection.cancel()
+                tlsClient.cancel()
+                dialed.proxyClient?.cancel()
+            }
+
+            let wire = Self.wireRequest(url: url, host: host, body: body)
             try await connection.send(wire)
             var response = Data()
             while true {
