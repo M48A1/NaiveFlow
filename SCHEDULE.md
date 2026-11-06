@@ -176,13 +176,16 @@
 
 ## 平台范围更新
 
+开发顺序更新（2026-11-06）：先完成 iOS/iPadOS 客户端，再开展 macOS。当前不安排 macOS target、UI 或 VPN 平台适配，不将其作为 iOS/iPadOS 交付阻塞项。现有 tvOS target 保留。
+
 仅面向 macOS、iPadOS、iOS、tvOS。已删除 Watch 客户端、scheme、配对通信模型及桥接，清除本地包 watchOS 平台声明；保留服务于目标平台的 Widget、Network Extension 与测试。Reference 原始目录保持不变。
 
 - [x] 清理 watchOS 客户端与配对通信；工程对象无悬空引用。
 - [x] 解决 `https://github.com/hiDandelion/RuleProxyRules.git` 访问问题。（2026-11-04：该包为私有仓库，匿名访问 404，上游公开仓库也依赖同一私有地址；按“只参考核心组件”的要求已从工程移除，改为在 `Bundle.main` 读取可选的 `Rules.db`，详见 [Reference/Dependencies.md](Reference/Dependencies.md)。）
-- [ ] 新增并验证 macOS 客户端。现有工程没有 macOS target，尚未启用 Mac Catalyst；不可将当前客户端声明为已经支持 macOS。
-- [ ] 确定 macOS 原生或 Catalyst 实现路径，核对 UI、VPN 扩展、沙箱、签名与系统 API 差异后实施。
-- [ ] iOS/iPadOS、tvOS 及 macOS 分别执行构建与运行验收。
+- [ ] 后续阶段（iOS/iPadOS 完成后）：新增并验证 macOS 客户端。现有工程没有 macOS target，尚未启用 Mac Catalyst；不可将当前客户端声明为已经支持 macOS。
+- [ ] 后续阶段（iOS/iPadOS 完成后）：确定 macOS 原生或 Catalyst 实现路径，核对 UI、VPN 扩展、沙箱、签名与系统 API 差异后实施。
+- [ ] 当前阶段：完成 iOS/iPadOS 构建与运行验收，回归共享代码对现有 tvOS target 的影响。
+- [ ] 后续阶段：macOS 客户端实现后单独执行构建与运行验收。
 
 ## 进度记录
 
