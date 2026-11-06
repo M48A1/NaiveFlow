@@ -168,7 +168,7 @@ nonisolated struct OrderedParameters: Equatable, Sendable {
         storage[key.lowercased()] != nil
     }
 
-    /// Returns the value parsed as a boolean using the spellings Surge accepts.
+    /// Returns the value parsed as a boolean using NaiveFlow boolean spellings.
     func bool(_ key: String) -> Bool? {
         guard let raw = storage[key.lowercased()]?.trimmingCharacters(in: .whitespaces) else { return nil }
         switch raw.lowercased() {

@@ -77,7 +77,7 @@ nonisolated struct ConfigurationExportSource: Sendable, Equatable {
 
 /// Renders the app's current configuration as a text document.
 ///
-/// This is the direction that did not exist yet: `SurgeConfigurationParser` and
+/// This is the direction that did not exist yet: `NaiveFlowConfigurationParser` and
 /// `ConfigurationCompiler` read a document into the app's stores, this writes
 /// the app's stores back out. Two rules keep it honest:
 ///
@@ -88,8 +88,8 @@ nonisolated struct ConfigurationExportSource: Sendable, Equatable {
 ///   errors. `ConfigurationExporterTests` asserts exactly that, so an export
 ///   that drifts away from the parser fails a test rather than a user.
 ///
-/// The output is Surge-style INI: exactly the section names and rule tokens
-/// `SurgeConfigurationParser` reads, so an exported document can be imported
+/// The output is NaiveFlow sectioned text: exactly the section names and rule tokens
+/// `NaiveFlowConfigurationParser` reads, so an exported document can be imported
 /// back into this app. No section is generated that the parser keeps but the
 /// engine does not act on (`[Script]`, `[URL Rewrite]`, `[Header Rewrite]`), and
 /// none for data the stores do not hold.
@@ -102,7 +102,7 @@ nonisolated enum ConfigurationExporter {
         var includeRuleSetComments: Bool = true
         /// Emit the generated banner at the top of the document.
         var includeBanner: Bool = true
-        /// Emit `[MITM]` when MITM hosts exist.
+        /// Export the supported MITM enable switch; report external host policies.
         var includeMITM: Bool = true
 
         init(
@@ -136,16 +136,15 @@ nonisolated enum ConfigurationExporter {
     }
 
     static let banner = """
-        # RuleProxy configuration
+        # NaiveFlow configuration
         #
         # Generated from the app's current settings. Edit it here from now on:
         # [General]      proxy-mode / quic-policy / tunnel flags / DNS upstreams
         # [Proxy]        Name = <share link>
         # [Proxy Group]  Name = select, Member, Member
         # [Rule]         DOMAIN-SUFFIX, example.com, DIRECT
-        #                FINAL, PROXY
         # [Host]         host = address
-        # [MITM]         hostname = %APPEND% example.com
+        # MITM policies remain managed by the app; [General] mitm controls enablement.
         """
 }
 
@@ -162,8 +161,8 @@ nonisolated extension ConfigurationExporter {
         state.emitGroups()
         state.emitRules()
         state.emitHosts()
-        state.emitMITM()
         state.emitSettings()
+        state.emitMITM()
         return state.result()
     }
 }
@@ -327,15 +326,16 @@ nonisolated extension State {
                     notes.append("Skipped a rule in '\(ruleSet.name)': '\(value)' contains a comma.")
                     continue
                 }
-                ruleLines.append("\(ConfigurationExporter.surgeToken(for: rule.type)), \(value), \(policy)")
+                ruleLines.append("\(ConfigurationExporter.ruleToken(for: rule.type)), \(value), \(policy)")
                 counts.rules += 1
             }
         }
 
-        // The engine's terminal action is the selected node, which is exactly
-        // what `PROXY` means; the document says so instead of leaving the
-        // catch-all implicit.
-        ruleLines.append("FINAL, \(options.finalPolicy)")
+        // Current kernel fallback is selected by proxy-mode. Do not export an
+        // inert directive that the native format cannot actually apply.
+        if options.finalPolicy.uppercased() != "PROXY" {
+            notes.append("FINAL policy '\(options.finalPolicy)' is unsupported and was not exported.")
+        }
     }
 
     mutating func emitHosts() {
@@ -352,21 +352,12 @@ nonisolated extension State {
     mutating func emitMITM() {
         guard options.includeMITM else { return }
 
-        let hostnames = source.mitmHostnames
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-
-        guard !hostnames.isEmpty else {
-            if source.mitmEnabled {
-                // `enable = true` with no hostname is an error, so the section is
-                // left out rather than producing a document that cannot activate.
-                notes.append("MITM is enabled in the app but lists no host, so [MITM] was left out.")
-            }
-            return
+        if !source.settings.contains(where: { $0.key.lowercased() == "mitm" }) {
+            settingLines.append("mitm = \(source.mitmEnabled)")
         }
-
-        mitmLines.append("enable = \(source.mitmEnabled)")
-        mitmLines.append("hostname = %APPEND% \(hostnames.joined(separator: ", "))")
+        if source.mitmEnabled || !source.mitmHostnames.isEmpty {
+            notes.append("MITM host policies remain in the app's rule sets; the text document exports only the enable switch.")
+        }
     }
 
     mutating func emitSettings() {
@@ -392,8 +383,8 @@ nonisolated extension ConfigurationExporter {
     }
 
     /// The four rule types the binary payload carries, in the document spelling
-    /// `SurgeConfigurationParser` maps back to the same type.
-    static func surgeToken(for type: RoutingRuleType) -> String {
+    /// `NaiveFlowConfigurationParser` maps back to the same type.
+    static func ruleToken(for type: RoutingRuleType) -> String {
         switch type {
         case .domainSuffix: return "DOMAIN-SUFFIX"
         case .domainKeyword: return "DOMAIN-KEYWORD"

@@ -35,13 +35,7 @@ nonisolated enum TextConfigurationPipeline {
         text: String,
         capabilities: ConfigurationValidator.Capabilities = .current
     ) -> Result {
-        let parseResult = SurgeConfigurationParser.parse(text: text)
-        let compiled = ConfigurationCompiler.compile(parseResult.configuration, capabilities: capabilities)
-        return Result(
-            document: parseResult.document,
-            parsed: parseResult.configuration,
-            compiled: compiled
-        )
+        ConfigurationCoordinator(capabilities: capabilities).compile(text: text)
     }
 
     /// Processes the text and freezes the outcome as a snapshot. Activation is
@@ -66,12 +60,11 @@ nonisolated enum TextConfigurationPipeline {
     /// "the selected node", so a node with that name could never be referenced
     /// by a rule.
     static let template: String = """
-        # RuleProxy configuration
+        # NaiveFlow configuration
         #
         # [General]  proxy-mode = rule | global | direct
         # [Proxy]    Name = vless://…   or   Name = vless, host, 443, uuid=…
         # [Rule]     DOMAIN-SUFFIX, example.com, DIRECT
-        #            FINAL, PROXY
 
         [General]
         proxy-mode = rule
@@ -85,12 +78,11 @@ nonisolated enum TextConfigurationPipeline {
         IP-CIDR, 192.168.0.0/16, DIRECT, no-resolve
         IP-CIDR, 10.0.0.0/8, DIRECT, no-resolve
         DOMAIN-SUFFIX, example.com, Node
-        FINAL, PROXY
         """
 }
 
 /// Preview helpers for the configuration editor: "which rule wins for this
-/// host or address?" runs through the same ordered matcher the tunnel uses.
+/// host or address?" runs through the ordered reference matcher (the live engine currently uses tiered rules).
 nonisolated extension TextConfigurationPipeline.Result {
 
     func route(

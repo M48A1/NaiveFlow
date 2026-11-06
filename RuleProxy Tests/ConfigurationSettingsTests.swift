@@ -62,7 +62,7 @@ struct ConfigurationSettingsTests {
 
     // MARK: - Parsing
 
-    @Test func parsesFlagsTheWaySurgeDoes() {
+    @Test func parsesNaiveFlowBooleanSpellings() {
         let key = ConfigurationSettingKey(
             name: "flag", kind: .flag, scope: .live, applies: true, summary: ""
         )
@@ -121,7 +121,7 @@ struct ConfigurationSettingsTests {
     // MARK: - Compile
 
     @Test func compilesOnlyTheKeysTheDocumentMentions() {
-        let result = SurgeConfigurationParser.parse(text: """
+        let result = NaiveFlowConfigurationParser.parse(text: """
             [General]
             block-udp = true
             include-apns = no
@@ -144,7 +144,7 @@ struct ConfigurationSettingsTests {
     }
 
     @Test func mitmSectionWinsOverGeneralFlag() {
-        let result = SurgeConfigurationParser.parse(text: """
+        let result = NaiveFlowConfigurationParser.parse(text: """
             [General]
             mitm = true
 

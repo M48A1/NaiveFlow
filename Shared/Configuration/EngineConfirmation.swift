@@ -17,11 +17,14 @@ import Foundation
 /// app and the extension can use it: the extension does not link the
 /// configuration compiler or the snapshot store.
 nonisolated struct ConfigurationEngineConfirmation: Codable, Equatable, Sendable {
+    enum Scope: String, Codable, Sendable { case routing, configuration }
+    var scope: Scope?
     var snapshotId: UUID?
     var confirmedAt: Date
     var engineVersion: String
 
-    init(snapshotId: UUID?, confirmedAt: Date = .now, engineVersion: String) {
+    init(snapshotId: UUID?, confirmedAt: Date = .now, engineVersion: String, scope: Scope = .routing) {
+        self.scope = scope
         self.snapshotId = snapshotId
         self.confirmedAt = confirmedAt
         self.engineVersion = engineVersion
@@ -85,15 +88,12 @@ nonisolated enum EngineConfirmationStore {
         try? data.write(to: fileURL, options: .atomic)
     }
 
-    /// Called by the extension once it is running the routing payload.
-    @discardableResult
-    static func recordRunningSnapshot(engineVersion: String = ConfigurationEngineVersion.current) -> ConfigurationEngineConfirmation {
-        let confirmation = ConfigurationEngineConfirmation(
-            snapshotId: activeSnapshotId(),
-            engineVersion: engineVersion
-        )
-        record(confirmation)
-        return confirmation
+    /// Routing telemetry only. Independent store publications do not prove that
+    /// all modules consumed one snapshot, so never infer its id from the latest
+    /// host manifest. A future transactional publisher can emit .configuration
+    /// only after verifying all module receipts for that exact snapshot.
+    static func recordRoutingReady(engineVersion: String = ConfigurationEngineVersion.current) {
+        record(ConfigurationEngineConfirmation(snapshotId: nil, engineVersion: engineVersion, scope: .routing))
     }
 
     static func clear() {

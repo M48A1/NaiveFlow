@@ -215,7 +215,7 @@ struct ConfigurationCoordinatorTests {
     }
 
     @Test func plansRunTheStepsInOrder() {
-        #expect(RuntimeCoordinator.plan(for: .settings).actions == [.reloadHostMappings, .reloadSettings])
+        #expect(RuntimeCoordinator.plan(for: .settings).actions == [.reloadHostMappings, .reloadDNS, .reloadSettings])
         #expect(RuntimeCoordinator.plan(for: .mitm).actions == [.reloadMITM, .revalidateQUIC])
         #expect(RuntimeCoordinator.plan(for: .routing).actions == [.reloadRouting])
         #expect(RuntimeCoordinator.plan(for: .activeConfiguration).actions == [.reloadActiveConfiguration])

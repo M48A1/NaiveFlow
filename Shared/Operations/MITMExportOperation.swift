@@ -28,9 +28,10 @@ struct MITMExportOperation {
     func run() async {
         let ruleSets = ruleSets
         await Task.detached {
-            if MITMSnapshot(ruleSets: ruleSets).exportBinaryToAppGroup() {
-                AWNotificationCenter.notifyMITMChanged()
-            }
+            _ = MITMSnapshot(ruleSets: ruleSets).exportBinaryToAppGroup()
+            // Trust/certificate settings can change without changing rule bytes.
+            // Notify only after the export, including that unchanged-byte case.
+            ConfigurationCoordinator.Announcement.mitm.post()
         }.value
     }
 }
