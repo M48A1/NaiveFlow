@@ -10,6 +10,7 @@ import JavaScriptCore
 import CryptoKit
 import Security
 import Synchronization
+import UserNotifications
 
 nonisolated private let logger = NaiveFlowLogger(category: "MITMScriptEngine")
 
@@ -71,11 +72,13 @@ actor MITMScriptEngine {
 
         let scope: UUID?
         let allowsHTTP: Bool
+        let dialect: MITMScriptDialect
         let context: JSContext
 
         fileprivate var directive: Directive?
         fileprivate let original: Message?
         fileprivate var contextValue: JSValue?
+        fileprivate var surgeDoneMessage: Message?
         fileprivate var continuation: CheckedContinuation<Outcome, Never>?
         fileprivate var resultPromise: JSValue?
         fileprivate var inFlightFetches = 0
@@ -105,11 +108,12 @@ actor MITMScriptEngine {
             return "[Script] \(name)"
         }
 
-        fileprivate init(scope: UUID?, allowsHTTP: Bool, context: JSContext, original: Message?) {
+        fileprivate init(scope: UUID?, allowsHTTP: Bool, context: JSContext, original: Message?, dialect: MITMScriptDialect) {
             self.scope = scope
             self.allowsHTTP = allowsHTTP
             self.context = context
             self.original = original
+            self.dialect = dialect
         }
 
         fileprivate func teardown() {
@@ -180,9 +184,9 @@ actor MITMScriptEngine {
 
     // MARK: - Run construction
 
-    nonisolated private func makeRun(scope: UUID?, allowsHTTP: Bool, original: Message?) -> ScriptRun {
+    nonisolated private func makeRun(scope: UUID?, allowsHTTP: Bool, original: Message?, dialect: MITMScriptDialect = .native) -> ScriptRun {
         let context = JSContext(virtualMachine: Self.sharedVirtualMachine)!
-        let run = ScriptRun(scope: scope, allowsHTTP: allowsHTTP, context: context, original: original)
+        let run = ScriptRun(scope: scope, allowsHTTP: allowsHTTP, context: context, original: original, dialect: dialect)
         configureContext(context, for: run)
         return run
     }
@@ -199,7 +203,18 @@ actor MITMScriptEngine {
             defer { run.isFormattingException = false }
             logger.warning("\(run.logPrefix): \(exception.map(Self.describe) ?? "Uncaught exception")")
         }
-        installNaiveFlowGlobals(context: context, for: run)
+        switch run.dialect {
+        case .native:
+            installNaiveFlowGlobals(context: context, for: run)
+        case .surge:
+            if let message = run.original {
+                installSurgeGlobals(context: context, for: run, message: message)
+            }
+        case .quantumultX:
+            if let message = run.original {
+                installQXGlobals(context: context, for: run, message: message)
+            }
+        }
     }
 
     // MARK: - Watchdog tree driver
@@ -303,12 +318,13 @@ actor MITMScriptEngine {
 
     func applyAsync(
         _ message: Message,
-        source: String
+        source: String,
+        dialect: MITMScriptDialect = .native
     ) async -> Outcome {
         let cancelHandle = CancelHandle()
         return await withTaskCancellationHandler {
             await JSCConcurrencyBridge.shared.runParked { (continuation: CheckedContinuation<Outcome, Never>) in
-                self.runApply(message, source: source, continuation: continuation, cancelHandle: cancelHandle)
+                self.runApply(message, source: source, dialect: dialect, continuation: continuation, cancelHandle: cancelHandle)
             }
         } onCancel: {
             JSCConcurrencyBridge.shared.enqueue { [self] in
@@ -329,6 +345,7 @@ actor MITMScriptEngine {
     private func runApply(
         _ message: Message,
         source: String,
+        dialect: MITMScriptDialect,
         continuation: CheckedContinuation<Outcome, Never>,
         cancelHandle: CancelHandle
     ) {
@@ -345,34 +362,46 @@ actor MITMScriptEngine {
             return
         }
 
-        let run = makeRun(scope: message.ruleSetID, allowsHTTP: true, original: message)
+        let run = makeRun(scope: message.ruleSetID, allowsHTTP: true, original: message, dialect: dialect)
         run.continuation = continuation
 
-        guard let function = compile(source, in: run) else {
-            deliver(.modified(message), for: run)
-            return
-        }
-
-        runUserScript(source) {
-            let contextValue = makeContextValue(message, in: run.context)
-            run.contextValue = contextValue
-            let returned = function.call(withArguments: [contextValue])
-            guard let returned, isThenable(returned, in: run.context) else {
-                let updated = readBack(message, from: contextValue, in: run.context)
-                deliver(finalize(run, original: message, updated: updated), for: run)
+        switch dialect {
+        case .native:
+            guard let function = compile(source, in: run) else {
+                deliver(.modified(message), for: run)
                 return
             }
-            run.pinnedBodyBytes = bodyBytes
-            Self.addSuspendedBodyBytes(bodyBytes)
-            run.resultPromise = returned
-            liveRuns[run.id] = run
-            armWatchdog(for: run)
-            attachSettleHandlers(to: returned, for: run)
-            let isCancelled = cancelHandle.state.withLock { state -> Bool in
-                state.runID = run.id
-                return state.isCancelled
+
+            runUserScript(source) {
+                let contextValue = makeContextValue(message, in: run.context)
+                run.contextValue = contextValue
+                let returned = function.call(withArguments: [contextValue])
+                guard let returned, isThenable(returned, in: run.context) else {
+                    let updated = readBack(message, from: contextValue, in: run.context)
+                    deliver(finalize(run, original: message, updated: updated), for: run)
+                    return
+                }
+                run.pinnedBodyBytes = bodyBytes
+                Self.addSuspendedBodyBytes(bodyBytes)
+                run.resultPromise = returned
+                liveRuns[run.id] = run
+                armWatchdog(for: run)
+                attachSettleHandlers(to: returned, for: run)
+                let isCancelled = cancelHandle.state.withLock { state -> Bool in
+                    state.runID = run.id
+                    return state.isCancelled
+                }
+                if isCancelled { deliver(.modified(message), for: run) }
             }
-            if isCancelled { deliver(.modified(message), for: run) }
+
+        case .surge, .quantumultX:
+            runUserScript(source) {
+                let wrapped = "(function(){\n\"use strict\";\n\(source)\n})()"
+                run.context.evaluateScript(wrapped)
+                if run.context.exception != nil { run.context.exception = nil }
+                let updated = run.surgeDoneMessage ?? message
+                deliver(finalize(run, original: message, updated: updated), for: run)
+            }
         }
     }
 
@@ -725,6 +754,323 @@ actor MITMScriptEngine {
       });
     })
     """#
+
+    /// Injects Surge / Quantumult X globals ($request / $response / $done) for a
+    /// script that runs at top level instead of declaring `process(ctx)`.
+    /// `$httpClient` / `$task.fetch` / persistence / notifications land in P8b.
+    nonisolated private func installSurgeGlobals(context: JSContext, for run: ScriptRun, message: Message) {
+        context.globalObject.setObject(makeSurgeDoneBlock(for: run), forKeyedSubscript: "$done" as NSString)
+        context.globalObject.setObject(makeSurgeRequest(message, in: context), forKeyedSubscript: "$request" as NSString)
+        context.globalObject.setObject(makeSurgeResponse(message, in: context), forKeyedSubscript: "$response" as NSString)
+        context.globalObject.setObject(makeSurgeHTTPClient(in: context, for: run), forKeyedSubscript: "$httpClient" as NSString)
+        context.globalObject.setObject(makeSurgePersistentStore(in: context, scope: run.scope), forKeyedSubscript: "$persistentStore" as NSString)
+        context.globalObject.setObject(makeSurgeNotification(in: context), forKeyedSubscript: "$notification" as NSString)
+    }
+
+    /// Quantumult X globals: `$done` / `$request` / `$response` plus `$task.fetch`.
+    nonisolated private func installQXGlobals(context: JSContext, for run: ScriptRun, message: Message) {
+        context.globalObject.setObject(makeSurgeDoneBlock(for: run), forKeyedSubscript: "$done" as NSString)
+        context.globalObject.setObject(makeSurgeRequest(message, in: context), forKeyedSubscript: "$request" as NSString)
+        context.globalObject.setObject(makeSurgeResponse(message, in: context), forKeyedSubscript: "$response" as NSString)
+        context.globalObject.setObject(makeQXTask(in: context, for: run), forKeyedSubscript: "$task" as NSString)
+        context.globalObject.setObject(makeQXPrefs(in: context, scope: run.scope), forKeyedSubscript: "$prefs" as NSString)
+        let notifyBlock: @convention(block) (String, String, String) -> Void = { title, subtitle, body in
+            Self.postScriptNotification(title: title, subtitle: subtitle, body: body)
+        }
+        context.globalObject.setObject(notifyBlock, forKeyedSubscript: "$notify" as NSString)
+    }
+
+    nonisolated private func makeSurgeDoneBlock(for run: ScriptRun) -> @convention(block) (JSValue) -> Void {
+        return { [weak run] argument in
+            guard let run, let original = run.original else { return }
+            if argument.isObject, !argument.isUndefined, !argument.isNull {
+                if let responseValue = argument.objectForKeyedSubscript("response"),
+                   !responseValue.isUndefined, !responseValue.isNull, responseValue.isObject {
+                    run.directive = .respond(Self.synthesizedResponse(from: responseValue))
+                } else {
+                    run.surgeDoneMessage = Self.applySurgeEdits(argument, to: original)
+                    run.directive = .done
+                }
+            } else {
+                run.directive = .done
+            }
+        }
+    }
+
+    /// Quantumult X `$task.fetch({url, method, headers, body})` → Promise whose
+    /// resolve value is `{status, statusCode, headers, body}` and whose reject
+    /// value is `{error}`.
+    nonisolated private func makeQXTask(in context: JSContext, for run: ScriptRun) -> JSValue {
+        let task = JSValue(newObjectIn: context)!
+        let fetchBlock: @convention(block) (JSValue) -> JSValue = { [weak self, weak run] specValue in
+            let context = JSContext.current()!
+            guard let self, let run else { return Self.rejected("$task.fetch: invocation released", in: context) }
+            let urlValue: JSValue = specValue.objectForKeyedSubscript("url") ?? JSValue(undefinedIn: context)
+            let promise = self.assumeIsolated { $0.startHTTP(run: run, defaultMethod: "GET", urlValue: urlValue, optionsValue: specValue) }
+            return Self.wrapQXFetch(promise, in: context)
+        }
+        task.setObject(fetchBlock, forKeyedSubscript: "fetch" as NSString)
+        return task
+    }
+
+    nonisolated private static func wrapQXFetch(_ promise: JSValue, in context: JSContext) -> JSValue {
+        let wrapped = JSValue(newPromiseIn: context, fromExecutor: { resolve, reject in
+            let onFulfilled: @convention(block) (JSValue) -> Void = { response in
+                let context = JSContext.current()!
+                resolve?.call(withArguments: [Self.makeQXResponse(response, in: context)])
+            }
+            let onRejected: @convention(block) (JSValue) -> Void = { error in
+                let context = JSContext.current()!
+                let qxError = JSValue(newObjectIn: context)!
+                qxError.setObject(error.toString() ?? "request failed", forKeyedSubscript: "error" as NSString)
+                reject?.call(withArguments: [qxError])
+            }
+            promise.invokeMethod("then", withArguments: [onFulfilled, onRejected])
+        })
+        return wrapped ?? Self.rejected("$task.fetch: could not create Promise", in: context)
+    }
+
+    nonisolated private static func makeQXResponse(_ response: JSValue, in context: JSContext) -> JSValue {
+        let qxResponse = JSValue(newObjectIn: context)!
+        if let status = response.objectForKeyedSubscript("status"), !status.isUndefined, !status.isNull {
+            qxResponse.setObject(status, forKeyedSubscript: "status" as NSString)
+            qxResponse.setObject(status, forKeyedSubscript: "statusCode" as NSString)
+        }
+        let headersObject = JSValue(newObjectIn: context)!
+        if let headersValue = response.objectForKeyedSubscript("headers"),
+           let pairs = headersValue.toArray() as? [[String]] {
+            for pair in pairs where pair.count == 2 {
+                headersObject.setObject(pair[1], forKeyedSubscript: pair[0] as NSString)
+            }
+        }
+        qxResponse.setObject(headersObject, forKeyedSubscript: "headers" as NSString)
+        let bodyString: String
+        if let bodyValue = response.objectForKeyedSubscript("body"),
+           let data = Self.bytesFromValue(bodyValue, in: context) {
+            bodyString = String(data: data, encoding: .utf8) ?? ""
+        } else {
+            bodyString = ""
+        }
+        qxResponse.setObject(bodyString, forKeyedSubscript: "body" as NSString)
+        return qxResponse
+    }
+
+    /// Surge `$persistentStore` with `read(key)` / `write(value, key)` string
+    /// semantics, backed by the per-scope on-disk store.
+    nonisolated private func makeSurgePersistentStore(in context: JSContext, scope: UUID?) -> JSValue {
+        let store = JSValue(newObjectIn: context)!
+        let readBlock: @convention(block) (String) -> JSValue = { key in
+            let context = JSContext.current()!
+            guard let scope,
+                  let bytes = MITMScriptStore.shared.value(forKey: key, scope: scope, onDisk: true),
+                  let string = String(data: bytes, encoding: .utf8)
+            else { return JSValue(nullIn: context) }
+            return JSValue(object: string, in: context)
+        }
+        let writeBlock: @convention(block) (String, String) -> Void = { value, key in
+            guard let scope else { return }
+            try? MITMScriptStore.shared.setValue(value.data(using: .utf8) ?? Data(), forKey: key, scope: scope, onDisk: true)
+        }
+        store.setObject(readBlock, forKeyedSubscript: "read" as NSString)
+        store.setObject(writeBlock, forKeyedSubscript: "write" as NSString)
+        return store
+    }
+
+    /// Quantumult X `$prefs` with `valueForKey` / `setValueForKey` /
+    /// `removeValueForKey` / `removeAllValues`, backed by the same on-disk store.
+    nonisolated private func makeQXPrefs(in context: JSContext, scope: UUID?) -> JSValue {
+        let prefs = JSValue(newObjectIn: context)!
+        let valueForKeyBlock: @convention(block) (String) -> JSValue = { key in
+            let context = JSContext.current()!
+            guard let scope,
+                  let bytes = MITMScriptStore.shared.value(forKey: key, scope: scope, onDisk: true),
+                  let string = String(data: bytes, encoding: .utf8)
+            else { return JSValue(nullIn: context) }
+            return JSValue(object: string, in: context)
+        }
+        let setValueForKeyBlock: @convention(block) (String, String) -> Void = { value, key in
+            guard let scope else { return }
+            try? MITMScriptStore.shared.setValue(value.data(using: .utf8) ?? Data(), forKey: key, scope: scope, onDisk: true)
+        }
+        let removeValueForKeyBlock: @convention(block) (String) -> Void = { key in
+            guard let scope else { return }
+            MITMScriptStore.shared.removeValue(forKey: key, scope: scope, onDisk: true)
+        }
+        let removeAllValuesBlock: @convention(block) () -> Void = {
+            guard let scope else { return }
+            for key in MITMScriptStore.shared.keys(scope: scope, onDisk: true) {
+                MITMScriptStore.shared.removeValue(forKey: key, scope: scope, onDisk: true)
+            }
+        }
+        prefs.setObject(valueForKeyBlock, forKeyedSubscript: "valueForKey" as NSString)
+        prefs.setObject(setValueForKeyBlock, forKeyedSubscript: "setValueForKey" as NSString)
+        prefs.setObject(removeValueForKeyBlock, forKeyedSubscript: "removeValueForKey" as NSString)
+        prefs.setObject(removeAllValuesBlock, forKeyedSubscript: "removeAllValues" as NSString)
+        return prefs
+    }
+
+    /// Surge `$notification.post(title, subtitle, body)`.
+    nonisolated private func makeSurgeNotification(in context: JSContext) -> JSValue {
+        let notification = JSValue(newObjectIn: context)!
+        let postBlock: @convention(block) (String, String, String) -> Void = { title, subtitle, body in
+            Self.postScriptNotification(title: title, subtitle: subtitle, body: body)
+        }
+        notification.setObject(postBlock, forKeyedSubscript: "post" as NSString)
+        return notification
+    }
+
+    /// Posts a local notification from the Network Extension. Authorization is
+    /// requested by the host app; without it the request is silently dropped by
+    /// the system.
+    nonisolated private static func postScriptNotification(title: String, subtitle: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        if !subtitle.isEmpty { content.subtitle = subtitle }
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    /// Surge-style `$httpClient` with callback signatures
+    /// `get(url, cb)` / `post(url, body, cb)`, where `cb(error, response, data)`.
+    /// It rides the existing `NaiveFlow.http` Promise and adapts it to callbacks.
+    nonisolated private func makeSurgeHTTPClient(in context: JSContext, for run: ScriptRun) -> JSValue {
+        let client = JSValue(newObjectIn: context)!
+
+        let getBlock: @convention(block) (JSValue, JSValue) -> Void = { [weak self, weak run] urlValue, callbackValue in
+            let context = JSContext.current()!
+            guard let self, let run else { return }
+            guard let urlString = Self.surgeURLString(from: urlValue), !urlString.isEmpty else {
+                Self.invokeSurgeCallback(callbackValue, response: nil, error: Self.error("$httpClient: invalid URL", in: context), in: context)
+                return
+            }
+            let urlJS = JSValue(object: urlString, in: context)!
+            let options = Self.surgeOptions(from: urlValue, in: context)
+            let promise = self.assumeIsolated { $0.startHTTP(run: run, defaultMethod: "GET", urlValue: urlJS, optionsValue: options) }
+            Self.attachSurgeCallback(promise, to: callbackValue, in: context)
+        }
+        let postBlock: @convention(block) (JSValue, JSValue, JSValue) -> Void = { [weak self, weak run] urlValue, bodyValue, callbackValue in
+            let context = JSContext.current()!
+            guard let self, let run else { return }
+            guard let urlString = Self.surgeURLString(from: urlValue), !urlString.isEmpty else {
+                Self.invokeSurgeCallback(callbackValue, response: nil, error: Self.error("$httpClient: invalid URL", in: context), in: context)
+                return
+            }
+            let urlJS = JSValue(object: urlString, in: context)!
+            var options = Self.surgeOptions(from: urlValue, in: context)
+            if !bodyValue.isUndefined, !bodyValue.isNull {
+                options.setObject(bodyValue, forKeyedSubscript: "body" as NSString)
+            }
+            let promise = self.assumeIsolated { $0.startHTTP(run: run, defaultMethod: "POST", urlValue: urlJS, optionsValue: options) }
+            Self.attachSurgeCallback(promise, to: callbackValue, in: context)
+        }
+
+        client.setObject(getBlock, forKeyedSubscript: "get" as NSString)
+        client.setObject(postBlock, forKeyedSubscript: "post" as NSString)
+        return client
+    }
+
+    nonisolated private static func surgeURLString(from value: JSValue) -> String? {
+        if value.isString { return value.toString() }
+        if value.isObject, let url = value.objectForKeyedSubscript("url"), url.isString {
+            return url.toString()
+        }
+        return nil
+    }
+
+    nonisolated private static func surgeOptions(from value: JSValue, in context: JSContext) -> JSValue {
+        value.isObject ? value : JSValue(nullIn: context)!
+    }
+
+    nonisolated private static func attachSurgeCallback(_ promise: JSValue, to callback: JSValue, in context: JSContext) {
+        let onFulfilled: @convention(block) (JSValue) -> Void = { response in
+            let context = JSContext.current()!
+            Self.invokeSurgeCallback(callback, response: response, error: nil, in: context)
+        }
+        let onRejected: @convention(block) (JSValue) -> Void = { error in
+            let context = JSContext.current()!
+            Self.invokeSurgeCallback(callback, response: nil, error: error, in: context)
+        }
+        promise.invokeMethod("then", withArguments: [onFulfilled, onRejected])
+    }
+
+    nonisolated private static func invokeSurgeCallback(_ callback: JSValue, response: JSValue?, error: JSValue?, in context: JSContext) {
+        if let response {
+            let surgeResponse = JSValue(newObjectIn: context)!
+            if let status = response.objectForKeyedSubscript("status"), !status.isUndefined, !status.isNull {
+                surgeResponse.setObject(status, forKeyedSubscript: "status" as NSString)
+            }
+            let headersObject = JSValue(newObjectIn: context)!
+            if let headersValue = response.objectForKeyedSubscript("headers"),
+               let pairs = headersValue.toArray() as? [[String]] {
+                for pair in pairs where pair.count == 2 {
+                    headersObject.setObject(pair[1], forKeyedSubscript: pair[0] as NSString)
+                }
+            }
+            surgeResponse.setObject(headersObject, forKeyedSubscript: "headers" as NSString)
+            let dataString: String
+            if let bodyValue = response.objectForKeyedSubscript("body"),
+               let data = Self.bytesFromValue(bodyValue, in: context) {
+                dataString = String(data: data, encoding: .utf8) ?? ""
+            } else {
+                dataString = ""
+            }
+            callback.call(withArguments: [JSValue(nullIn: context), surgeResponse, dataString])
+        } else {
+            callback.call(withArguments: [error ?? Self.error("$httpClient: request failed", in: context), JSValue(nullIn: context), JSValue(nullIn: context)])
+        }
+    }
+
+    /// Applies Surge `$done({...})` fields (url / status / headers / body) to the
+    /// message. `response` is handled separately as a synthesized response.
+    nonisolated private static func applySurgeEdits(_ argument: JSValue, to message: Message) -> Message {
+        var updated = message
+        if let url = argument.objectForKeyedSubscript("url"), url.isString {
+            updated.url = url.toString()
+        }
+        if let status = argument.objectForKeyedSubscript("status"), status.isNumber {
+            updated.status = Int(status.toInt32())
+        }
+        if let headersValue = argument.objectForKeyedSubscript("headers"),
+           !headersValue.isUndefined, !headersValue.isNull,
+           let parsed = Self.headersFromValue(headersValue) {
+            updated.headers = parsed
+        }
+        if let bodyValue = argument.objectForKeyedSubscript("body"),
+           !bodyValue.isUndefined, !bodyValue.isNull {
+            let context = JSContext.current()!
+            if let body = Self.bytesFromValue(bodyValue, in: context) {
+                updated.body = body
+            }
+        }
+        return updated
+    }
+
+    nonisolated private func makeSurgeRequest(_ message: Message, in context: JSContext) -> JSValue {
+        let object = JSValue(newObjectIn: context)!
+        object.setObject(message.url as Any, forKeyedSubscript: "url" as NSString)
+        object.setObject(message.method as Any, forKeyedSubscript: "method" as NSString)
+        let headers = JSValue(newObjectIn: context)!
+        for header in message.headers {
+            headers.setObject(header.value, forKeyedSubscript: header.name as NSString)
+        }
+        object.setObject(headers, forKeyedSubscript: "headers" as NSString)
+        object.setObject(String(data: message.body, encoding: .utf8) ?? "", forKeyedSubscript: "body" as NSString)
+        return object
+    }
+
+    nonisolated private func makeSurgeResponse(_ message: Message, in context: JSContext) -> JSValue {
+        let object = JSValue(newObjectIn: context)!
+        object.setObject(message.status as Any, forKeyedSubscript: "status" as NSString)
+        let headers = JSValue(newObjectIn: context)!
+        for header in message.headers {
+            headers.setObject(header.value, forKeyedSubscript: header.name as NSString)
+        }
+        object.setObject(headers, forKeyedSubscript: "headers" as NSString)
+        object.setObject(String(data: message.body, encoding: .utf8) ?? "", forKeyedSubscript: "body" as NSString)
+        return object
+    }
 
     nonisolated private func installNaiveFlowGlobals(context: JSContext, for run: ScriptRun) {
         let resolve: @convention(block) (String) -> JSValue = { [weak self, weak run] name in

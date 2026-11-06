@@ -151,6 +151,16 @@ nonisolated enum MITMScriptTransform {
         nativeBodyEditReservedBytes.wrappingSubtract(bytes, ordering: .relaxed)
     }
 
+    /// Temporary dialect sniffing until the configuration model carries an
+    /// explicit dialect field. A script declaring `process(...)` is the native
+    /// dialect; anything else is treated as a Surge top-level script.
+    private static func detectDialect(_ source: String) -> MITMScriptDialect {
+        if source.range(of: #"function\s+process\s*\("#, options: .regularExpression) != nil {
+            return .native
+        }
+        return .surge
+    }
+
     static func apply(
         _ message: HTTPMessage,
         rules: [CompiledMITMRule]
@@ -171,7 +181,8 @@ nonisolated enum MITMScriptTransform {
             if case .script(let source) = operation { scriptSource = source }
         }
         guard let scriptSource else { return .message(edited) }
-        let outcome = await MITMScriptEngine.shared.applyAsync(edited, source: scriptSource)
+        let dialect = Self.detectDialect(scriptSource)
+        let outcome = await MITMScriptEngine.shared.applyAsync(edited, source: scriptSource, dialect: dialect)
         switch outcome {
         case .modified(let updated):  return .message(updated)
         case .done(let updated):      return .message(updated)
