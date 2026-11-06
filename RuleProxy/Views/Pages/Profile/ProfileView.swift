@@ -155,11 +155,18 @@ private extension ProfileView {
     var actionSection: some View {
         Section {
             Button {
-                model.apply()
+                Task { await model.apply() }
             } label: {
-                Label("Apply to App", systemImage: "checkmark.circle")
+                Label("Apply Configuration", systemImage: "checkmark.circle")
             }
             .disabled(!model.canApply)
+
+            Button {
+                Task { await model.rollbackRuntimeVersion() }
+            } label: {
+                Label("Restore Previous Runtime Version", systemImage: "arrow.uturn.backward")
+            }
+            .disabled(model.isApplying || model.history.isEmpty)
 
             Button {
                 model.reloadFromCurrentSetup()

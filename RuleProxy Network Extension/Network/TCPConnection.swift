@@ -146,6 +146,9 @@ actor TCPConnection: MITMSessionHost {
 
     // MARK: Lifecycle
 
+    private let sourceIP: String?
+    private let sourcePort: UInt16?
+
     init(
         stack: TunnelStack,
         connection: RuleProxyIP.Stream,
@@ -155,8 +158,11 @@ actor TCPConnection: MITMSessionHost {
         routeTarget: RouteTarget,
         ruleSetName: String? = nil,
         sniffSNI: Bool = false,
-        hostIsResolvedDomain: Bool = false
+        hostIsResolvedDomain: Bool = false,
+        sourceIP: String? = nil, sourcePort: UInt16? = nil
     ) {
+        self.sourceIP = sourceIP
+        self.sourcePort = sourcePort
         self.stack = stack
         self.bufferLedger = stack.tcpBufferLedger
         self.connection = connection
@@ -262,13 +268,28 @@ actor TCPConnection: MITMSessionHost {
     }
 
     private func applyIPRuleMatch() async {
-        guard hostIsResolvedDomain, !ruleMatched, phase != .closed,
-              let stack, !stack.connectionRouter.preventDNSLeak.load(ordering: .relaxed),
-              let ip = await DNSResolver.localRequests.resolveHost(dstHost, family: .ipv4),
-              phase != .closed, let match = stack.domainRouter.matchIP(ip)
-        else { return }
-
+        guard let stack, phase != .closed else { return }
         let router = stack.domainRouter
+        let match: DomainRouter.Match
+        if router.usesNativeRules {
+            let host = mitmSNI ?? dstHost
+            var query = RouteQuery(host: DNSName.isIPAddress(host) ? nil : host,
+                ip: DNSName.isIPAddress(host) ? host : nil, sourceIP: sourceIP,
+                sourcePort: sourcePort, destinationPort: dstPort, protocolName: "TCP")
+            var evaluation = router.nativeDecision(query, allowResolution: !AWCore.getPreventDNSLeak())
+            if case .needsAddress = evaluation {
+                query.ip = await DNSResolver.localRequests.resolveHost(host, family: .ipv4)
+                evaluation = router.nativeDecision(query, allowResolution: false)
+            }
+            guard phase != .closed, case .matched(let result) = evaluation else { return }
+            match = DomainRouter.nativeMatch(result)
+        } else {
+            guard hostIsResolvedDomain, !ruleMatched,
+                  !stack.connectionRouter.preventDNSLeak.load(ordering: .relaxed),
+                  let ip = await DNSResolver.localRequests.resolveHost(dstHost, family: .ipv4),
+                  phase != .closed, let resolved = router.matchIP(ip) else { return }
+            match = resolved
+        }
         switch match.action {
         case .default, .defaultProxy:
             ruleMatched = true
@@ -1119,7 +1140,7 @@ actor TCPConnection: MITMSessionHost {
     }
 
     private func commitUpstreamRoute(forDialHost host: String, port: UInt16) async -> UpstreamRoute {
-        let resolved = await resolveUpstreamRoute(forDialHost: host)
+        let resolved = await resolveUpstreamRoute(forDialHost: host, port: port)
         stack?.requestLog.record(protocol: .tcp, host: host, port: port, routeTarget: resolved.route.target, ruleSetName: resolved.ruleSetName)
         guard phase != .closed else { return resolved.route }
         if host.caseInsensitiveCompare(mitmSNI ?? dstHost) == .orderedSame {
@@ -1133,7 +1154,19 @@ actor TCPConnection: MITMSessionHost {
         return resolved.route
     }
 
-    private func resolveUpstreamRoute(forDialHost host: String) async -> (route: UpstreamRoute, ruleSetName: String?) {
+    private func resolveUpstreamRoute(forDialHost host: String, port: UInt16) async -> (route: UpstreamRoute, ruleSetName: String?) {
+        if let router = stack?.domainRouter, router.usesNativeRules {
+            var query = RouteQuery(host: host, ip: DNSName.isIPAddress(host) ? host : nil, sourceIP: sourceIP,
+                                   sourcePort: sourcePort, destinationPort: port, protocolName: "TCP")
+            var evaluation = router.nativeDecision(query, allowResolution: !AWCore.getPreventDNSLeak())
+            if case .needsAddress = evaluation {
+                query.ip = await DNSResolver.localRequests.resolveHost(host, family: .ipv4)
+                evaluation = router.nativeDecision(query, allowResolution: false)
+            }
+            if case .matched(let result) = evaluation,
+               let applied = upstreamRoute(applying: DomainRouter.nativeMatch(result), dialHost: host) { return applied }
+            return (defaultUpstreamRoute(), nil)
+        }
         if let router = stack?.domainRouter, let match = router.matchDomain(host),
            let applied = upstreamRoute(applying: match, dialHost: host) {
             return applied

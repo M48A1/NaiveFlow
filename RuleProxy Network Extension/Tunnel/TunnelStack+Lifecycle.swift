@@ -134,7 +134,7 @@ extension TunnelStack {
     }
 
     func sleep() {
-        guard phase == .running, let configuration else { return }
+        guard !configurationTransition.load(ordering: .acquiring), phase == .running, let configuration else { return }
         executeLifecycle(.sleep, configuration: configuration)
     }
 
@@ -218,6 +218,7 @@ extension TunnelStack {
     /// cannot be applied live — a different proxy mode — and from the deferred
     /// restart job that throttles repeated requests.
     func restartStack(configuration: ProxyConfiguration, revalidateMode: Bool = false) {
+        guard !configurationTransition.load(ordering: .acquiring) else { return }
         if revalidateMode, deferredRestartScheduled { return }
 
         let now = MonotonicClock.now
@@ -252,6 +253,7 @@ extension TunnelStack {
     }
 
     private func restartStackNow(configuration: ProxyConfiguration) {
+        guard !configurationTransition.load(ordering: .acquiring) else { return }
         guard phase == .running else { return }
         deferredRestartGeneration += 1
         deferredRestartScheduled = false
@@ -262,7 +264,7 @@ extension TunnelStack {
 
     /// Module adapters reuse the existing data plane and transport cleanup.
     /// All lifecycle ordering is supplied by RuntimeCoordinator.
-    private func executeLifecycle(
+    func executeLifecycle(
         _ event: RuntimeCoordinator.Lifecycle,
         configuration: ProxyConfiguration?,
         precompiledRouting: DomainRouter.CompiledRouting? = nil
@@ -301,7 +303,11 @@ extension TunnelStack {
         // Serialize with stop on this actor: a detached write could recreate a
         // stale confirmation after shutdown cleared it.
         guard phase == .running else { return }
-        EngineConfirmationStore.recordRoutingReady()
+        if let bundle = nativeBundle, let snapshotID = bundle.snapshotID {
+            EngineConfirmationStore.record(ConfigurationEngineConfirmation(
+                snapshotId: snapshotID, engineVersion: ConfigurationEngineVersion.current, scope: .configuration
+            ))
+        } else { EngineConfirmationStore.recordRoutingReady() }
     }
 
 }

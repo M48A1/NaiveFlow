@@ -20,11 +20,13 @@ nonisolated struct ConfigurationDocument: Equatable, Sendable {
     /// reported as `unknownSection` instead of being silently dropped.
     enum SectionKind: String, CaseIterable, Sendable {
         case general
+        case geoIP, geoSite
         case proxy
         case proxyGroup
         case rule
         case host
         case mitm
+        case mitmSet
         case script
         case urlRewrite
         case headerRewrite
@@ -39,11 +41,14 @@ nonisolated struct ConfigurationDocument: Equatable, Sendable {
         var displayName: String {
             switch self {
             case .general: return "General"
+            case .geoIP: return "GeoIP"
+            case .geoSite: return "GeoSite"
             case .proxy: return "Proxy"
             case .proxyGroup: return "Proxy Group"
             case .rule: return "Rule"
             case .host: return "Host"
             case .mitm: return "MITM"
+            case .mitmSet: return "MITM Set"
             case .script: return "Script"
             case .urlRewrite: return "URL Rewrite"
             case .headerRewrite: return "Header Rewrite"
@@ -62,7 +67,7 @@ nonisolated struct ConfigurationDocument: Equatable, Sendable {
             switch self {
             case .rule, .urlRewrite, .headerRewrite, .bodyRewrite, .mapLocal, .rewrite:
                 return true
-            case .general, .proxy, .proxyGroup, .host, .mitm, .script, .panel, .ssidSetting, .misc:
+            case .geoIP, .geoSite, .mitmSet, .general, .proxy, .proxyGroup, .host, .mitm, .script, .panel, .ssidSetting, .misc:
                 return false
             }
         }
@@ -76,11 +81,14 @@ nonisolated struct ConfigurationDocument: Equatable, Sendable {
                 .replacingOccurrences(of: " ", with: "")
             switch normalized {
             case "general": return .general
+            case "geoip": return .geoIP
+            case "geosite": return .geoSite
             case "proxy", "proxies": return .proxy
             case "proxygroup", "proxygroups", "policygroup": return .proxyGroup
             case "rule", "rules": return .rule
             case "host", "hosts": return .host
             case "mitm": return .mitm
+            case "mitmset": return .mitmSet
             case "script", "scripts": return .script
             case "urlrewrite": return .urlRewrite
             case "headerrewrite": return .headerRewrite
@@ -468,6 +476,7 @@ nonisolated extension ConfigurationDocument {
         guard trimmed.count >= 2, trimmed.hasPrefix("\""), trimmed.hasSuffix("\"") else {
             return trimmed
         }
+        if let decoded = try? JSONDecoder().decode(String.self, from: Data(trimmed.utf8)) { return decoded }
         var result = ""
         var escaped = false
         for character in trimmed.dropFirst().dropLast() {
@@ -488,37 +497,37 @@ nonisolated extension ConfigurationDocument {
     /// Splits a comma-separated list while respecting double quotes, dropping
     /// empty elements. Used for rule fields and proxy group members.
     static func splitList(_ value: String) -> [String] {
+        splitFields(value, nested: false)
+    }
+
+    static func splitExpression(_ value: String) -> [String] {
+        splitFields(value, nested: true)
+    }
+
+    private static func splitFields(_ value: String, nested: Bool) -> [String] {
         var results: [String] = []
         var current = ""
         var inQuote = false
         var escaped = false
-
+        var depth = 0
+        func append() {
+            let trimmed = current.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty { results.append(unquoted(trimmed)) }
+            current = ""
+        }
         for character in value {
-            if escaped {
-                current.append(character)
-                escaped = false
-                continue
+            if escaped { current.append(character); escaped = false; continue }
+            if character == "\\", inQuote { current.append(character); escaped = true; continue }
+            if character == "\"" { inQuote.toggle(); current.append(character); continue }
+            if nested && !inQuote {
+                if character == "(" { depth += 1 }
+                if character == ")" { depth -= 1 }
             }
-            if character == "\\", inQuote {
-                escaped = true
-                continue
-            }
-            if character == "\"" {
-                inQuote.toggle()
-                continue
-            }
-            if character == ",", !inQuote {
-                results.append(current)
-                current = ""
-                continue
-            }
+            if character == ",", !inQuote, depth == 0 { append(); continue }
             current.append(character)
         }
-        results.append(current)
-
+        append()
         return results
-            .map { unquoted($0).trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
     }
 }
 

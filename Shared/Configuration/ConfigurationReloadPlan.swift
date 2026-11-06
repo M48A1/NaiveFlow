@@ -160,11 +160,12 @@ nonisolated extension ConfigurationReloadPlan {
 nonisolated extension ConfigurationSnapshotStore {
 
     func confirmation() -> ConfigurationEngineConfirmation? {
-        EngineConfirmationStore.load()
+        guard let data = try? Data(contentsOf: directory.appendingPathComponent("engine-confirmation.json")) else { return nil }
+        return try? JSONDecoder().decode(ConfigurationEngineConfirmation.self, from: data)
     }
 
     func clearConfirmation() {
-        EngineConfirmationStore.clear()
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent("engine-confirmation.json"))
     }
 
     /// True when the extension confirmed the snapshot the manifest points at.

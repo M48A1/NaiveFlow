@@ -31,7 +31,7 @@ final class ProxyRowCoordinator {
     private func observe() {
         withObservationTracking {
             _ = configurationStore.configurations
-            _ = selection.selectedConfiguration
+            _ = selection.effectiveConfiguration
             _ = selection.selectedChainId
             _ = latency.latencyResults
         } onChange: { [weak self] in
@@ -45,7 +45,7 @@ final class ProxyRowCoordinator {
 
     private func reconcile() {
         let configurations = configurationStore.configurations
-        let selectedId = selection.selectedConfiguration?.id
+        let selectedId = selection.effectiveConfiguration?.id
         let selectedChainId = selection.selectedChainId
         let latency = latency.latencyResults
 

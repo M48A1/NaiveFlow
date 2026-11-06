@@ -95,8 +95,8 @@ nonisolated extension TextConfigurationPipeline.Result {
         OrderedRouteMatcher(
             rules: compiled.orderedRules,
             finalAction: compiled.finalAction,
-            geoIP: geoIP,
-            geoSite: geoSite
+            geoIP: geoIP is EmptyGeoIPLookup ? compiled.geo : geoIP,
+            geoSite: geoSite is EmptyGeoSiteLookup ? compiled.geo : geoSite
         ).match(RouteQuery(host: host, ip: ip, destinationPort: port))
     }
 

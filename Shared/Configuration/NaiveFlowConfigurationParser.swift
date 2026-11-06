@@ -42,6 +42,12 @@ nonisolated enum NaiveFlowConfigurationParser {
 
         for section in document.sections {
             switch section.kind {
+            case .geoIP, .geoSite:
+                for entry in section.entries {
+                    guard let key = entry.key else { continue }
+                    if section.kind == .geoIP { configuration.geoIP.set(key, entry.value) }
+                    else { configuration.geoSite.set(key, entry.value) }
+                }
             case .general:
                 for entry in section.entries {
                     guard let key = entry.key else { continue }
@@ -55,6 +61,10 @@ nonisolated enum NaiveFlowConfigurationParser {
                 parseRules(section, into: &configuration, diagnostics: &diagnostics)
             case .host:
                 parseHosts(section, into: &configuration, diagnostics: &diagnostics)
+            case .mitmSet:
+                for entry in section.entries {
+                    if let key = entry.key { configuration.mitmSets.set(key, entry.value) }
+                }
             case .mitm:
                 for entry in section.entries {
                     guard let key = entry.key else { continue }
@@ -376,7 +386,7 @@ nonisolated extension NaiveFlowConfigurationParser {
         _ entry: ConfigurationDocument.Entry,
         diagnostics: inout [ConfigurationDiagnostic]
     ) -> ParsedRule? {
-        let tokens = ConfigurationDocument.splitList(entry.value)
+        let tokens = ConfigurationDocument.splitExpression(entry.value)
         guard let kindToken = tokens.first else {
             diagnostics.append(
                 ConfigurationDiagnostic(
@@ -574,7 +584,7 @@ nonisolated extension NaiveFlowConfigurationParser {
             if !phase.isSupportedByEngine {
                 diagnostics.append(
                     ConfigurationDiagnostic(
-                        severity: .warning,
+                        severity: .error,
                         code: .unsupportedRuleType,
                         line: entry.line,
                         section: ConfigurationDocument.SectionKind.script.displayName,
@@ -589,7 +599,7 @@ nonisolated extension NaiveFlowConfigurationParser {
                     line: entry.line,
                     phase: phase,
                     pattern: parameters["pattern"],
-                    path: parameters["script-path"],
+                    path: parameters["source"] ?? parameters["script-path"],
                     requiresBody: parameters.bool("requires-body") ?? false,
                     maxSize: parameters.int("max-size"),
                     argument: parameters["argument"],
