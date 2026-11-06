@@ -25,7 +25,7 @@ struct TunnelSessionReaction {
             if status == .disconnected || status == .invalid {
                 stats.reset()
                 if tunnel.consumePendingReconnect(),
-                   let configuration = selection.selectedConfiguration {
+                   let configuration = selection.effectiveConfiguration {
                     tunnel.connect(using: configuration)
                 }
             }

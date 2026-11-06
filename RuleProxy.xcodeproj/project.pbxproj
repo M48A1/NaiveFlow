@@ -89,6 +89,11 @@
 				AWNotificationCenter.swift,
 				Configuration/EngineConfirmation.swift,
 				Configuration/RuntimeCoordinator.swift,
+				Configuration/RuntimePreferences.swift,
+				Configuration/RuntimeConfigurationBundle.swift,
+				Configuration/RuntimeJavaScript.swift,
+				Networking/Routing/OrderedRouteMatcher.swift,
+				Networking/Routing/NativeGeoDatabase.swift,
 				DataStore/FailableDecodable.swift,
 				DataStore/SyncStore.swift,
 				MITM/MITMCertificateStore.swift,
@@ -346,6 +351,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				AWCore.swift,
+				Configuration/RuntimePreferences.swift,
 				AWNotificationCenter.swift,
 				Localizable.xcstrings,
 				Models/DNSMode.swift,

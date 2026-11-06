@@ -21,6 +21,8 @@ nonisolated struct CompiledConfiguration: Sendable {
     /// Action taken when no rule matches (`FINAL`, defaulting to `PROXY`).
     let finalAction: RouteMatchAction
     let hosts: [HostMapping]
+    let geo: NativeGeoDatabase
+    let textMITM: CompiledTextMITM
     let settings: CompiledSettings
     let diagnostics: [ConfigurationDiagnostic]
 
@@ -73,8 +75,27 @@ nonisolated enum ConfigurationCompiler {
             capabilities: capabilities,
             diagnostics: &diagnostics
         )
-        let ordered = compileOrderedRules(configuration, policies: policies)
+        var ordered = compileOrderedRules(configuration, policies: policies, diagnostics: &diagnostics)
+        if let country = configuration.general["bypass-country"], !country.isEmpty {
+            let extra = CountryBypassCatalog.shared.rules(for: country.uppercased())
+            if extra.isEmpty {
+                diagnostics.append(.init(severity: .error, code: .missingValue, section: "General",
+                    message: "bypass-country requires an installed country preset database; use explicit [GeoIP] data instead."))
+            }
+            var line = (ordered.rules.map(\.line).max() ?? 0) + 1
+            for rule in extra {
+                let matcher: OrderedRoutingRule.Matcher?
+                switch rule.type {
+                case .domainSuffix: matcher = .domainSuffix(rule.value)
+                case .domainKeyword: matcher = .domainKeyword(rule.value)
+                case .ipCIDR, .ipCIDR6: matcher = CIDRPrefix.parse(rule.value).map { .ipCIDR($0) }
+                }
+                if let matcher { ordered.rules.append(.init(line: line, matcher: matcher, action: .direct, noResolve: true)); line += 1 }
+            }
+        }
+        let geo = compileGeo(configuration, rules: ordered.rules, diagnostics: &diagnostics)
 
+        let textMITM = TextMITMCompiler.compile(configuration, diagnostics: &diagnostics)
         return CompiledConfiguration(
             proxies: proxies,
             proxyGroups: groups,
@@ -82,6 +103,8 @@ nonisolated enum ConfigurationCompiler {
             orderedRules: ordered.rules,
             finalAction: ordered.finalAction,
             hosts: compileHosts(configuration, diagnostics: &diagnostics),
+            geo: geo,
+            textMITM: textMITM,
             settings: compileSettings(configuration),
             diagnostics: diagnostics.sorted
         )
@@ -421,13 +444,27 @@ nonisolated extension ConfigurationCompiler {
                 targets[proxy.name] = .proxy(id)
             }
         }
-        for group in groups where targets[group.name] == nil {
-            if let first = group.memberIds.first {
-                targets[group.name] = .proxy(first)
-            } else {
-                targets[group.name] = .defaultProxy
+        func resolve(_ name: String, visiting: Set<String>) -> RouteTarget? {
+            switch ParsedRule.Policy(token: name) {
+            case .direct: return .direct
+            case .reject: return .reject
+            case .defaultProxy: return .defaultProxy
+            case .rejectTinyGIF: return nil
+            case .named: break
+            }
+            if let id = proxyIds[name] { return .proxy(id) }
+            guard !visiting.contains(name), let group = configuration.proxyGroup(named: name),
+                  let selected = group.parameters["selected"] ?? group.members.first else { return nil }
+            return resolve(selected, visiting: visiting.union([name]))
+        }
+        for group in groups {
+            if let target = resolve(group.name, visiting: []) { targets[group.name] = target }
+            else {
+                diagnostics.append(.init(severity: .error, code: .unresolvedPolicy, section: "Proxy Group",
+                    message: "Group '\(group.name)' has no resolvable selected member."))
             }
         }
+
         return targets
     }
 }
@@ -454,6 +491,7 @@ nonisolated extension ConfigurationCompiler {
             guard let target = routeTarget(for: rule.policy, policies: policies) else { continue }
 
             guard let type = routingRuleType(for: rule.kind) else {
+                if capabilities.preservesRuleOrder { continue }
                 diagnostics.append(
                     ConfigurationDiagnostic(
                         severity: .info,
@@ -548,7 +586,7 @@ nonisolated extension ConfigurationCompiler {
             guard let host = DNSName.normalizedHost(entry.host) else {
                 diagnostics.append(
                     ConfigurationDiagnostic(
-                        severity: .warning,
+                        severity: .error,
                         code: .invalidValue,
                         line: entry.line,
                         section: ConfigurationDocument.SectionKind.host.displayName,
@@ -558,11 +596,13 @@ nonisolated extension ConfigurationCompiler {
                 continue
             }
 
-            var address = entry.address
-            if address.lowercased().hasPrefix("server:") {
-                address = String(address.dropFirst("server:".count))
+            guard entry.mode == .replace else {
+                diagnostics.append(.init(severity: .error, code: .notApplied, line: entry.line, section: "Host",
+                    message: "Host entries use exact names and IPv4/IPv6 values; append/insert markers are not native syntax."))
+                continue
             }
-            guard let canonical = HostMapping.canonicalAddress(address) ?? DNSName.normalizedHost(address) else {
+            let address = entry.address
+            guard let canonical = HostMapping.canonicalAddress(address) else {
                 diagnostics.append(
                     ConfigurationDiagnostic(
                         severity: .error,
@@ -626,14 +666,24 @@ nonisolated extension ConfigurationCompiler {
     /// ordered payload exist.
     static func compileOrderedRules(
         _ configuration: ParsedConfiguration,
-        policies: [String: RouteTarget]
+        policies: [String: RouteTarget],
+        diagnostics: inout [ConfigurationDiagnostic]
     ) -> (rules: [OrderedRoutingRule], finalAction: RouteMatchAction) {
         var rules: [OrderedRoutingRule] = []
         rules.reserveCapacity(configuration.rules.count)
 
         for rule in configuration.rules where !rule.isFinal {
             guard let action = routeMatchAction(for: rule.policy, policies: policies) else { continue }
-            guard let matcher = matcher(for: rule) else { continue }
+            guard let matcher = matcher(for: rule) else {
+                diagnostics.append(ConfigurationDiagnostic(severity: .error, code: .invalidValue,
+                    line: rule.line, section: "Rule", message: "The rule expression cannot be compiled."))
+                continue
+            }
+            do { try validateExpression(matcher)
+            } catch {
+                diagnostics.append(.init(severity: .error, code: .invalidValue, line: rule.line,
+                    section: "Rule", message: "Invalid regular expression or protocol value."))
+            }
             rules.append(
                 OrderedRoutingRule(
                     line: rule.line,
@@ -672,8 +722,20 @@ nonisolated extension ConfigurationCompiler {
         }
     }
 
-    static func matcher(for rule: ParsedRule) -> OrderedRoutingRule.Matcher? {
-        guard let value = rule.value, !value.isEmpty else { return nil }
+    private static func validateExpression(_ matcher: OrderedRoutingRule.Matcher) throws {
+        switch matcher {
+        case .allOf(let children), .anyOf(let children):
+            for child in children { try validateExpression(child) }
+        case .negated(let child): try validateExpression(child)
+        case .domainRegex(let pattern): _ = try NSRegularExpression(pattern: pattern)
+        case .protocolName(let name):
+            guard ["TCP", "UDP"].contains(name) else { throw RuntimeConfigurationFailure.invalidBundle }
+        default: break
+        }
+    }
+
+    static func matcher(for rule: ParsedRule, depth: Int = 0) -> OrderedRoutingRule.Matcher? {
+        guard depth <= 16, let value = rule.value, !value.isEmpty else { return nil }
 
         switch rule.kind {
         case .domain:
@@ -699,7 +761,7 @@ nonisolated extension ConfigurationCompiler {
         case .geoIP:
             return .geoIP(value.uppercased())
         case .geoSite:
-            return .geoSite(value)
+            return .geoSite(value.lowercased())
         case .ruleSet:
             return .ruleSet(value)
         case .processName:
@@ -714,9 +776,79 @@ nonisolated extension ConfigurationCompiler {
             return .userAgent(value)
         case .final:
             return nil
-        case .logicalAnd, .logicalOr, .logicalNot, .unsupported:
-            return .unsupported(rule.kind.token)
+        case .logicalAnd, .logicalOr, .logicalNot:
+            var expression = value.trimmingCharacters(in: .whitespaces)
+            if expression.hasPrefix("("), expression.hasSuffix(")") {
+                expression = String(expression.dropFirst().dropLast())
+            }
+            let children = ConfigurationDocument.splitExpression(expression)
+            guard !children.isEmpty, children.count <= 64 else { return nil }
+            var matchers: [OrderedRoutingRule.Matcher] = []
+            for child in children {
+                var content = child.trimmingCharacters(in: .whitespaces)
+                if content.hasPrefix("("), content.hasSuffix(")") { content = String(content.dropFirst().dropLast()) }
+                let parts = ConfigurationDocument.splitExpression(content)
+                guard parts.count == 2 else { return nil }
+                let kind = ParsedRule.Kind(token: parts[0])
+                guard ConfigurationValidator.Capabilities.current.ruleKinds.contains(kind) else { return nil }
+                let nested = ParsedRule(line: rule.line, kind: kind, value: parts[1], policy: .direct, options: [], raw: child)
+                guard let matcher = matcher(for: nested, depth: depth + 1) else { return nil }
+                matchers.append(matcher)
+            }
+            switch rule.kind {
+            case .logicalAnd: return .allOf(matchers)
+            case .logicalOr: return .anyOf(matchers)
+            default: return matchers.count == 1 ? .negated(matchers[0]) : nil
+            }
+        case .unsupported:
+            return nil
         }
     }
 }
 
+
+nonisolated extension ConfigurationCompiler {
+    static func compileGeo(_ parsed: ParsedConfiguration, rules: [OrderedRoutingRule], diagnostics: inout [ConfigurationDiagnostic]) -> NativeGeoDatabase {
+        var result = NativeGeoDatabase()
+        for (key, raw) in parsed.geoIP.pairs {
+            let token = key.uppercased()
+            let asn = token.hasPrefix("AS") ? Int(token.dropFirst(2)) : nil
+            guard asn != nil || (token.count == 2 && token.allSatisfy(\.isLetter)) else {
+                diagnostics.append(.init(severity: .error, code: .invalidValue, section: "GeoIP", message: "GeoIP key must be a country code or AS number."))
+                continue
+            }
+            for prefix in ConfigurationDocument.splitList(raw) {
+                guard let network = CIDRPrefix.parse(prefix) else {
+                    diagnostics.append(.init(severity: .error, code: .invalidValue, section: "GeoIP", message: "Invalid network prefix."))
+                    continue
+                }
+                result.networks.append(.init(prefix: network, country: asn == nil ? token : nil, asn: asn))
+            }
+        }
+        for (tag, raw) in parsed.geoSite.pairs {
+            var suffixes: [String] = []
+            for suffix in ConfigurationDocument.splitList(raw) {
+                guard let host = DNSName.normalizedHost(suffix), !host.contains("*") else {
+                    diagnostics.append(.init(severity: .error, code: .invalidValue, section: "GeoSite", message: "GeoSite lists plain domain suffixes."))
+                    continue
+                }
+                suffixes.append(host)
+            }
+            result.sites[tag] = suffixes
+        }
+        func check(_ matcher: OrderedRoutingRule.Matcher) {
+            let exists: Bool
+            switch matcher {
+            case .geoSite(let tag): exists = result.contains(tag: tag)
+            case .geoIP(let country): exists = result.networks.contains { $0.country == country }
+            case .geoASN(let asn), .ipASN(let asn): exists = result.networks.contains { $0.asn == asn }
+            case .allOf(let children), .anyOf(let children): children.forEach(check); return
+            case .negated(let child): check(child); return
+            default: return
+            }
+            if !exists { diagnostics.append(.init(severity: .error, code: .missingValue, section: "Rule", message: "Geo rule references data absent from [GeoIP] or [GeoSite].")) }
+        }
+        rules.forEach { check($0.matcher) }
+        return result
+    }
+}

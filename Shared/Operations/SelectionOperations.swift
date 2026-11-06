@@ -12,10 +12,12 @@ struct SelectionOperations {
     let proxySelection: ProxySelection
 
     func select(_ configuration: ProxyConfiguration) {
+        guard !proxySelection.usesRuntimeVersion else { return }
         proxySelection.select(configuration)
     }
 
     func selectChain(_ chain: ProxyChain, configurations: [ProxyConfiguration]) {
+        guard !proxySelection.usesRuntimeVersion else { return }
         proxySelection.selectChain(chain, configurations: configurations)
     }
 

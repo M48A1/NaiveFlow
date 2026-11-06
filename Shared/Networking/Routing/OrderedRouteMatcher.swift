@@ -47,7 +47,7 @@ nonisolated struct RouteQuery: Sendable, Equatable {
 }
 
 /// Where a matched rule sends the connection.
-nonisolated enum RouteMatchAction: Hashable, Sendable {
+nonisolated enum RouteMatchAction: Hashable, Codable, Sendable {
     case direct
     case reject
     /// `PROXY`: the currently selected default route.
@@ -61,8 +61,8 @@ nonisolated enum RouteMatchAction: Hashable, Sendable {
 }
 
 /// An IPv4/IPv6 network prefix, parsed once and matched without allocations.
-nonisolated struct CIDRPrefix: Hashable, Sendable {
-    enum Family: Hashable, Sendable {
+nonisolated struct CIDRPrefix: Hashable, Codable, Sendable {
+    enum Family: Hashable, Codable, Sendable {
         case v4
         case v6
 
@@ -120,7 +120,7 @@ nonisolated struct CIDRPrefix: Hashable, Sendable {
         var masked = bytes
         for index in 0..<masked.count {
             let bitsInByte = min(max(prefixLength - index * 8, 0), 8)
-            let mask: UInt8 = bitsInByte == 8 ? 0xFF : bitsInByte == 0 ? 0 : UInt8(0xFF << (8 - bitsInByte))
+            let mask: UInt8 = bitsInByte == 8 ? 0xFF : bitsInByte == 0 ? 0 : UInt8.max << (8 - bitsInByte)
             masked[index] &= mask
         }
         return masked
@@ -156,8 +156,9 @@ nonisolated struct EmptyGeoSiteLookup: GeoSiteLookup {
 // MARK: - Rules
 
 /// A single rule in document order, with everything the matcher needs.
-nonisolated struct OrderedRoutingRule: Sendable, Identifiable, Equatable {
-    enum Matcher: Sendable, Equatable {
+nonisolated struct OrderedRoutingRule: Codable, Sendable, Identifiable, Equatable {
+    indirect enum Matcher: Codable, Sendable, Equatable {
+        case allOf([Matcher]), anyOf([Matcher]), negated(Matcher)
         case domain(String)
         case domainSuffix(String)
         case domainKeyword(String)
@@ -185,8 +186,22 @@ nonisolated struct OrderedRoutingRule: Sendable, Identifiable, Equatable {
             switch self {
             case .ipCIDR, .ipASN, .geoIP, .geoASN:
                 return true
+            case .allOf(let children), .anyOf(let children): return children.contains { $0.requiresResolvedAddress }
+            case .negated(let child): return child.requiresResolvedAddress
             default:
                 return false
+            }
+        }
+
+        func lacksMetadata(_ query: RouteQuery) -> Bool {
+            switch self {
+            case .sourceIP: return query.sourceIP == nil
+            case .sourcePort: return query.sourcePort == nil
+            case .destinationPort: return query.destinationPort == nil
+            case .protocolName: return query.protocolName == nil
+            case .allOf(let children), .anyOf(let children): return children.contains { $0.lacksMetadata(query) }
+            case .negated(let child): return child.lacksMetadata(query)
+            default: return false
             }
         }
 
@@ -252,6 +267,27 @@ nonisolated struct OrderedRouteMatcher: Sendable {
         self.geoSite = geoSite
     }
 
+    enum Evaluation: Sendable {
+        case matched(Result)
+        case needsAddress
+        case deferred
+    }
+
+    /// Stop before a later rule can win when an earlier rule needs DNS or flow
+    /// metadata. DNS-time previews must not cache a verdict for a later rule.
+    func evaluate(_ query: RouteQuery, allowAddressResolution: Bool = true, allowFinal: Bool = true) -> Evaluation {
+        for rule in rules {
+            switch Self.predicate(rule.matcher, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite) {
+            case .yes: return .matched(Result(action: rule.action, ruleLine: rule.line))
+            case .no: continue
+            case .address:
+                if !rule.noResolve && allowAddressResolution { return .needsAddress }
+            case .metadata: return .deferred
+            }
+        }
+        return allowFinal ? .matched(Result(action: finalAction, ruleLine: nil)) : .deferred
+    }
+
     func firstMatch(_ query: RouteQuery) -> OrderedRoutingRule? {
         for rule in rules where Self.matches(rule, query: query, geoIP: geoIP, geoSite: geoSite) {
             return rule
@@ -260,9 +296,7 @@ nonisolated struct OrderedRouteMatcher: Sendable {
     }
 
     func match(_ query: RouteQuery) -> Result {
-        if let rule = firstMatch(query) {
-            return Result(action: rule.action, ruleLine: rule.line)
-        }
+        if case .matched(let result) = evaluate(query, allowAddressResolution: false) { return result }
         return Result(action: finalAction, ruleLine: nil)
     }
 }
@@ -272,6 +306,38 @@ nonisolated struct OrderedRouteMatcher: Sendable {
 
 nonisolated extension OrderedRouteMatcher {
 
+    private enum Predicate { case yes, no, address, metadata }
+
+    private static func predicate(_ matcher: OrderedRoutingRule.Matcher, rule: OrderedRoutingRule,
+                                  query: RouteQuery, geoIP: any GeoIPLookup, geoSite: any GeoSiteLookup) -> Predicate {
+        switch matcher {
+        case .allOf(let children):
+            let results = children.map { predicate($0, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite) }
+            if results.contains(where: { if case .no = $0 { true } else { false } }) { return .no }
+            if results.contains(where: { if case .address = $0 { true } else { false } }) { return .address }
+            if results.contains(where: { if case .metadata = $0 { true } else { false } }) { return .metadata }
+            return .yes
+        case .anyOf(let children):
+            let results = children.map { predicate($0, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite) }
+            if results.contains(where: { if case .yes = $0 { true } else { false } }) { return .yes }
+            if results.contains(where: { if case .address = $0 { true } else { false } }) { return .address }
+            if results.contains(where: { if case .metadata = $0 { true } else { false } }) { return .metadata }
+            return .no
+        case .negated(let child):
+            switch predicate(child, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite) {
+            case .yes: return .no
+            case .no: return .yes
+            case .address: return .address
+            case .metadata: return .metadata
+            }
+        default:
+            if matcher.requiresResolvedAddress && query.ip == nil { return .address }
+            if matcher.lacksMetadata(query) { return .metadata }
+            let leaf = OrderedRoutingRule(line: rule.line, matcher: matcher, action: rule.action, noResolve: rule.noResolve)
+            return matches(leaf, query: query, geoIP: geoIP, geoSite: geoSite) ? .yes : .no
+        }
+    }
+
     static func matches(
         _ rule: OrderedRoutingRule,
         query: RouteQuery,
@@ -279,6 +345,12 @@ nonisolated extension OrderedRouteMatcher {
         geoSite: any GeoSiteLookup
     ) -> Bool {
         switch rule.matcher {
+        case .allOf(let children):
+            return children.allSatisfy { matches(OrderedRoutingRule(line: rule.line, matcher: $0, action: rule.action, noResolve: rule.noResolve), query: query, geoIP: geoIP, geoSite: geoSite) }
+        case .anyOf(let children):
+            return children.contains { matches(OrderedRoutingRule(line: rule.line, matcher: $0, action: rule.action, noResolve: rule.noResolve), query: query, geoIP: geoIP, geoSite: geoSite) }
+        case .negated(let child):
+            return !matches(OrderedRoutingRule(line: rule.line, matcher: child, action: rule.action, noResolve: rule.noResolve), query: query, geoIP: geoIP, geoSite: geoSite)
         case .domain(let value):
             guard let host = normalizedHost(query.host),
                   let expected = normalizedHost(value)
@@ -308,13 +380,13 @@ nonisolated extension OrderedRouteMatcher {
             guard let url = query.url else { return false }
             return regexMatches(pattern, url)
 
-        case .ipCIDR(let prefix):
+        case .ipCIDR(let cidrPrefix):
             guard let ip = query.ip else { return false }
-            return prefix.contains(ip)
+            return cidrPrefix.contains(ip)
 
-        case .sourceIP(let prefix):
+        case .sourceIP(let cidrPrefix):
             guard let ip = query.sourceIP else { return false }
-            return prefix.contains(ip)
+            return cidrPrefix.contains(ip)
 
         case .ipASN(let asn), .geoASN(let asn):
             guard let ip = query.ip, let resolved = geoIP.asn(for: ip) else { return false }

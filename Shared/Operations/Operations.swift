@@ -58,14 +58,9 @@ final class Operations {
             routingRuleSetStore: container.routingRuleSetStore,
             mitmRuleSetStore: container.mitmRuleSetStore,
             moduleStore: container.moduleStore,
-            installer: ConfigurationInstaller(
-                configurationStore: container.configurationStore,
-                groupStore: container.groupStore,
-                ruleSetStore: container.routingRuleSetStore,
-                selection: container.selection,
-                reaction: container.mutationReaction
-            ),
-            activation: ConfigurationActivation()
+            activation: ConfigurationActivation(),
+            tunnel: container.tunnel,
+            selection: container.selection
         )
     }
 

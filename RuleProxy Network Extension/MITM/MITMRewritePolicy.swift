@@ -198,6 +198,18 @@ nonisolated final class MITMRewritePolicy: Sendable {
         state.withLock { $0 = PolicyState() }
     }
 
+    static func validate(ruleSets: [MITMRuleSet]) throws {
+        let compiler = MITMRewritePolicy()
+        for set in ruleSets {
+            for rule in set.rules {
+                guard MITMGateRegex(pattern: rule.urlPattern) != nil,
+                      compiler.compile(rule.operation, ruleSet: set.name) != nil else {
+                    throw RuntimeConfigurationFailure.rejected("An MITM operation cannot be compiled.")
+                }
+            }
+        }
+    }
+
     func load(ruleSets: [MITMRuleSet]) {
         var scopedRules: [(scope: UUID, rules: [CompiledMITMRule])] = []
         let previousGates = state.withLock { $0.gateCache }

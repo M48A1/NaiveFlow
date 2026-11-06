@@ -111,14 +111,14 @@ struct ProfileEditorModelTests {
 
     // MARK: - Applying
 
-    @Test func refusedApplyKeepsTheBufferAndReportsWhy() {
+    @Test func refusedApplyKeepsTheBufferAndReportsWhy() async {
         let document = ProfileDocumentStub()
         document.applyError = ConfigurationActivation.Failure.notActivatable(errors: 2, warnings: 0)
         let model = ProfileEditorModel(document: document, previewDelay: .zero)
         model.load()
         model.edit(Self.invalidDocument)
 
-        model.apply()
+        await model.apply()
 
         #expect(model.errorMessage?.contains("2 errors") == true)
         #expect(model.text == Self.invalidDocument, "A refused apply must not touch what the user typed.")
@@ -127,7 +127,7 @@ struct ProfileEditorModelTests {
         #expect(model.isApplying == false)
     }
 
-    @Test func applyPublishesHistoryBaselineAndReloadPlan() {
+    @Test func applyPublishesHistoryBaselineAndReloadPlan() async {
         let document = ProfileDocumentStub()
         let appliedAt = Date(timeIntervalSince1970: 1_700_000_500)
         document.outcome = ProfileApplyOutcome(
@@ -147,7 +147,7 @@ struct ProfileEditorModelTests {
         document.appliedAt = appliedAt
         document.snapshots = [Self.snapshot(Self.validDocument)]
 
-        model.apply()
+        await model.apply()
 
         #expect(model.isDirty == false, "A successful apply makes the buffer the applied document.")
         #expect(model.baseline == Self.validDocument)
@@ -161,7 +161,7 @@ struct ProfileEditorModelTests {
         #expect(model.isApplying == false)
     }
 
-    @Test func liveOnlyPlanDoesNotAskForAReconnect() {
+    @Test func liveOnlyPlanDoesNotAskForAReconnect() async {
         let document = ProfileDocumentStub()
         document.outcome = ProfileApplyOutcome(
             summary: "Applied.",
@@ -174,10 +174,24 @@ struct ProfileEditorModelTests {
         model.load()
         model.edit(Self.validDocument)
 
-        model.apply()
+        await model.apply()
 
         #expect(model.requiresReconnect == false)
         #expect(model.statusMessage?.contains("without a restart") == true)
+    }
+
+    @Test func editsDuringAsyncApplyRemainDirty() async {
+        let document = ProfileDocumentStub()
+        let model = ProfileEditorModel(document: document, previewDelay: .zero)
+        model.load()
+        model.edit(Self.validDocument)
+        let appliedText = model.text
+        document.onApply = { _ in model.edit(Self.validDocument + "\n# later edit") }
+        defer { document.onApply = nil }
+        await model.apply()
+        #expect(model.baseline == appliedText)
+        #expect(model.text != model.baseline)
+        #expect(model.isDirty)
     }
 
     // MARK: - Importing and exporting
@@ -329,7 +343,9 @@ private final class ProfileDocumentStub: ProfileEditing {
         return TextConfigurationPipeline.process(text: text)
     }
 
-    func applyDocument(_ text: String) throws -> ProfileApplyOutcome {
+    var onApply: ((String) async -> Void)?
+    func applyDocument(_ text: String) async throws -> ProfileApplyOutcome {
+        await onApply?(text)
         if let applyError { throw applyError }
         return outcome
     }

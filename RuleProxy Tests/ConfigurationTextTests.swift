@@ -146,13 +146,13 @@ extension ConfigurationTextTests {
         #expect(!result.isActivatable)
     }
 
-    @Test func rejectsGeoRulesUntilDatabasesLand() {
+    @Test func rejectsGeoReferencesWithoutDocumentData() {
         let result = TextConfigurationPipeline.process(text: """
             [Rule]
             GEOIP, CN, DIRECT
             """)
 
-        #expect(result.diagnostics.contains { $0.code == .unsupportedRuleType })
+        #expect(result.diagnostics.contains { $0.code == .missingValue })
         #expect(!result.isActivatable)
     }
 

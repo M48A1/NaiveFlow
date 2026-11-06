@@ -7,7 +7,7 @@
 
 import Foundation
 
-nonisolated enum MITMPhase: String, Codable, CaseIterable, Identifiable {
+nonisolated enum MITMPhase: String, Codable, CaseIterable, Identifiable, Sendable {
     case httpRequest
     case httpResponse
 
@@ -25,7 +25,7 @@ extension MITMPhase: CustomStringConvertible {
     }
 }
 
-nonisolated enum MITMJSONOperation: Equatable {
+nonisolated enum MITMJSONOperation: Equatable, Sendable {
     case add(path: String, value: String)
     case replace(path: String, value: String)
     case delete(path: String)
@@ -153,7 +153,7 @@ extension MITMJSONOperation: Codable {
     }
 }
 
-nonisolated enum MITMOperation: Equatable {
+nonisolated enum MITMOperation: Equatable, Sendable {
     case rewrite(MITMRewriteAction)
     case headerAdd(name: String, value: String)
     case headerDelete(name: String)
@@ -276,7 +276,7 @@ extension MITMOperation: Codable {
     }
 }
 
-nonisolated struct MITMRule: Codable, Equatable, Identifiable {
+nonisolated struct MITMRule: Codable, Equatable, Identifiable, Sendable {
     var id = UUID()
     var phase: MITMPhase
     var urlPattern: String
@@ -352,7 +352,7 @@ extension MITMRule {
     }
 }
 
-nonisolated enum MITMRewriteAction: Equatable {
+nonisolated enum MITMRewriteAction: Equatable, Sendable {
     case transparent(url: String)
     case redirect302(url: String)
     case reject200Text(content: String)
@@ -413,9 +413,9 @@ extension MITMRewriteAction: Codable {
     }
 }
 
-nonisolated struct MITMParameter: Codable, Equatable, Identifiable {
-    enum InputType: Int, Codable { case input = 0, picker = 1 }
-    enum DataType: Int, Codable { case string = 0 }
+nonisolated struct MITMParameter: Codable, Equatable, Identifiable, Sendable {
+    enum InputType: Int, Codable, Sendable { case input = 0, picker = 1 }
+    enum DataType: Int, Codable, Sendable { case string = 0 }
 
     var type: InputType
     var dataType: DataType
@@ -458,7 +458,7 @@ nonisolated struct MITMParameter: Codable, Equatable, Identifiable {
     }
 }
 
-nonisolated struct MITMRuleSet: Codable, Equatable, Identifiable, SoftDeletable {
+nonisolated struct MITMRuleSet: Codable, Equatable, Identifiable, SoftDeletable, Sendable {
     static let maxRuleCount = 10000
     static let maxParameterCount = 256
 

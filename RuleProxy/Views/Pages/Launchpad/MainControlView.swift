@@ -236,7 +236,7 @@ private struct ConfigurationCapsule: View {
     @Binding var showingAddSheet: Bool
 
     var body: some View {
-        if let configuration = selection.selectedConfiguration {
+        if let configuration = selection.effectiveConfiguration {
             selectedCapsule(configuration)
         } else if configurationStore.isLoaded {
             emptyCapsule

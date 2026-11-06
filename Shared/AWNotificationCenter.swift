@@ -12,6 +12,7 @@ actor AWNotificationCenter {
     // MARK: - Darwin Notification Names
 
     enum Notification {
+        nonisolated(unsafe) static let configurationVersionChanged = "\(AWCore.Identifier.bundle).configurationVersion" as CFString
         nonisolated(unsafe) static let activeConfigurationChanged = "\(AWCore.Identifier.bundle).activeConfigurationChanged" as CFString
         nonisolated(unsafe) static let certificatePolicyChanged = "\(AWCore.Identifier.bundle).certificatePolicyChanged" as CFString
         nonisolated(unsafe) static let mitmChanged = "\(AWCore.Identifier.bundle).mitmChanged" as CFString
@@ -20,6 +21,8 @@ actor AWNotificationCenter {
     }
 
     // MARK: - Public API
+
+    static func notifyConfigurationVersionChanged() { post(Notification.configurationVersionChanged) }
 
     static func notifyActiveConfigurationChanged() {
         post(Notification.activeConfigurationChanged)

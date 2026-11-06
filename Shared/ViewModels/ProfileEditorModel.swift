@@ -24,7 +24,8 @@ protocol ProfileEditing {
     /// Compiles without touching the stores, for live feedback.
     func previewDocument(_ text: String) -> TextConfigurationPipeline.Result
     /// Compiles and writes the document into the app's stores.
-    func applyDocument(_ text: String) throws -> ProfileApplyOutcome
+    func applyDocument(_ text: String) async throws -> ProfileApplyOutcome
+    func rollbackDocument() async throws -> ProfileApplyOutcome
     /// Renders the stores back into a document.
     func exportDocument() -> ConfigurationExporter.Result
     /// Reads a picked file so it can be reviewed before it is applied.
@@ -33,6 +34,12 @@ protocol ProfileEditing {
     func lastAppliedAt() -> Date?
     /// Recently applied documents, newest first.
     func appliedHistory() -> [ConfigurationSnapshot]
+}
+
+extension ProfileEditing {
+    func rollbackDocument() async throws -> ProfileApplyOutcome {
+        throw ConfigurationActivation.Failure.nothingToRollBack
+    }
 }
 
 /// The part of an activation the editor reports back to the user.
@@ -171,16 +178,17 @@ final class ProfileEditorModel {
     /// A document with errors is refused by the pipeline before the stores are
     /// touched, so a failed apply leaves the buffer and the baseline alone and
     /// keeps the error on screen.
-    func apply() {
+    func apply() async {
         guard !isApplying else { return }
         pendingPreview?.cancel()
         pendingPreview = nil
         isApplying = true
+        let submitted = text
         defer { isApplying = false }
 
         do {
-            let outcome = try document.applyDocument(text)
-            baseline = text
+            let outcome = try await document.applyDocument(submitted)
+            baseline = submitted
             preview = document.previewDocument(text)
             notes = outcome.notes
             lastOutcome = outcome
@@ -191,6 +199,27 @@ final class ProfileEditorModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func rollbackRuntimeVersion() async {
+        guard !isApplying else { return }
+        pendingPreview?.cancel()
+        pendingPreview = nil
+        isApplying = true
+        defer { isApplying = false }
+        do {
+            let outcome = try await document.rollbackDocument()
+            text = document.exportDocument().text
+            baseline = text
+            preview = document.previewDocument(text)
+            try document.persistDraft(text)
+            notes = outcome.notes
+            lastOutcome = outcome
+            history = document.appliedHistory()
+            lastAppliedAt = document.lastAppliedAt()
+            statusMessage = outcome.summary
+            errorMessage = nil
+        } catch { errorMessage = error.localizedDescription }
     }
 
     /// Renders the app's current stores into the buffer, so editing starts from
@@ -308,13 +337,17 @@ extension ConfigurationDocumentOperations: ProfileEditing {
         preview(text)
     }
 
-    func applyDocument(_ text: String) throws -> ProfileApplyOutcome {
-        let outcome = try apply(text)
+    func applyDocument(_ text: String) async throws -> ProfileApplyOutcome {
+        let outcome = try await apply(text)
         return ProfileApplyOutcome(
             summary: outcome.summary,
             notes: outcome.notes,
             plan: outcome.plan
         )
+    }
+
+    func rollbackDocument() async throws -> ProfileApplyOutcome {
+        try await rollbackRuntimeVersion()
     }
 
     func exportDocument() -> ConfigurationExporter.Result {

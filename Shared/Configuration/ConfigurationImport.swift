@@ -36,7 +36,7 @@ nonisolated enum ConfigurationImport {
 
     /// Larger profiles are almost always generated files or a wrong pick; the
     /// editor would stall long before the engine had an opinion.
-    static let maximumBytes = 1_000_000
+    static let maximumBytes = 16 * 1024 * 1024
 
     static func read(from url: URL) throws -> String {
         let scoped = url.startAccessingSecurityScopedResource()
@@ -44,7 +44,15 @@ nonisolated enum ConfigurationImport {
 
         let data: Data
         do {
-            data = try Data(contentsOf: url)
+            let file = try FileHandle(forReadingFrom: url)
+            defer { try? file.close() }
+            var bounded = Data()
+            while bounded.count <= maximumBytes {
+                let count = min(65_536, maximumBytes + 1 - bounded.count)
+                guard let chunk = try file.read(upToCount: count), !chunk.isEmpty else { break }
+                bounded.append(chunk)
+            }
+            data = bounded
         } catch {
             throw Failure.unreadable(error.localizedDescription)
         }

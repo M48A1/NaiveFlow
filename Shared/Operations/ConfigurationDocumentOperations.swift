@@ -13,7 +13,7 @@ import Foundation
 /// - **out** — `exportCurrent()` renders the current stores as a document, so
 ///   editing starts from what the app already runs instead of a blank file;
 /// - **in** — `apply(_:)` compiles the text and writes it into the stores
-///   through `ConfigurationInstaller`, refusing anything with errors.
+///   through `ConfigurationPublisher`, refusing anything with errors.
 ///
 /// The document itself lives in the App Group container
 /// (`configurations/draft.txt`), so it survives a relaunch and the extension can
@@ -27,8 +27,12 @@ struct ConfigurationDocumentOperations {
     let routingRuleSetStore: RoutingRuleSetStore
     let mitmRuleSetStore: MITMRuleSetStore
     let moduleStore: ModuleStore
-    let installer: ConfigurationInstaller
     let activation: ConfigurationActivation
+    var tunnel: TunnelController? = nil
+    var selection: ProxySelection? = nil
+    private var publisher: ConfigurationPublisher {
+        ConfigurationPublisher(activation: activation, tunnel: tunnel, stateSink: { selection?.showRuntimeVersion($0) })
+    }
 
     var ruleManager: RuleManager { RuleManager(activation: activation) }
 
@@ -40,7 +44,13 @@ struct ConfigurationDocumentOperations {
     func exportCurrent(
         options: ConfigurationExporter.Options = ConfigurationExporter.Options()
     ) -> ConfigurationExporter.Result {
-        ConfigurationExporter.exportCurrentConfiguration(
+        if let active = activation.active {
+            return ConfigurationExporter.Result(text: active.text, notes: [], counts: .init(
+                proxies: active.compiled.proxies.count, groups: active.compiled.proxyGroups.count,
+                rules: active.compiled.orderedRules.count, hosts: active.compiled.hosts.count
+            ))
+        }
+        return         ConfigurationExporter.exportCurrentConfiguration(
             configurationStore: configurationStore,
             chainStore: chainStore,
             groupStore: groupStore,
@@ -55,7 +65,10 @@ struct ConfigurationDocumentOperations {
 
     /// Text the editor should show, or the starter template on first launch.
     func draft() -> String {
-        ruleManager.draft()
+        do { try publisher.reconcile() }
+        catch RuntimeConfigurationFailure.busy { }
+        catch { activation.record(error.localizedDescription) }
+        return ruleManager.draft()
     }
 
     func hasDraft() -> Bool {
@@ -78,8 +91,13 @@ struct ConfigurationDocumentOperations {
     /// Compiles and installs. A document with errors is refused before the
     /// stores are touched, and if installation fails halfway the manifest is
     /// rolled back and the previous snapshot installed again.
-    func apply(_ text: String) throws -> ConfigurationInstaller.Outcome {
-        try installer.activate(text: text).outcome
+    func apply(_ text: String) async throws -> ConfigurationInstaller.Outcome {
+        try await publisher.publish(text: text).1
+    }
+
+    func rollbackRuntimeVersion() async throws -> ProfileApplyOutcome {
+        let outcome = try await publisher.rollback()
+        return ProfileApplyOutcome(summary: outcome.summary, notes: outcome.notes, plan: outcome.plan)
     }
 
     /// Reads a picked file so the editor can show it. Reading does not apply:

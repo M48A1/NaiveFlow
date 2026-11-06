@@ -134,11 +134,11 @@ nonisolated extension ConfigurationModule {
         switch kind {
         case .proxy, .proxyGroup, .ssidSetting:
             return .outbound
-        case .rule:
+        case .rule, .geoIP, .geoSite:
             return .rule
         case .host:
             return .dns
-        case .mitm, .script, .urlRewrite, .headerRewrite, .bodyRewrite, .mapLocal, .rewrite:
+        case .mitmSet, .mitm, .script, .urlRewrite, .headerRewrite, .bodyRewrite, .mapLocal, .rewrite:
             // The rewrite sections only do anything while interception is on, and
             // they are loaded together with the MITM policy.
             return .mitm
@@ -158,8 +158,8 @@ nonisolated extension ConfigurationModule {
 /// - what activating it costs, module by module;
 /// - which notifications the running tunnel has to be told about.
 ///
-/// It holds no state and touches no store: `ConfigurationInstaller` writes the
-/// stores, the extension reloads its modules, and this only decides what the
+/// It holds no state and touches no store: `ConfigurationPublisher` publishes an
+/// immutable version, the extension reloads its modules, and this only decides what the
 /// answer is. That is also why the editor can run it on every keystroke — it is
 /// the same code path a real apply goes through, without the side effects.
 nonisolated struct ConfigurationCoordinator: Sendable {
@@ -372,14 +372,16 @@ nonisolated extension ConfigurationCoordinator {
 
         case .rule:
             let count = compiled.orderedRules.count
-            return count == 0 ? (0, "") : (count, "\(count) rule(s)")
+            let data = compiled.geo.networks.count + compiled.geo.sites.values.reduce(0) { $0 + $1.count }
+            return count + data == 0 ? (0, "") : (count + data, "\(count) rule(s), \(data) geo entry/entries")
 
         case .dns:
             let count = compiled.hosts.count
             return count == 0 ? (0, "") : (count, "\(count) host override(s)")
 
         case .mitm:
-            return (0, "")
+            let count = compiled.textMITM.rules.count + compiled.textMITM.scripts.count + compiled.textMITM.embeddedSets.reduce(0) { $0 + $1.rules.count }
+            return (count + compiled.textMITM.suffixes.count, count == 0 ? "" : "\(count) rewrite/script rule(s)")
         }
     }
 }
@@ -484,10 +486,10 @@ nonisolated extension ConfigurationCoordinator {
                 payloadChanged = Self.payloadChanged(from: previous, to: next, module: module)
             } else {
                 switch module {
-                case .rule: payloadChanged = !next.orderedRules.isEmpty
+                case .rule: payloadChanged = !next.orderedRules.isEmpty || !next.geo.networks.isEmpty || !next.geo.sites.isEmpty
                 case .dns: payloadChanged = !next.hosts.isEmpty
                 case .outbound: payloadChanged = !next.proxies.isEmpty || !next.proxyGroups.isEmpty
-                case .mitm: payloadChanged = false
+                case .mitm: payloadChanged = !next.textMITM.suffixes.isEmpty || !next.textMITM.embeddedSets.isEmpty
                 }
             }
 
@@ -579,7 +581,7 @@ nonisolated extension ConfigurationCoordinator {
     ) -> Bool {
         switch module {
         case .rule:
-            return ruleSignatures(previous) != ruleSignatures(next)
+            return previous.geo != next.geo || ruleSignatures(previous) != ruleSignatures(next)
                 || actionName(previous.finalAction, in: previous) != actionName(next.finalAction, in: next)
         case .dns:
             return Set(previous.hosts) != Set(next.hosts)
@@ -589,7 +591,12 @@ nonisolated extension ConfigurationCoordinator {
         case .mitm:
             // A document carries no MITM rules: they live in the MITM rule sets
             // the app manages, so only `[General]` keys can change here.
-            return false
+            return previous.textMITM.embeddedSignature != next.textMITM.embeddedSignature
+                || previous.textMITM.suffixes != next.textMITM.suffixes
+                || previous.textMITM.rules.map { $0.operation } != next.textMITM.rules.map { $0.operation }
+                || previous.textMITM.rules.map { $0.urlPattern } != next.textMITM.rules.map { $0.urlPattern }
+                || previous.textMITM.rules.map { $0.phase } != next.textMITM.rules.map { $0.phase }
+                || previous.textMITM.scripts != next.textMITM.scripts
         }
     }
 

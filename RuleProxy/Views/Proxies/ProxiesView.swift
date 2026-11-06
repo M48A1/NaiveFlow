@@ -99,7 +99,12 @@ struct ProxiesView: View {
     
     var body: some View {
         NavigationStack {
-            Group {
+            VStack(spacing: 0) {
+                if proxySelection.usesRuntimeVersion {
+                    Text("The active configuration controls routing. Edit Configuration to change it; these lists remain your manual library.")
+                        .font(.footnote).foregroundStyle(.secondary).padding()
+                }
+                Group {
                 if proxyType == .servers, configurationStore.configurations.isEmpty, serverGroups.isEmpty {
                     ContentUnavailableView("No Proxies", systemImage: "network")
                 } else if proxyType == .chains, chainCoordinator.models.isEmpty, chainGroups.isEmpty {
@@ -142,6 +147,7 @@ struct ProxiesView: View {
                         }
                     }
                 }
+            }
             }
             .navigationTitle(title)
             .toolbar { toolbar }
@@ -353,7 +359,7 @@ struct ProxiesView: View {
             if let group = groupStore.group(containing: chainId, kind: .chains) {
                 expandedContainerId = group.id
             }
-        } else if let configuration = proxySelection.selectedConfiguration {
+        } else if let configuration = proxySelection.effectiveConfiguration {
             if let subscriptionId = configuration.subscriptionId {
                 expandedContainerId = subscriptionId
             } else if let group = groupStore.group(containing: configuration.id, kind: .servers) {
