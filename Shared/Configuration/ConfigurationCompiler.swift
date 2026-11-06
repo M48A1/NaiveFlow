@@ -700,7 +700,8 @@ nonisolated extension ConfigurationCompiler {
         switch type {
         case .ipCIDR:
             return value.contains("/") ? value : value + "/32"
-        default: break
+        default:
+            return value
         }
     }
 

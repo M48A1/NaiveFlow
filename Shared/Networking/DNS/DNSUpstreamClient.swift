@@ -17,7 +17,7 @@ nonisolated enum DNSUpstreamClient {
     /// connector (rules + selected proxy) instead of dialing the resolver
     /// directly. The Network Extension installs one while a routing context is
     /// available; the host app leaves it nil and keeps the direct bootstrap path.
-    nonisolated typealias ProxyDoHTransport = @Sendable (URL, Data) async throws -> Data
+    typealias ProxyDoHTransport = @Sendable (URL, Data) async throws -> Data
 
     private static let proxyDoHTransport = Mutex<ProxyDoHTransport?>(nil)
 

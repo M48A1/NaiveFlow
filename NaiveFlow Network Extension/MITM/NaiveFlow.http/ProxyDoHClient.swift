@@ -31,7 +31,7 @@ nonisolated enum ProxyDoHClient {
             tlsConnection = try await tlsClient.connect(overTunnel: dialed.connection)
         } catch {
             dialed.connection.cancel()
-            dialed.proxyClient?.cancel()
+            await dialed.proxyClient?.cancel()
             throw error
         }
         let connection = TLSProxyConnection(tlsConnection: tlsConnection)
