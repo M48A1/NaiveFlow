@@ -1,203 +1,130 @@
 # NaiveFlow 开发排期
 
-> 当前范围更新（2026-11-06）：IPv4-only，IPv6 功能及完整双栈目标已从首版移除。以下历史记录中的 IPv6 待办不再执行；本次仍只有静态检查，未通过新的 Xcode/真机验收。
+更新日期：2026-11-07
 
+本文件按当前源码跟踪实现和待验收事项，详细规范见 [配置说明](Documentations/Configuration.md)与[配置架构](Documentations/ConfigurationArchitecture.md)。下方历史记录仅反映当时状态；当前进度以本文前半部分为准。[DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) 中的早期估算和架构描述需要结合当前实现阅读。
 
-更新日期：2026-11-05
+> 勾选表示代码或文档已存在，不代表当前版本已通过构建、自动化测试或真机验收。本次更新仅核对源码与文档，未执行构建、测试、抓包或性能基准；历史构建结果不用于确认当前代码可用。
 
-本文件用于逐项执行和跟踪进度，详细设计见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。按阶段验收后推进，不预设固定完成日期；工期在工程能够构建、首批配置样例确定后复核。
+## 当前范围与架构
 
-## Geo 实现更新（2026-11-06）
+- 当前优先完成 iOS/iPadOS；保留 tvOS target，涉及共享代码时需要回归。macOS 尚无 target，待 iOS/iPadOS 完成后另行实施。
+- 首版为 IPv4-only，IPv6、完整双栈与 NAT64 支持不列为待交付功能。Watch 客户端已移除。
+- 配置为 NaiveFlow 原生分节文本，参考其他客户端的组织形式；不承诺完整配置或脚本兼容。
+- `RuleManager` 负责文档、草稿及历史；`ConfigurationCoordinator` 负责校验、编译和模块变更；`ConfigurationPublisher` 发布不可变运行包，扩展通过 `RuntimeCoordinator` 与版本安装流程加载、确认和恢复。
+- 活动文本版本控制实际流量；手工节点、分组和规则库独立保留。应用文档不再通过逐个 Store 写入的旧安装路径执行，`ConfigurationInstaller` 仅保留报告类型。
+- 通用 MITM、改写和脚本继续保留。应用内 DoH/DoH3 走普通路由，专用 DoH 解密、重查与合成回包已移出范围。
 
-- [x] 代码：外部 V2Ray GeoIP/GeoSite protobuf 导入，以及 CIDR/域名文本导入、分类选择和 GeoSite 属性筛选。
-- [x] 代码：应用配置时下载、SHA-256 校验、不可变版本固定、失败恢复和离线回滚。
-- [x] 代码：IPv4 前缀哈希桶、域名集合/标签索引、关键字自动机与预编译正则。
-- 按本次要求未运行测试或性能基准；不将这些实现标记为构建或真机验收通过。手动重新应用刷新数据库，不包含后台定时更新。具体格式、限制及示例见 [GeoDatabases.md](Documentations/GeoDatabases.md)。
+## 01：工程基线与平台验收
 
-## 当前状态
+- [x] 完成工作工程重命名，保留 `Reference/Anywhere` 对照。
+- [x] 移除继承的 StoreKit 付费、会员门禁与 Telegram 群组入口。
+- [x] 依赖收敛为仓库内 `NaiveFlowIP`、`NaiveFlowQUIC`、`BLAKE`、`YAML` 四个组件包。
+- [x] 保留历史 iOS/tvOS 无签名构建与模拟器测试记录，见 [BASELINE_CHECK.md](BASELINE_CHECK.md)。
+- [ ] 对当前代码重新构建 iOS 主应用、Network Extension、Widget 与 tvOS target。
+- [ ] 运行当前自动化测试，单独记录通过、失败与因缺少受控服务而跳过的用例。
+- [ ] 核对开发者账号、Bundle ID、App Group、CloudKit、Network Extension 能力与签名。
+- [ ] 真机验证导入节点、VPN 启停、访问和断开。
+- [ ] 确认真实图标和品牌资源，完成发布资源检查。
 
-- [x] 整理开发计划。
-- [x] 复制工作工程，保留 `Reference/Anywhere` 原始对照。
-- [x] 工作副本的 Anywhere 命名替换为 NaiveFlow。
-- [x] 工程及相关配置文件静态格式检查。
-- [x] 移除从上游继承的 Anywhere/Voyager 付费（StoreKit 内购）与 Telegram 群组功能。
-- [x] 依赖收敛：只保留 4 个仓库内核心组件包，移除无法获取的私有预设包，工程已无远程依赖。
-- [x] 无签名工程编译：主应用（含 Network Extension、Widget）与 TV scheme 均构建通过。
-- [ ] 签名安装、真机连接与 VPN 启停验证。
+验收：当前代码可构建、可签名安装，真机基本连接可用；历史验证与本次验证能够区分。
 
-后续修改根目录的 `NaiveFlow.xcodeproj` 及对应源码，参考目录保持原样。Xcode 27.2 已启用；原先阻塞编译的 `NaiveFlowRules` 私有仓库依赖已移除，`xcodebuild` 现在可离线构建 iOS 与 tvOS scheme。详见 [BASELINE_CHECK.md](BASELINE_CHECK.md) 与 [Reference/Dependencies.md](Reference/Dependencies.md)。
+## 02：配置编辑与版本发布
 
-## 01：验证现有工程
+- [x] 文档解析、原文与注释保留、诊断、能力校验和编译。
+- [x] 文件导入、文本编辑、草稿保存、预览、应用、历史载入与丢弃修改；入口为 `ProfileView` / `ProfileEditorModel`。
+- [x] `ConfigurationImport` 限制 UTF-8、16 MiB，支持 BOM 与换行归一、安全作用域访问。
+- [x] `ConfigurationDocumentOperations.apply` 统一调用 `ConfigurationPublisher.publish`。
+- [x] 节点、规则、Geo、DNS/Host、偏好及 MITM/脚本资源固定到 `RuntimeConfigurationBundle`。
+- [x] 发布锁、原子 head、完整性校验、精确版本 receipt、失败恢复及待发布事务恢复代码。
+- [x] 恢复上一运行版本，以及载入历史文本后重新应用这两种独立操作。
+- [x] 配置文本手动 iCloud 上传与下载；下载内容需在本机单独应用。
+- [ ] 验证错误配置不覆盖可用版本、过期确认不误报成功、宿主退出后恢复、连续发布和回滚。
+- [ ] 真机验证一般更新重建数据平面、关闭旧连接，以及连接级偏好变更触发重连的行为。
 
-目标：建立可构建、可运行的修改基线。
+验收：应用状态必须对应实际运行版本。停止状态下保存的版本需等待启动确认，不能仅凭保存成功宣称扩展已生效。历史文本重新应用会重新获取远程资源；恢复不可变运行版本使用已保存资源。
 
-- [x] 核对重命名后的 target、scheme、本地包和文件引用；移除缺失 StoreKit 配置引用。
-- [ ] 核对 Bundle ID、App Group、CloudKit、扩展通信及签名能力。（本地声明一致性已检查；账号能力与真机通信待验证。）
-- [x] 检查批量替换涉及的远程链接并记录待配置项，见 [BASELINE_CHECK.md](BASELINE_CHECK.md)。
-- [x] 使用完整 Xcode 构建主应用和 Network Extension，并检查其他现有 target。（2026-11-04：iOS `NaiveFlow` 与 tvOS `NaiveFlow TV` 无签名构建通过，Network Extension、Widget 随主应用一起构建；未签名、未运行。）
-- [ ] 真机验证导入节点、连接、访问和断开。
-- [x] 记录系统、工具链、测试配置及已知问题，建立版本基线。（系统/工具链/已知问题记录见 [BASELINE_CHECK.md](BASELINE_CHECK.md)；工作副本尚未纳入版本控制，版本基线待建立。）
+## 03：有序路由、规则集与 Geo
 
-验收：核心应用与扩展构建通过，真机基本连接可用；已有缺陷与新增问题可区分。
+- [x] `ConfigurationCompiler.compileOrderedRules` 编译原文顺序、逐规则策略和 FINAL。
+- [x] `DomainRouter.installNative` 从运行包安装 `OrderedRouteMatcher` 和 Geo 数据，已进入扩展执行路径。
+- [x] 域名、IPv4 CIDR、端口、协议、逻辑表达式、Geo 与 RULE-SET 的解析/编译基础。
+- [x] 外部规则集展开、校验并随版本固定，见 [RuleSets.md](Documentations/RuleSets.md)。
+- [x] GeoIP/GeoSite 外部数据导入、SHA-256 校验、版本固定、索引和离线恢复，见 [GeoDatabases.md](Documentations/GeoDatabases.md)。
+- [x] `[Chain]` 解析、校验、编译、导出与 composite 节点引用。
+- [ ] 验证首条命中、逻辑短路、逐规则 no-resolve、DNS 等待与失败语义。
+- [ ] 验证旧手工基线读取和原生版本切换；旧 `routing.bin` 不需承担原生有序规则载荷。
+- [ ] 核对规则能力声明与实际元数据来源，特别是 URL-REGEX、PROCESS-NAME、USER-AGENT；不能仅凭解析/编译支持认定运行有效。
+- [ ] 验证 `url-test` / `fallback` / `load-balance` 的真实选择行为；不能将退化为 select 计作自动策略完成。
+- [ ] 测试重叠规则、顺序调整、真实 IP、坏库拒绝、缺库、更新和回滚；补充容量与性能基准。
 
-## 02：统一配置文件入口（第一个功能里程碑）
+Geo 更新由用户重新应用触发，不含后台定时刷新。可选 `Rules.db` 预设库与原生 Geo 资源是不同来源，不应混为同一条未完成依赖。
 
-目标：使用 Surge 风格文本配置管理节点、DNS 与规则。
+## 04：Fake-IP、解析通道与普通 DNS 接管
 
-**服务层状态（2026-11-04）**：解析、校验、编译、快照、安装、扩展确认、重载分级、文件导入与反向导出均已完成；本阶段按要求只加功能，未编译、未运行测试；编辑器 UI 入口留到 07。
+- [x] SyntheticAddressPool 的并发保护、LRU、代次、TTL 和映射缺失处理代码。
+- [x] DNS 解析目的与 Local / Proxy / Bootstrap 策略模型、缓存隔离及 Bootstrap 防循环代码。
+- [x] TCP/UDP 调度中恢复原域名、DIRECT 按需解析、代理保留域名目标的路径。
+- [x] UDP/53、TCP/53 查询处理与 `dns-exempt-servers` 配置入口。
+- [x] A 查询 Fake-IP、AAAA/HTTPS(type 65) 抑制、拒绝和例外域名处理，详见 [DNSConfiguration.md](Documentations/DNSConfiguration.md)。
+- [ ] 使用可计数 DNS 服务验证 no-resolve 不主动解析、代理收到原域名、真实 IP 不反查。
+- [ ] 验证映射过期、回收、耗尽、重启和并发连接不存在跨域名误映射。
+- [ ] 验证 TCP DNS 分段、多请求、上游故障切换、豁免和无递归。
+- [ ] 用日志与抓包核实各解析通道、代理节点 Bootstrap 和实际出站。
 
-- [x] 确定首批配置样例与字段支持表。（样例：`TextConfigurationPipeline.template`；字段表：`Documentations/Configuration.md` 的 `[General]` / `[Proxy]` / `[Proxy Group]` / `[Rule]` 支持状态表。）
-- [x] 实现配置文档模型，保留注释、顺序和原文。（`ConfigurationDocument` 524 行，`text` 原样回写；`ConfigurationDocumentEditing` 提供行/规则/设置编辑。）
-- [x] 首批解析 `[General]`、`[Proxy]`、`[Proxy Group]`、`[Rule]`。（另含 `[Host]`、`[MITM]`、`[Script]` 与未知节保留。）
-- [x] 明确每个字段的默认值和支持状态；未知关键配置不能静默忽略。（`ConfigurationValidator.Capabilities.current` 固定当前引擎能力；`unknownGeneralKey`、`notApplied`、`unsupportedRuleType`、`unknownProxyType` 均显式报出；`loglevel`、`[Script]`、`[MITM]` 证书字段按“已识别未生效”告警。）
-- [x] 校验语法、行列位置、节点与策略组引用、循环引用及 FINAL。（`ConfigurationValidator`：`malformedRule`、`missingEquals`、`unknownPolicy`、`unresolvedPolicy`、`groupCycle`、`duplicateFinal`、`finalNotLast`。注意：`[General]` 键级告警暂不带行号，见进度记录。）
-- [x] 接入现有节点、分组、设置与操作层，避免产生两套配置来源。（`ConfigurationInstaller`：节点→`ConfigurationStore`、分组→`GroupStore`、规则→`RoutingRuleSetStore`（按策略生成 `Config · POLICY` 并写 assignment）、`[Host]`→`HostMapping`、设置→`AWCore`；`installation.json` 记录归属，重复激活原地更新，手建节点不受影响。）
-- [ ] 实现文件/文本导入、编辑、保存和激活入口。（服务层已完成：`ConfigurationImport.read(from:)` 文件导入，`ConfigurationActivation` 草稿/保存/激活/回滚/历史，`ConfigurationInstaller.activate(text:)` / `activate(contentsOf:)` 激活并落库且失败回滚；编辑器 UI 入口留到 07。）
-- [x] 实现配置版本快照、扩展确认及失败恢复；区分热重载和需要重连的设置。（快照+manifest；`engine-confirmation.json` 由扩展在启动/规则热重载后写入；`ConfigurationReloadPlan` 分 `live` / `stackRestart` / `reconnect`。）
-- [x] 为后续 `[Host]`、`[MITM]`、`[Script]` 和重写配置预留扩展结构。（解析、校验、诊断已覆盖；编译输出与安装步骤按字段留位。）
-- [x] 反向导出当前配置为文本，作为文本配置的初始文档。（`ConfigurationExporter` 纯渲染 + `ConfigurationExporter+Stores` 读存储层；无法表达的项目——链、链分组、模块规则集、未分配策略的规则集、无分享链接的节点——写入 `notes`，名称按 `=`/`,`/`#` 净化并去重，`[MITM]` 只在有主机时输出。导出结果必须被 `TextConfigurationPipeline.process` 无错误读回，由 `ConfigurationExporterTests` 保证。）
-- [ ] 验证正常导入、错误定位、引用失败、重载失败和应用重启恢复。（`NaiveFlow Tests/ConfigurationTextTests.swift`、`OrderedRouteMatcherTests.swift`、`ConfigurationExporterTests.swift` 已写；本阶段按要求只加功能，尚未编译与运行。）
+验收：Fake-IP 不进入 GeoIP 或公网出站；缺失映射明确失败；节点与 DNS 上游不存在自依赖循环。
 
-验收：一份最小配置可以加载节点和规则；错误配置不覆盖当前可用配置；页面设置与文本配置保持一致。尚未实现的规则类型明确提示，不伪装成已生效。
+## 05：应用内 DoH / DoH3 分流验收
 
-**验收状态（2026-11-04）**：前三项的服务层已具备（安装层写入既有存储、失败回滚、设置统一走 `AWCore`）；第五项由 `ConfigurationValidator` 的 `notApplied`/`unsupportedRuleType`/`unknownPolicy` 显式报出。整体验收待构建、测试与编辑器入口完成后再判定。
+- [x] 现有 HTTPS SNI 与 QUIC 嗅探、普通路由和 QUIC 策略代码可供此阶段复用。
+- [ ] 验证 DoH 服务端域名/IP 的 DIRECT、PROXY、REJECT。
+- [ ] 验证 DoH3 UDP/QUIC 出口与 QUIC 策略，不承诺客户端必然回退。
+- [ ] 分别验证 DNS 服务端连接和业务连接的命中规则与出口。
+- [ ] 验证域名不可见时的 IP 规则与 FINAL。
+- [ ] 确认普通 DNS/Fake-IP 和内核自身 DoH 上游仍独立正常工作。
 
-## 03：有序规则、GeoSite 与 GeoIP
+验收：不要求安装 CA，不宣称能够控制加密查询内部的域名；DoH 出口不会自动决定业务连接出口。
 
-目标：严格按配置顺序首条命中，FINAL 兜底。
+## 06：MITM、改写与脚本
 
-**已有参考实现（2026-11-04）**：`Shared/Networking/Routing/OrderedRouteMatcher.swift` 已按原文顺序首条命中并支持 `FINAL`，GeoIP/GeoSite 通过 `GeoIPLookup` / `GeoSiteLookup` 注入（当前为空实现）；`TextConfigurationPipeline.Result.route(...)` 与 `CompiledConfiguration.orderedRules` / `finalAction` 已在用。待办是把这份语义接入 `routing.bin` 载荷与隧道执行路径，并确定 Geo 数据来源。
+- [x] 已有原生 MITM 引擎和 `TextMITMCompiler`，支持文本编译及随版本固定资源。
+- [x] 已有 `ForeignMITMImporter` 的 Surge / Quantumult X 部分导入代码。
+- [ ] 核对外部格式导入的调用入口、未支持项诊断，以及导入结果的实际执行。
+- [ ] 对照选定版本的官方样例建立脚本兼容矩阵，分别记录支持、部分支持、不支持和未验证。
+- [ ] 验证请求/响应上下文、完成语义、主动 HTTP 请求、持久存储、通知、文本/二进制及压缩 body。
+- [ ] 验证 CA 未信任、脚本下载失败、固定字节回滚、超时、并发与自触发循环。
 
-**进展（2026-11-06）**：修复 `e10f7b0`（Remove IPv6）在 `ConfigurationCompiler.swift` 中误删的 4 个函数——`compileOrderedRules`、`routeMatchAction`、`compileHosts`、`compileSettings`，并补回 `validateExpression` 的 protocol 校验。有序规则编译此前因缺失 `compileOrderedRules` 根本无法产出 `orderedRules` / `finalAction`；现按原文顺序编译（首条命中 + 唯一末尾 `FINAL` + 逐规则 `no-resolve`），GeoIP/GeoSite 数据经 `ConfigurationCompiler.compileGeo`（`NativeGeoDatabase`）随 `RuntimeConfigurationBundle` 下发；`Capabilities.current.ruleKinds` 补齐 `urlRegex` / `processName` / `userAgent`。本阶段只做静态检查，未编译、未运行测试。
+原生脚本 ABI 与外部脚本 API 分开验收；有导入器或能解析脚本声明，不能代表 Surge / Quantumult X 脚本已经兼容。定时、事件、DNS 脚本等扩展能力另行评估。
 
-- [ ] 扩展现有规则模型和载荷，保留旧配置读取能力。（有序语义已走 `RuntimeConfigurationBundle`；旧 `routing.bin` 仍为分 tier 手动基线，未改。）
-- [x] 实现有序规则执行，索引加速不能改变原文顺序。（`compileOrderedRules` 已恢复，产出原文顺序规则；匹配器线性扫描、首条命中。）
-- [x] 加入 GeoSite 域名匹配和 GeoIP IPv4 匹配。（`NativeGeoDatabase` 实现 `GeoIPLookup` / `GeoSiteLookup`，`OrderedRouteMatcher` 消费。）
-- [x] 确定 Geo 数据格式、来源、随包基线、容量及更新方式。（见 `Documentations/GeoDatabases.md`。）
-- [x] 实现数据库校验、原子更新、失败回滚和版本化缓存失效。（`NativeGeoDatabase.validate` + 版本固定导入。）
-- [x] 实现逐规则 `no-resolve`、唯一末尾 FINAL 和明确的 DNS 失败语义。（`OrderedRouteMatcher.evaluate` + `ConfigurationValidator`。）
-- [ ] 测试重叠规则、顺序调整、真实 IP、缺失数据库及不支持规则。
+## 07：UI 与诊断完善
 
-验收：支持 `GEOSITE,CN,DIRECT`、`GEOIP,CN,DIRECT,no-resolve`、`FINAL,PROXY`；首条命中后停止，不强制所有连接同时运行 GeoSite 和 GeoIP。
+配置文本编辑入口已存在，本阶段继续统一页面和交互。
 
-## 04：Fake-IP 与 DNS 解析
+- [ ] 核对首页运行版本、活动节点、应用结果和恢复入口是否与扩展状态一致。
+- [ ] 完善规则排序、Geo/规则集版本与更新状态展示。
+- [ ] 诊断展示原始目标、命中规则、解析目的/通道、最终出口及失败原因。
+- [ ] 完善 MITM/脚本来源、作用域、兼容提示与运行日志。
+- [ ] 验证深色模式、动态字体、长列表、iPad 布局和 tvOS 共享代码影响。
 
-目标：恢复原始域名后分流，直连按需解析，代理优先保留域名。
+## 08：IPv4-only 发布前回归
 
-**进展（2026-11-06）**：新增 `Shared/Networking/DNS/DNSResolution.swift`，定义解析目的 `DNSResolutionPurpose`（directConnection / ruleEvaluation / proxyBootstrap / explicitDNSQuery）与传输策略 `DNSResolutionTransport`（system / local / proxy / automatic）。`DNSResolver` 增加 `purpose` / `transport` 属性，`purpose` 纳入缓存 `Query` 键，按目的隔离缓存；`proxies` 标注 `.proxy` / `.proxyBootstrap`，`localRequests` 标注 `.local` / `.directConnection`。`ConnectionRouter` 与 `TCPConnection` 的按需规则解析（needsAddress / IP 规则）显式传 `.ruleEvaluation`。`SyntheticAddressPool` 补齐映射代次（`generation`）与 TTL 过期（`expiresAt`）：`allocate` 刷新代次与过期时间，`lookup` 对过期/缺失映射返回 nil → 明确不可达。补齐 Proxy Resolver 经代理路径：`DNSUpstreamClient` 增加 `ProxyDoHTransport` 注入与 `viaProxy` 参数；新增 `NaiveFlow Network Extension/MITM/NaiveFlow.http/ProxyDoHClient.swift`，用 `OutboundConnector.dial` + `TLSClient` 走隧道出站（遵循规则与所选代理）发 DoH，复用 `BootstrapDoHClient` 的报文/响应解析；`TunnelStack.publishOutboundRoutingContext` 注入、`.releaseModules` 清除。`DNSResolver.lookup` 按 `transport == .proxy && purpose != .proxyBootstrap` 决定经代理，代理节点 bootstrap 保持直连以避免自依赖循环。本阶段只做静态检查，未编译、未运行测试。
-
-- [x] 复用并补齐 SyntheticAddressPool 的生命周期、回收、并发与耗尽处理。（已有 LRU + Mutex + reset + evictLRU；新增映射代次与 TTL 过期。）
-- [x] 映射缺失明确不可达，Fake-IP 不进入 GeoIP 或公网出站。（`lookup` 过期/缺失返回 nil → `ConnectionRouter` 返回 `.unreachable`；合成地址先恢复域名再匹配。）
-- [x] 为现有 DNSResolver 增加解析目的及 Local / Proxy / Bootstrap 策略。（新增 purpose / transport 模型；Bootstrap 沿用 `DNSBootstrapPolicy` 防循环。）
-- [x] 明确系统 DNS、第三方 DNS 的优先级、故障切换与缓存隔离。（`purpose` 纳入缓存键隔离；`DNSLookupCache` 已按上游变更重置并支持正负缓存。）
-- [x] 检查节点、DoH 端点、订阅与 ECH 解析的依赖，避免循环。（Proxy Resolver 经代理仅用于非 bootstrap 目的，代理节点 bootstrap 直连；`DNSBootstrapPolicy.endpointAddresses` 已按种子解析 DoH 主机名并拒绝递归。）
-- [x] 接入 TCP/UDP 调度；DIRECT 域名决定路由后才真实解析。（TCP `connectDirect` / UDP `UDPPlane.deferUntilResolved` 用 `localRequests` 在路由定为 DIRECT 后解析；PROXY 经 `ProxyClient.connect(to:)` / `connectUDP(to:)` 传域名给代理。）
-- [x] 核对各出站的域名目标能力；仅接受 IP 时使用显式解析策略。（核对结论：全部出站——含 Hysteria、SOCKS5 UDP relay、Shadowsocks UDP——的报文都编码域名地址、由代理远端解析，无「仅接受 IP」协议。新增 `OutboundProtocol.supportsDomainTarget` 显式声明，`ProxyClient.dial` 对不支持域名时报告不支持而非暗中走运营商 DNS。）
-- [ ] 验证 no-resolve 不产生主动 DNS、代理收到原域名、真实 IP 不反查。
-
-验收：默认域名代理路径不产生本地真实目标解析；真实 IP 正确分流；解析失败和映射失败可诊断。
-
-## 05：普通 DNS 拦截
-
-目标：将受管 DNS 查询送入统一 DNS/Fake-IP 处理链。
-
-**进展（2026-11-06）**：新增可配置 DNS 豁免名单 `dns-exempt-servers`（`AWCore` UserDefaults + `TunnelStack.interceptExemptDNSServers` 合并 + `ConfigurationSettings` 目录/绑定，`[General]` 文本配置可写）。豁免语义：内置 `TunnelAddress.ipv4` 始终接管，其他 IPv4 默认接管，明文上游 + bootstrap 种子 + 用户豁免名单不接管。UDP/53、TCP/53（长度前缀/拆包/粘包/连续请求）、A/AAAA/HTTPS(SVCB) 抑制、拒绝、Fake-IP 排除域名与 fallback 上游回退已在既有实现中覆盖（见 `Documentations/DNSConfiguration.md`）。本阶段只做静态检查，未编译、未运行测试。
-
-- [x] 将拦截目标和豁免范围改为可配置。（新增 `dns-exempt-servers` 用户豁免名单；接管目标保持「内置 + 默认全接管」。）
-- [x] 支持 UDP/53 与 TCP/53，包括 TCP 分段及连续查询。（`UDPPlane.handleDNSQuery` / `TCPConnection` 长度前缀解析，详见 DNSConfiguration.md。）
-- [x] 处理 A、AAAA、其他查询类型、拒绝和例外域名。（A → Fake-IP，AAAA/HTTPS(SVCB) → NODATA，拒绝 → 0.0.0.0，其他类型 → fallback 上游。）
-- [x] 明确 HTTPS/SVCB 及地址提示策略。（type 65/28 直接返回 NODATA，不合成地址提示。）
-- [x] 豁免内核自身上游、Bootstrap 和 Proxy Resolver，避免重新进入隧道。（明文上游 + bootstrap 种子 + 用户豁免名单地址级豁免；DoH 上游为 HTTPS 流量不走 53 端口。）
-- [ ] 用受控 DNS 服务、日志与抓包验证实际路径及无循环。
-
-验收：不同 DNS 入口执行同一策略；上游故障可恢复；内核自身 DNS 不被重复截获。
-
-## 06：应用内 DoH/DoH3 分流验收
-
-范围更新（2026-11-06）：移除 DoH MITM 解密、重新查询及 HTTP/DNS 合成回包任务。应用内加密 DNS 使用普通路由，不要求安装 CA；通用 MITM 功能继续保留。
-
-**代码现状（2026-11-06）**：本阶段为验收阶段，分流逻辑已在既有代码中完整覆盖——DoH 作为 HTTPS 经 `TCPConnection` 的 TLS SNI 嗅探恢复域名后按规则路由；DoH3 作为 QUIC/UDP 经 `UDPPlane.sniffQUIC`（`QUICClientHelloSniffer`）恢复 SNI 后按规则路由，并受 `QUICPolicy`（blocked / automatic / unblocked）与 `revalidateQUIC` 控制；域名不可见时走 IP 规则与 FINAL 兜底；普通 DNS/Fake-IP 与内核自身 DoH 上游（`DNSUpstreamClient`）为独立路径。以下均为真机/测试验证项，按「不测试」要求保持未勾选。
-
-- [ ] 验证 DoH 服务端域名/IP 规则与直连、代理、拒绝动作。
-- [ ] 验证 DoH3 的 UDP/QUIC 规则和现有 QUIC 策略，不承诺客户端回退。
-- [ ] 分别检查 DNS 服务端连接及业务连接的规则和最终出口。
-- [ ] 验证域名不可见时的 IP 规则及 FINAL 兜底。
-- [ ] 确认普通 DNS/Fake-IP 与内核自身 DoH 上游解析保持独立正常工作。
-
-验收：加密 DNS 按配置选择出口；不宣称能够查看或控制加密查询内的域名；不加入专用 DoH 解密、重查和回包链路。
-
-## 07：后续 UI 改版
-
-前面阶段先增加必要功能入口，本阶段统一页面与交互。
-
-- [ ] 确认首页、配置、规则、DNS、MITM、脚本及诊断页面草案。
-- [ ] 展示当前配置版本、激活状态、重载失败和恢复入口。
-- [ ] 支持规则排序、数据库更新状态及脚本兼容提示。
-- [ ] 诊断展示命中规则、解析通道、出站、MITM 与脚本结果。
-- [ ] 验证深色模式、动态字体、长列表及现有平台布局。
-
-验收：常用任务有清晰入口，文本与可视化编辑一致，状态真实且错误可操作。
-
-## 08：Surge / Quantumult X 脚本兼容
-
-- [ ] 对照官方文档与样例建立版本化兼容矩阵。
-- [ ] 复用现有运行时，分别提供 Surge / Quantumult X 方言适配。
-- [ ] 支持请求/响应上下文、`$done`、日志与参数。
-- [ ] 支持请求/响应文本及二进制改写、合成响应与中止。
-- [ ] 适配 `$httpClient`、`$task.fetch`、持久存储与通知 API。
-- [ ] 支持相关脚本与 rewrite 配置子集导入，明确未支持项。
-- [ ] 验证主动请求的 DNS/路由、自触发循环、超时、内存和并发限制。
-- [ ] 使用实际脚本验证行为，不以导入成功代替运行兼容。
-- [ ] 后续分别评估手动、定时、事件、DNS 脚本及策略控制。
-
-验收：选定样例与实际脚本按预期运行；公布支持、部分支持、不支持及未验证清单。
-
-## 09：IPv4-only 发布前回归
-
-- [ ] 验证 IPv4 节点、域名节点的 A 记录解析、所有承诺协议的 TCP/UDP。
-- [ ] 验证不支持的地址/规则拒绝、AAAA NODATA、TUN 防绕行。
-- [ ] 回归网络切换、前后台、隧道重启、配置恢复和数据库更新。
-- [ ] 检查内存峰值、吞吐、连接数与长时间运行。
-
+- [ ] 验证 IPv4 节点、域名 A 记录和各承诺协议的 TCP/UDP。
+- [ ] 验证不支持的地址/规则诊断、AAAA NODATA 和 TUN 防绕行。
+- [ ] 验证 Wi-Fi/蜂窝切换、前后台、睡眠/唤醒、隧道重启、配置恢复和资源更新。
+- [ ] 测量内存峰值、吞吐、连接数与长时间运行。
+- [ ] 整理当前构建产物、测试记录、受控服务条件和已知限制。
 
 ## 下一步
 
-**01 阶段：静态检查与无签名编译已完成，签名与真机验收未做，阶段尚未整体验收通过。** 具体结果见 [BASELINE_CHECK.md](BASELINE_CHECK.md)。
+1. 先完成当前提交的 iOS/tvOS 构建与自动化测试，记录跳过的连通性用例。
+2. 优先核实能力声明、编译产物与运行路径的一致性，处理规则元数据和策略组语义的差异。
+3. 使用最小原生配置验证「导入 → 预览 → 发布 → 扩展确认 → DNS/Fake-IP → 有序路由 → 出站」。
+4. 以受控服务验证发布失败、回滚、进程退出恢复和 DNS 无循环，再进行签名真机回归。
+5. 核心闭环通过后完善 UI 与脚本兼容；macOS 保持后续独立阶段。
 
-**02 阶段：服务层完成并通过构建与测试（66 个用例全通过），配置文件的应用内编辑页已落地；真机验收未做，阶段尚未整体验收。** 代码位于 `Shared/Configuration/` 与 `Shared/Operations/ConfigurationDocumentOperations.swift`，说明见 [Documentations/Configuration.md](Documentations/Configuration.md) 的「Editing inside the app」。
+## 历史进度记录
 
-1. **[已完成 2026-11-04]** 构建 iOS 主应用与 Network Extension（0 error），并在 iPhone 17 模拟器跑通 `NaiveFlow Tests`（66 个用例全通过）；下一步转为真机验收。
-2. 在开发者账号中核对团队、Bundle ID、App Group、CloudKit、Network Extension 能力，配置签名后真机验证导入节点、连接、访问与断开。
-3. 用真实品牌资源替换占位内容（`Shared/Assets.xcassets` 目前只有中性占位色板与空 `AppIcon.appiconset`，仅为通过编译）。
-4. 如需内置服务/国家预设，把自备且符合表结构的 `Rules.db`（`rules(type,value,source)`、`metadata(key,value)`）加入主应用资源即可自动加载。
-5. 真机验证配置页的四个动作：`Load from Current Setup` → 编辑 → `Apply to App` → 隧道按 `ConfigurationReloadPlan` 重载；节点、分组、规则的表单化编辑与设计稿仍属 07，进入 **03** 前先确定有序规则载荷格式与 Geo 数据来源。后续每完成一项更新本文件，并记录验证结果及未解决问题。
-6. **让 profile 成为唯一真相源（按 Surge 语义逐节补齐）**，顺序按投入产出排：
-   - [x] `[General]` 全量目录化：54 个键（2026-11-04 完成）。
-   - [ ] `routing.bin` 有序规则 + `FINAL`：有序语义已走 `RuntimeConfigurationBundle`；旧 `routing.bin` 载荷仍是分 tier，未改。
-   - [x] 补齐可编译规则类型：`DOMAIN`/`DOMAIN-WILDCARD`/`DOMAIN-REGEX`/`URL-REGEX`/`PROCESS-NAME`/`USER-AGENT`（2026-11-06 补齐）。
-   - [x] `[Proxy Group]` 增加 `url-test`/`fallback`/`load-balance`：`groupKinds` 已启用，`interval`/`tolerance`/`url` 参数放行；执行语义暂退化为 select（延迟测试/健康检查/负载均衡待后续）。
-   - [x] `[MITM] hostname` 接进拦截列表，`[Script]` 可执行（`TextMITMCompiler` + 阶段 08 方言）。
-   - [x] `[Host]` 通配符、`[URL Rewrite]`/`[Header Rewrite]`/`[Map Local]`（`TextMITMCompiler` + `DNSHosts` 通配符）。
-   - [x] `[Chain]`：解析、编译、校验（成员引用/重复名）、导出、运行时 composite 节点与策略引用（2026-11-07 完成）。
-   - [ ] `[SSID Setting]`、`[Module]`/`[Subscription]` 各节。
-   - [x] 语义：维持「文本 = 全量投影 + 页面保留选择状态/外观」，与 Surge / Loon / Quantumult X 一致；页面不反向改写文本，选择/外观不入 profile。
-
-
-
-## 平台范围更新
-
-开发顺序更新（2026-11-06）：先完成 iOS/iPadOS 客户端，再开展 macOS。当前不安排 macOS target、UI 或 VPN 平台适配，不将其作为 iOS/iPadOS 交付阻塞项。现有 tvOS target 保留。
-
-仅面向 macOS、iPadOS、iOS、tvOS。已删除 Watch 客户端、scheme、配对通信模型及桥接，清除本地包 watchOS 平台声明；保留服务于目标平台的 Widget、Network Extension 与测试。Reference 原始目录保持不变。
-
-- [x] 清理 watchOS 客户端与配对通信；工程对象无悬空引用。
-- [x] 解决 `https://github.com/hiDandelion/NaiveFlowRules.git` 访问问题。（2026-11-04：该包为私有仓库，匿名访问 404，上游公开仓库也依赖同一私有地址；按“只参考核心组件”的要求已从工程移除，改为在 `Bundle.main` 读取可选的 `Rules.db`，详见 [Reference/Dependencies.md](Reference/Dependencies.md)。）
-- [ ] 后续阶段（iOS/iPadOS 完成后）：新增并验证 macOS 客户端。现有工程没有 macOS target，尚未启用 Mac Catalyst；不可将当前客户端声明为已经支持 macOS。
-- [ ] 后续阶段（iOS/iPadOS 完成后）：确定 macOS 原生或 Catalyst 实现路径，核对 UI、VPN 扩展、沙箱、签名与系统 API 差异后实施。
-- [ ] 当前阶段：完成 iOS/iPadOS 构建与运行验收，回归共享代码对现有 tvOS target 的影响。
-- [ ] 后续阶段：macOS 客户端实现后单独执行构建与运行验收。
-
-## 进度记录
+以下保留原始记录；旧 API、阶段编号、能力声明、环境说明和测试数量不代表当前代码状态。
 
 ### 2026-11-05
 
