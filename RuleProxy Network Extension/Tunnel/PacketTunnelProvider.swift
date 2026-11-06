@@ -312,6 +312,9 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
             let response = LatencyTestResponse(await LatencyTester.test(configuration))
             return encodeReply(response)
 
+        case .fetchRuntimeStatus:
+            return encodeReply(await tunnelStack.runtimeStatus())
+
         case .fetchStats:
             return encodeReply(statsRecorder.snapshot())
 

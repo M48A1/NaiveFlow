@@ -65,7 +65,7 @@ nonisolated struct ParsedProxy: Equatable, Sendable, Identifiable {
     enum Form: Equatable, Sendable {
         /// A proxy URI, e.g. `vless://…`, `ss://…`.
         case link(String)
-        /// Surge/Clash style fields: `vless, server, 443, uuid=…, tls=true`.
+        /// NaiveFlow fields: `vless, server, 443, uuid=…, tls=true`.
         case fields(type: String, server: String?, port: UInt16?, parameters: OrderedParameters)
     }
 

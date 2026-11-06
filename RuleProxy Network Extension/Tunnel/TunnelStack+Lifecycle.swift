@@ -50,8 +50,7 @@ extension TunnelStack {
             }
             return false
         }
-        configureRuntime(for: configuration, precompiledRouting: precompiledRouting)
-        bringUpDataPlane(configuration: configuration)
+        executeLifecycle(.start, configuration: configuration, precompiledRouting: precompiledRouting)
 
         rootTask = Task { await self.run(packetFlow: packetFlow, udpPlane: udpPlane) }
 
@@ -104,14 +103,7 @@ extension TunnelStack {
 
     private func finishShutdown() {
         TransportReclaim.sealAll()
-        tearDownDataPlane(tcp: .graceful)
-        purgeOutputBuffer()
-        attachPacketFlow(nil)
-        OutboundConnector.setRoutingContext(nil)
-        syntheticAddressPool.reset()
-        connectionRouter.clearRejectMarks()
-        ConnectionMetrics.shared.setDefaultServer(nil)
-        configuration = nil
+        executeLifecycle(.stop, configuration: configuration)
         finishPlaneCommands()
     }
 
@@ -143,8 +135,7 @@ extension TunnelStack {
 
     func sleep() {
         guard phase == .running, let configuration else { return }
-        tearDownDataPlane(tcp: .silent)
-        bringUpDataPlane(configuration: configuration)
+        executeLifecycle(.sleep, configuration: configuration)
     }
 
     func updateNetworkContext(_ context: NetworkContext) {
@@ -266,24 +257,51 @@ extension TunnelStack {
         deferredRestartScheduled = false
         lastRestartTime = MonotonicClock.now
 
-        tearDownDataPlane(tcp: .graceful)
+        executeLifecycle(.restart, configuration: configuration)
+    }
 
-        connectionRouter.clearRejectMarks()
-
-        self.configuration = configuration
-        configureRuntime(for: configuration)
-        bringUpDataPlane(configuration: configuration)
+    /// Module adapters reuse the existing data plane and transport cleanup.
+    /// All lifecycle ordering is supplied by RuntimeCoordinator.
+    private func executeLifecycle(
+        _ event: RuntimeCoordinator.Lifecycle,
+        configuration: ProxyConfiguration?,
+        precompiledRouting: DomainRouter.CompiledRouting? = nil
+    ) {
+        for action in RuntimeCoordinator.lifecyclePlan(for: event) {
+            switch action {
+            case .stopDataPlane: tearDownDataPlane(tcp: .graceful)
+            case .discardDataPlane: tearDownDataPlane(tcp: .silent)
+            case .configureModules:
+                guard let configuration else { continue }
+                connectionRouter.clearRejectMarks()
+                self.configuration = configuration
+                configureRuntime(for: configuration, precompiledRouting: precompiledRouting)
+            case .startDataPlane:
+                guard let configuration else { continue }
+                bringUpDataPlane(configuration: configuration)
+            case .releaseModules:
+                purgeOutputBuffer()
+                attachPacketFlow(nil)
+                OutboundConnector.setRoutingContext(nil)
+                syntheticAddressPool.reset()
+                connectionRouter.clearRejectMarks()
+                domainRouter.reset()
+                mitmPolicy.reset()
+                ConnectionMetrics.shared.setDefaultServer(nil)
+                self.configuration = nil
+                EngineConfirmationStore.clear()
+            }
+        }
     }
 
     // MARK: - Engine Confirmation
 
-    /// Leaves the extension's answer next to the snapshot manifest: the host
-    /// records what it activated, this records what the engine is actually
-    /// running. File IO runs off the tunnel's executor.
+    /// Records routing readiness without claiming a complete snapshot commit.
     func recordEngineConfirmation() {
-        Task.detached(priority: .utility) {
-            EngineConfirmationStore.recordRunningSnapshot()
-        }
+        // Serialize with stop on this actor: a detached write could recreate a
+        // stale confirmation after shutdown cleared it.
+        guard phase == .running else { return }
+        EngineConfirmationStore.recordRoutingReady()
     }
 
 }

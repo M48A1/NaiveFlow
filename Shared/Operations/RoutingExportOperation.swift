@@ -169,7 +169,7 @@ struct RoutingExportOperation {
 
             if data != AWCore.getRoutingData() {
                 AWCore.setRoutingData(data)
-                AWNotificationCenter.notifyRoutingChanged()
+                ConfigurationCoordinator.Announcement.routing.post()
             }
         }.value
     }
