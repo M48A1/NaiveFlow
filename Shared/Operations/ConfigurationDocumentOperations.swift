@@ -30,6 +30,8 @@ struct ConfigurationDocumentOperations {
     let installer: ConfigurationInstaller
     let activation: ConfigurationActivation
 
+    var ruleManager: RuleManager { RuleManager(activation: activation) }
+
     // MARK: - Stores to text
 
     /// Renders the stores as a document. Whatever the text format cannot carry
@@ -53,24 +55,24 @@ struct ConfigurationDocumentOperations {
 
     /// Text the editor should show, or the starter template on first launch.
     func draft() -> String {
-        activation.draft()
+        ruleManager.draft()
     }
 
     func hasDraft() -> Bool {
-        activation.hasDraft()
+        ruleManager.hasDraft()
     }
 
     /// Persists the editor buffer. Saving never implies activation, so a
     /// half-finished document with errors stays on disk.
     func saveDraft(_ text: String) throws {
-        try activation.saveDraft(text)
+        try ruleManager.saveDraft(text)
     }
 
     // MARK: - Text to stores
 
     /// Compiles without writing anything, for the editor's live feedback.
     func preview(_ text: String) -> TextConfigurationPipeline.Result {
-        TextConfigurationPipeline.process(text: text)
+        ruleManager.preview(text)
     }
 
     /// Compiles and installs. A document with errors is refused before the
@@ -83,16 +85,16 @@ struct ConfigurationDocumentOperations {
     /// Reads a picked file so the editor can show it. Reading does not apply:
     /// the user reviews the text, then presses Apply.
     func read(contentsOf url: URL) throws -> String {
-        try ConfigurationImport.read(from: url)
+        try ruleManager.read(contentsOf: url)
     }
 
     // MARK: - History
 
     func appliedAt() -> Date? {
-        activation.appliedAt()
+        ruleManager.appliedAt()
     }
 
     func history(limit: Int = 5) -> [ConfigurationSnapshot] {
-        activation.history(limit: limit)
+        ruleManager.history(limit: limit)
     }
 }

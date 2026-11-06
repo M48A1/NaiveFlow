@@ -9,6 +9,7 @@ import Foundation
 
 nonisolated enum TunnelMessage: Codable, Sendable {
     case testLatency(ProxyConfiguration)
+    case fetchRuntimeStatus
     case fetchStats
     case resetStats
     case fetchLogs

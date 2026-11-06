@@ -26,7 +26,13 @@ extension TunnelStack {
     /// a new event is a case in the coordinator instead of a second list of
     /// notification names here.
     func runSettingsObserver() async {
-        for await name in DarwinNotificationConcurrencyBridge.names(RuntimeCoordinator.Event.notificationNames) {
+        // Subscribe before reconciliation so an edit racing startup is either
+        // loaded by this pass or buffered by the observer, never lost in between.
+        let notifications = DarwinNotificationConcurrencyBridge.names(RuntimeCoordinator.Event.notificationNames)
+        for event in RuntimeCoordinator.reconciliationOrder {
+            await apply(RuntimeCoordinator.plan(for: event))
+        }
+        for await name in notifications {
             guard let event = RuntimeCoordinator.Event(notificationName: name) else { continue }
             await apply(RuntimeCoordinator.plan(for: event))
         }
@@ -40,6 +46,10 @@ extension TunnelStack {
             guard !action.requiresRunningPhase || phase == .running else { continue }
             switch action {
             case .reloadHostMappings: reloadHostMappings()
+            case .reloadDNS:
+                let ticket = runtime.begin(.dns)
+                reloadDNSConfiguration()
+                runtime.complete(ticket)
             case .reloadSettings: reloadSettings()
             case .reloadRouting: await reloadRouting()
             case .reloadMITM: reloadMITM()
@@ -57,17 +67,21 @@ extension TunnelStack {
         DNSHosts.shared.invalidate()
     }
 
-    /// Re-reads everything the settings file can change while the stack runs.
-    ///
-    /// Only the fields the data plane caches are republished — the rest read the
-    /// store on demand — and a different proxy mode is the one change that cannot
-    /// be applied in place, so it rebuilds the stack instead.
+    /// Upstream getters are dynamic; flushing removes answers from old inputs.
+    func reloadDNSConfiguration() {
+        DNSHosts.shared.invalidate()
+        DNSResolver.localRequests.flush()
+        DNSResolver.proxies.flush()
+        ECHResolver.shared.flush()
+    }
+
     private func reloadSettings() {
         guard let configuration else { return }
 
         let old = settings
         let new = TunnelSettings.load()
         guard new != old else { return }
+        let ticket = runtime.begin(.outbound)
         settings = new
 
         publishUDPConfig()
@@ -77,6 +91,7 @@ extension TunnelStack {
         }
         if new.preventDNSLeak != old.preventDNSLeak {
             connectionRouter.preventDNSLeak.store(new.preventDNSLeak, ordering: .relaxed)
+            publishOutboundRoutingContext(configuration: configuration)
         }
         if new.reflectionEnabled != old.reflectionEnabled {
             publishReflectionEnabled()
@@ -91,6 +106,8 @@ extension TunnelStack {
 
         if computeEffectiveProxyMode() != proxyMode {
             restartStack(configuration: configuration)
+        } else {
+            runtime.complete(ticket)
         }
     }
 
@@ -102,29 +119,42 @@ extension TunnelStack {
     /// payload.
     private func reloadRouting() async {
         guard proxyMode == .rule else { return }
+        let ticket = runtime.begin(.rule)
         let compiled = await domainRouter.compileRoutingConfiguration()
-        guard phase == .running, proxyMode == .rule else { return }
+        guard phase == .running, proxyMode == .rule, runtime.accepts(ticket) else { return }
         domainRouter.install(compiled)
+        runtime.complete(ticket)
         connectionRouter.clearRejectMarks()
         recordEngineConfirmation()
     }
 
     /// Re-reads the MITM policy and republishes it to the UDP plane.
     private func reloadMITM() {
+        let ticket = runtime.begin(.mitm)
         loadMITMSetting()
         publishUDPConfig()
+        runtime.complete(ticket)
     }
 
     /// Switches the data plane to the node the host selected.
     private func reloadActiveConfiguration() {
+        let ticket = runtime.begin(.outbound)
         let active: ProxyConfiguration?
         do {
             active = try ActiveConfiguration.load()
         } catch {
             logger.report(RuleProxyError.store(.corrupted(.configurations, detail: RuleProxyError.describe(error))))
+            runtime.fail(ticket, message: "Could not load the outbound configuration.")
             return
         }
-        guard let active else { return }
-        applyConfiguration(active)
+        guard let active else {
+            runtime.fail(ticket, message: "No active outbound configuration is published.")
+            return
+        }
+        if active == configuration {
+            runtime.complete(ticket)
+        } else {
+            applyConfiguration(active)
+        }
     }
 }

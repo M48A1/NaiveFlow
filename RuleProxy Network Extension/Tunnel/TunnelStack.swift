@@ -236,7 +236,10 @@ actor TunnelStack {
 
     // MARK: - Lifecycle State
 
-    private(set) var phase: TunnelPhase = .idle
+    var runtime = RuntimeCoordinator.State()
+    var phase: TunnelPhase { runtime.phase }
+
+    func runtimeStatus() -> RuntimeCoordinator.Status { runtime.status }
 
     nonisolated let publishedPhase = Atomic<TunnelPhase>(.idle)
 
@@ -245,7 +248,7 @@ actor TunnelStack {
     @discardableResult
     func transition(to new: TunnelPhase) -> Bool {
         let old = phase
-        guard TunnelPhase.transition(&phase, to: new) else {
+        guard runtime.transition(to: new) else {
             if new != .starting {
                 logger.error("[TunnelStack] Invalid transition: \(old) → \(new)")
             }
@@ -503,29 +506,34 @@ actor TunnelStack {
         precompiledRouting: DomainRouter.CompiledRouting? = nil
     ) {
         settings = TunnelSettings.load()
-        DNSHosts.shared.invalidate()
-        connectionRouter.preventDNSLeak.store(settings.preventDNSLeak, ordering: .relaxed)
-        proxyMode = Self.effectiveProxyMode(settings: settings, network: networkContext)
-
-        defaultRouteTarget = proxyMode == .direct ? .direct : .proxy(configuration.id)
-        requestLog.setDefaultRouteTarget(defaultRouteTarget)
-
-        loadMITMSetting()
-
-        ConnectionMetrics.shared.setDefaultServer(configuration.id)
-
-        publishUDPConfig()
-        publishReflectionEnabled()
-        publishOutboundRoutingContext(configuration: configuration)
-
-        if proxyMode == .rule {
-            if let precompiledRouting {
-                domainRouter.install(precompiledRouting)
-            } else {
-                domainRouter.loadRoutingConfiguration()
+        for module in RuntimeCoordinator.configurationOrder {
+            let ticket = runtime.begin(module)
+            switch module {
+            case .dns:
+                reloadDNSConfiguration()
+                connectionRouter.preventDNSLeak.store(settings.preventDNSLeak, ordering: .relaxed)
+                proxyMode = Self.effectiveProxyMode(settings: settings, network: networkContext)
+            case .mitm:
+                loadMITMSetting()
+            case .outbound:
+                defaultRouteTarget = proxyMode == .direct ? .direct : .proxy(configuration.id)
+                requestLog.setDefaultRouteTarget(defaultRouteTarget)
+                ConnectionMetrics.shared.setDefaultServer(configuration.id)
+                publishUDPConfig()
+                publishReflectionEnabled()
+                publishOutboundRoutingContext(configuration: configuration)
+            case .rule:
+                if proxyMode == .rule {
+                    if let precompiledRouting {
+                        domainRouter.install(precompiledRouting)
+                    } else {
+                        domainRouter.loadRoutingConfiguration()
+                    }
+                } else {
+                    domainRouter.reset()
+                }
             }
-        } else {
-            domainRouter.reset()
+            runtime.complete(ticket)
         }
     }
 

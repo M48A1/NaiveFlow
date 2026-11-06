@@ -64,10 +64,8 @@ nonisolated enum ConfigurationValidator {
         "client-source-address",
     ]
 
-    /// Keys the catalog recognizes so a real Surge profile imports, but which the
-    /// engine does not act on yet. Each one is reported instead of silently doing
-    /// nothing — a setting that looks applied but changes no behavior is worse
-    /// than a rejected one.
+    /// Reserved names that have no runtime binding. They remain readable for
+    /// diagnostics and editing, but are errors at activation.
     static var acceptedGeneralKeys: Set<String> {
         Set(ConfigurationSettings.unappliedKeys.map(\.name))
     }
@@ -113,7 +111,7 @@ nonisolated enum ConfigurationValidator {
             guard let definition = ConfigurationSettings.key(named: key) else {
                 diagnostics.append(
                     ConfigurationDiagnostic(
-                        severity: .warning,
+                        severity: .error,
                         code: .unknownGeneralKey,
                         line: nil,
                         section: ConfigurationDocument.SectionKind.general.displayName,
@@ -166,7 +164,7 @@ nonisolated enum ConfigurationValidator {
         for name in configuration.unsupportedSections {
             diagnostics.append(
                 ConfigurationDiagnostic(
-                    severity: .info,
+                    severity: .error,
                     code: .unknownSection,
                     section: name,
                     message: "Section [\(name)] is preserved but has no effect in this build."
@@ -177,9 +175,8 @@ nonisolated enum ConfigurationValidator {
 
     /// Settings this build parses and keeps but does not apply.
     ///
-    /// Reported as warnings so a profile cannot look fully honored while half of
-    /// it is inert; the keys stay accepted so importing a real Surge profile
-    /// reports what will happen instead of rejecting the document.
+    /// Preserved in drafts, rejected on activation. The format belongs to
+    /// NaiveFlow; accepting an inert directive is not a compatibility feature.
     private static func validateAcceptedButUnapplied(
         _ configuration: ParsedConfiguration,
         diagnostics: inout [ConfigurationDiagnostic]
@@ -187,7 +184,7 @@ nonisolated enum ConfigurationValidator {
         for key in configuration.general.keys where acceptedGeneralKeys.contains(key) {
             diagnostics.append(
                 ConfigurationDiagnostic(
-                    severity: .warning,
+                    severity: .error,
                     code: .notApplied,
                     section: ConfigurationDocument.SectionKind.general.displayName,
                     message: "General setting '\(key)' is recognized but this build does not apply it yet."
@@ -198,7 +195,7 @@ nonisolated enum ConfigurationValidator {
         for key in configuration.mitm.keys where acceptedMITMKeys.contains(key) {
             diagnostics.append(
                 ConfigurationDiagnostic(
-                    severity: .warning,
+                    severity: .error,
                     code: .notApplied,
                     section: ConfigurationDocument.SectionKind.mitm.displayName,
                     message: "MITM setting '\(key)' is recognized but this build does not apply it yet."
@@ -206,10 +203,18 @@ nonisolated enum ConfigurationValidator {
             )
         }
 
+        for rewrite in configuration.rewrites {
+            diagnostics.append(ConfigurationDiagnostic(
+                severity: .error, code: .notApplied, line: rewrite.line,
+                section: rewrite.section,
+                message: "Text rewrite directives are not installed by this build."
+            ))
+        }
+
         for script in configuration.scripts {
             diagnostics.append(
                 ConfigurationDiagnostic(
-                    severity: .warning,
+                    severity: .error,
                     code: .notApplied,
                     line: script.line,
                     section: ConfigurationDocument.SectionKind.script.displayName,
@@ -259,7 +264,7 @@ nonisolated extension ConfigurationValidator {
                     )
                 }
             case .fields(let type, let server, let port, _):
-                if !SurgeConfigurationParser.supportedProxyTypes.contains(type) {
+                if !NaiveFlowConfigurationParser.supportedProxyTypes.contains(type) {
                     diagnostics.append(
                         ConfigurationDiagnostic(
                             severity: .error,
@@ -342,7 +347,7 @@ nonisolated extension ConfigurationValidator {
             if !capabilities.groupKinds.contains(kind) {
                 diagnostics.append(
                     ConfigurationDiagnostic(
-                        severity: .warning,
+                        severity: .error,
                         code: .unsupportedRuleType,
                         line: group.line,
                         section: ConfigurationDocument.SectionKind.proxyGroup.displayName,
@@ -487,7 +492,7 @@ nonisolated extension ConfigurationValidator {
             if !capabilities.supportsFinal {
                 diagnostics.append(
                     ConfigurationDiagnostic(
-                        severity: .warning,
+                        severity: .error,
                         code: .unsupportedRuleType,
                         line: final.line,
                         section: ConfigurationDocument.SectionKind.rule.displayName,
@@ -674,7 +679,7 @@ nonisolated extension ConfigurationValidator {
             case .extendedMatching, .preMatching, .dnsFailed, .forceRemoteDNS:
                 diagnostics.append(
                     ConfigurationDiagnostic(
-                        severity: .info,
+                        severity: .error,
                         code: .unsupportedRuleOption,
                         line: rule.line,
                         section: ConfigurationDocument.SectionKind.rule.displayName,
@@ -682,7 +687,11 @@ nonisolated extension ConfigurationValidator {
                     )
                 )
             case .unknown:
-                break
+                diagnostics.append(ConfigurationDiagnostic(
+                    severity: .error, code: .unsupportedRuleOption, line: rule.line,
+                    section: ConfigurationDocument.SectionKind.rule.displayName,
+                    message: "Unknown rule option '\(option.token)'."
+                ))
             }
         }
     }
@@ -756,7 +765,7 @@ nonisolated extension ConfigurationValidator {
         for key in configuration.mitm.keys where !knownMITMKeys.contains(key) {
             diagnostics.append(
                 ConfigurationDiagnostic(
-                    severity: .warning,
+                    severity: .error,
                     code: .unknownGeneralKey,
                     section: ConfigurationDocument.SectionKind.mitm.displayName,
                     message: "MITM setting '\(key)' is not recognized and is ignored."

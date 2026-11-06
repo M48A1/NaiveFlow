@@ -18,18 +18,9 @@ import Foundation
 /// changes. Everything the coordinator says about a document is expressed in
 /// these terms, which is what lets the editor and the installer agree without
 /// either of them knowing what the other shows.
-nonisolated enum ConfigurationModule: String, CaseIterable, Identifiable, Sendable, Hashable {
-    /// `[Rule]`: which connection goes where (`routing.bin`, `DomainRouter`).
-    case rule
-    /// `[General]` DNS keys and `[Host]`: how a name is resolved.
-    case dns
-    /// `[MITM]`: interception and the trusted certificate list.
-    case mitm
-    /// `[Proxy]`, `[Proxy Group]` and the TUN keys: what carries a connection.
-    case outbound
+typealias ConfigurationModule = RuntimeCoordinator.Module
 
-    var id: String { rawValue }
-
+nonisolated extension ConfigurationModule {
     var title: String {
         switch self {
         case .rule: return String(localized: "Rule")
@@ -219,6 +210,20 @@ nonisolated struct ConfigurationCoordinator: Sendable {
 
 nonisolated extension ConfigurationCoordinator {
 
+    /// The single compilation boundary, including syntax diagnostics. A parser
+    /// error must never disappear merely because an invalid entry was omitted.
+    func compile(text: String) -> TextConfigurationPipeline.Result {
+        let parsed = RuleManager.parse(text)
+        return TextConfigurationPipeline.Result(
+            document: parsed.document,
+            parsed: parsed.configuration,
+            compiled: ConfigurationCompiler.compile(
+                parsed.configuration, capabilities: capabilities,
+                parsingDiagnostics: parsed.diagnostics
+            )
+        )
+    }
+
     /// What one module gets out of a document.
     struct ModuleReport: Sendable, Equatable, Identifiable {
         let module: ConfigurationModule
@@ -284,7 +289,7 @@ nonisolated extension ConfigurationCoordinator {
 
     /// Compiles the text and reports it per module.
     func prepare(text: String) -> Preparation {
-        prepare(TextConfigurationPipeline.process(text: text, capabilities: capabilities))
+        prepare(compile(text: text))
     }
 
     /// Reports a document that was already compiled by the same pipeline.
@@ -421,13 +426,22 @@ nonisolated extension ConfigurationCoordinator {
 
         /// The notifications the host posts after installing the document.
         ///
-        /// Exactly the two posts the installer relied on before this type
-        /// existed, now derived from the modules instead of from a bare field
-        /// list: any settings change is one `tunnelSettingsChanged`, and a MITM
-        /// change additionally announces itself so the extension reloads
-        /// interception.
+        /// Settings and payload changes both participate. The installer publishes
+        /// settings after writing them; binary exporters and node publication
+        /// post their events only after their respective resources are ready.
         var announcements: [Announcement] {
-            ConfigurationCoordinator.announcements(for: reload)
+            var events = ConfigurationCoordinator.announcements(for: reload)
+            for change in changes where change.payloadChanged {
+                let event: Announcement
+                switch change.module {
+                case .dns: event = .settings
+                case .rule: event = .routing
+                case .mitm: event = .mitm
+                case .outbound: event = .activeConfiguration
+                }
+                if !events.contains(event) { events.append(event) }
+            }
+            return events
         }
 
         var summary: String {
@@ -446,8 +460,8 @@ nonisolated extension ConfigurationCoordinator {
     ///
     /// - Parameters:
     ///   - previous: what the engine last activated, when the caller knows it.
-    ///     `nil` means the payload of every module the document describes counts
-    ///     as new, because there is nothing to compare it against.
+    ///     `nil` treats nonempty payloads as new. `currentHosts` lets the installer
+    ///     compare with the actual shared table, including removing its last entry.
     ///   - next: the document being activated.
     ///   - running: the `[General]` values in use, i.e. the base a settings change
     ///     is measured against. Defaults to the live settings, which is what the
@@ -455,16 +469,27 @@ nonisolated extension ConfigurationCoordinator {
     func plan(
         from previous: CompiledConfiguration?,
         to next: CompiledConfiguration,
-        running: CompiledSettings = .current()
+        running: CompiledSettings = .current(),
+        currentHosts: [HostMapping]? = nil
     ) -> Plan {
         let reload = ConfigurationReloadPlan.make(from: running, to: next.settings)
 
         var changes: [Change] = []
         for module in ConfigurationModule.allCases {
             let owned = reload.changes.filter { ConfigurationModule.owning(setting: $0.field) == module }
-            let payloadChanged = previous.map {
-                ConfigurationCoordinator.payloadChanged(from: $0, to: next, module: module)
-            } ?? true
+            let payloadChanged: Bool
+            if module == .dns, let currentHosts {
+                payloadChanged = Set(currentHosts) != Set(next.hosts)
+            } else if let previous {
+                payloadChanged = Self.payloadChanged(from: previous, to: next, module: module)
+            } else {
+                switch module {
+                case .rule: payloadChanged = !next.orderedRules.isEmpty
+                case .dns: payloadChanged = !next.hosts.isEmpty
+                case .outbound: payloadChanged = !next.proxies.isEmpty || !next.proxyGroups.isEmpty
+                case .mitm: payloadChanged = false
+                }
+            }
 
             guard !owned.isEmpty || payloadChanged else { continue }
             changes.append(
@@ -545,8 +570,8 @@ nonisolated extension ConfigurationCoordinator {
     ///
     /// Compared by content, never by identity: every compile mints new node and
     /// group ids (and new timestamps), so ids cannot be compared across
-    /// documents. Rules keep their source line and their action, so they compare
-    /// directly.
+    /// documents. Rule actions are normalized to names and comments/source-line
+    /// shifts are ignored, while rule order remains significant.
     static func payloadChanged(
         from previous: CompiledConfiguration,
         to next: CompiledConfiguration,
@@ -554,8 +579,8 @@ nonisolated extension ConfigurationCoordinator {
     ) -> Bool {
         switch module {
         case .rule:
-            return previous.orderedRules != next.orderedRules
-                || previous.finalAction != next.finalAction
+            return ruleSignatures(previous) != ruleSignatures(next)
+                || actionName(previous.finalAction, in: previous) != actionName(next.finalAction, in: next)
         case .dns:
             return Set(previous.hosts) != Set(next.hosts)
         case .outbound:
@@ -570,14 +595,45 @@ nonisolated extension ConfigurationCoordinator {
 
     /// Name, endpoint and protocol per node: what switching to another node list
     /// actually changes.
-    private static func nodeSignatures(_ compiled: CompiledConfiguration) -> [String] {
-        compiled.proxies.map { proxy in
-            [
-                proxy.name,
-                proxy.serverAddress,
-                String(proxy.serverPort),
-                proxy.outboundProtocol.rawValue
-            ].joined(separator: "|")
+    private struct NodeSignature: Equatable {
+        let name: String
+        let address: String
+        let port: UInt16
+        let outbound: Outbound
+        let chain: [NodeSignature]
+
+        init(_ proxy: ProxyConfiguration) {
+            name = proxy.name
+            address = proxy.serverAddress
+            port = proxy.serverPort
+            outbound = proxy.outbound
+            chain = (proxy.chain ?? []).map(NodeSignature.init)
+        }
+    }
+
+    private static func nodeSignatures(_ compiled: CompiledConfiguration) -> [NodeSignature] {
+        compiled.proxies.map(NodeSignature.init)
+    }
+
+    private struct RuleSignature: Equatable {
+        let matcher: OrderedRoutingRule.Matcher
+        let action: String
+        let noResolve: Bool
+    }
+
+    private static func ruleSignatures(_ compiled: CompiledConfiguration) -> [RuleSignature] {
+        compiled.orderedRules.map {
+            RuleSignature(matcher: $0.matcher, action: actionName($0.action, in: compiled), noResolve: $0.noResolve)
+        }
+    }
+
+    private static func actionName(_ action: RouteMatchAction, in compiled: CompiledConfiguration) -> String {
+        switch action {
+        case .direct: return "builtin:direct"
+        case .reject: return "builtin:reject"
+        case .defaultProxy: return "builtin:proxy"
+        case .proxy(let id):
+            return "node:" + (compiled.proxies.first { $0.id == id }?.name ?? id.uuidString)
         }
     }
 

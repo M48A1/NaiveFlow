@@ -109,7 +109,7 @@ final class TunnelController {
         guard let configuration else {
             guard AWCore.getActiveConfigurationData() != nil else { return }
             try? ActiveConfiguration.store(nil)
-            AWNotificationCenter.notifyActiveConfigurationChanged()
+            ConfigurationCoordinator.Announcement.activeConfiguration.post()
             return
         }
 
@@ -132,7 +132,7 @@ final class TunnelController {
             logger.report("[Tunnel] Active configuration encode failed", error: error)
             return
         }
-        AWNotificationCenter.notifyActiveConfigurationChanged()
+        ConfigurationCoordinator.Announcement.activeConfiguration.post()
     }
 
     // MARK: - Provider IPC
