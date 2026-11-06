@@ -16,6 +16,7 @@ nonisolated private let logger = RuleProxyLogger(category: "TunnelController")
 final class TunnelController {
     private(set) var rawStatus: NEVPNStatus = .disconnected
     var status: VPNStatus { VPNStatus(rawStatus) }
+    var hasRunningTunnel: Bool { rawStatus == .connected || rawStatus == .connecting || rawStatus == .reasserting }
     private(set) var isManagerReady = false
     var startError: String?
     private(set) var pendingReconnect = false
@@ -55,6 +56,10 @@ final class TunnelController {
     func connect(using configuration: ProxyConfiguration) {
         guard isManagerReady else { return }
         Task {
+            if let head = try? RuntimeBundleStore().head(),
+               let version = try? RuntimeBundleStore().load(head.current) {
+                AWCore.installRuntimePreferences(version.preferences)
+            }
             await publish(configuration, refreshingIP: true)
             do {
                 var request = TunnelStartRequest()
@@ -133,6 +138,54 @@ final class TunnelController {
             return
         }
         ConfigurationCoordinator.Announcement.activeConfiguration.post()
+    }
+
+    /// Apply a complete version. Connection-level NE preferences participate by
+    /// reconnecting the provider; ordinary module changes use one provider IPC.
+    func applyRuntimeVersion(_ bundle: RuntimeConfigurationBundle, requireRunning: Bool) async throws -> RuntimeConfigurationReceipt? {
+        await provider.prepare()
+        let wasUp = provider.status == .connected || provider.status == .connecting || provider.status == .reasserting
+        guard wasUp || requireRunning else { return nil }
+        let started = Date()
+        let statusData = await send(.fetchRuntimeStatus)
+        let runtimeStatus = statusData.flatMap { try? JSONDecoder().decode(RuntimeCoordinator.Status.self, from: $0) }
+        let activeID = runtimeStatus?.versionID.flatMap(UUID.init(uuidString:))
+        let oldBundle = (activeID ?? bundle.parentID).flatMap { try? RuntimeBundleStore().load($0) }
+        let reconnectKeys = ["alwaysOnEnabled", "tunnelIncludeAllNetworks", "tunnelExcludeLocalNetworks",
+            "tunnelExcludeAPNs", "tunnelExcludeCellularServices", "tunnelExcludeDeviceCommunication"]
+        let reconnect = !wasUp || runtimeStatus?.phase != "running" || reconnectKeys.contains { oldBundle?.preferences[$0] != bundle.preferences[$0] }
+        AWCore.installRuntimePreferences(bundle.preferences)
+        if reconnect {
+            pendingReconnect = false
+            await provider.stop(disablingAlwaysOn: true)
+            let stopDeadline = Date().addingTimeInterval(15)
+            while provider.status != .disconnected && provider.status != .invalid {
+                guard Date() < stopDeadline else { throw RuntimeConfigurationFailure.unavailable }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            var request = TunnelStartRequest()
+            #if !os(tvOS)
+            request.includeAllNetworks = AWCore.getTunnelIncludeAllNetworks()
+            request.excludeLocalNetworks = AWCore.getTunnelExcludeLocalNetworks()
+            request.excludeAPNs = AWCore.getTunnelExcludeAPNs()
+            request.excludeCellularServices = AWCore.getTunnelExcludeCellularServices()
+            request.excludeDeviceCommunication = AWCore.getTunnelExcludeDeviceCommunication()
+            #endif
+            request.alwaysOn = AWCore.getAlwaysOnEnabled()
+            try await provider.start(request)
+        } else if let data = await send(.applyRuntimeVersion(bundle.id)),
+                  let receipt = try? JSONDecoder().decode(RuntimeConfigurationReceipt.self, from: data) {
+            return receipt
+        }
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            if let receipt = try RuntimeBundleStore().receipt(bundle.id), receipt.date >= started,
+               receipt.requestID == (try RuntimeBundleStore().head()?.requestID) {
+                return receipt
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        throw RuntimeConfigurationFailure.unavailable
     }
 
     // MARK: - Provider IPC

@@ -44,7 +44,30 @@ nonisolated final class ConnectionRouter: Sendable {
         self.domainRouter = domainRouter
     }
 
-    func decision(forIP ip: String) -> RouteDecision {
+    func decision(forIP ip: String, sourceIP: String? = nil, sourcePort: UInt16? = nil,
+                  destinationPort: UInt16? = nil, protocolName: String? = nil, allowAddressResolution: Bool = true) -> RouteDecision {
+        if domainRouter.usesNativeRules {
+            let synthetic = SyntheticAddressPool.isSyntheticAddress(ip)
+            let host = synthetic ? syntheticAddressPool.lookup(ip: ip)?.domain : nil
+            if synthetic && host == nil {
+                return RouteDecision(host: ip, hostIsResolvedDomain: false, action: .unreachable)
+            }
+            let resolved = synthetic ? host.flatMap { DNSResolver.localRequests.cachedIPs(for: $0, family: .ipv4)?.first } : ip
+            let query = RouteQuery(host: host, ip: resolved, sourceIP: sourceIP, sourcePort: sourcePort,
+                                   destinationPort: destinationPort, protocolName: protocolName)
+            switch domainRouter.nativeDecision(query, allowResolution: allowAddressResolution && !preventDNSLeak.load(ordering: .relaxed)) {
+            case .matched(let result):
+                return RouteDecision(host: host ?? ip, hostIsResolvedDomain: synthetic,
+                                     action: action(for: DomainRouter.nativeMatch(result)))
+            case .needsAddress:
+                if let host { DNSResolver.localRequests.prewarm(host, family: .ipv4) }
+                return RouteDecision(host: host ?? ip, hostIsResolvedDomain: synthetic,
+                                     action: .route(target: .default, configuration: nil, ruleSetName: nil), ipRuleLookupPending: true)
+            default:
+                return RouteDecision(host: host ?? ip, hostIsResolvedDomain: synthetic,
+                                     action: .route(target: .default, configuration: nil, ruleSetName: nil))
+            }
+        }
         guard SyntheticAddressPool.isSyntheticAddress(ip) else {
             guard let match = domainRouter.matchIP(ip) else {
                 return RouteDecision(host: ip, hostIsResolvedDomain: false, action: .route(target: .default, configuration: nil, ruleSetName: nil))

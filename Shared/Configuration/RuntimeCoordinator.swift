@@ -11,7 +11,7 @@ import Synchronization
 /// Owns kernel lifecycle state, module ordering and configuration reload plans.
 /// TunnelStack is the actor-isolated adapter that executes these decisions.
 ///
-/// The extension reloads four things while it runs — the settings it reads from
+/// Manual mode reloads four inputs independently — the settings it reads from
 /// the shared container, the routing payload, the MITM policy, and the selected
 /// node — and each of those arrives as a Darwin notification. Before this type,
 /// the notification name, its guard and its reload steps were spelled out inline
@@ -27,6 +27,9 @@ import Synchronization
 /// vocabulary to the other lives where both exist. A notification the host posts
 /// that no event here recognizes is then a test failure instead of a silent
 /// no-op in the extension.
+///
+/// Native text mode publishes one version notification; TunnelStack validates,
+/// gates the data plane, and installs or restores all module inputs together.
 ///
 /// The coordinator decides *what* to reload and *in which order*
 /// (`TunnelStack+Runtime` performs the reloading, because that part needs the
@@ -127,6 +130,8 @@ nonisolated enum RuntimeCoordinator {
     /// "Ready" means the module adapter has loaded its current inputs; this is
     /// not an acknowledgement that all independent stores form one snapshot.
     struct Status: Codable, Equatable, Sendable {
+        var versionID: String? = nil
+        var pendingVersionID: String? = nil
         let phase: String
         let epoch: UInt64
         let readyModules: [String]
@@ -157,6 +162,7 @@ nonisolated enum RuntimeCoordinator {
     /// Something the host announced.
     enum Event: String, CaseIterable, Sendable, Hashable {
         /// The node list or the selected node changed.
+        case configurationVersion
         case activeConfiguration
         /// `[General]` values changed (DNS, TUN, QUIC, mode, …).
         case settings
@@ -168,6 +174,7 @@ nonisolated enum RuntimeCoordinator {
         /// The Darwin notification that triggers this event.
         var notificationName: CFString {
             switch self {
+            case .configurationVersion: return AWNotificationCenter.Notification.configurationVersionChanged
             case .activeConfiguration: return AWNotificationCenter.Notification.activeConfigurationChanged
             case .settings: return AWNotificationCenter.Notification.tunnelSettingsChanged
             case .routing: return AWNotificationCenter.Notification.routingChanged
@@ -203,6 +210,7 @@ nonisolated extension RuntimeCoordinator {
     /// One unit of reload work.
     enum Action: String, CaseIterable, Sendable, Hashable {
         /// Drop the cached host overrides so the next lookup reads them again.
+        case reloadConfigurationVersion
         case reloadHostMappings
         /// Flush process-local DNS/ECH caches after upstream or Host changes.
         case reloadDNS
@@ -226,7 +234,7 @@ nonisolated extension RuntimeCoordinator {
             switch self {
             case .reloadHostMappings:
                 return false
-            case .reloadDNS, .reloadSettings, .reloadRouting, .reloadMITM, .reloadActiveConfiguration, .revalidateQUIC:
+            case .reloadConfigurationVersion, .reloadDNS, .reloadSettings, .reloadRouting, .reloadMITM, .reloadActiveConfiguration, .revalidateQUIC:
                 return true
             }
         }
@@ -256,6 +264,8 @@ nonisolated extension RuntimeCoordinator {
     /// The work one announcement turns into.
     static func plan(for event: Event) -> Plan {
         switch event {
+        case .configurationVersion:
+            return Plan(event: event, actions: [.reloadConfigurationVersion])
         case .activeConfiguration:
             return Plan(event: event, actions: [.reloadActiveConfiguration])
         case .settings:

@@ -34,6 +34,7 @@ nonisolated final class DomainRouter: Sendable {
 
     fileprivate struct RoutingState: Sendable {
         var matcher = TieredRouteMatcher<RulePayload>(tierCount: Tier.allCases.count)
+        var ordered: OrderedRouteMatcher?
         var configurationMap: [UUID: ProxyConfiguration] = [:]
         var ruleSetNames: [String] = []
         var version: UInt64 = 1
@@ -121,9 +122,9 @@ nonisolated final class DomainRouter: Sendable {
         _ = replaceRoutingState(with: compiled.state)
     }
 
-    private static func makeRoutingState() -> RoutingState {
+    private static func makeRoutingState(data: Data? = AWCore.getRoutingData()) -> RoutingState {
         var state = RoutingState()
-        guard let data = AWCore.getRoutingData() else { return state }
+        guard let data else { return state }
 
         do {
             let unresolvedEntries = try data.withUnsafeBytes { raw -> [Int] in
@@ -329,10 +330,39 @@ nonisolated final class DomainRouter: Sendable {
         }
     }
 
+    func installBaseline(_ data: Data?) {
+        _ = replaceRoutingState(with: Self.makeRoutingState(data: data))
+    }
+
+    func installNative(_ bundle: RuntimeConfigurationBundle) {
+        var state = RoutingState()
+        state.ordered = OrderedRouteMatcher(rules: bundle.rules ?? [], finalAction: bundle.finalAction,
+            geoIP: bundle.geo, geoSite: bundle.geo)
+        state.configurationMap = Dictionary(uniqueKeysWithValues: bundle.nodes.map { ($0.id, $0) })
+        _ = replaceRoutingState(with: state)
+    }
+
+    var usesNativeRules: Bool { routingState.withLock { $0.ordered != nil } }
+
+    func nativeDecision(_ query: RouteQuery, allowResolution: Bool = true) -> OrderedRouteMatcher.Evaluation? {
+        routingState.withLock { $0.ordered?.evaluate(query, allowAddressResolution: allowResolution) }
+    }
+
+    static func nativeMatch(_ result: OrderedRouteMatcher.Result) -> Match {
+        let target: RouteTarget
+        switch result.action {
+        case .direct: target = .direct
+        case .reject: target = .reject
+        case .defaultProxy: target = .defaultProxy
+        case .proxy(let id): target = .proxy(id)
+        }
+        return Match(action: target, ruleSetName: result.ruleLine.map { "Text line \($0)" } ?? "FINAL")
+    }
+
     // MARK: - Matching
 
     var hasRules: Bool {
-        routingState.withLock { $0.matcher.hasRules }
+        routingState.withLock { $0.ordered != nil || $0.matcher.hasRules }
     }
 
     func matchDomain(_ domain: String) -> Match? {
@@ -343,6 +373,13 @@ nonisolated final class DomainRouter: Sendable {
         guard !domain.isEmpty else { return (nil, currentRulesVersion) }
         var lowered = RouteMatching.asciiLowercasedIfNeeded(domain)
         return routingState.withLock { state in
+            if let ordered = state.ordered {
+                let match: Match?
+                if case .matched(let result) = ordered.evaluate(RouteQuery(host: domain), allowFinal: false) {
+                    match = Self.nativeMatch(result)
+                } else { match = nil }
+                return (match, state.version)
+            }
             let payload = lowered.withUTF8 { state.matcher.matchDomain(bytes: $0) }
             return (state.match(resolving: payload), state.version)
         }
@@ -350,6 +387,10 @@ nonisolated final class DomainRouter: Sendable {
 
     func matchIP(_ ip: String) -> Match? {
         routingState.withLock { state in
+            if let ordered = state.ordered {
+                if case .matched(let result) = ordered.evaluate(RouteQuery(ip: ip)) { return Self.nativeMatch(result) }
+                return nil
+            }
             let payload = state.matcher.matchIP(ip)
             return state.match(resolving: payload)
         }

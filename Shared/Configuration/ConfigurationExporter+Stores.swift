@@ -111,6 +111,7 @@ extension ConfigurationExportSource {
             settings: Self.exportSettings(),
             mitmEnabled: mitmRuleSetStore.isEnabled,
             mitmHostnames: Self.exportMITMHostnames(from: mitmRuleSetStore),
+            mitmRuleSets: (moduleStore?.exportedMITMRuleSets ?? []) + mitmRuleSetStore.ruleSets,
             notes: notes
         )
     }

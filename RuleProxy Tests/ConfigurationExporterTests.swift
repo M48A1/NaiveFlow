@@ -70,10 +70,10 @@ struct ConfigurationExporterTests {
         #expect(text.contains("DOMAIN-SUFFIX, example.com, Auto"))
         #expect(text.contains("IP-CIDR, 10.0.0.0/8, Auto"))
         #expect(text.contains("[Host]\nexample.com = 1.2.3.4"))
-        #expect(!text.contains("[MITM]"))
+        #expect(text.contains("[MITM]\nenable = true\nhostname = example.com"))
         #expect(text.contains("mitm = true"))
 
-        let order = ["[General]", "[Proxy]", "[Proxy Group]", "[Rule]", "[Host]"]
+        let order = ["[General]", "[Proxy]", "[Proxy Group]", "[Rule]", "[Host]", "[MITM]"]
         let offsets = order.compactMap { text.range(of: $0)?.lowerBound }
         #expect(offsets.count == order.count)
         #expect(offsets == offsets.sorted())
@@ -82,18 +82,18 @@ struct ConfigurationExporterTests {
         #expect(result.counts.groups == 1)
         #expect(result.counts.rules == 2)
         #expect(result.counts.hosts == 1)
-        #expect(result.notes.contains { $0.contains("MITM") })
+        #expect(result.notes.isEmpty)
     }
 
-    @Test func unsupportedFinalIsReportedInsteadOfExported() {
+    @Test func finalPolicyIsExportedAndApplied() {
         let exported = bannerlessExport(source(), finalPolicy: "DIRECT")
         let text = exported.text
 
         let ruleLines = text
             .components(separatedBy: "\n")
             .filter { $0.hasPrefix("DOMAIN-SUFFIX") || $0.hasPrefix("IP-CIDR") || $0.hasPrefix("FINAL") }
-        #expect(!ruleLines.contains { $0.hasPrefix("FINAL") })
-        #expect(exported.notes.contains { $0.contains("FINAL") })
+        #expect(ruleLines.last == "FINAL, DIRECT")
+        #expect(TextConfigurationPipeline.process(text: text).compiled.finalAction == .direct)
     }
 
     @Test func bannerCanBeTurnedOff() {

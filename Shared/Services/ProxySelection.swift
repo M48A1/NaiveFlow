@@ -12,6 +12,10 @@ import Observation
 @Observable
 final class ProxySelection {
     private(set) var selectedConfiguration: ProxyConfiguration?
+    private(set) var runtimeConfiguration: ProxyConfiguration?
+    var usesRuntimeVersion: Bool { runtimeConfiguration != nil }
+    var effectiveConfiguration: ProxyConfiguration? { runtimeConfiguration ?? selectedConfiguration }
+    func showRuntimeVersion(_ bundle: RuntimeConfigurationBundle) { runtimeConfiguration = bundle.selectedNode }
     private(set) var selectedChainId: UUID?
 
     // MARK: - Mutations

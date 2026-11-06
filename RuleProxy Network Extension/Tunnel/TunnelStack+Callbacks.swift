@@ -92,12 +92,13 @@ extension TunnelStack {
     }
 
     private func accept(_ pending: PendingConnection, generation: UInt64) -> TCPConnection? {
-        guard dataPlaneUp, dataPlaneGeneration.load(ordering: .acquiring) == generation, let defaultConfiguration = configuration else {
+        guard !configurationTransition.load(ordering: .acquiring), dataPlaneUp, dataPlaneGeneration.load(ordering: .acquiring) == generation, let defaultConfiguration = configuration else {
             pending.reject(); return nil
         }
         let dstIPString = pending.destination.address.description
         let dstPort = pending.destination.port
-        let decision = connectionRouter.decision(forIP: dstIPString)
+        let decision = connectionRouter.decision(forIP: dstIPString, sourceIP: pending.source.address.description,
+            sourcePort: pending.source.port, destinationPort: dstPort, protocolName: "TCP")
 
         var connectionConfiguration = defaultConfiguration
         var routeTarget: RouteTarget = .default
@@ -140,7 +141,8 @@ extension TunnelStack {
             routeTarget: routeTarget,
             ruleSetName: ruleSetName,
             sniffSNI: sniffSNI,
-            hostIsResolvedDomain: decision.hostIsResolvedDomain
+            hostIsResolvedDomain: decision.hostIsResolvedDomain,
+            sourceIP: pending.source.address.description, sourcePort: pending.source.port
         )
         tcpConnections.withLock { $0.insert(delegate) }
         return delegate

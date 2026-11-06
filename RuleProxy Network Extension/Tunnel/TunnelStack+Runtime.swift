@@ -42,9 +42,14 @@ extension TunnelStack {
 
     /// Runs a plan's actions in order, skipping the ones the phase rules out.
     func apply(_ plan: RuntimeCoordinator.Plan) async {
+        guard !configurationTransition.load(ordering: .acquiring) else { return }
+        // A version pins all inputs. Legacy exporters cannot partially overwrite
+        // it; publication is handled by the provider so OS settings participate.
+        if nativeBundle != nil, plan.event != .configurationVersion { return }
         for action in plan.actions {
             guard !action.requiresRunningPhase || phase == .running else { continue }
             switch action {
+            case .reloadConfigurationVersion: requestReapplyTunnelSettings()
             case .reloadHostMappings: reloadHostMappings()
             case .reloadDNS:
                 let ticket = runtime.begin(.dns)

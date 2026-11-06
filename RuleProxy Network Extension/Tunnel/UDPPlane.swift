@@ -33,6 +33,7 @@ actor UDPPlane {
     private var udpPressureLog = PressureEventThrottle(message: "[UDP] Flow table full")
 
     private struct PendingDatagrams {
+        let generation: UInt64
         var datagrams: [InboundDatagram] = []
         var byteCount = 0
     }
@@ -98,10 +99,13 @@ actor UDPPlane {
     }
 
     func feed(_ datagrams: [InboundDatagram]) async {
+        guard !stack.configurationTransition.load(ordering: .acquiring) else { return }
+        let generation = stack.dataPlaneGeneration.load(ordering: .acquiring)
         let udpConfig = stack.udpConfig()
         var batches: [FlowBatch] = []
         for datagram in datagrams {
-            guard stack.publishedPhase.load(ordering: .relaxed) == .running else { break }
+            guard generation == stack.dataPlaneGeneration.load(ordering: .acquiring), stack.publishedPhase.load(ordering: .relaxed) == .running,
+                  !stack.configurationTransition.load(ordering: .acquiring) else { break }
             if let flow = openFlow(for: datagram, udpConfig: udpConfig) {
                 if let index = batches.firstIndex(where: { $0.flow === flow }) {
                     batches[index].payloads.append(datagram.payload)
@@ -127,6 +131,7 @@ actor UDPPlane {
 
     private func deliver(_ batches: inout [FlowBatch]) async {
         for batch in batches {
+            guard !stack.configurationTransition.load(ordering: .acquiring) else { break }
             await batch.flow.handleReceivedData(batch.payloads)
         }
         batches.removeAll(keepingCapacity: true)
@@ -154,22 +159,26 @@ actor UDPPlane {
             return false
         }
 
-        pendingResolutions[flowKey] = PendingDatagrams(datagrams: [datagram],
+        let generation = stack.dataPlaneGeneration.load(ordering: .acquiring)
+        pendingResolutions[flowKey] = PendingDatagrams(generation: generation, datagrams: [datagram],
                                                        byteCount: datagram.payload.count)
         Task { [weak self] in
             _ = await DNSResolver.localRequests.resolveHost(domain, family: .ipv4)
-            await self?.resumeAfterResolution(flowKey: flowKey)
+            await self?.resumeAfterResolution(flowKey: flowKey, generation: generation)
         }
         return true
     }
 
-    private func resumeAfterResolution(flowKey: TunnelStack.UDPFlowKey) async {
-        guard let pending = pendingResolutions.removeValue(forKey: flowKey) else { return }
+    private func resumeAfterResolution(flowKey: TunnelStack.UDPFlowKey, generation: UInt64) async {
+        guard generation == stack.dataPlaneGeneration.load(ordering: .acquiring),
+              let pending = pendingResolutions[flowKey], pending.generation == generation else { return }
+        pendingResolutions.removeValue(forKey: flowKey)
         if pendingResolutionCapWarned, pendingResolutions.count <= TunnelLimits.udpMaxPendingResolutions / 2 {
             pendingResolutionCapWarned = false
         }
         for datagram in pending.datagrams {
-            guard stack.publishedPhase.load(ordering: .relaxed) == .running else { return }
+            guard stack.publishedPhase.load(ordering: .relaxed) == .running,
+                  !stack.configurationTransition.load(ordering: .acquiring) else { return }
             await handleInboundUDP(datagram, awaitedResolution: true)
         }
     }
@@ -179,6 +188,7 @@ actor UDPPlane {
         awaitedResolution: Bool = false,
         sniff: SniffStage = .pending
     ) async {
+        guard !stack.configurationTransition.load(ordering: .acquiring) else { return }
         let payload = datagram.payload
         let dstAddress = datagram.destination.address
         let dstPort = datagram.destination.port
@@ -231,7 +241,8 @@ actor UDPPlane {
 
         guard let defaultConfiguration = udpConfig.configuration else { return }
 
-        let decision = stack.connectionRouter.decision(forIP: dstAddress.description)
+        let decision = stack.connectionRouter.decision(forIP: dstAddress.description, sourceIP: datagram.source.address.description,
+            sourcePort: datagram.source.port, destinationPort: dstPort, protocolName: "UDP", allowAddressResolution: !awaitedResolution)
 
         let dstHost = decision.host
 
@@ -473,7 +484,8 @@ actor UDPPlane {
             return .finished(serverName: serverName)
         }
         for datagram in held + [datagram] {
-            guard stack.publishedPhase.load(ordering: .relaxed) == .running else { break }
+            guard stack.publishedPhase.load(ordering: .relaxed) == .running,
+                  !stack.configurationTransition.load(ordering: .acquiring) else { break }
             await handleInboundUDP(datagram, sniff: .done(serverName: serverName))
         }
         return .consumed
@@ -484,7 +496,8 @@ actor UDPPlane {
         pendingSniffs.removeValue(forKey: flowKey)
         notePendingSniffDrained()
         for datagram in pending.datagrams {
-            guard stack.publishedPhase.load(ordering: .relaxed) == .running else { return }
+            guard stack.publishedPhase.load(ordering: .relaxed) == .running,
+                  !stack.configurationTransition.load(ordering: .acquiring) else { return }
             await handleInboundUDP(datagram, sniff: .done(serverName: nil))
         }
     }
@@ -715,7 +728,8 @@ actor UDPPlane {
             flows.removeValue(forKey: flowKey)
         }
 
-        let decision = stack.connectionRouter.decision(forIP: upstream)
+        let decision = stack.connectionRouter.decision(forIP: upstream, sourceIP: datagram.source.address.description,
+            sourcePort: datagram.source.port, destinationPort: 53, protocolName: "UDP")
 
         var flowConfiguration = defaultConfiguration
         var routeTarget: RouteTarget = .default

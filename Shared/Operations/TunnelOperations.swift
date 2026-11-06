@@ -25,7 +25,7 @@ struct TunnelOperations {
     }
 
     func connect() {
-        guard let configuration = selection.selectedConfiguration else { return }
+        guard let configuration = selection.effectiveConfiguration else { return }
         tunnel.connect(using: configuration)
     }
 

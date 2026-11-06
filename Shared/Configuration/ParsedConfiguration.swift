@@ -14,12 +14,15 @@ import Foundation
 /// `ProxyConfiguration` / `ProxyGroup` / rule payload values, and
 /// `ConfigurationValidator` checks it against the engine's capabilities.
 nonisolated struct ParsedConfiguration: Equatable, Sendable {
+    var geoIP = OrderedParameters()
+    var geoSite = OrderedParameters()
     var general = OrderedParameters()
     var proxies: [ParsedProxy] = []
     var proxyGroups: [ParsedProxyGroup] = []
     var rules: [ParsedRule] = []
     var finalRule: ParsedRule?
     var hosts: [ParsedHostEntry] = []
+    var mitmSets = OrderedParameters()
     var mitm = OrderedParameters()
     var scripts: [ParsedScript] = []
     var rewrites: [ParsedRewriteDirective] = []
@@ -28,7 +31,7 @@ nonisolated struct ParsedConfiguration: Equatable, Sendable {
 
     var hasContent: Bool {
         !general.isEmpty || !proxies.isEmpty || !proxyGroups.isEmpty || !rules.isEmpty
-            || finalRule != nil || !hosts.isEmpty || !mitm.isEmpty || !scripts.isEmpty
+            || !geoIP.isEmpty || !geoSite.isEmpty || !mitmSets.isEmpty || finalRule != nil || !hosts.isEmpty || !mitm.isEmpty || !scripts.isEmpty
             || !rewrites.isEmpty
     }
 

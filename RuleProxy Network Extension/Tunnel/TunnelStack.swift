@@ -236,10 +236,18 @@ actor TunnelStack {
 
     // MARK: - Lifecycle State
 
+    var nativeBundle: RuntimeConfigurationBundle?
+    var applyingVersion: UUID?
+    nonisolated let configurationTransition = Atomic<Bool>(false)
     var runtime = RuntimeCoordinator.State()
     var phase: TunnelPhase { runtime.phase }
 
-    func runtimeStatus() -> RuntimeCoordinator.Status { runtime.status }
+    func runtimeStatus() -> RuntimeCoordinator.Status {
+        var status = runtime.status
+        status.versionID = nativeBundle?.id.uuidString
+        status.pendingVersionID = applyingVersion?.uuidString
+        return status
+    }
 
     nonisolated let publishedPhase = Atomic<TunnelPhase>(.idle)
 
@@ -524,7 +532,10 @@ actor TunnelStack {
                 publishOutboundRoutingContext(configuration: configuration)
             case .rule:
                 if proxyMode == .rule {
-                    if let precompiledRouting {
+                    if let nativeBundle {
+                        if nativeBundle.rules != nil { domainRouter.installNative(nativeBundle) }
+                        else { domainRouter.installBaseline(nativeBundle.legacyRouting) }
+                    } else if let precompiledRouting {
                         domainRouter.install(precompiledRouting)
                     } else {
                         domainRouter.loadRoutingConfiguration()
@@ -555,9 +566,14 @@ actor TunnelStack {
     }
 
     func loadMITMSetting() {
-        guard let data = AWCore.getMITMData(),
-              let snapshot = MITMBinaryReader.decode(data),
-              snapshot.enabled else {
+        let snapshot: (enabled: Bool, ruleSets: [MITMRuleSet])?
+        if let nativeBundle, nativeBundle.rules != nil {
+            snapshot = (AWCore.getMITMEnabled(), nativeBundle.mitmRuleSets)
+        } else {
+            let data = nativeBundle?.legacyMITM ?? AWCore.getMITMData()
+            snapshot = data.flatMap(MITMBinaryReader.decode)
+        }
+        guard let snapshot, snapshot.enabled else {
             _mitmEnabled.store(false, ordering: .relaxed)
             mitmPolicy.reset()
             return
