@@ -1,5 +1,5 @@
 //
-//  SurgeConfigurationParser.swift
+//  NaiveFlowConfigurationParser.swift
 //  RuleProxy
 //
 //  Created by NodePassProject on 11/4/26.
@@ -14,7 +14,7 @@ import Foundation
 /// cannot interpret. Checking values against the routing engine's capabilities
 /// is `ConfigurationValidator`'s job, and turning the result into stores is
 /// `ConfigurationCompiler`'s job.
-nonisolated enum SurgeConfigurationParser {
+nonisolated enum NaiveFlowConfigurationParser {
 
     struct ParseResult: Sendable {
         let document: ConfigurationDocument
@@ -84,7 +84,7 @@ nonisolated enum SurgeConfigurationParser {
 
 // MARK: - Proxy
 
-nonisolated extension SurgeConfigurationParser {
+nonisolated extension NaiveFlowConfigurationParser {
 
     static func parseProxies(
         _ section: ConfigurationDocument.Section,
@@ -224,10 +224,10 @@ nonisolated extension SurgeConfigurationParser {
 
 // MARK: - Positional proxy values
 
-nonisolated extension SurgeConfigurationParser {
+nonisolated extension NaiveFlowConfigurationParser {
 
     /// Maps unlabelled positional values (`ss, host, 443, aes-128-gcm, pass`) to
-    /// the parameter names each protocol expects, so Surge's compact form and
+    /// the parameter names each protocol expects, so the compact field form and
     /// Clash's labelled form compile to the same configuration.
     static func applyPositionalValues(
         _ values: [String],
@@ -257,7 +257,7 @@ nonisolated extension SurgeConfigurationParser {
             parameters.set("arg\(offset)", value)
             diagnostics.append(
                 ConfigurationDiagnostic(
-                    severity: .info,
+                    severity: .error,
                     code: .unknownDirective,
                     line: line,
                     section: ConfigurationDocument.SectionKind.proxy.displayName,
@@ -270,7 +270,7 @@ nonisolated extension SurgeConfigurationParser {
 
 // MARK: - Proxy Group
 
-nonisolated extension SurgeConfigurationParser {
+nonisolated extension NaiveFlowConfigurationParser {
 
     static func parseProxyGroups(
         _ section: ConfigurationDocument.Section,
@@ -356,7 +356,7 @@ nonisolated extension SurgeConfigurationParser {
 
 // MARK: - Rule
 
-nonisolated extension SurgeConfigurationParser {
+nonisolated extension NaiveFlowConfigurationParser {
 
     static func parseRules(
         _ section: ConfigurationDocument.Section,
@@ -471,7 +471,7 @@ nonisolated extension SurgeConfigurationParser {
             if case .unknown(let token) = option {
                 diagnostics.append(
                     ConfigurationDiagnostic(
-                        severity: .info,
+                        severity: .error,
                         code: .unsupportedRuleOption,
                         line: entry.line,
                         section: ConfigurationDocument.SectionKind.rule.displayName,
@@ -497,7 +497,7 @@ nonisolated extension SurgeConfigurationParser {
 
 // MARK: - Host
 
-nonisolated extension SurgeConfigurationParser {
+nonisolated extension NaiveFlowConfigurationParser {
 
     static func parseHosts(
         _ section: ConfigurationDocument.Section,
@@ -545,7 +545,7 @@ nonisolated extension SurgeConfigurationParser {
 
 // MARK: - Script
 
-nonisolated extension SurgeConfigurationParser {
+nonisolated extension NaiveFlowConfigurationParser {
 
     static func parseScripts(
         _ section: ConfigurationDocument.Section,

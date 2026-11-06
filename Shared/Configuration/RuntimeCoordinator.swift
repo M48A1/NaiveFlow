@@ -6,9 +6,10 @@
 //
 
 import Foundation
+import Synchronization
 
-/// Turns "something the host changed" into the ordered work the running tunnel
-/// has to do about it.
+/// Owns kernel lifecycle state, module ordering and configuration reload plans.
+/// TunnelStack is the actor-isolated adapter that executes these decisions.
 ///
 /// The extension reloads four things while it runs — the settings it reads from
 /// the shared container, the routing payload, the MITM policy, and the selected
@@ -31,6 +32,127 @@ import Foundation
 /// (`TunnelStack+Runtime` performs the reloading, because that part needs the
 /// running stack).
 nonisolated enum RuntimeCoordinator {
+
+    enum Module: String, CaseIterable, Identifiable, Sendable, Hashable {
+        case rule, dns, mitm, outbound
+        var id: String { rawValue }
+    }
+
+    enum Phase: UInt8, AtomicRepresentable, CustomStringConvertible, PhaseTransitionable, Sendable {
+        case idle, starting, running, stopping, stopped
+
+        static func canTransition(from old: Phase, to new: Phase) -> Bool {
+            switch (old, new) {
+            case (.idle, .starting), (.stopped, .starting), (.starting, .running),
+                 (.starting, .stopping), (.running, .stopping), (.stopping, .stopped):
+                return true
+            default: return false
+            }
+        }
+
+        var description: String {
+            switch self {
+            case .idle: "idle"
+            case .starting: "starting"
+            case .running: "running"
+            case .stopping: "stopping"
+            case .stopped: "stopped"
+            }
+        }
+    }
+
+    /// Actor-owned by TunnelStack. This is the single lifecycle state; published
+    /// atomics are mirrors for the existing packet path, not another authority.
+    struct State: Sendable {
+        private(set) var phase: Phase = .idle
+        private(set) var epoch: UInt64 = 0
+        private(set) var modules: Set<Module> = []
+        private var revisions: [Module: UInt64] = [:]
+        private var failures: [Module: String] = [:]
+
+        var status: Status {
+            Status(
+                phase: phase.description, epoch: epoch,
+                readyModules: modules.map(\.rawValue).sorted(),
+                pendingModules: revisions.keys.filter { !modules.contains($0) }.map(\.rawValue).sorted(),
+                failures: Dictionary(uniqueKeysWithValues: failures.map { ($0.key.rawValue, $0.value) })
+            )
+        }
+
+        struct Ticket: Equatable, Sendable {
+            let module: Module
+            let epoch: UInt64
+            let revision: UInt64
+        }
+
+        mutating func transition(to next: Phase) -> Bool {
+            guard Phase.transition(&phase, to: next) else { return false }
+            if next == .starting || next == .stopping {
+                epoch &+= 1
+                modules.removeAll()
+                revisions.removeAll()
+                failures.removeAll()
+            }
+            return true
+        }
+
+        mutating func begin(_ module: Module) -> Ticket {
+            let revision = (revisions[module] ?? 0) &+ 1
+            revisions[module] = revision
+            modules.remove(module)
+            failures.removeValue(forKey: module)
+            return Ticket(module: module, epoch: epoch, revision: revision)
+        }
+
+        func accepts(_ ticket: Ticket) -> Bool {
+            (phase == .starting || phase == .running)
+                && ticket.epoch == epoch && revisions[ticket.module] == ticket.revision
+        }
+
+        @discardableResult
+        mutating func complete(_ ticket: Ticket) -> Bool {
+            guard accepts(ticket) else { return false }
+            modules.insert(ticket.module)
+            failures.removeValue(forKey: ticket.module)
+            return true
+        }
+
+        mutating func fail(_ ticket: Ticket, message: String) {
+            guard accepts(ticket) else { return }
+            modules.remove(ticket.module)
+            failures[ticket.module] = message
+        }
+    }
+
+    /// "Ready" means the module adapter has loaded its current inputs; this is
+    /// not an acknowledgement that all independent stores form one snapshot.
+    struct Status: Codable, Equatable, Sendable {
+        let phase: String
+        let epoch: UInt64
+        let readyModules: [String]
+        let pendingModules: [String]
+        let failures: [String: String]
+    }
+
+    enum Lifecycle: Sendable { case start, restart, sleep, stop }
+    enum LifecycleAction: Sendable, Equatable {
+        case stopDataPlane, discardDataPlane, configureModules, startDataPlane, releaseModules
+    }
+
+    /// Preserve the kernel's existing teardown semantics and restart throttling.
+    /// The coordinator owns order; the adapter owns sockets, pools and packets.
+    static func lifecyclePlan(for event: Lifecycle) -> [LifecycleAction] {
+        switch event {
+        case .start: return [.configureModules, .startDataPlane]
+        case .restart: return [.stopDataPlane, .configureModules, .startDataPlane]
+        case .sleep: return [.discardDataPlane, .startDataPlane]
+        case .stop: return [.stopDataPlane, .releaseModules]
+        }
+    }
+
+    /// DNS/settings before dependent policies; publish outbound only after MITM.
+    static let configurationOrder: [Module] = [.dns, .mitm, .outbound, .rule]
+    static let reconciliationOrder: [Event] = [.settings, .mitm, .activeConfiguration, .routing]
 
     /// Something the host announced.
     enum Event: String, CaseIterable, Sendable, Hashable {
@@ -82,6 +204,8 @@ nonisolated extension RuntimeCoordinator {
     enum Action: String, CaseIterable, Sendable, Hashable {
         /// Drop the cached host overrides so the next lookup reads them again.
         case reloadHostMappings
+        /// Flush process-local DNS/ECH caches after upstream or Host changes.
+        case reloadDNS
         /// Re-read the settings and publish what the data plane reads from them.
         case reloadSettings
         /// Recompile and install the routing payload.
@@ -102,7 +226,7 @@ nonisolated extension RuntimeCoordinator {
             switch self {
             case .reloadHostMappings:
                 return false
-            case .reloadSettings, .reloadRouting, .reloadMITM, .reloadActiveConfiguration, .revalidateQUIC:
+            case .reloadDNS, .reloadSettings, .reloadRouting, .reloadMITM, .reloadActiveConfiguration, .revalidateQUIC:
                 return true
             }
         }
@@ -135,7 +259,7 @@ nonisolated extension RuntimeCoordinator {
         case .activeConfiguration:
             return Plan(event: event, actions: [.reloadActiveConfiguration])
         case .settings:
-            return Plan(event: event, actions: [.reloadHostMappings, .reloadSettings])
+            return Plan(event: event, actions: [.reloadHostMappings, .reloadDNS, .reloadSettings])
         case .routing:
             return Plan(event: event, actions: [.reloadRouting])
         case .mitm:

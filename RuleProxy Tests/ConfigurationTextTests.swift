@@ -42,7 +42,7 @@ struct ConfigurationTextTests {
     }
 
     @Test func keepsURLValuesIntact() {
-        let result = SurgeConfigurationParser.parse(text: """
+        let result = NaiveFlowConfigurationParser.parse(text: """
             [Script]
             rewrite = type=http-request, pattern=^https://example.com/, script-path=https://cdn.example.com/x.js
             """)
@@ -56,7 +56,7 @@ struct ConfigurationTextTests {
     // MARK: - Proxies and groups
 
     @Test func parsesFieldFormProxyWithPositionalValues() {
-        let result = SurgeConfigurationParser.parse(text: """
+        let result = NaiveFlowConfigurationParser.parse(text: """
             [Proxy]
             HK = ss, 1.2.3.4, 8388, aes-128-gcm, secret, udp = true
             """)
@@ -76,7 +76,7 @@ struct ConfigurationTextTests {
     }
 
     @Test func parsesLinkFormProxy() {
-        let result = SurgeConfigurationParser.parse(text: """
+        let result = NaiveFlowConfigurationParser.parse(text: """
             [Proxy]
             Node = vless://11111111-2222-3333-4444-555555555555@example.com:443?encryption=none#Node
             """)
@@ -86,7 +86,7 @@ struct ConfigurationTextTests {
     }
 
     @Test func parsesProxyGroupMembersAndOptions() {
-        let result = SurgeConfigurationParser.parse(text: """
+        let result = NaiveFlowConfigurationParser.parse(text: """
             [Proxy Group]
             Auto = url-test, A, B, url = http://www.gstatic.com/generate_204, interval = 600
             """)
@@ -103,7 +103,7 @@ struct ConfigurationTextTests {
 extension ConfigurationTextTests {
 
     @Test func parsesRulePolicyAndOptions() {
-        let result = SurgeConfigurationParser.parse(text: """
+        let result = NaiveFlowConfigurationParser.parse(text: """
             [Rule]
             IP-CIDR, 10.0.0.0/8, DIRECT, no-resolve
             DOMAIN-SUFFIX, example.com, REJECT
@@ -120,7 +120,7 @@ extension ConfigurationTextTests {
     }
 
     @Test func keepsLogicalExpressionIntact() {
-        let result = SurgeConfigurationParser.parse(text: """
+        let result = NaiveFlowConfigurationParser.parse(text: """
             [Rule]
             AND,((DOMAIN-SUFFIX,a.com),(DOMAIN-SUFFIX,b.com)),DIRECT
             """)

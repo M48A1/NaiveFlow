@@ -82,6 +82,7 @@ struct ConfigurationInstaller {
     struct Outcome: Equatable, Sendable {
         let installation: ConfigurationInstallation
         let plan: ConfigurationReloadPlan
+        let modulePlan: ConfigurationCoordinator.Plan
         let addedProxies: [String]
         let updatedProxies: [String]
         let removedProxies: [String]
@@ -102,7 +103,7 @@ struct ConfigurationInstaller {
             if !ruleSets.isEmpty { parts.append("\(ruleSets.count) rule set(s)") }
             if !removedRuleSets.isEmpty { parts.append("-\(removedRuleSets.count) rule set(s)") }
             let changes = parts.isEmpty ? String(localized: "Configuration applied.") : parts.joined(separator: ", ")
-            return "\(changes) · \(plan.summary)"
+            return "\(changes) · \(modulePlan.summary)"
         }
     }
 
@@ -162,9 +163,18 @@ extension ConfigurationInstaller {
     /// configuration id it cannot resolve.
     @discardableResult
     func install(_ compiled: CompiledConfiguration, snapshotId: UUID? = nil) throws -> Outcome {
+        guard compiled.isActivatable else {
+            throw Failure.notActivatable(errors: compiled.errors.count, warnings: compiled.diagnostics.count { $0.severity == .warning })
+        }
         var notes: [String] = []
         let previous = store.installation() ?? ConfigurationInstallation()
-        let plan = ConfigurationReloadPlan.make(from: CompiledSettings.current(), to: compiled.settings)
+        let previousCompiled = previous.snapshotId.flatMap { store.snapshot($0) }.map {
+            ConfigurationCoordinator().compile(text: $0.text).compiled
+        }
+        let modulePlan = ConfigurationCoordinator().plan(
+            from: previousCompiled, to: compiled, currentHosts: HostMapping.load()
+        )
+        let plan = modulePlan.reload
 
         let proxies = installProxies(compiled.proxies, previous: previous)
         let groups = installGroups(compiled.proxyGroups, previous: previous, idMap: proxies.idMap)
@@ -177,14 +187,6 @@ extension ConfigurationInstaller {
         DNSResolver.localRequests.flush()
 
         apply(compiled.settings)
-        // The coordinator owns which notifications an install owes the running
-        // extension, so this call site does not keep its own copy of the rule.
-        for announcement in ConfigurationCoordinator.announcements(for: plan) {
-            announcement.post()
-        }
-        if compiled.settings["loglevel"] != nil {
-            notes.append("`loglevel` is recorded but this build has no log level setting to apply it to.")
-        }
         notes.append(
             contentsOf: selectDefaultProxyIfNeeded(
                 preferredIds: compiled.proxies.compactMap { proxies.ids[$0.name] }
@@ -205,10 +207,17 @@ extension ConfigurationInstaller {
         }
 
         reaction?.run()
+        // Binary routing/MITM payloads and the active node announce themselves
+        // only after their existing exporters have published them. Host/settings
+        // have already been written here and must also notify on Host-only edits.
+        for event in modulePlan.announcements where event == .settings {
+            event.post()
+        }
 
         return Outcome(
             installation: installation,
             plan: plan,
+            modulePlan: modulePlan,
             addedProxies: proxies.added,
             updatedProxies: proxies.updated,
             removedProxies: proxies.removed,
@@ -222,20 +231,18 @@ extension ConfigurationInstaller {
 
     /// Activation and installation in one step.
     ///
-    /// The document only goes live after the compile is clean *and* the stores
-    /// accepted it. If installation fails after the snapshot was activated, the
-    /// manifest is rolled back to the previous snapshot and that snapshot is
-    /// installed again, so the engine is never left pointing at a document whose
-    /// nodes are missing from the stores.
+    /// Compile before touching stores. On installation failure, attempt to restore
+    /// the previous snapshot and its installation. Existing stores/exporters are
+    /// independent: this is recovery, not a cross-process atomic transaction.
     @discardableResult
     func activate(text: String) throws -> (activation: ConfigurationActivation.Activation, outcome: Outcome) {
-        let activated = try activation.activate(text: text)
+        let activated = try RuleManager(activation: activation).activate(text: text)
         do {
             let outcome = try install(activated)
             return (activated, outcome)
         } catch {
             activation.record(error.localizedDescription)
-            if let restored = try? activation.rollback() {
+            if let restored = try? RuleManager(activation: activation).rollback() {
                 _ = try? install(restored)
             }
             throw error
@@ -272,6 +279,7 @@ extension ConfigurationInstaller {
         }
 
         HostMapping.store([])
+        ConfigurationCoordinator.Announcement.settings.post()
         DNSHosts.shared.invalidate()
         DNSResolver.localRequests.flush()
         store.clearInstallation()

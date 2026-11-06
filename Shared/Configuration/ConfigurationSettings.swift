@@ -53,7 +53,7 @@ nonisolated enum ConfigurationSettingValue: Equatable, Sendable {
 /// — there is no second list to keep in sync.
 nonisolated struct ConfigurationSettingKey: Identifiable, Sendable {
 
-    /// The shapes a `[General]` value can take, mirroring the spellings Surge
+    /// The shapes a `[General]` value can take, defining the spellings NaiveFlow
     /// accepts so a real profile imports unchanged.
     enum Kind: Equatable, Sendable {
         /// `true` / `false` / `yes` / `no` / `on` / `off` / `1` / `0`.
@@ -77,7 +77,7 @@ nonisolated struct ConfigurationSettingKey: Identifiable, Sendable {
     let kind: Kind
     let scope: ConfigurationReloadPlan.Scope
     /// `false` keeps the key recognized and reported but not installed. That is
-    /// how a Surge setting this build cannot honor stays visible in diagnostics
+    /// how an unavailable setting stays visible in diagnostics
     /// instead of looking applied.
     let applies: Bool
     let summary: String
@@ -430,7 +430,7 @@ nonisolated enum ConfigurationSettings {
 
         // MARK: Recognized, not applied
         //
-        // Keys a real Surge profile contains that this build cannot honor yet.
+        // Reserved keys not implemented by this build (activation rejects them).
         // They stay in the catalog so the parser accepts them and the validator
         // reports each one instead of silently dropping it.
 

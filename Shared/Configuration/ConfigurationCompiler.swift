@@ -48,9 +48,10 @@ nonisolated enum ConfigurationCompiler {
 
     static func compile(
         _ configuration: ParsedConfiguration,
-        capabilities: ConfigurationValidator.Capabilities = .current
+        capabilities: ConfigurationValidator.Capabilities = .current,
+        parsingDiagnostics: [ConfigurationDiagnostic] = []
     ) -> CompiledConfiguration {
-        var diagnostics = ConfigurationValidator.validate(configuration, capabilities: capabilities)
+        var diagnostics = parsingDiagnostics + ConfigurationValidator.validate(configuration, capabilities: capabilities)
 
         let proxies = compileProxies(configuration, diagnostics: &diagnostics)
         let proxyIds = Dictionary(proxies.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
@@ -173,7 +174,7 @@ nonisolated extension ConfigurationCompiler {
         }
     }
 
-    /// Options the Surge field form accepts but this build cannot express are
+    /// Options the NaiveFlow field form accepts but this build cannot express are
     /// reported instead of vanishing: dropping `skip-cert-verify` or `udp-relay`
     /// silently would change behavior without saying so.
     static func reportDroppedOptions(
@@ -184,7 +185,7 @@ nonisolated extension ConfigurationCompiler {
         for (key, _) in parameters.pairs where clashParameter(key: key, value: "") == nil {
             diagnostics.append(
                 ConfigurationDiagnostic(
-                    severity: .warning,
+                    severity: .error,
                     code: .notApplied,
                     line: proxy.line,
                     section: ConfigurationDocument.SectionKind.proxy.displayName,
@@ -275,7 +276,7 @@ nonisolated extension ConfigurationCompiler {
         }
     }
 
-    /// Translates Surge-style option names to the Clash keys `ClashProxyParser`
+    /// Translates NaiveFlow option names to the Clash keys `ClashProxyParser`
     /// reads. Returns `nil` for options this build cannot express.
     static func clashParameter(key: String, value: String) -> (key: String, value: String)? {
         switch key {

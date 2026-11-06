@@ -7,7 +7,7 @@
 
 import Foundation
 
-/// Line-preserving representation of a Surge-style text configuration.
+/// Line-preserving representation of a NaiveFlow sectioned text configuration.
 ///
 /// The document keeps every original line together with its 1-based number,
 /// the comment split off each line, and the ordered section list. Parsing is
@@ -166,7 +166,7 @@ nonisolated struct ConfigurationDocument: Equatable, Sendable {
 nonisolated extension ConfigurationDocument {
 
     /// Parses configuration text into a lossless document plus structural
-    /// diagnostics. Semantic checks live in `SurgeConfigurationParser` and
+    /// diagnostics. Semantic checks live in `NaiveFlowConfigurationParser` and
     /// `ConfigurationValidator`.
     static func parse(text source: String) -> ConfigurationDocument {
         var document = ConfigurationDocument()
@@ -216,7 +216,7 @@ nonisolated extension ConfigurationDocument {
                 if kind == nil {
                     document.diagnostics.append(
                         ConfigurationDiagnostic(
-                            severity: .warning,
+                            severity: .error,
                             code: .unknownSection,
                             line: number,
                             section: name,
