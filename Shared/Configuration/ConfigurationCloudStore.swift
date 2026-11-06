@@ -2,9 +2,8 @@ import Foundation
 import CryptoKit
 import Observation
 
-/// One latest text draft per installation. Separate owners preserve concurrent
-/// edits on different devices; receiving a file never changes runtime state.
-nonisolated struct CloudConfigurationDocument: Identifiable, Sendable, Equatable {
+/// A complete cloud copy. Uploads use new IDs; receiving a copy never changes runtime state.
+nonisolated struct CloudConfigurationDocument: Codable, Identifiable, Sendable, Equatable {
     let id: UUID
     let deviceName: String
     let updatedAt: Date
@@ -34,11 +33,6 @@ nonisolated enum ConfigurationCloudCodec {
     struct Failure: LocalizedError {
         let message: String
         var errorDescription: String? { message }
-    }
-    static func appliedOwner(_ owner: UUID) -> UUID {
-        let hex = Array(digest(Data((owner.uuidString + ":applied").utf8)).prefix(32))
-        let value = [String(hex[0..<8]), String(hex[8..<12]), String(hex[12..<16]), String(hex[16..<20]), String(hex[20..<32])].joined(separator: "-")
-        return UUID(uuidString: value)!
     }
     static func manifestID(_ owner: UUID) -> String { "\(owner.uuidString):manifest" }
     static func partID(_ owner: UUID, _ index: Int) -> String { "\(owner.uuidString):part:\(index)" }
@@ -101,111 +95,65 @@ nonisolated enum ConfigurationCloudCodec {
     }
 }
 
-/// Encoding and SQLite writes run off the main actor and are serialized. Fixed
-/// per-device chunk slots bound storage; manifests reject mixed/incomplete data
-/// while CKSyncEngine delivers a revision across multiple records.
-actor ConfigurationCloudWriter {
-    let store: SyncStore
-    let owner: UUID
-    let deviceName: String
-    init(store: SyncStore, owner: UUID, deviceName: String) {
-        self.store = store; self.owner = owner; self.deviceName = deviceName
-    }
-    func save(_ text: String) throws {
-        let ref = SyncItemRef(key: .configurationDocuments, itemID: ConfigurationCloudCodec.manifestID(owner))
-        let previous = store.snapshots(for: [ref])[ref]
-        if let previous, let record = try? JSONDecoder().decode(ConfigurationCloudCodec.Record.self, from: previous.payload),
-           case .manifest(let manifest) = record, manifest.digest == ConfigurationCloudCodec.digest(Data(text.utf8)),
-           ConfigurationCloudCodec.decode(store.loadItems(.configurationDocuments)).contains(where: { $0.id == owner && $0.text == text }) { return }
-        let refs = [ref] + (0..<ConfigurationCloudCodec.maximumParts).map {
-            SyncItemRef(key: .configurationDocuments, itemID: ConfigurationCloudCodec.partID(owner, $0))
-        }
-        let snapshots = store.snapshots(for: refs)
-        let stamp = SyncStamp.after(snapshots.values.map(\.updatedAt).max())
-        let items = try ConfigurationCloudCodec.encode(text: text, owner: owner, deviceName: deviceName, stamp: stamp)
-        let changes = items.filter { snapshots[SyncItemRef(key: .configurationDocuments, itemID: $0.id)]?.payload != $0.payload }
-        store.save(.configurationDocuments, items: changes, order: [])
-        guard store.snapshots(for: [ref])[ref]?.payload == items.last?.payload,
-              ConfigurationCloudCodec.decode(store.loadItems(.configurationDocuments)).contains(where: { $0.id == owner && $0.text == text }) else {
-            throw ConfigurationCloudCodec.Failure(message: "Could not queue the configuration for iCloud; the local draft is preserved.")
-        }
-    }
-}
-
+/// Local cache plus explicit transfer actions. Opening the editor reads disk;
+/// editing/applying never queues data for CKSyncEngine or starts network work.
 @MainActor
 @Observable
 final class ConfigurationCloudStore {
     private(set) var documents: [CloudConfigurationDocument] = []
     private(set) var statusMessage: String?
     private(set) var errorMessage: String?
-    private(set) var isRefreshing = false
-    let owner: UUID
-    @ObservationIgnored private let store: SyncStore
-    @ObservationIgnored private let writer: ConfigurationCloudWriter
-    @ObservationIgnored private let appliedWriter: ConfigurationCloudWriter
-    @ObservationIgnored private var pendingSave: Task<Void, Never>?
+    private(set) var isTransferring = false
+    @ObservationIgnored private let transport: any ConfigurationCloudTransport
+    @ObservationIgnored private let cacheURL: URL?
 
-    init(store: SyncStore, owner: UUID? = nil, deviceName: String = ProcessInfo.processInfo.hostName) {
-        self.store = store
-        let identity: UUID
-        if let owner { identity = owner }
-        else if let raw = UserDefaults.standard.string(forKey: "configurationCloudDeviceID"), let id = UUID(uuidString: raw) { identity = id }
-        else {
-            identity = UUID()
-            UserDefaults.standard.set(identity.uuidString, forKey: "configurationCloudDeviceID")
-        }
-        self.owner = identity
-        self.writer = ConfigurationCloudWriter(store: store, owner: identity, deviceName: "\(deviceName) · Draft")
-        self.appliedWriter = ConfigurationCloudWriter(store: store, owner: ConfigurationCloudCodec.appliedOwner(identity), deviceName: "\(deviceName) · Applied")
+    init(transport: any ConfigurationCloudTransport = ManualConfigurationCloudTransport.shared,
+         cacheURL: URL? = EngineConfirmationStore.directory.appendingPathComponent("manual-cloud-configurations.json")) {
+        self.transport = transport
+        self.cacheURL = cacheURL
     }
 
-    func schedule(_ text: String) {
-        pendingSave?.cancel()
-        pendingSave = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(2)) } catch { return }
-            guard !Task.isCancelled, let self else { return }
-            await saveNow(text)
-        }
-    }
-
-    func saveNow(_ text: String) async {
-        pendingSave?.cancel()
-        pendingSave = nil
+    func upload(_ text: String) async {
+        guard !isTransferring else { return }
+        isTransferring = true
+        defer { isTransferring = false }
         do {
-            try await writer.save(text)
+            let document = try await transport.upload(text: text)
+            documents.removeAll { $0.id == document.id }
+            documents.insert(document, at: 0)
+            statusMessage = "Uploaded a new iCloud copy. Existing cloud configurations were preserved."
             errorMessage = nil
-            statusMessage = AWCore.getICloudSyncEnabled()
-                ? "Saved on this device. iCloud will sync when your account and network are available."
-                : "Saved on this device. Enable iCloud Sync to upload this configuration."
-            await reload()
+            saveCache()
         } catch { errorMessage = error.localizedDescription }
     }
 
-    func saveApplied(_ text: String) async {
+    /// Disk only; never initiates a fetch, upload, migration or retry.
+    func reload() {
+        guard let cacheURL, FileManager.default.fileExists(atPath: cacheURL.path) else { return }
         do {
-            try await appliedWriter.save(text)
-            await reload()
+            guard (try cacheURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 128 * 1024 * 1024 else { return }
+            documents = try JSONDecoder().decode([CloudConfigurationDocument].self, from: Data(contentsOf: cacheURL))
         } catch { errorMessage = error.localizedDescription }
     }
 
-    func reload() async {
-        let items = await Task.detached(priority: .utility) { [store] in
-            ConfigurationCloudCodec.decode(store.loadItems(.configurationDocuments))
-        }.value
-        // Keep a previously complete copy visible during partial cloud delivery.
-        var complete = Dictionary(documents.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        for item in items where complete[item.id].map({ $0.updatedAt <= item.updatedAt }) ?? true { complete[item.id] = item }
-        documents = complete.values.sorted { $0.updatedAt > $1.updatedAt }
-    }
-
-    func refresh() async {
-        guard !isRefreshing else { return }
-        isRefreshing = true
-        defer { isRefreshing = false }
+    func download() async {
+        guard !isTransferring else { return }
+        isTransferring = true
+        defer { isTransferring = false }
         do {
-            try await CloudSync.shared.refresh()
+            let downloaded = try await transport.download()
+            documents = downloaded
+            statusMessage = "Downloaded iCloud copies. Select one to load into the editor; nothing has been applied."
             errorMessage = nil
+            saveCache()
         } catch { errorMessage = error.localizedDescription }
-        await reload()
+    }
+
+    private func saveCache() {
+        guard let cacheURL else { return }
+        do {
+            try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder().encode(documents).write(to: cacheURL, options: .atomic)
+        } catch { errorMessage = "Transfer completed, but the local cache could not be saved: \(error.localizedDescription)" }
     }
 }

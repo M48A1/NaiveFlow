@@ -21,7 +21,6 @@ import UniformTypeIdentifiers
 /// text document that describes the whole setup.
 struct ProfileView: View {
     @Environment(Operations.self) private var operations
-    @Environment(AppSettings.self) private var appSettings
 
     @State private var modelBox = ViewScoped<ProfileEditorModel>()
     @State private var showImporter = false
@@ -44,7 +43,7 @@ struct ProfileView: View {
                 historySection
             }
             .navigationTitle("Configuration")
-            .task { model.load(); await operations.configurationCloud.reload() }
+            .task { model.load(); operations.configurationCloud.reload() }
             .onDisappear { model.dismissMessages() }
             .fileImporter(
                 isPresented: $showImporter,
@@ -212,16 +211,15 @@ private extension ProfileView {
 
     var cloudSection: some View {
         Section {
-            Toggle("iCloud Sync", isOn: Binding(get: { appSettings.iCloudSyncEnabled }, set: { appSettings.iCloudSyncEnabled = $0 }))
-            Button("Save for iCloud Sync") {
+            Button("Upload New Copy to iCloud") {
                 let text = model.text
-                Task { await operations.configurationCloud.saveNow(text) }
+                Task { await operations.configurationCloud.upload(text) }
             }
-            .disabled(model.isApplying)
-            Button("Refresh iCloud Configurations") {
-                Task { await operations.configurationCloud.refresh() }
+            .disabled(model.isApplying || operations.configurationCloud.isTransferring)
+            Button("Download iCloud Configurations") {
+                Task { await operations.configurationCloud.download() }
             }
-            .disabled(!appSettings.iCloudSyncEnabled || operations.configurationCloud.isRefreshing)
+            .disabled(operations.configurationCloud.isTransferring)
             ForEach(operations.configurationCloud.documents) { item in
                 Button {
                     pendingCloudDocument = item
@@ -247,7 +245,7 @@ private extension ProfileView {
         } header: {
             Text("iCloud Configurations")
         } footer: {
-            Text("Drafts sync after editing pauses. Each device keeps its draft and last applied text separately. Load a copy to review, then press Apply on this device. Certificates and running tunnel state stay local.")
+            Text("Uploads and downloads are manual. Editing, applying and opening the app never transfer configurations. Upload creates a new cloud copy. Downloaded copies only enter the editor after you select and confirm them.")
         }
     }
 

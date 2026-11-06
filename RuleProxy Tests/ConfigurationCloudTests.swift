@@ -39,11 +39,10 @@ struct ConfigurationCloudCodecTests {
         #expect(ConfigurationCloudCodec.decode(items.map(\.payload)).isEmpty)
     }
 
-    @Test func separateDevicesAndAppliedSlotHaveDistinctIdentity() throws {
+    @Test func independentCloudCopiesHaveDistinctIdentity() throws {
         let firstOwner = UUID(), secondOwner = UUID()
-        let applied = ConfigurationCloudCodec.appliedOwner(firstOwner)
+        let applied = UUID()
         #expect(applied != firstOwner && applied != secondOwner)
-        #expect(applied == ConfigurationCloudCodec.appliedOwner(firstOwner))
         let first = try ConfigurationCloudCodec.encode(text: "first", owner: firstOwner, deviceName: "First", stamp: .now)
         let second = try ConfigurationCloudCodec.encode(text: "second", owner: secondOwner, deviceName: "Second", stamp: .now)
         let active = try ConfigurationCloudCodec.encode(text: "applied", owner: applied, deviceName: "Applied", stamp: .now)
@@ -57,45 +56,90 @@ struct ConfigurationCloudCodecTests {
         }
     }
 
-    @Test func fixedChunkSlotsIgnoreOldTrailingPartsAfterShrink() async throws {
-        let store = SyncStore.ephemeral()
-        let owner = UUID()
-        let writer = ConfigurationCloudWriter(store: store, owner: owner, deviceName: "Test")
-        try await writer.save(String(repeating: "a", count: ConfigurationCloudCodec.partBytes * 2 + 1))
-        let count = store.allItemRefs().count
-        try await writer.save("small")
-        try await writer.save("latest")
-        #expect(store.allItemRefs().count == count)
-        #expect(ConfigurationCloudCodec.decode(store.loadItems(.configurationDocuments)).first?.text == "latest")
+    @Test func configurationDocumentsAreExcludedFromAutomaticSync() {
+        #expect(!SyncStore.Key.configurationDocuments.automaticallySyncs)
+        #expect(SyncStore.Key.allCases.filter { $0 != .configurationDocuments }.allSatisfy(\.automaticallySyncs))
+    }
+
+}
+
+private actor ManualCloudFixture: ConfigurationCloudTransport {
+    var uploads = 0
+    var downloads = 0
+    var server: [CloudConfigurationDocument] = []
+    var failUpload = false
+    var failDownload = false
+    func counts() -> (Int, Int) { (uploads, downloads) }
+    func failures(upload: Bool = false, download: Bool = false) { failUpload = upload; failDownload = download }
+    func upload(text: String) async throws -> CloudConfigurationDocument {
+        uploads += 1
+        if failUpload { throw ConfigurationCloudCodec.Failure(message: "Offline") }
+        let item = CloudConfigurationDocument(id: UUID(), deviceName: "Test", updatedAt: .now, text: text)
+        server.append(item)
+        return item
+    }
+    func download() async throws -> [CloudConfigurationDocument] {
+        downloads += 1
+        if failDownload { throw ConfigurationCloudCodec.Failure(message: "Offline") }
+        return server
     }
 }
 
 @MainActor
 struct ConfigurationCloudStoreTests {
-    @Test func remoteReloadDoesNotChangeDraftOrRuntimeAndKeepsCompleteCopy() async throws {
-        let store = SyncStore.ephemeral()
-        let owner = UUID()
-        let viewer = ConfigurationCloudStore(store: store, owner: UUID(), deviceName: "Viewer")
-        let first = try ConfigurationCloudCodec.encode(text: "old", owner: owner, deviceName: "Remote", stamp: .now)
-        store.save(.configurationDocuments, items: first, order: [])
-        await viewer.reload()
-        #expect(viewer.documents.first?.text == "old")
-        let next = try ConfigurationCloudCodec.encode(text: "new", owner: owner, deviceName: "Remote", stamp: Date.now.addingTimeInterval(1))
-        store.save(.configurationDocuments, items: [try #require(next.last)], order: [])
-        await viewer.reload()
-        #expect(viewer.documents.first?.text == "old")
-        store.save(.configurationDocuments, items: next, order: [])
-        await viewer.reload()
-        #expect(viewer.documents.first?.text == "new")
-        #expect(store.loadItems(.configurations).isEmpty)
+    @Test func openingAndReloadingOnlyReadLocalCache() async {
+        let transport = ManualCloudFixture()
+        let cloud = ConfigurationCloudStore(transport: transport, cacheURL: nil)
+        cloud.reload()
+        cloud.reload()
+        let counts = await transport.counts()
+        #expect(counts.0 == 0 && counts.1 == 0)
+        #expect(cloud.documents.isEmpty)
     }
 
-    @Test func draftAndAppliedTextAreSavedIndependently() async {
-        let cloud = ConfigurationCloudStore(store: .ephemeral(), owner: UUID(), deviceName: "Test")
-        await cloud.saveApplied("applied")
-        await cloud.saveNow("draft with unfinished edits")
+    @Test func uploadCreatesNewCopiesAndNeverDownloads() async {
+        let transport = ManualCloudFixture()
+        let cloud = ConfigurationCloudStore(transport: transport, cacheURL: nil)
+        await cloud.upload("first")
+        await cloud.upload("second")
         #expect(cloud.documents.count == 2)
-        #expect(Set(cloud.documents.map(\.text)) == Set(["applied", "draft with unfinished edits"]))
-        #expect(cloud.errorMessage == nil)
+        #expect(Set(cloud.documents.map(\.text)) == Set(["first", "second"]))
+        #expect(Set(cloud.documents.map(\.id)).count == 2)
+        let counts = await transport.counts()
+        #expect(counts.0 == 2 && counts.1 == 0)
+    }
+
+    @Test func downloadFailureRetainsCacheAndDoesNotUpload() async throws {
+        let transport = ManualCloudFixture()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = directory.appendingPathComponent("cache.json")
+        let first = ConfigurationCloudStore(transport: transport, cacheURL: cache)
+        await first.upload("preserved")
+        let reopened = ConfigurationCloudStore(transport: transport, cacheURL: cache)
+        reopened.reload()
+        #expect(reopened.documents.first?.text == "preserved")
+        await transport.failures(download: true)
+        await reopened.download()
+        #expect(reopened.errorMessage != nil)
+        #expect(reopened.documents.first?.text == "preserved")
+        let counts = await transport.counts()
+        #expect(counts.0 == 1 && counts.1 == 1)
+    }
+
+    @Test func failedUploadDoesNotQueueRetryAndDownloadIsExplicit() async {
+        let transport = ManualCloudFixture()
+        let cloud = ConfigurationCloudStore(transport: transport, cacheURL: nil)
+        await transport.failures(upload: true)
+        await cloud.upload("local draft")
+        cloud.reload()
+        let reopened = ConfigurationCloudStore(transport: transport, cacheURL: nil)
+        reopened.reload()
+        #expect(cloud.errorMessage != nil)
+        #expect(cloud.documents.isEmpty)
+        await transport.failures()
+        await cloud.download()
+        let counts = await transport.counts()
+        #expect(counts.0 == 1 && counts.1 == 1)
     }
 }

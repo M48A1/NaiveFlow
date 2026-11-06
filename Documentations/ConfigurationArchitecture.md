@@ -14,7 +14,7 @@
 
 ## iCloud 文本同步
 
-配置页通过现有 CloudKit 同步每个设备的草稿和最后应用的配置文本。收到的副本可载入编辑器，不会自动改变本机内核运行版本；详见 [ConfigurationCloudSync.md](ConfigurationCloudSync.md)。
+配置页仅在点击上传或下载时传输配置文本；编辑、应用和启动不自动传输。上传新增云端副本，下载后需确认载入并在本机单独应用；详见 [ConfigurationCloudSync.md](ConfigurationCloudSync.md)。
 
 ## 版本切换协议
 

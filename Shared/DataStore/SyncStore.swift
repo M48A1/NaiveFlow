@@ -60,6 +60,8 @@ nonisolated final class SyncStore: Sendable {
         case customRuleSets
         case mitm
         case modules
+
+        var automaticallySyncs: Bool { self != .configurationDocuments }
     }
 
     struct ItemSnapshot: Sendable {

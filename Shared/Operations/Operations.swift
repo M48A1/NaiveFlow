@@ -60,8 +60,7 @@ final class Operations {
             moduleStore: container.moduleStore,
             activation: ConfigurationActivation(),
             tunnel: container.tunnel,
-            selection: container.selection,
-            cloud: container.configurationCloud
+            selection: container.selection
         )
     }
 
@@ -100,7 +99,6 @@ final class Operations {
     var configurationCloud: ConfigurationCloudStore { container.configurationCloud }
 
     func reload(_ keys: Set<SyncStore.Key>) async {
-        if keys.contains(.configurationDocuments) { await container.configurationCloud.reload() }
         let stores: [(SyncStore.Key, any Reloadable)] = [
             (.groups, container.groupStore),
             (.subscriptions, container.subscriptionStore),

@@ -47,7 +47,7 @@ final class AppContainer {
         mitmRuleSetStore = MITMRuleSetStore(syncStore: syncStore)
         moduleStore = ModuleStore(syncStore: syncStore)
         certificateStore = CertificateStore()
-        configurationCloud = ConfigurationCloudStore(store: syncStore)
+        configurationCloud = ConfigurationCloudStore()
         do {
             let publisher = ConfigurationPublisher(activation: ConfigurationActivation(), tunnel: tunnel,
                 stateSink: { [selection] in selection.showRuntimeVersion($0) })
@@ -100,12 +100,7 @@ final class AppContainer {
     func start() {
         guard !started else { return }
         started = true
-        Task {
-            await configurationCloud.reload()
-            let activation = ConfigurationActivation()
-            if activation.hasDraft() { configurationCloud.schedule(activation.draft()) }
-            if let active = activation.active { await configurationCloud.saveApplied(active.text) }
-        }
+        configurationCloud.reload()
 
         Task { await LoadOperation(configurationStore: configurationStore, reaction: mutationReaction).run() }
         observeTunnelStatus()

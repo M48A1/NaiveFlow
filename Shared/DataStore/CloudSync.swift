@@ -62,13 +62,6 @@ actor CloudSync {
         }
     }
 
-    func refresh() async throws {
-        guard AWCore.getICloudSyncEnabled(), let engine else {
-            throw ConfigurationCloudCodec.Failure(message: "Enable iCloud Sync in Data settings to fetch configurations.")
-        }
-        try await engine.fetchChanges()
-    }
-
     private func startEngine() {
         let state = Self.loadState()
         let configuration = CKSyncEngine.Configuration(
@@ -77,6 +70,14 @@ actor CloudSync {
             delegate: self
         )
         let engine = CKSyncEngine(configuration)
+        // Discard legacy queued configuration transfers restored from disk.
+        let blocked = engine.state.pendingRecordZoneChanges.filter { change in
+            switch change {
+            case .saveRecord(let id), .deleteRecord(let id): return !Self.isAutomaticRecord(id)
+            @unknown default: return false
+            }
+        }
+        engine.state.remove(pendingRecordZoneChanges: blocked)
         self.engine = engine
         if state == nil {
             requeueAllItems()
@@ -88,7 +89,7 @@ actor CloudSync {
                 }
             }
         } else {
-            let refs = store.refsNeedingUpload()
+            let refs = store.refsNeedingUpload().filter { $0.key.automaticallySyncs }
             if !refs.isEmpty {
                 engine.state.add(pendingRecordZoneChanges: refs.map { .saveRecord(Self.recordID(for: $0)) })
             }
@@ -103,10 +104,16 @@ actor CloudSync {
     private func requeueAllItems() {
         guard let engine else { return }
         engine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: Self.zoneID))])
-        engine.state.add(pendingRecordZoneChanges: store.allItemRefs().map { .saveRecord(Self.recordID(for: $0)) })
+        engine.state.add(pendingRecordZoneChanges: store.allItemRefs().filter { $0.key.automaticallySyncs }.map { .saveRecord(Self.recordID(for: $0)) })
     }
 
     private func noteLocalChanges(_ changes: [SyncChange]) {
+        let changes = changes.filter { change in
+            switch change {
+            case .save(let ref), .delete(let ref): return ref.key.automaticallySyncs
+            }
+        }
+        guard !changes.isEmpty else { return }
         guard let engine else {
             if AWCore.getICloudSyncEnabled() { deferredChanges += changes }
             return
@@ -149,6 +156,7 @@ actor CloudSync {
         var saves: [SyncStore.RemoteItem] = []
         var deletes: [SyncItemRef] = []
         for modification in event.modifications {
+            guard Self.isAutomaticRecord(modification.record.recordID) else { continue }
             guard let item = Self.remoteItem(from: modification.record) else {
                 logger.error("[Sync] Unreadable record: \(modification.record.recordID.recordName)")
                 continue
@@ -156,7 +164,7 @@ actor CloudSync {
             saves.append(item)
         }
         for deletion in event.deletions {
-            guard let ref = Self.itemRef(for: deletion.recordID) else { continue }
+            guard Self.isAutomaticRecord(deletion.recordID), let ref = Self.itemRef(for: deletion.recordID) else { continue }
             deletes.append(ref)
         }
         guard !saves.isEmpty || !deletes.isEmpty else { return }
@@ -238,6 +246,10 @@ actor CloudSync {
 
     // MARK: - Record mapping
 
+    private static func isAutomaticRecord(_ id: CKRecord.ID) -> Bool {
+        id.zoneID == zoneID && itemRef(for: id)?.key.automaticallySyncs == true
+    }
+
     private static func recordID(for ref: SyncItemRef) -> CKRecord.ID {
         CKRecord.ID(recordName: "\(ref.key.rawValue)\(recordNameSeparator)\(ref.itemID)", zoneID: zoneID)
     }
@@ -317,6 +329,12 @@ actor CloudSync {
 // MARK: - CKSyncEngineDelegate
 
 extension CloudSync: CKSyncEngineDelegate {
+    func nextFetchChangesOptions(_ context: CKSyncEngine.FetchChangesContext, syncEngine: CKSyncEngine) async -> CKSyncEngine.FetchChangesOptions {
+        var options = context.options
+        options.scope = .zoneIDs([Self.zoneID])
+        return options
+    }
+
     func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
         guard syncEngine === engine else { return }
         switch event {
@@ -343,7 +361,13 @@ extension CloudSync: CKSyncEngineDelegate {
     func nextRecordZoneChangeBatch(_ context: CKSyncEngine.SendChangesContext, syncEngine: CKSyncEngine) async -> CKSyncEngine.RecordZoneChangeBatch? {
         guard syncEngine === engine else { return nil }
         let scope = context.options.scope
-        let pending = syncEngine.state.pendingRecordZoneChanges.filter { scope.contains($0) }
+        let pending = syncEngine.state.pendingRecordZoneChanges.filter { change in
+            guard scope.contains(change) else { return false }
+            switch change {
+            case .saveRecord(let id), .deleteRecord(let id): return Self.isAutomaticRecord(id)
+            @unknown default: return false
+            }
+        }
         guard !pending.isEmpty else { return nil }
         let saveRefs = pending.compactMap { change -> (CKRecord.ID, SyncItemRef)? in
             guard case .saveRecord(let recordID) = change, let ref = Self.itemRef(for: recordID) else { return nil }
