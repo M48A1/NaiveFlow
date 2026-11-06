@@ -41,19 +41,20 @@ nonisolated struct CompiledRuleSet: Sendable {
 
 /// Maps a `ParsedConfiguration` onto the app's existing model types.
 ///
-/// Proxies become `ProxyConfiguration` (through the URL parser or
-/// `ClashProxyParser`), groups become `ProxyGroup`, and rules are grouped by
-/// their policy into `CompiledRuleSet`s because the current matcher assigns one
-/// policy per rule set. When the ordered matcher lands, `compileRules` is the
-/// only function that has to change.
+/// Proxies become `ProxyConfiguration`, groups become `ProxyGroup`, and native
+/// rules retain document order. Resolved provider entries are expanded in place;
+/// grouped `CompiledRuleSet`s are retained for inventory reports.
 nonisolated enum ConfigurationCompiler {
 
     static func compile(
-        _ configuration: ParsedConfiguration,
+        _ sourceConfiguration: ParsedConfiguration,
         capabilities: ConfigurationValidator.Capabilities = .current,
-        parsingDiagnostics: [ConfigurationDiagnostic] = []
+        parsingDiagnostics: [ConfigurationDiagnostic] = [],
+        ruleSetContents: [String: String] = [:]
     ) -> CompiledConfiguration {
-        var diagnostics = parsingDiagnostics + ConfigurationValidator.validate(configuration, capabilities: capabilities)
+        var diagnostics = parsingDiagnostics
+        let configuration = NativeRuleSet.expand(sourceConfiguration, contents: ruleSetContents, diagnostics: &diagnostics)
+        diagnostics += ConfigurationValidator.validate(configuration, capabilities: capabilities)
 
         let proxies = compileProxies(configuration, diagnostics: &diagnostics)
         let proxyIds = Dictionary(proxies.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
@@ -660,10 +661,8 @@ nonisolated extension ConfigurationCompiler {
 
     /// Builds the ordered rule list used by `OrderedRouteMatcher`.
     ///
-    /// Unlike `compileRules`, this keeps every rule — including types the
-    /// current binary payload cannot carry — because the matcher and the
-    /// editor's preview can evaluate them as soon as the geo databases and the
-    /// ordered payload exist.
+    /// Unlike the grouped inventory, this is the authoritative runtime order.
+    /// Expanded provider entries share the reference line for diagnostics.
     static func compileOrderedRules(
         _ configuration: ParsedConfiguration,
         policies: [String: RouteTarget],
@@ -697,7 +696,7 @@ nonisolated extension ConfigurationCompiler {
         let finalAction = configuration.finalRule
             .flatMap { routeMatchAction(for: $0.policy, policies: policies) } ?? .defaultProxy
 
-        return (rules.sorted { $0.line < $1.line }, finalAction)
+        return (rules, finalAction)
     }
 
     static func routeMatchAction(
@@ -722,7 +721,7 @@ nonisolated extension ConfigurationCompiler {
         }
     }
 
-    private static func validateExpression(_ matcher: OrderedRoutingRule.Matcher) throws {
+    static func validateExpression(_ matcher: OrderedRoutingRule.Matcher) throws {
         switch matcher {
         case .allOf(let children), .anyOf(let children):
             for child in children { try validateExpression(child) }
@@ -790,7 +789,7 @@ nonisolated extension ConfigurationCompiler {
                 let parts = ConfigurationDocument.splitExpression(content)
                 guard parts.count == 2 else { return nil }
                 let kind = ParsedRule.Kind(token: parts[0])
-                guard ConfigurationValidator.Capabilities.current.ruleKinds.contains(kind) else { return nil }
+                guard kind != .ruleSet, ConfigurationValidator.Capabilities.current.ruleKinds.contains(kind) else { return nil }
                 let nested = ParsedRule(line: rule.line, kind: kind, value: parts[1], policy: .direct, options: [], raw: child)
                 guard let matcher = matcher(for: nested, depth: depth + 1) else { return nil }
                 matchers.append(matcher)

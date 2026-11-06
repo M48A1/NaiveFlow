@@ -8,6 +8,7 @@ struct ConfigurationPublisher {
     let activation: ConfigurationActivation
     let tunnel: TunnelController?
     var runningOverride: Bool? = nil
+    var ruleSetLoader: NativeRuleSet.Loader? = nil
     var deliveryOverride: (@MainActor (RuntimeConfigurationBundle, Bool) async throws -> RuntimeConfigurationReceipt?)? = nil
     var preferencesSink: @MainActor ([String: RuntimePreferenceValue]?) -> Void = { AWCore.installRuntimePreferences($0) }
 
@@ -40,11 +41,20 @@ struct ConfigurationPublisher {
 
     func publish(text: String) async throws -> (ConfigurationActivation.Activation, ConfigurationInstaller.Outcome) {
         try activation.saveDraft(text)
-        let result = ConfigurationCoordinator().compile(text: text)
+        var result = ConfigurationCoordinator().compile(text: text)
         guard result.isActivatable else {
             throw ConfigurationActivation.Failure.notActivatable(errors: result.errorCount, warnings: result.warningCount)
         }
+        let ruleSetContents = try await NativeRuleSet.resolve(result.parsed, loader: ruleSetLoader)
+        if !ruleSetContents.isEmpty {
+            result = ConfigurationCoordinator().compile(text: text, ruleSetContents: ruleSetContents)
+            guard result.isActivatable else {
+                throw NativeRuleSet.Failure(message: result.diagnostics.filter { $0.severity == .error }
+                    .map(\.localizedDescription).joined(separator: "\n"))
+            }
+        }
         let mitm = try await result.compiled.textMITM.resolveScripts()
+        try Task.checkCancellation()
         let lease = try bundleStore.lease()
         defer { withExtendedLifetime(lease) {} }
         let originalManifest = activation.store.manifest()

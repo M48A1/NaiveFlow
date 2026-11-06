@@ -40,6 +40,7 @@ DNS 读取固定在一个设置视图，缓存有代际隔离；旧路由编译�
 | 项目 | 原生 v1 |
 | --- | --- |
 | 路由 | 顺序首条命中、每条策略、FINAL；精确域名、后缀、关键字、通配符、正则；IPv4/IPv6 CIDR、来源 IP/端口、目标端口、TCP/UDP；AND/OR/NOT |
+| 外部规则集 | RULE-SET 引用 HTTPS 或 App 可读的绝对 file:/// 文件；发布前展开、校验并固定到运行包，详见 [RuleSets.md](RuleSets.md) |
 | Geo | [GeoIP] 中的国家/ASN 前缀和 [GeoSite] 的域名后缀列表，随版本固定；不附带外部数据库 |
 | 分组 | select，支持嵌套、内置动作和 selected=成员；不支持自动延迟选择/负载均衡 |
 | Host | 精确域名 → IPv4/IPv6 字面量。没有把 server:、通配符或别名当作有效绑定 |
@@ -47,7 +48,7 @@ DNS 读取固定在一个设置视图，缓存有代际隔离；旧路由编译�
 | 脚本 | http-request/http-response；普通或逐帧 process(ctx)，复用已有原生脚本 ABI；HTTPS 或 base64 源，固定字节；支持 $argument |
 | 无损导出 | [MITM Set] 保存原生规则集的 Base64 JSON，保留作用域 ID、参数和脚本字节；不把多个作用域扁平化 |
 
-PROCESS-NAME、USER-AGENT、URL 路由、外部 RULE-SET、定时/DNS 脚本、证书导入、其他客户端脚本 API、未实现 General 字段会明确拒绝。bypass-country 只有本机存在对应预设数据库时才接受；也可使用文档内的 Geo 数据。规则匹配可能先等待 DNS；no-resolve 不触发额外查询。
+PROCESS-NAME、USER-AGENT、URL 路由、定时/DNS 脚本、证书导入、其他客户端脚本 API、未实现 General 字段会明确拒绝。bypass-country 只有本机存在对应预设数据库时才接受；也可使用文档内的 Geo 数据。规则匹配可能先等待 DNS；no-resolve 不触发额外查询。
 
 文本文档最多 16 MiB，脚本源最多 1 MB，运行包最多 16 MiB。请求/响应完整消息、流式脚本和 JSON path 的行为遵循现有 MITM 引擎，见 MITM.md。
 

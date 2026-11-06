@@ -212,14 +212,14 @@ nonisolated extension ConfigurationCoordinator {
 
     /// The single compilation boundary, including syntax diagnostics. A parser
     /// error must never disappear merely because an invalid entry was omitted.
-    func compile(text: String) -> TextConfigurationPipeline.Result {
+    func compile(text: String, ruleSetContents: [String: String] = [:]) -> TextConfigurationPipeline.Result {
         let parsed = RuleManager.parse(text)
         return TextConfigurationPipeline.Result(
             document: parsed.document,
             parsed: parsed.configuration,
             compiled: ConfigurationCompiler.compile(
                 parsed.configuration, capabilities: capabilities,
-                parsingDiagnostics: parsed.diagnostics
+                parsingDiagnostics: parsed.diagnostics, ruleSetContents: ruleSetContents
             )
         )
     }
