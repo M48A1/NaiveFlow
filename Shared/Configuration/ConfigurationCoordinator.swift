@@ -133,7 +133,7 @@ nonisolated extension ConfigurationModule {
         guard let name, let kind = ConfigurationDocument.SectionKind.matching(name) else { return nil }
 
         switch kind {
-        case .proxy, .proxyGroup, .ssidSetting:
+        case .proxy, .proxyGroup, .ssidSetting, .chain, .subscription:
             return .outbound
         case .rule, .geoIP, .geoSite:
             return .rule
@@ -143,7 +143,7 @@ nonisolated extension ConfigurationModule {
             // The rewrite sections only do anything while interception is on, and
             // they are loaded together with the MITM policy.
             return .mitm
-        case .general, .panel, .misc:
+        case .general, .panel, .misc, .module:
             return nil
         }
     }

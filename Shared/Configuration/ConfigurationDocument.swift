@@ -37,6 +37,9 @@ nonisolated struct ConfigurationDocument: Equatable, Sendable {
         case panel
         case ssidSetting
         case misc
+        case chain
+        case subscription
+        case module
 
         /// Canonical header text, also used when exporting a document.
         var displayName: String {
@@ -60,6 +63,9 @@ nonisolated struct ConfigurationDocument: Equatable, Sendable {
             case .panel: return "Panel"
             case .ssidSetting: return "SSID Setting"
             case .misc: return "Misc"
+            case .chain: return "Chain"
+            case .subscription: return "Subscription"
+            case .module: return "Module"
             }
         }
 
@@ -69,7 +75,7 @@ nonisolated struct ConfigurationDocument: Equatable, Sendable {
             switch self {
             case .rule, .urlRewrite, .headerRewrite, .bodyRewrite, .mapLocal, .rewrite:
                 return true
-            case .dns, .geoIP, .geoSite, .mitmSet, .general, .proxy, .proxyGroup, .host, .mitm, .script, .panel, .ssidSetting, .misc:
+            case .dns, .geoIP, .geoSite, .mitmSet, .general, .proxy, .proxyGroup, .host, .mitm, .script, .panel, .ssidSetting, .misc, .chain, .subscription, .module:
                 return false
             }
         }
@@ -100,6 +106,9 @@ nonisolated struct ConfigurationDocument: Equatable, Sendable {
             case "rewrite": return .rewrite
             case "panel", "panels": return .panel
             case "ssidsetting": return .ssidSetting
+            case "chain", "chains": return .chain
+            case "subscription", "subscriptions": return .subscription
+            case "module", "modules": return .module
             default: return nil
             }
         }

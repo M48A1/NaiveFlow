@@ -75,7 +75,12 @@ struct ConfigurationPublisher {
         let previous = try bundleStore.load(head.current)
         let compiled = result.compiled
         let snapshot = ConfigurationSnapshot(text: text, compiled: compiled)
-        let nodes = compiled.proxies.isEmpty ? [directNode()] : compiled.proxies
+        var nodes = compiled.proxies.isEmpty ? [directNode()] : compiled.proxies
+        for chain in compiled.chains {
+            if let composite = chain.resolveComposite(from: compiled.proxies) {
+                nodes.append(composite)
+            }
+        }
         let selected = nodes.first { $0.id == previous.selectedNodeID }
             ?? nodes.first { $0.name == previous.selectedNode?.name } ?? nodes[0]
         let preferences = try AWCore.captureRuntimePreferences(base: previous.preferences) {

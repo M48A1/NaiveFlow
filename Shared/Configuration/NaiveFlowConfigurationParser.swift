@@ -64,6 +64,8 @@ nonisolated enum NaiveFlowConfigurationParser {
                 parseRules(section, into: &configuration, diagnostics: &diagnostics)
             case .host:
                 parseHosts(section, into: &configuration, diagnostics: &diagnostics)
+            case .chain:
+                parseChains(section, into: &configuration, diagnostics: &diagnostics)
             case .mitmSet:
                 for entry in section.entries {
                     if let key = entry.key { configuration.mitmSets.set(key, entry.value) }
@@ -81,7 +83,7 @@ nonisolated enum NaiveFlowConfigurationParser {
                         ParsedRewriteDirective(line: entry.line, section: section.rawName, text: entry.value)
                     )
                 }
-            case .panel, .ssidSetting, .misc:
+            case .panel, .ssidSetting, .misc, .subscription, .module:
                 configuration.unsupportedSections.append(section.rawName)
             }
         }
@@ -578,6 +580,28 @@ nonisolated extension NaiveFlowConfigurationParser {
                     ParsedHostEntry(host: host, address: address, mode: mode, line: entry.line)
                 )
             }
+        }
+    }
+}
+
+// MARK: - Chain
+
+nonisolated extension NaiveFlowConfigurationParser {
+
+    static func parseChains(
+        _ section: ConfigurationDocument.Section,
+        into configuration: inout ParsedConfiguration,
+        diagnostics: inout [ConfigurationDiagnostic]
+    ) {
+        for entry in section.entries {
+            guard let name = entry.key, !name.isEmpty else { continue }
+            let members = ConfigurationDocument.splitList(entry.value).map(ConfigurationDocument.unquoted)
+            guard members.count >= 2 else {
+                diagnostics.append(.init(severity: .error, code: .missingValue, line: entry.line,
+                    section: "Chain", message: "Chain '\(name)' needs at least two member nodes."))
+                continue
+            }
+            configuration.chains.append(ParsedChain(name: ConfigurationDocument.unquoted(name), members: members, line: entry.line))
         }
     }
 }

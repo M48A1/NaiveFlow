@@ -86,6 +86,7 @@ nonisolated enum ConfigurationValidator {
         validateUnsupportedSections(configuration, diagnostics: &diagnostics)
         validateProxies(configuration, diagnostics: &diagnostics)
         validateProxyGroups(configuration, capabilities: capabilities, diagnostics: &diagnostics)
+        validateChains(configuration, diagnostics: &diagnostics)
         validateRules(configuration, capabilities: capabilities, diagnostics: &diagnostics)
         validateHosts(configuration, diagnostics: &diagnostics)
         validateMITM(configuration, diagnostics: &diagnostics)
@@ -449,6 +450,35 @@ nonisolated extension ConfigurationValidator {
     }
 }
 
+
+// MARK: - Chains
+
+nonisolated extension ConfigurationValidator {
+
+    static func validateChains(
+        _ configuration: ParsedConfiguration,
+        diagnostics: inout [ConfigurationDiagnostic]
+    ) {
+        let names = configuration.chains.map(\.name)
+        for (index, chain) in configuration.chains.enumerated() {
+            if names.firstIndex(of: chain.name) != index {
+                diagnostics.append(.init(severity: .error, code: .duplicateName, line: chain.line,
+                    section: ConfigurationDocument.SectionKind.chain.displayName,
+                    message: "Duplicate chain name '\(chain.name)'."))
+            }
+            if Set(chain.members).count != chain.members.count {
+                diagnostics.append(.init(severity: .info, code: .duplicateName, line: chain.line,
+                    section: ConfigurationDocument.SectionKind.chain.displayName,
+                    message: "Chain '\(chain.name)' lists the same node more than once."))
+            }
+            for member in chain.members where configuration.proxy(named: member) == nil {
+                diagnostics.append(.init(severity: .error, code: .unresolvedPolicy, line: chain.line,
+                    section: ConfigurationDocument.SectionKind.chain.displayName,
+                    message: "Chain '\(chain.name)' references unknown node '\(member)'."))
+            }
+        }
+    }
+}
 
 // MARK: - Rules
 

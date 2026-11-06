@@ -42,9 +42,15 @@ nonisolated struct ConfigurationExportSource: Sendable, Equatable {
         var value: String
     }
 
+    struct Chain: Sendable, Equatable {
+        var name: String
+        var members: [String]
+    }
+
     var proxies: [Proxy]
     var groups: [Group]
     var ruleSets: [RuleSet]
+    var chains: [Chain]
     var hosts: [HostMapping]
     /// `[General]` entries, in emission order.
     var settings: [Setting]
@@ -59,6 +65,7 @@ nonisolated struct ConfigurationExportSource: Sendable, Equatable {
         proxies: [Proxy] = [],
         groups: [Group] = [],
         ruleSets: [RuleSet] = [],
+        chains: [Chain] = [],
         hosts: [HostMapping] = [],
         settings: [Setting] = [],
         mitmEnabled: Bool = false,
@@ -69,6 +76,7 @@ nonisolated struct ConfigurationExportSource: Sendable, Equatable {
         self.proxies = proxies
         self.groups = groups
         self.ruleSets = ruleSets
+        self.chains = chains
         self.hosts = hosts
         self.settings = settings
         self.mitmEnabled = mitmEnabled
@@ -126,6 +134,7 @@ nonisolated enum ConfigurationExporter {
         var groups = 0
         var rules = 0
         var hosts = 0
+        var chains = 0
         /// Rule sets whose rules are not in the document; the reason is in
         /// `Result.notes`.
         var skippedRuleSets: [String] = []
@@ -162,6 +171,7 @@ nonisolated extension ConfigurationExporter {
         var state = State(source: source, options: options)
         state.emitNodes()
         state.emitGroups()
+        state.emitChains()
         state.emitRules()
         state.emitHosts()
         state.emitSettings()
@@ -186,6 +196,7 @@ private nonisolated struct State {
 
     var proxyLines: [String] = []
     var groupLines: [String] = []
+    var chainLines: [String] = []
     var ruleLines: [String] = []
     var hostLines: [String] = []
     var mitmLines: [String] = []
@@ -207,6 +218,7 @@ private nonisolated struct State {
             ConfigurationExporter.section("General", settingLines),
             ConfigurationExporter.section("Proxy", proxyLines),
             ConfigurationExporter.section("Proxy Group", groupLines),
+            ConfigurationExporter.section("Chain", chainLines),
             ConfigurationExporter.section("Rule", ruleLines),
             ConfigurationExporter.section("Host", hostLines),
             ConfigurationExporter.section("MITM", mitmLines),
@@ -293,6 +305,14 @@ nonisolated extension State {
 }
 
 nonisolated extension State {
+
+    mutating func emitChains() {
+        for chain in source.chains {
+            let members = chain.members.map { renames[$0] ?? $0 }
+            chainLines.append("\(chain.name) = \(members.joined(separator: ", "))")
+        }
+        counts.chains = chainLines.count
+    }
 
     mutating func emitRules() {
         for ruleSet in source.ruleSets {

@@ -26,13 +26,14 @@ nonisolated struct ParsedConfiguration: Equatable, Sendable {
     var mitm = OrderedParameters()
     var scripts: [ParsedScript] = []
     var rewrites: [ParsedRewriteDirective] = []
+    var chains: [ParsedChain] = []
     /// Raw header text of sections this build does not model.
     var unsupportedSections: [String] = []
 
     var hasContent: Bool {
         !general.isEmpty || !proxies.isEmpty || !proxyGroups.isEmpty || !rules.isEmpty
             || !geoIP.isEmpty || !geoSite.isEmpty || !mitmSets.isEmpty || finalRule != nil || !hosts.isEmpty || !mitm.isEmpty || !scripts.isEmpty
-            || !rewrites.isEmpty
+            || !rewrites.isEmpty || !chains.isEmpty
     }
 
     func proxy(named name: String) -> ParsedProxy? {
@@ -60,6 +61,16 @@ nonisolated struct ParsedConfiguration: Equatable, Sendable {
         let groupMembers = Set(proxyGroups.flatMap(\.members))
         return proxies.map(\.name).filter { !referenced.contains($0) && !groupMembers.contains($0) }
     }
+}
+
+// MARK: - Chain
+
+nonisolated struct ParsedChain: Equatable, Sendable, Identifiable {
+    let name: String
+    let members: [String]
+    let line: Int
+
+    var id: String { name }
 }
 
 // MARK: - Proxy

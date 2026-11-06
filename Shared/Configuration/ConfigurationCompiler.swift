@@ -21,6 +21,7 @@ nonisolated struct CompiledConfiguration: Sendable {
     /// Action taken when no rule matches (`FINAL`, defaulting to `PROXY`).
     let finalAction: RouteMatchAction
     let hosts: [HostMapping]
+    let chains: [ProxyChain]
     let geo: NativeGeoDatabase
     let textMITM: CompiledTextMITM
     let settings: CompiledSettings
@@ -65,9 +66,12 @@ nonisolated enum ConfigurationCompiler {
             proxyIds: proxyIds,
             diagnostics: &diagnostics
         )
+        let chains = compileChains(configuration, proxyIds: proxyIds, diagnostics: &diagnostics)
+        let chainIds = Dictionary(chains.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
         let policies = policyTargets(
             configuration,
             proxyIds: proxyIds,
+            chainIds: chainIds,
             groups: groups,
             diagnostics: &diagnostics
         )
@@ -105,6 +109,7 @@ nonisolated enum ConfigurationCompiler {
             orderedRules: ordered.rules,
             finalAction: ordered.finalAction,
             hosts: compileHosts(configuration, diagnostics: &diagnostics),
+            chains: chains,
             geo: geo,
             textMITM: textMITM,
             settings: compileSettings(configuration),
@@ -443,6 +448,7 @@ nonisolated extension ConfigurationCompiler {
     static func policyTargets(
         _ configuration: ParsedConfiguration,
         proxyIds: [String: UUID],
+        chainIds: [String: UUID],
         groups: [ProxyGroup],
         diagnostics: inout [ConfigurationDiagnostic]
     ) -> [String: RouteTarget] {
@@ -450,6 +456,11 @@ nonisolated extension ConfigurationCompiler {
         for proxy in configuration.proxies {
             if let id = proxyIds[proxy.name] {
                 targets[proxy.name] = .proxy(id)
+            }
+        }
+        for chain in configuration.chains {
+            if let id = chainIds[chain.name] {
+                targets[chain.name] = .proxy(id)
             }
         }
         func resolve(_ name: String, visiting: Set<String>) -> RouteTarget? {
@@ -461,6 +472,7 @@ nonisolated extension ConfigurationCompiler {
             case .named: break
             }
             if let id = proxyIds[name] { return .proxy(id) }
+            if let id = chainIds[name] { return .proxy(id) }
             guard !visiting.contains(name), let group = configuration.proxyGroup(named: name),
                   let selected = group.parameters["selected"] ?? group.members.first else { return nil }
             return resolve(selected, visiting: visiting.union([name]))
@@ -675,6 +687,25 @@ nonisolated extension ConfigurationCompiler {
             return "*." + suffix
         }
         return DNSName.normalizedHost(host)
+    }
+
+    static func compileChains(
+        _ configuration: ParsedConfiguration,
+        proxyIds: [String: UUID],
+        diagnostics: inout [ConfigurationDiagnostic]
+    ) -> [ProxyChain] {
+        configuration.chains.compactMap { chain in
+            var memberIds: [UUID] = []
+            for member in chain.members {
+                guard let id = proxyIds[member] else {
+                    diagnostics.append(.init(severity: .error, code: .unresolvedPolicy, line: chain.line,
+                        section: "Chain", message: "Chain '\(chain.name)' references unknown node '\(member)'."))
+                    return nil
+                }
+                memberIds.append(id)
+            }
+            return ProxyChain(name: chain.name, proxyIds: memberIds)
+        }
     }
 
     static func compileSettings(_ configuration: ParsedConfiguration) -> CompiledSettings {

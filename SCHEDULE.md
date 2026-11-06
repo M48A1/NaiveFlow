@@ -178,7 +178,8 @@
    - [x] `[Proxy Group]` 增加 `url-test`/`fallback`/`load-balance`：`groupKinds` 已启用，`interval`/`tolerance`/`url` 参数放行；执行语义暂退化为 select（延迟测试/健康检查/负载均衡待后续）。
    - [x] `[MITM] hostname` 接进拦截列表，`[Script]` 可执行（`TextMITMCompiler` + 阶段 08 方言）。
    - [x] `[Host]` 通配符、`[URL Rewrite]`/`[Header Rewrite]`/`[Map Local]`（`TextMITMCompiler` + `DNSHosts` 通配符）。
-   - [ ] `[SSID Setting]`、`[Module]`/`[Subscription]`/`[Chain]` 各节。
+   - [x] `[Chain]`：解析、编译、校验（成员引用/重复名）、导出、运行时 composite 节点与策略引用（2026-11-07 完成）。
+   - [ ] `[SSID Setting]`、`[Module]`/`[Subscription]` 各节。
    - [x] 语义：维持「文本 = 全量投影 + 页面保留选择状态/外观」，与 Surge / Loon / Quantumult X 一致；页面不反向改写文本，选择/外观不入 profile。
 
 

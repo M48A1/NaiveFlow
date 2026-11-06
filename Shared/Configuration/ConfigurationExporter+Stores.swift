@@ -41,14 +41,16 @@ extension ConfigurationExportSource {
             proxies.append(Proxy(name: node.name, url: node.toURLString()))
         }
 
-        // A chain is a fixed multi-hop node; the text format has no equivalent,
-        // so its hops stay where they are and the chain itself is reported.
         let chains = chainStore.chains
         let chainNames = Dictionary(chains.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
-        if !chains.isEmpty {
-            notes.append(
-                "\(chains.count) chain(s) are not exported: a text configuration has no multi-hop node."
-            )
+        var exportedChains: [ConfigurationExportSource.Chain] = []
+        for chain in chains {
+            let memberNames = chain.proxyIds.compactMap { nodeNames[$0] }
+            if memberNames.count == chain.proxyIds.count, memberNames.count >= 2 {
+                exportedChains.append(.init(name: chain.name, members: memberNames))
+            } else {
+                notes.append("Chain '\(chain.name)' has missing or too few members and is not exported.")
+            }
         }
 
         // MARK: Groups
@@ -107,6 +109,7 @@ extension ConfigurationExportSource {
             proxies: proxies,
             groups: groups,
             ruleSets: ruleSets,
+            chains: exportedChains,
             hosts: HostMapping.load(),
             settings: Self.exportSettings(),
             mitmEnabled: mitmRuleSetStore.isEnabled,
