@@ -326,7 +326,7 @@ actor TCPConnection: MITMSessionHost {
                 sourcePort: sourcePort, destinationPort: dstPort, protocolName: "TCP")
             var evaluation = router.nativeDecision(query, allowResolution: !AWCore.getPreventDNSLeak())
             if case .needsAddress = evaluation {
-                query.ip = await DNSResolver.localRequests.resolveHost(host, family: .ipv4)
+                query.ip = await DNSResolver.localRequests.resolveHost(host, family: .ipv4, purpose: .ruleEvaluation)
                 evaluation = router.nativeDecision(query, allowResolution: false)
             }
             guard phase != .closed, case .matched(let result) = evaluation else { return }
@@ -334,7 +334,7 @@ actor TCPConnection: MITMSessionHost {
         } else {
             guard hostIsResolvedDomain, !ruleMatched,
                   !stack.connectionRouter.preventDNSLeak.load(ordering: .relaxed),
-                  let ip = await DNSResolver.localRequests.resolveHost(dstHost, family: .ipv4),
+                  let ip = await DNSResolver.localRequests.resolveHost(dstHost, family: .ipv4, purpose: .ruleEvaluation),
                   phase != .closed, let resolved = router.matchIP(ip) else { return }
             match = resolved
         }
@@ -1208,7 +1208,7 @@ actor TCPConnection: MITMSessionHost {
                                    sourcePort: sourcePort, destinationPort: port, protocolName: "TCP")
             var evaluation = router.nativeDecision(query, allowResolution: !AWCore.getPreventDNSLeak())
             if case .needsAddress = evaluation {
-                query.ip = await DNSResolver.localRequests.resolveHost(host, family: .ipv4)
+                query.ip = await DNSResolver.localRequests.resolveHost(host, family: .ipv4, purpose: .ruleEvaluation)
                 evaluation = router.nativeDecision(query, allowResolution: false)
             }
             if case .matched(let result) = evaluation,
@@ -1249,7 +1249,7 @@ actor TCPConnection: MITMSessionHost {
     private func ipRuleCandidate(forDialHost host: String) async -> String? {
         if let literal = Self.bareIPLiteral(host) { return literal }
         guard let stack, !stack.connectionRouter.preventDNSLeak.load(ordering: .relaxed) else { return nil }
-        return await DNSResolver.localRequests.resolveHost(host, family: .ipv4)
+        return await DNSResolver.localRequests.resolveHost(host, family: .ipv4, purpose: .ruleEvaluation)
     }
 
     nonisolated private static func bareIPLiteral(_ host: String) -> String? {

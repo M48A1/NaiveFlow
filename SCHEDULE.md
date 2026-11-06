@@ -68,12 +68,14 @@
 
 **已有参考实现（2026-11-04）**：`Shared/Networking/Routing/OrderedRouteMatcher.swift` 已按原文顺序首条命中并支持 `FINAL`，GeoIP/GeoSite 通过 `GeoIPLookup` / `GeoSiteLookup` 注入（当前为空实现）；`TextConfigurationPipeline.Result.route(...)` 与 `CompiledConfiguration.orderedRules` / `finalAction` 已在用。待办是把这份语义接入 `routing.bin` 载荷与隧道执行路径，并确定 Geo 数据来源。
 
-- [ ] 扩展现有规则模型和载荷，保留旧配置读取能力。
-- [ ] 实现有序规则执行，索引加速不能改变原文顺序。
-- [ ] 加入 GeoSite 域名匹配和 GeoIP IPv4/IPv6 匹配。
-- [ ] 确定 Geo 数据格式、来源、随包基线、容量及更新方式。
-- [ ] 实现数据库校验、原子更新、失败回滚和版本化缓存失效。
-- [ ] 实现逐规则 `no-resolve`、唯一末尾 FINAL 和明确的 DNS 失败语义。
+**进展（2026-11-06）**：修复 `e10f7b0`（Remove IPv6）在 `ConfigurationCompiler.swift` 中误删的 4 个函数——`compileOrderedRules`、`routeMatchAction`、`compileHosts`、`compileSettings`，并补回 `validateExpression` 的 protocol 校验。有序规则编译此前因缺失 `compileOrderedRules` 根本无法产出 `orderedRules` / `finalAction`；现按原文顺序编译（首条命中 + 唯一末尾 `FINAL` + 逐规则 `no-resolve`），GeoIP/GeoSite 数据经 `ConfigurationCompiler.compileGeo`（`NativeGeoDatabase`）随 `RuntimeConfigurationBundle` 下发；`Capabilities.current.ruleKinds` 补齐 `urlRegex` / `processName` / `userAgent`。本阶段只做静态检查，未编译、未运行测试。
+
+- [ ] 扩展现有规则模型和载荷，保留旧配置读取能力。（有序语义已走 `RuntimeConfigurationBundle`；旧 `routing.bin` 仍为分 tier 手动基线，未改。）
+- [x] 实现有序规则执行，索引加速不能改变原文顺序。（`compileOrderedRules` 已恢复，产出原文顺序规则；匹配器线性扫描、首条命中。）
+- [x] 加入 GeoSite 域名匹配和 GeoIP IPv4 匹配。（`NativeGeoDatabase` 实现 `GeoIPLookup` / `GeoSiteLookup`，`OrderedRouteMatcher` 消费。）
+- [x] 确定 Geo 数据格式、来源、随包基线、容量及更新方式。（见 `Documentations/GeoDatabases.md`。）
+- [x] 实现数据库校验、原子更新、失败回滚和版本化缓存失效。（`NativeGeoDatabase.validate` + 版本固定导入。）
+- [x] 实现逐规则 `no-resolve`、唯一末尾 FINAL 和明确的 DNS 失败语义。（`OrderedRouteMatcher.evaluate` + `ConfigurationValidator`。）
 - [ ] 测试重叠规则、顺序调整、真实 IP、缺失数据库及不支持规则。
 
 验收：支持 `GEOSITE,CN,DIRECT`、`GEOIP,CN,DIRECT,no-resolve`、`FINAL,PROXY`；首条命中后停止，不强制所有连接同时运行 GeoSite 和 GeoIP。
@@ -82,13 +84,15 @@
 
 目标：恢复原始域名后分流，直连按需解析，代理优先保留域名。
 
-- [ ] 复用并补齐 SyntheticAddressPool 的生命周期、回收、并发与耗尽处理。
-- [ ] 映射缺失明确不可达，Fake-IP 不进入 GeoIP 或公网出站。
-- [ ] 为现有 DNSResolver 增加解析目的及 Local / Proxy / Bootstrap 策略。
-- [ ] 明确系统 DNS、第三方 DNS 的优先级、故障切换与缓存隔离。
-- [ ] 检查节点、DoH 端点、订阅与 ECH 解析的依赖，避免循环。
-- [ ] 接入 TCP/UDP 调度；DIRECT 域名决定路由后才真实解析。
-- [ ] 核对各出站的域名目标能力；仅接受 IP 时使用显式解析策略。
+**进展（2026-11-06）**：新增 `Shared/Networking/DNS/DNSResolution.swift`，定义解析目的 `DNSResolutionPurpose`（directConnection / ruleEvaluation / proxyBootstrap / explicitDNSQuery）与传输策略 `DNSResolutionTransport`（system / local / proxy / automatic）。`DNSResolver` 增加 `purpose` / `transport` 属性，`purpose` 纳入缓存 `Query` 键，按目的隔离缓存；`proxies` 标注 `.proxy` / `.proxyBootstrap`，`localRequests` 标注 `.local` / `.directConnection`。`ConnectionRouter` 与 `TCPConnection` 的按需规则解析（needsAddress / IP 规则）显式传 `.ruleEvaluation`。`SyntheticAddressPool` 补齐映射代次（`generation`）与 TTL 过期（`expiresAt`）：`allocate` 刷新代次与过期时间，`lookup` 对过期/缺失映射返回 nil → 明确不可达。补齐 Proxy Resolver 经代理路径：`DNSUpstreamClient` 增加 `ProxyDoHTransport` 注入与 `viaProxy` 参数；新增 `RuleProxy Network Extension/MITM/RuleProxy.http/ProxyDoHClient.swift`，用 `OutboundConnector.dial` + `TLSClient` 走隧道出站（遵循规则与所选代理）发 DoH，复用 `BootstrapDoHClient` 的报文/响应解析；`TunnelStack.publishOutboundRoutingContext` 注入、`.releaseModules` 清除。`DNSResolver.lookup` 按 `transport == .proxy && purpose != .proxyBootstrap` 决定经代理，代理节点 bootstrap 保持直连以避免自依赖循环。本阶段只做静态检查，未编译、未运行测试。
+
+- [x] 复用并补齐 SyntheticAddressPool 的生命周期、回收、并发与耗尽处理。（已有 LRU + Mutex + reset + evictLRU；新增映射代次与 TTL 过期。）
+- [x] 映射缺失明确不可达，Fake-IP 不进入 GeoIP 或公网出站。（`lookup` 过期/缺失返回 nil → `ConnectionRouter` 返回 `.unreachable`；合成地址先恢复域名再匹配。）
+- [x] 为现有 DNSResolver 增加解析目的及 Local / Proxy / Bootstrap 策略。（新增 purpose / transport 模型；Bootstrap 沿用 `DNSBootstrapPolicy` 防循环。）
+- [x] 明确系统 DNS、第三方 DNS 的优先级、故障切换与缓存隔离。（`purpose` 纳入缓存键隔离；`DNSLookupCache` 已按上游变更重置并支持正负缓存。）
+- [x] 检查节点、DoH 端点、订阅与 ECH 解析的依赖，避免循环。（Proxy Resolver 经代理仅用于非 bootstrap 目的，代理节点 bootstrap 直连；`DNSBootstrapPolicy.endpointAddresses` 已按种子解析 DoH 主机名并拒绝递归。）
+- [x] 接入 TCP/UDP 调度；DIRECT 域名决定路由后才真实解析。（TCP `connectDirect` / UDP `UDPPlane.deferUntilResolved` 用 `localRequests` 在路由定为 DIRECT 后解析；PROXY 经 `ProxyClient.connect(to:)` / `connectUDP(to:)` 传域名给代理。）
+- [x] 核对各出站的域名目标能力；仅接受 IP 时使用显式解析策略。（核对结论：全部出站——含 Hysteria、SOCKS5 UDP relay、Shadowsocks UDP——的报文都编码域名地址、由代理远端解析，无「仅接受 IP」协议。新增 `OutboundProtocol.supportsDomainTarget` 显式声明，`ProxyClient.dial` 对不支持域名时报告不支持而非暗中走运营商 DNS。）
 - [ ] 验证 no-resolve 不产生主动 DNS、代理收到原域名、真实 IP 不反查。
 
 验收：默认域名代理路径不产生本地真实目标解析；真实 IP 正确分流；解析失败和映射失败可诊断。

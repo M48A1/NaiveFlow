@@ -115,6 +115,7 @@
 				Networking/DNS/DNSPacket.swift,
 				Networking/DNS/DNSName.swift,
 				Networking/DNS/DNSResolver.swift,
+				Networking/DNS/DNSResolution.swift,
 				Networking/DNS/DNSUpstreamClient.swift,
                 Networking/DNS/DNSBootstrapPolicy.swift,
                 Networking/DNS/BootstrapDoHClient.swift,

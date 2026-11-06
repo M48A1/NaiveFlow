@@ -285,6 +285,7 @@ extension TunnelStack {
                 purgeOutputBuffer()
                 attachPacketFlow(nil)
                 OutboundConnector.setRoutingContext(nil)
+                DNSUpstreamClient.setProxyDoHTransport(nil)
                 syntheticAddressPool.reset()
                 connectionRouter.clearRejectMarks()
                 domainRouter.reset()

@@ -136,7 +136,17 @@ nonisolated final class ProxyClient: Sendable {
     }
     
     func dial(_ request: ProxyRequest) async throws -> ProxyConnection {
-        if !request.isMultiplexerCarrier { try IPv4Only.requireHost(request.host) }
+        if !request.isMultiplexerCarrier {
+            try IPv4Only.requireHost(request.host)
+            // A domain-name target is handed to the proxy verbatim when the wire
+            // format can carry it. For an IP-only transport, report the gap
+            // instead of silently resolving through the carrier DNS.
+            if !configuration.outboundProtocol.supportsDomainTarget, !DNSName.isIPAddress(request.host) {
+                throw RuleProxyError.proxy(configuration.outboundProtocol.wire, .protocolViolation(
+                    detail: "\(configuration.outboundProtocol.name) cannot carry a domain-name target"
+                ))
+            }
+        }
         if !configuration.isDirect { try IPv4Only.requireHost(configuration.serverAddress) }
         if let resolved = configuration.resolvedIP { try IPv4Only.requireHost(resolved) }
         return try await withOutboundMetrics {

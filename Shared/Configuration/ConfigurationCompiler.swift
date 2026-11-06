@@ -555,6 +555,136 @@ nonisolated extension ConfigurationCompiler {
         }
     }
 
+    /// Maps a parsed policy to the ordered matcher's action. A named policy that
+    /// cannot be resolved returns `nil` so the rule is dropped (the validator
+    /// already reported it) instead of silently falling back to the default route.
+    static func routeMatchAction(
+        for policy: ParsedRule.Policy,
+        policies: [String: RouteTarget]
+    ) -> RouteMatchAction? {
+        switch policy {
+        case .direct:
+            return .direct
+        case .reject, .rejectTinyGIF:
+            return .reject
+        case .defaultProxy:
+            return .defaultProxy
+        case .named(let name):
+            guard let target = policies[name] else { return nil }
+            switch target {
+            case .direct: return .direct
+            case .reject: return .reject
+            case .proxy(let id): return .proxy(id)
+            case .default, .defaultProxy: return .defaultProxy
+            }
+        }
+    }
+
+    /// Builds the ordered rule list in document order plus the terminal `FINAL`
+    /// action — the exact input the kernel's `OrderedRouteMatcher` consumes.
+    ///
+    /// Unlike `compileRules`, this keeps every rule at its original line position
+    /// with its own action (no grouping by policy), which is what first-match-wins
+    /// semantics require. The tiered `compileRules` output remains only for the
+    /// preserved manual baseline.
+    static func compileOrderedRules(
+        _ configuration: ParsedConfiguration,
+        policies: [String: RouteTarget],
+        diagnostics: inout [ConfigurationDiagnostic]
+    ) -> (rules: [OrderedRoutingRule], finalAction: RouteMatchAction) {
+        var rules: [OrderedRoutingRule] = []
+        rules.reserveCapacity(configuration.rules.count)
+
+        for rule in configuration.rules where !rule.isFinal {
+            guard let action = routeMatchAction(for: rule.policy, policies: policies) else { continue }
+            guard let matcher = matcher(for: rule) else {
+                diagnostics.append(ConfigurationDiagnostic(severity: .error, code: .invalidValue,
+                    line: rule.line, section: "Rule", message: "The rule expression cannot be compiled."))
+                continue
+            }
+            do { try validateExpression(matcher)
+            } catch {
+                diagnostics.append(.init(severity: .error, code: .invalidValue, line: rule.line,
+                    section: "Rule", message: "Invalid regular expression or protocol value."))
+            }
+            rules.append(
+                OrderedRoutingRule(
+                    line: rule.line,
+                    matcher: matcher,
+                    action: action,
+                    noResolve: rule.hasOption(.noResolve)
+                )
+            )
+        }
+
+        let finalAction = configuration.finalRule
+            .flatMap { routeMatchAction(for: $0.policy, policies: policies) } ?? .defaultProxy
+
+        return (rules, finalAction)
+    }
+
+    static func compileHosts(
+        _ configuration: ParsedConfiguration,
+        diagnostics: inout [ConfigurationDiagnostic]
+    ) -> [HostMapping] {
+        var mappings: [HostMapping] = []
+        for entry in configuration.hosts {
+            guard let host = DNSName.normalizedHost(entry.host) else {
+                diagnostics.append(
+                    ConfigurationDiagnostic(
+                        severity: .error,
+                        code: .invalidValue,
+                        line: entry.line,
+                        section: ConfigurationDocument.SectionKind.host.displayName,
+                        message: "Host '\(entry.host)' is a wildcard or invalid; the DNS override table only matches exact hosts."
+                    )
+                )
+                continue
+            }
+
+            guard entry.mode == .replace else {
+                diagnostics.append(.init(severity: .error, code: .notApplied, line: entry.line, section: "Host",
+                    message: "Host entries use exact names and IPv4 values; append/insert markers are not native syntax."))
+                continue
+            }
+            let address = entry.address
+            guard let canonical = HostMapping.canonicalAddress(address) else {
+                diagnostics.append(
+                    ConfigurationDiagnostic(
+                        severity: .error,
+                        code: .invalidValue,
+                        line: entry.line,
+                        section: ConfigurationDocument.SectionKind.host.displayName,
+                        message: "Host '\(entry.host)' maps to invalid address '\(entry.address)'."
+                    )
+                )
+                continue
+            }
+
+            mappings.append(HostMapping(host: host, address: canonical))
+        }
+        return mappings
+    }
+
+    static func compileSettings(_ configuration: ParsedConfiguration) -> CompiledSettings {
+        var settings = CompiledSettings()
+
+        for key in ConfigurationSettings.catalog {
+            guard let raw = configuration.general[key.name] else { continue }
+            if let value = key.parse(raw) {
+                settings.values[key.name] = value
+            }
+        }
+
+        // `[MITM] enable` wins over `[General] mitm` when both appear: the
+        // dedicated section is the more specific statement.
+        if let enable = configuration.mitm.bool("enable") {
+            settings.values["mitm"] = .flag(enable)
+        }
+
+        return settings
+    }
+
     static func routingRuleType(for kind: ParsedRule.Kind) -> RoutingRuleType? {
         switch kind {
         case .domainSuffix: return .domainSuffix
@@ -712,6 +842,8 @@ nonisolated extension ConfigurationCompiler {
         switch matcher {
         case .domainRegex(let pattern), .urlRegex(let pattern):
             _ = try NSRegularExpression(pattern: pattern)
+        case .protocolName(let name):
+            guard name == "TCP" || name == "UDP" else { throw NativeGeoFailure("Unsupported protocol.") }
         case .allOf(let children), .anyOf(let children):
             guard !children.isEmpty else { throw NativeGeoFailure("Logical rule has no conditions.") }
             for child in children { try validateExpression(child, depth: depth + 1) }

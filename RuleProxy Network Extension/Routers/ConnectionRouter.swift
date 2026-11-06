@@ -52,7 +52,7 @@ nonisolated final class ConnectionRouter: Sendable {
             if synthetic && host == nil {
                 return RouteDecision(host: ip, hostIsResolvedDomain: false, action: .unreachable)
             }
-            let resolved = synthetic ? host.flatMap { DNSResolver.localRequests.cachedIPs(for: $0, family: .ipv4)?.first } : ip
+            let resolved = synthetic ? host.flatMap { DNSResolver.localRequests.cachedIPs(for: $0, family: .ipv4, purpose: .ruleEvaluation)?.first } : ip
             let query = RouteQuery(host: host, ip: resolved, sourceIP: sourceIP, sourcePort: sourcePort,
                                    destinationPort: destinationPort, protocolName: protocolName)
             switch domainRouter.nativeDecision(query, allowResolution: allowAddressResolution && !preventDNSLeak.load(ordering: .relaxed)) {
@@ -60,7 +60,7 @@ nonisolated final class ConnectionRouter: Sendable {
                 return RouteDecision(host: host ?? ip, hostIsResolvedDomain: synthetic,
                                      action: action(for: DomainRouter.nativeMatch(result)))
             case .needsAddress:
-                if let host { DNSResolver.localRequests.prewarm(host, family: .ipv4) }
+                if let host { DNSResolver.localRequests.prewarm(host, family: .ipv4, purpose: .ruleEvaluation) }
                 return RouteDecision(host: host ?? ip, hostIsResolvedDomain: synthetic,
                                      action: .route(target: .default, configuration: nil, ruleSetName: nil), ipRuleLookupPending: true)
             default:

@@ -35,8 +35,9 @@ nonisolated enum ConfigurationValidator {
         /// Native documents use the ordered matcher and explicit local geo data.
         /// The preserved manual baseline continues using its original matcher.
         static let current = Capabilities(
-            ruleKinds: [.domain, .domainSuffix, .domainKeyword, .domainWildcard, .domainRegex,
+            ruleKinds: [.domain, .domainSuffix, .domainKeyword, .domainWildcard, .domainRegex, .urlRegex,
                         .ipCIDR, .sourceIP, .sourcePort, .destinationPort, .protocolType,
+                        .processName, .userAgent,
                         .ruleSet, .geoIP, .geoASN, .ipASN, .geoSite, .logicalAnd, .logicalOr, .logicalNot],
             groupKinds: [.select],
             preservesRuleOrder: true,

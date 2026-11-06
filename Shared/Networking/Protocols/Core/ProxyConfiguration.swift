@@ -53,6 +53,14 @@ nonisolated enum OutboundProtocol: String, Codable, CaseIterable {
         }
     }
 
+    /// Whether the wire format carries a domain-name target so the proxy server
+    /// resolves it remotely. Every current outbound — including the UDP carriers
+    /// (Hysteria, SOCKS5 UDP relay, Shadowsocks UDP) — encodes a domain address,
+    /// so this is true across the board. The flag keeps the capability explicit:
+    /// an IP-only transport added later can be rejected instead of silently
+    /// leaking the name to the carrier DNS.
+    var supportsDomainTarget: Bool { true }
+
     var name: String {
         switch self {
         case .nowhere:

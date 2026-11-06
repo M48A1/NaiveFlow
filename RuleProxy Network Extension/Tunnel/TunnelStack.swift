@@ -420,6 +420,7 @@ actor TunnelStack {
             defaultConfiguration: configuration,
             preventDNSLeak: connectionRouter.preventDNSLeak.load(ordering: .relaxed)
         ))
+        DNSUpstreamClient.setProxyDoHTransport(ProxyDoHClient.request)
     }
 
     func publishReflectionEnabled() {

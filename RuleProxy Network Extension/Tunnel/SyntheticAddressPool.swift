@@ -14,6 +14,12 @@ nonisolated final class SyntheticAddressPool: Sendable {
         var shouldReject = false
         var verdict: DomainRouter.Match?
         var verdictVersion: UInt64 = 0
+        /// Monotonic mapping generation at allocation/refresh time.
+        var generation: UInt64 = 0
+        /// When the synthetic mapping expires; expired mappings resolve to nil
+        /// so the connection is reported unreachable instead of reusing an old
+        /// address for a different domain.
+        var expiresAt: TimeInterval = .infinity
     }
 
     private class LRUNode {
@@ -32,6 +38,15 @@ nonisolated final class SyntheticAddressPool: Sendable {
         var offsetToNode: [Int: LRUNode] = [:]
 
         var nextOffset = 1
+
+        /// Monotonic mapping generation, bumped on every allocate or verdict
+        /// refresh so a caller can tell a fresh mapping from a stale one.
+        var generation: UInt64 = 0
+
+        mutating func nextGeneration() -> UInt64 {
+            generation &+= 1
+            return generation
+        }
 
         // MARK: LRU Doubly-Linked List (O(1) operations)
 
@@ -99,12 +114,18 @@ nonisolated final class SyntheticAddressPool: Sendable {
 
     // MARK: - Pool Operations
 
-    func allocate(domain: String, verdict: DomainRouter.Match?, verdictVersion: UInt64) -> Int {
+    func allocate(domain: String, verdict: DomainRouter.Match?, verdictVersion: UInt64,
+                  ttl: TimeInterval = TimeInterval(TunnelConstants.dnsSyntheticAddressAnswerTTL)) -> Int {
         state.withLock { state in
+            let now = MonotonicClock.now
+            let generation = state.nextGeneration()
+            let expiresAt = now + ttl
             if let offset = state.domainToOffset[domain] {
                 state.touchLRU(offset)
                 state.offsetToEntry[offset]?.verdict = verdict
                 state.offsetToEntry[offset]?.verdictVersion = verdictVersion
+                state.offsetToEntry[offset]?.generation = generation
+                state.offsetToEntry[offset]?.expiresAt = expiresAt
                 return offset
             }
 
@@ -117,7 +138,8 @@ nonisolated final class SyntheticAddressPool: Sendable {
             }
 
             state.domainToOffset[domain] = offset
-            state.offsetToEntry[offset] = Entry(domain: domain, verdict: verdict, verdictVersion: verdictVersion)
+            state.offsetToEntry[offset] = Entry(domain: domain, verdict: verdict, verdictVersion: verdictVersion,
+                                                generation: generation, expiresAt: expiresAt)
             state.appendLRU(offset)
 
             return offset
@@ -143,7 +165,7 @@ nonisolated final class SyntheticAddressPool: Sendable {
     func lookup(ip: String) -> Entry? {
         state.withLock { state in
             guard let offset = ipv4ToOffset(ip) else { return nil }
-            guard let entry = state.offsetToEntry[offset] else { return nil }
+            guard let entry = state.offsetToEntry[offset], entry.expiresAt > MonotonicClock.now else { return nil }
             state.touchLRU(offset)
             return entry
         }

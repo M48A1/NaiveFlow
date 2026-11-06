@@ -6,12 +6,29 @@
 //
 
 import Foundation
+import Synchronization
 
 nonisolated private let logger = RuleProxyLogger(category: "DNSUpstreamClient")
 
 nonisolated enum DNSUpstreamClient {
     static let queryTimeout: Duration = .seconds(4)
-    
+
+    /// A transport for proxy-side DoH that routes through the tunnel's outbound
+    /// connector (rules + selected proxy) instead of dialing the resolver
+    /// directly. The Network Extension installs one while a routing context is
+    /// available; the host app leaves it nil and keeps the direct bootstrap path.
+    nonisolated typealias ProxyDoHTransport = @Sendable (URL, Data) async throws -> Data
+
+    private static let proxyDoHTransport = Mutex<ProxyDoHTransport?>(nil)
+
+    static func setProxyDoHTransport(_ transport: ProxyDoHTransport?) {
+        proxyDoHTransport.withLock { $0 = transport }
+    }
+
+    static func activeProxyDoHTransport() -> ProxyDoHTransport? {
+        proxyDoHTransport.withLock { $0 }
+    }
+
     private static let recordUDPPayloadSize: UInt16 = 1232
 
     // MARK: - Public API
@@ -20,7 +37,8 @@ nonisolated enum DNSUpstreamClient {
         _ host: String,
         via upstream: DNSUpstream,
         family: DNSAddressFamily = .ipv4,
-        bootstrap: DNSBootstrapPolicy? = nil
+        bootstrap: DNSBootstrapPolicy? = nil,
+        viaProxy: Bool = false
     ) async throws -> [String] {
         try IPv4Only.requireHost(host)
         let policy = bootstrap ?? AWCore.getBootstrapDNS()
@@ -35,7 +53,7 @@ nonisolated enum DNSUpstreamClient {
                 }
             case .doh(let url):
                 addresses = try await queryAll(host, family: family) { name, type in
-                    try await queryDoH(name, type: type, url: url, bootstrap: policy)
+                    try await queryDoH(name, type: type, url: url, bootstrap: policy, viaProxy: viaProxy)
                 }
             }
         } catch {
@@ -237,7 +255,7 @@ nonisolated enum DNSUpstreamClient {
 
     // MARK: - DoH
 
-    private static func queryDoH(_ name: String, type: UInt16, url: URL, bootstrap: DNSBootstrapPolicy) async throws -> [String] {
+    private static func queryDoH(_ name: String, type: UInt16, url: URL, bootstrap: DNSBootstrapPolicy, viaProxy: Bool = false) async throws -> [String] {
         let id: UInt16 = 0
         guard let query = DNSMessage.makeQuery(domain: name, type: type, id: id) else {
             throw RuleProxyError.dns(.resolutionFailed(host: name, detail: "name not encodable"))
@@ -252,7 +270,7 @@ nonisolated enum DNSUpstreamClient {
         request.timeoutInterval = TimeInterval(queryTimeout.components.seconds)
         request.cachePolicy = .reloadIgnoringLocalCacheData
 
-        let data = try await sendDoH(request, bootstrap: bootstrap)
+        let data = try await sendDoH(request, bootstrap: bootstrap, viaProxy: viaProxy)
         guard let addresses = try decode(data, id: id) else {
             throw RuleProxyError.dns(.malformedResponse)
         }
@@ -287,10 +305,16 @@ nonisolated enum DNSUpstreamClient {
         return firstAccepted(records, accept: accept)
     }
 
-    private static func sendDoH(_ request: URLRequest, bootstrap: DNSBootstrapPolicy) async throws -> Data {
+    private static func sendDoH(_ request: URLRequest, bootstrap: DNSBootstrapPolicy, viaProxy: Bool = false) async throws -> Data {
         guard let url = request.url, let host = url.host else { throw RuleProxyError.dns(.malformedResponse) }
         // All endpoints use a numeric IPv4 dial destination.
         try IPv4Only.requireHost(host)
+        // Proxy-side DoH routes through the tunnel when requested; bootstrap and
+        // host-app lookups keep the direct path (the proxy cannot carry its own
+        // bootstrap without looping).
+        if viaProxy, let transport = activeProxyDoHTransport() {
+            return try await transport(url, request.httpBody ?? Data())
+        }
         let addresses: [String]
         if bootstrap.isSystem {
             addresses = await DNSSyscallConcurrencyBridge.shared.resolveAddresses(host, family: .ipv4)
