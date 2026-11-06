@@ -412,11 +412,11 @@ class TVLaunchpadViewController: UIViewController {
     }
 
     private func updateConfigCard() {
-        let hasConfig = selection.selectedConfiguration != nil
+        let hasConfig = selection.effectiveConfiguration != nil
         configButton.isHidden = !hasConfig
         emptyButton.isHidden = hasConfig
 
-        if let configuration = selection.selectedConfiguration {
+        if let configuration = selection.effectiveConfiguration {
             configNameLabel.text = configuration.name
             UIView.animate(withDuration: 0.3) {
                 self.configIcon.tintColor = self.isConnected ? UIColor.white.withAlphaComponent(0.7) : .secondaryLabel

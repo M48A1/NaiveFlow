@@ -32,17 +32,18 @@ nonisolated enum ConfigurationValidator {
         /// Length of the longest rule set the engine accepts.
         let maxRuleCount: Int
 
-        /// What today's `TieredRouteMatcher` + `RoutingBinaryFormat` support:
-        /// four rule types, a policy per rule set, and no FINAL. The compiler
-        /// groups rules by their policy so activation stays deterministic.
+        /// Native documents use the ordered matcher and explicit local geo data.
+        /// The preserved manual baseline continues using its original matcher.
         static let current = Capabilities(
-            ruleKinds: [.domainSuffix, .domainKeyword, .ipCIDR, .ipCIDR6],
+            ruleKinds: [.domain, .domainSuffix, .domainKeyword, .domainWildcard, .domainRegex,
+                        .ipCIDR, .ipCIDR6, .sourceIP, .sourcePort, .destinationPort, .protocolType,
+                        .geoIP, .geoASN, .ipASN, .geoSite, .logicalAnd, .logicalOr, .logicalNot],
             groupKinds: [.select],
-            preservesRuleOrder: false,
-            supportsPerRulePolicy: false,
-            supportsFinal: false,
-            supportsLogicalRules: false,
-            supportsGeoDatabases: false,
+            preservesRuleOrder: true,
+            supportsPerRulePolicy: true,
+            supportsFinal: true,
+            supportsLogicalRules: true,
+            supportsGeoDatabases: true,
             maxRuleCount: CustomRoutingRuleSet.maxRuleCount
         )
     }
@@ -72,15 +73,7 @@ nonisolated enum ConfigurationValidator {
 
     /// `[MITM] enable` is honored; the certificate and host fields are stored in
     /// the document but are not consumed by the MITM host list yet.
-    static let acceptedMITMKeys: Set<String> = [
-        "hostname",
-        "tcp-connection",
-        "skip-server-cert-verify",
-        "ca-passphrase",
-        "auto-quic-block",
-        "use-default-ca",
-        "client-source-address",
-    ]
+    static let acceptedMITMKeys: Set<String> = []
 
     static func validate(
         _ configuration: ParsedConfiguration,
@@ -203,25 +196,7 @@ nonisolated enum ConfigurationValidator {
             )
         }
 
-        for rewrite in configuration.rewrites {
-            diagnostics.append(ConfigurationDiagnostic(
-                severity: .error, code: .notApplied, line: rewrite.line,
-                section: rewrite.section,
-                message: "Text rewrite directives are not installed by this build."
-            ))
-        }
 
-        for script in configuration.scripts {
-            diagnostics.append(
-                ConfigurationDiagnostic(
-                    severity: .error,
-                    code: .notApplied,
-                    line: script.line,
-                    section: ConfigurationDocument.SectionKind.script.displayName,
-                    message: "Script '\(script.name)' is parsed and validated, but this build does not install scripts yet."
-                )
-            )
-        }
     }
 }
 
@@ -356,6 +331,14 @@ nonisolated extension ConfigurationValidator {
                 )
             }
 
+            for (key, _) in group.parameters.pairs where key != "selected" {
+                diagnostics.append(.init(severity: .error, code: .notApplied, line: group.line,
+                    section: "Proxy Group", message: "Unsupported native group option '\(key)'."))
+            }
+            if let selected = group.parameters["selected"], !group.members.contains(selected) {
+                diagnostics.append(.init(severity: .error, code: .invalidValue, line: group.line,
+                    section: "Proxy Group", message: "selected must name one of the group's members."))
+            }
             for member in group.members {
                 if builtInPolicyName(member) != nil { continue }
                 if proxyNames.contains(member) || groupNames.contains(member) { continue }
@@ -656,7 +639,7 @@ nonisolated extension ConfigurationValidator {
     ) {
         let isIPRule: Bool
         switch rule.kind {
-        case .ipCIDR, .ipCIDR6, .ipASN, .geoIP, .geoASN:
+        case .ipCIDR, .ipCIDR6, .ipASN, .geoIP, .geoASN, .logicalAnd, .logicalOr, .logicalNot:
             isIPRule = true
         default:
             isIPRule = false
@@ -758,75 +741,23 @@ nonisolated extension ConfigurationValidator {
 
 nonisolated extension ConfigurationValidator {
 
-    static func validateMITM(
-        _ configuration: ParsedConfiguration,
-        diagnostics: inout [ConfigurationDiagnostic]
-    ) {
-        for key in configuration.mitm.keys where !knownMITMKeys.contains(key) {
-            diagnostics.append(
-                ConfigurationDiagnostic(
-                    severity: .error,
-                    code: .unknownGeneralKey,
-                    section: ConfigurationDocument.SectionKind.mitm.displayName,
-                    message: "MITM setting '\(key)' is not recognized and is ignored."
-                )
-            )
+    static func validateMITM(_ configuration: ParsedConfiguration, diagnostics: inout [ConfigurationDiagnostic]) {
+        for key in configuration.mitm.keys where !["enable", "hostname"].contains(key) {
+            diagnostics.append(ConfigurationDiagnostic(severity: .error, code: .notApplied,
+                section: "MITM", message: "Unsupported native MITM field '\(key)'."))
         }
-
-        let hostnames = configuration.mitm.list("hostname") ?? []
-        let enabled = configuration.mitm.bool("enable") ?? !hostnames.isEmpty
-        if enabled, hostnames.isEmpty {
-            diagnostics.append(
-                ConfigurationDiagnostic(
-                    severity: .error,
-                    code: .missingValue,
-                    section: ConfigurationDocument.SectionKind.mitm.displayName,
-                    message: "MITM is enabled but 'hostname' lists no hosts."
-                )
-            )
+        if configuration.mitm.contains("enable"), configuration.mitm.bool("enable") == nil {
+            diagnostics.append(ConfigurationDiagnostic(severity: .error, code: .invalidValue,
+                section: "MITM", message: "MITM enable expects true or false."))
         }
-
-        for raw in hostnames {
-            if raw.hasPrefix("%APPEND%") || raw.hasPrefix("%INSERT%") { continue }
-            var host = raw
-            if host.hasPrefix("-") || host.hasPrefix("+") {
-                host = String(host.dropFirst())
+        for suffix in configuration.mitm.list("hostname") ?? [] {
+            if DNSName.normalizedHost(suffix) == nil {
+                diagnostics.append(ConfigurationDiagnostic(severity: .error, code: .invalidValue,
+                    section: "MITM", message: "MITM hostname uses plain domain suffixes, such as example.com."))
             }
-            if normalizedHostPattern(host) == nil {
-                diagnostics.append(
-                    ConfigurationDiagnostic(
-                        severity: .error,
-                        code: .invalidValue,
-                        section: ConfigurationDocument.SectionKind.mitm.displayName,
-                        message: "MITM hostname '\(raw)' is not a valid host pattern."
-                    )
-                )
-            }
-        }
-
-        let booleanKeys = ["enable", "tcp-connection", "skip-server-cert-verify", "auto-quic-block", "use-default-ca"]
-        for key in booleanKeys where configuration.mitm.contains(key) && configuration.mitm.bool(key) == nil {
-            diagnostics.append(
-                ConfigurationDiagnostic(
-                    severity: .error,
-                    code: .invalidValue,
-                    section: ConfigurationDocument.SectionKind.mitm.displayName,
-                    message: "MITM setting '\(key)' expects a boolean value."
-                )
-            )
-        }
-
-        if let passphrase = configuration.mitm["ca-passphrase"], passphrase.count < 8 {
-            diagnostics.append(
-                ConfigurationDiagnostic(
-                    severity: .error,
-                    code: .invalidValue,
-                    section: ConfigurationDocument.SectionKind.mitm.displayName,
-                    message: "ca-passphrase must be at least 8 characters."
-                )
-            )
         }
     }
+
 }
 
 

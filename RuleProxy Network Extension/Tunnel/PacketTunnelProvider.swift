@@ -77,7 +77,13 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
             throw RuleProxyError.tunnel(.sessionUnavailable)
         }
 
-        guard let configuration = resolveStartConfiguration() else {
+        let resolved: ProxyConfiguration?
+        do { resolved = try await tunnelStack.prepareStartupVersion() }
+        catch {
+            releaseStartClaim(myClaim)
+            throw error
+        }
+        guard var configuration = resolved else {
             let error = RuleProxyError.tunnel(.invalidConfiguration)
             logger.report("[VPN] Start failed", error: error)
             releaseStartClaim(myClaim)
@@ -85,7 +91,12 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
         }
 
         do {
-            try await applyTunnelSettings()
+            do { try await applyTunnelSettings() }
+            catch {
+                guard let restored = try await tunnelStack.restoreStartupVersion(after: error) else { throw error }
+                configuration = restored
+                try await applyTunnelSettings()
+            }
         } catch {
             let wrapped = RuleProxyError.tunnel(.settingsApplyFailed(underlying: error))
             logger.report("[VPN] Start failed", error: wrapped)
@@ -126,6 +137,22 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
             case .superseded:
                 rootTask.cancel()
                 installed = false
+            }
+        }
+        if installed {
+            do { try await tunnelStack.confirmStartedVersion() }
+            catch {
+                let task = providerState.withLock { state in
+                    state.transition(to: .stopping)
+                    defer { state.rootTask = nil }
+                    return state.rootTask
+                }
+                task?.cancel()
+                await tunnelStack.stop()
+                providerState.withLock { state in
+                    if state.phase == .stopping { state.transition(to: .stopped) }
+                }
+                throw error
             }
         }
         guard installed else {
@@ -312,6 +339,9 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
             let response = LatencyTestResponse(await LatencyTester.test(configuration))
             return encodeReply(response)
 
+        case .applyRuntimeVersion(let id):
+            return await applyPublishedVersion(id)
+
         case .fetchRuntimeStatus:
             return encodeReply(await tunnelStack.runtimeStatus())
 
@@ -335,6 +365,34 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
             case .udp: tunnelStack.udpActivity
             }
             return encodeReply(ActivityResponse(entries: pool.snapshot()))
+        }
+    }
+
+    private func applyPublishedVersion(_ id: UUID) async -> Data? {
+        do {
+            let bundle = try RuntimeBundleStore().load(id)
+            let receipt = try await tunnelStack.applyVersion(bundle) { [self] preferences in
+                let capture = RuntimePreferenceCapture(preferences)
+                try await RuntimePreferenceContext.$capture.withValue(capture) {
+                    try await self.applyTunnelSettings()
+                }
+            }
+            return encodeReply(receipt)
+        } catch RuntimeConfigurationFailure.rollbackFailed {
+            cancelTunnelWithError(RuntimeConfigurationFailure.rollbackFailed)
+            return encodeReply(RuntimeConfigurationReceipt(versionID: id, activeVersionID: nil,
+                snapshotID: nil, status: .rejected, message: RuntimeConfigurationFailure.rollbackFailed.localizedDescription))
+        } catch RuntimeConfigurationFailure.reconnectRequired {
+            return nil
+        } catch RuntimeConfigurationFailure.busy {
+            // Another request already performs this transition; the host polls
+            // the durable receipt rather than treating duplication as rejection.
+            return nil
+        } catch {
+            let receipt = RuntimeConfigurationReceipt(versionID: id, activeVersionID: nil,
+                snapshotID: nil, status: .rejected, message: error.localizedDescription)
+            try? RuntimeBundleStore().record(receipt)
+            return encodeReply(receipt)
         }
     }
 
@@ -378,7 +436,9 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
         await withDiscardingTaskGroup { group in
             group.addTask { [reapplySignal = tunnelStack.reapplySettingsSignal] in
                 for await _ in reapplySignal {
-                    await self.reapplyTunnelSettings()
+                    if let head = try? RuntimeBundleStore().head() {
+                        _ = await self.applyPublishedVersion(head.current)
+                    } else { await self.reapplyTunnelSettings() }
                 }
             }
             group.addTask {

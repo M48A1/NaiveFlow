@@ -24,7 +24,7 @@ nonisolated final class AWCore {
         Bundle.main.bundleIdentifier == Identifier.bundle
     }
     
-    nonisolated(unsafe) private static let userDefaults: UserDefaults = {
+    nonisolated(unsafe) private static let rawUserDefaults: UserDefaults = {
         let defaults = UserDefaults(suiteName: Identifier.appGroupSuite)!
         defaults.register(defaults: [
             UserDefaultsKey.blockWebRTC: true,
@@ -47,6 +47,39 @@ nonisolated final class AWCore {
         ])
         return defaults
     }()
+
+    private static let userDefaults = RuntimePreferences(defaults: rawUserDefaults)
+
+    static let runtimePreferenceKeys = [
+        "activeConfiguration", "allowInsecure", "alwaysOnEnabled", "alwaysTrustCellular",
+        "alwaysUntrustCellular", "blockUDP", "blockWebRTC", "bypassCountryCode",
+        "echDNSDoHURL", "echDNSMode", "echDNSPlainServer", "experimentalEnabled",
+        "fallbackDNSMode", "fallbackDNSServer", "hideVPNIcon", "hostMappings",
+        "localRequestDNSDoHURL", "localRequestDNSMode", "localRequestDNSPlainServer",
+        "mitmEnabled", "preventDNSLeak", "proxyDNSDoHURL", "proxyDNSMode",
+        "proxyDNSPlainServer", "proxyMode", "quicPolicy", "reflectionEnabled",
+        "selectedChainId", "selectedConfigurationId", "subscriptionDNSDoHURL",
+        "subscriptionDNSMode", "subscriptionDNSPlainServer", "syntheticAddressExcludedDomainSuffixes",
+        "trustedCertificateSHA256s", "trustedSSIDs", "tunnelExcludeAPNs",
+        "tunnelExcludeCellularServices", "tunnelExcludeDeviceCommunication",
+        "tunnelExcludedRoutes", "tunnelExcludeLocalNetworks", "tunnelIncludeAllNetworks", "tunnelIncludedRoutes"
+    ]
+
+    static func runtimePreferences() -> [String: RuntimePreferenceValue] {
+        userDefaults.snapshot(keys: runtimePreferenceKeys)
+    }
+
+    static func installRuntimePreferences(_ values: [String: RuntimePreferenceValue]?) {
+        userDefaults.install(values)
+    }
+
+    static func captureRuntimePreferences(
+        base: [String: RuntimePreferenceValue]? = nil, _ write: () throws -> Void
+    ) rethrows -> [String: RuntimePreferenceValue] {
+        let capture = RuntimePreferenceCapture(base ?? runtimePreferences())
+        try RuntimePreferenceContext.$capture.withValue(capture, operation: write)
+        return capture.values.withLock { $0 }
+    }
 
     // MARK: - UserDefaults Keys
 
@@ -556,42 +589,57 @@ nonisolated final class AWCore {
     }
 
     static func getSubscriptionDNSUpstream() -> DNSUpstream {
-        DNSUpstream(
-            mode: getSubscriptionDNSMode(),
-            plainServer: getSubscriptionDNSPlainServer(),
-            dohURL: getSubscriptionDNSDoHURL()
-        )
+        let capture = RuntimePreferenceContext.capture ?? RuntimePreferenceCapture(runtimePreferences())
+        return RuntimePreferenceContext.$capture.withValue(capture) {
+            DNSUpstream(
+                mode: getSubscriptionDNSMode(),
+                plainServer: getSubscriptionDNSPlainServer(),
+                dohURL: getSubscriptionDNSDoHURL()
+            )
+        }
     }
     
     static func getLocalRequestDNSUpstream() -> DNSUpstream {
-        DNSUpstream(
-            mode: getLocalRequestDNSMode(),
-            plainServer: getLocalRequestDNSPlainServer(),
-            dohURL: getLocalRequestDNSDoHURL()
-        )
+        let capture = RuntimePreferenceContext.capture ?? RuntimePreferenceCapture(runtimePreferences())
+        return RuntimePreferenceContext.$capture.withValue(capture) {
+            DNSUpstream(
+                mode: getLocalRequestDNSMode(),
+                plainServer: getLocalRequestDNSPlainServer(),
+                dohURL: getLocalRequestDNSDoHURL()
+            )
+        }
     }
     
     static func getFallbackDNSUpstream() -> DNSUpstream {
-        switch getFallbackDNSMode() {
-        case .default: return .defaultPlain
-        case .plain: return DNSUpstream.parsePlain(getFallbackDNSServer()) ?? .defaultPlain
+        let capture = RuntimePreferenceContext.capture ?? RuntimePreferenceCapture(runtimePreferences())
+        return RuntimePreferenceContext.$capture.withValue(capture) {
+            switch getFallbackDNSMode() {
+            case .default: return .defaultPlain
+            case .plain: return DNSUpstream.parsePlain(getFallbackDNSServer()) ?? .defaultPlain
+            }
         }
     }
 
     static func getProxyDNSUpstream() -> DNSUpstream {
-        DNSUpstream(
-            mode: getProxyDNSMode(),
-            plainServer: getProxyDNSPlainServer(),
-            dohURL: getProxyDNSDoHURL()
-        )
+        let capture = RuntimePreferenceContext.capture ?? RuntimePreferenceCapture(runtimePreferences())
+        return RuntimePreferenceContext.$capture.withValue(capture) {
+            DNSUpstream(
+                mode: getProxyDNSMode(),
+                plainServer: getProxyDNSPlainServer(),
+                dohURL: getProxyDNSDoHURL()
+            )
+        }
     }
 
     static func getECHDNSUpstream() -> DNSUpstream {
-        DNSUpstream(
-            mode: getECHDNSMode(),
-            plainServer: getECHDNSPlainServer(),
-            dohURL: getECHDNSDoHURL()
-        )
+        let capture = RuntimePreferenceContext.capture ?? RuntimePreferenceCapture(runtimePreferences())
+        return RuntimePreferenceContext.$capture.withValue(capture) {
+            DNSUpstream(
+                mode: getECHDNSMode(),
+                plainServer: getECHDNSPlainServer(),
+                dohURL: getECHDNSDoHURL()
+            )
+        }
     }
     
     static func getRemnawaveHWIDEnabled() -> Bool {

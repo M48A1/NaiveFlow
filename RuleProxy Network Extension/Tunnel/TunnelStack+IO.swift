@@ -44,6 +44,7 @@ extension TunnelStack {
     }
 
     nonisolated func enqueueOutbound(_ packet: OutboundPacket) {
+        guard !configurationTransition.load(ordering: .acquiring) else { return }
         let drains = outputBuffer.withLock { buffer in
             guard buffer.writer != nil else { return false }
             buffer.packets.append(packet)
@@ -53,6 +54,7 @@ extension TunnelStack {
     }
 
     nonisolated func enqueueTCPOutput(_ packets: [OutboundPacket], generation: UInt64) {
+        guard !configurationTransition.load(ordering: .acquiring) else { return }
         let drains = outputBuffer.withLock { buffer in
             guard buffer.generation == generation, buffer.writer != nil, !packets.isEmpty else { return false }
             buffer.packets.append(contentsOf: packets)
@@ -103,6 +105,7 @@ extension TunnelStack {
     }
 
     private nonisolated func processInbound(_ packets: [UnsafeRawBufferPointer]) {
+        guard !configurationTransition.load(ordering: .acquiring) else { return }
         let drains = claimOutputDrain()
         var batch = packets
         if reflectionEnabled {
@@ -123,6 +126,7 @@ extension TunnelStack {
     }
     
     nonisolated func admitDatagrams(_ batch: [InboundDatagram]) {
+        guard !configurationTransition.load(ordering: .acquiring) else { return }
         datagramIntake.withLock { $0 }?.yield(batch)
     }
 

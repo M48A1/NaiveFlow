@@ -47,7 +47,7 @@ nonisolated struct ConfigurationSnapshot: Codable, Equatable, Sendable, Identifi
         self.summary = Summary(
             proxyCount: compiled.proxies.count,
             groupCount: compiled.proxyGroups.count,
-            ruleCount: compiled.ruleSets.reduce(0) { $0 + $1.rules.count },
+            ruleCount: compiled.orderedRules.count,
             ruleSetCount: compiled.ruleSets.count,
             hostCount: compiled.hosts.count
         )
@@ -188,17 +188,25 @@ nonisolated extension ConfigurationSnapshotStore {
 
     /// Marks a snapshot active. The previously active snapshot stays on disk as
     /// the rollback target.
-    func activate(_ id: UUID) throws {
+    func activate(_ id: UUID, confirmed: Bool = true) throws {
         guard snapshot(id) != nil else { throw Failure.snapshotMissing(id) }
         var current = manifest()
-        guard current.activeSnapshotId != id else { return }
+        if current.activeSnapshotId == id {
+            if confirmed, current.appliedAt == nil {
+                current.appliedAt = .now
+                try write(current)
+            }
+            return
+        }
         current.previousSnapshotId = current.activeSnapshotId
         current.activeSnapshotId = id
         current.updatedAt = .now
-        current.appliedAt = current.updatedAt
+        current.appliedAt = confirmed ? current.updatedAt : nil
         current.lastFailure = nil
         try write(current)
     }
+
+    func restoreManifest(_ manifest: Manifest) throws { try write(manifest) }
 
     func recordFailure(_ message: String) throws {
         var current = manifest()

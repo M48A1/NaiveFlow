@@ -51,6 +51,7 @@ nonisolated struct ConfigurationExportSource: Sendable, Equatable {
     var mitmEnabled: Bool
     /// MITM host patterns, without the `%APPEND%` marker.
     var mitmHostnames: [String]
+    var mitmRuleSets: [MITMRuleSet]
     /// What the app holds but the text format cannot express.
     var notes: [String]
 
@@ -62,6 +63,7 @@ nonisolated struct ConfigurationExportSource: Sendable, Equatable {
         settings: [Setting] = [],
         mitmEnabled: Bool = false,
         mitmHostnames: [String] = [],
+        mitmRuleSets: [MITMRuleSet] = [],
         notes: [String] = []
     ) {
         self.proxies = proxies
@@ -71,6 +73,7 @@ nonisolated struct ConfigurationExportSource: Sendable, Equatable {
         self.settings = settings
         self.mitmEnabled = mitmEnabled
         self.mitmHostnames = mitmHostnames
+        self.mitmRuleSets = mitmRuleSets
         self.notes = notes
     }
 }
@@ -144,7 +147,7 @@ nonisolated enum ConfigurationExporter {
         # [Proxy Group]  Name = select, Member, Member
         # [Rule]         DOMAIN-SUFFIX, example.com, DIRECT
         # [Host]         host = address
-        # MITM policies remain managed by the app; [General] mitm controls enablement.
+        # MITM sets use the native encoded section to preserve every operation and parameter.
         """
 }
 
@@ -186,6 +189,7 @@ private nonisolated struct State {
     var ruleLines: [String] = []
     var hostLines: [String] = []
     var mitmLines: [String] = []
+    var mitmSetLines: [String] = []
     var settingLines: [String] = []
 
     init(source: ConfigurationExportSource, options: ConfigurationExporter.Options) {
@@ -205,7 +209,8 @@ private nonisolated struct State {
             ConfigurationExporter.section("Proxy Group", groupLines),
             ConfigurationExporter.section("Rule", ruleLines),
             ConfigurationExporter.section("Host", hostLines),
-            ConfigurationExporter.section("MITM", mitmLines)
+            ConfigurationExporter.section("MITM", mitmLines),
+            ConfigurationExporter.section("MITM Set", mitmSetLines)
         ].compactMap({ $0 }) {
             blocks.append(block)
         }
@@ -331,11 +336,7 @@ nonisolated extension State {
             }
         }
 
-        // Current kernel fallback is selected by proxy-mode. Do not export an
-        // inert directive that the native format cannot actually apply.
-        if options.finalPolicy.uppercased() != "PROXY" {
-            notes.append("FINAL policy '\(options.finalPolicy)' is unsupported and was not exported.")
-        }
+        ruleLines.append("FINAL, \(options.finalPolicy)")
     }
 
     mutating func emitHosts() {
@@ -352,11 +353,24 @@ nonisolated extension State {
     mutating func emitMITM() {
         guard options.includeMITM else { return }
 
+        if source.mitmRuleSets.isEmpty {
+            if !source.mitmHostnames.isEmpty {
+                mitmLines.append("enable = \(source.mitmEnabled)")
+                mitmLines.append("hostname = \(source.mitmHostnames.joined(separator: ", "))")
+            } else if source.mitmEnabled {
+                notes.append("MITM is enabled but has no host policies.")
+            }
+        } else {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .sortedKeys
+            for (index, set) in source.mitmRuleSets.enumerated() {
+                if let data = try? encoder.encode(set) {
+                    mitmSetLines.append("set-\(index + 1) = base64:\(data.base64EncodedString())")
+                } else { notes.append("MITM set '\(set.name)' could not be encoded.") }
+            }
+        }
         if !source.settings.contains(where: { $0.key.lowercased() == "mitm" }) {
             settingLines.append("mitm = \(source.mitmEnabled)")
-        }
-        if source.mitmEnabled || !source.mitmHostnames.isEmpty {
-            notes.append("MITM host policies remain in the app's rule sets; the text document exports only the enable switch.")
         }
     }
 

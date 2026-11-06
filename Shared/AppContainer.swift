@@ -46,6 +46,17 @@ final class AppContainer {
         mitmRuleSetStore = MITMRuleSetStore(syncStore: syncStore)
         moduleStore = ModuleStore(syncStore: syncStore)
         certificateStore = CertificateStore()
+        do {
+            let publisher = ConfigurationPublisher(activation: ConfigurationActivation(), tunnel: tunnel,
+                stateSink: { [selection] in selection.showRuntimeVersion($0) })
+            try publisher.reconcile()
+            if let head = try RuntimeBundleStore().head() {
+                let version = try RuntimeBundleStore().load(head.current)
+                AWCore.installRuntimePreferences(version.preferences)
+                selection.showRuntimeVersion(version)
+            }
+        } catch RuntimeConfigurationFailure.busy { }
+        catch { ConfigurationActivation().record(error.localizedDescription) }
     }
 
     // MARK: - Operation Factories
@@ -104,18 +115,25 @@ final class AppContainer {
                 guard let self else { return }
                 TunnelSessionReaction(tunnel: self.tunnel, stats: self.stats, selection: self.selection).run()
                 self.observeTunnelStatus()
+                if self.tunnel.rawStatus == .connected {
+                    do {
+                        try await ConfigurationPublisher(activation: ConfigurationActivation(), tunnel: self.tunnel,
+                            stateSink: { [selection = self.selection] in selection.showRuntimeVersion($0) }).recoverPending()
+                    } catch RuntimeConfigurationFailure.busy { }
+                    catch { ConfigurationActivation().record(error.localizedDescription) }
+                }
             }
         }
     }
     
     private func observeSelection() {
         withObservationTracking {
-            _ = selection.selectedConfiguration
+            _ = selection.effectiveConfiguration
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.observeSelection()
-                await self.tunnel.publish(self.selection.selectedConfiguration)
+                await self.tunnel.publish(self.selection.effectiveConfiguration)
             }
         }
     }
