@@ -37,7 +37,7 @@ nonisolated enum ConfigurationValidator {
         static let current = Capabilities(
             ruleKinds: [.domain, .domainSuffix, .domainKeyword, .domainWildcard, .domainRegex,
                         .ipCIDR, .ipCIDR6, .sourceIP, .sourcePort, .destinationPort, .protocolType,
-                        .geoIP, .geoASN, .ipASN, .geoSite, .logicalAnd, .logicalOr, .logicalNot],
+                        .ruleSet, .geoIP, .geoASN, .ipASN, .geoSite, .logicalAnd, .logicalOr, .logicalNot],
             groupKinds: [.select],
             preservesRuleOrder: true,
             supportsPerRulePolicy: true,
@@ -639,7 +639,7 @@ nonisolated extension ConfigurationValidator {
     ) {
         let isIPRule: Bool
         switch rule.kind {
-        case .ipCIDR, .ipCIDR6, .ipASN, .geoIP, .geoASN, .logicalAnd, .logicalOr, .logicalNot:
+        case .ruleSet, .ipCIDR, .ipCIDR6, .ipASN, .geoIP, .geoASN, .logicalAnd, .logicalOr, .logicalNot:
             isIPRule = true
         default:
             isIPRule = false
