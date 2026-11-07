@@ -55,22 +55,17 @@ actor GroupProber {
         interval: TimeInterval
     ) async {
         // Each member is probed against its own group's target URL (or the
-        // built-in default). A member shared across groups keeps the first group's
-        // target; groups rarely overlap, and the target is usually identical.
-        var memberTargets: [UUID: ProbeTarget] = [:]
-        for group in groups {
-            let target = Self.probeTarget(for: group)
-            for memberID in group.memberIDs where memberTargets[memberID] == nil {
-                memberTargets[memberID] = target
-            }
-        }
+        // built-in default). Direct nodes are included on purpose: a `fallback`
+        // group that lists a reachable direct member first must be able to pick
+        // it instead of always resolving to a heavier proxy further down.
+        let memberTargets = ProxyProbePlan.memberTargets(groups: groups, nodes: nodeMap)
 
         while !Task.isCancelled {
             var latencies: [UUID: Int] = [:]
             for (memberID, target) in memberTargets {
                 guard !Task.isCancelled else { return }
-                guard let node = nodeMap[memberID], !node.isDirect else { continue }
-                let result = await LatencyTester.test(node, host: target.host, port: target.port)
+                guard let node = nodeMap[memberID] else { continue }
+                let result = await LatencyTester.test(node, target: target)
                 if case .success(let ms) = result {
                     latencies[memberID] = ms
                 }
@@ -78,29 +73,9 @@ actor GroupProber {
 
             // A stale generation must not clobber a newer prober's results.
             guard generation == self.generation, !Task.isCancelled else { return }
-            await router.updateLatencies(latencies)
+            router.updateLatencies(latencies)
 
             try? await Task.sleep(for: .seconds(interval))
         }
-    }
-
-    private struct ProbeTarget: Sendable {
-        let host: String
-        let port: UInt16
-    }
-
-    private nonisolated static func probeTarget(for group: RuntimeProxyGroup) -> ProbeTarget {
-        if let raw = group.url,
-           let components = URLComponents(string: raw),
-           let host = components.host {
-            let port: UInt16
-            if let explicit = components.port {
-                port = UInt16(clamping: explicit)
-            } else {
-                port = components.scheme?.lowercased() == "https" ? 443 : 80
-            }
-            return ProbeTarget(host: host, port: port)
-        }
-        return ProbeTarget(host: "captive.apple.com", port: 80)
     }
 }

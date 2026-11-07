@@ -127,3 +127,38 @@ nonisolated enum ProxyGroupSelector {
         ids.firstIndex(of: id) ?? Int.max
     }
 }
+
+nonisolated extension RuntimeProxyGroup {
+    /// The endpoint this group's members are probed against: the configured URL
+    /// when it parses to a dialable http(s) target, otherwise the built-in
+    /// captive-portal default.
+    var probeTarget: LatencyTarget {
+        url.flatMap(LatencyTarget.init(url:)) ?? .captivePortal
+    }
+}
+
+/// Builds the member -> target worklist the automatic-group prober measures.
+nonisolated enum ProxyProbePlan {
+    /// Every dialable member of an automatic group, keyed to the target it is
+    /// measured against (a member shared by several groups keeps the first
+    /// group's target).
+    ///
+    /// `direct` nodes are intentionally included: an explicit direct member is a
+    /// real route, so a `fallback` group that lists one first must be able to
+    /// pick it once it proves reachable instead of always resolving to a heavier
+    /// proxy further down.
+    static func memberTargets(
+        groups: [RuntimeProxyGroup],
+        nodes: [UUID: ProxyConfiguration]
+    ) -> [UUID: LatencyTarget] {
+        var targets: [UUID: LatencyTarget] = [:]
+        for group in groups {
+            let target = group.probeTarget
+            for memberID in group.memberIDs where targets[memberID] == nil {
+                guard nodes[memberID] != nil else { continue }
+                targets[memberID] = target
+            }
+        }
+        return targets
+    }
+}

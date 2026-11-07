@@ -137,4 +137,84 @@ struct ProxyGroupPolicyTests {
         #expect(RuntimeProxyGroup.stableID(name: "Auto") == RuntimeProxyGroup.stableID(name: "Auto"))
         #expect(RuntimeProxyGroup.stableID(name: "Auto") != RuntimeProxyGroup.stableID(name: "Other"))
     }
+
+    // MARK: - Probe Targets
+
+    @Test func latencyTargetPreservesSchemeHostPathAndQuery() {
+        let target = LatencyTarget(url: "https://www.gstatic.com/generate_204?edge=1")
+        #expect(target?.scheme == .https)
+        #expect(target?.host == "www.gstatic.com")
+        #expect(target?.port == 443)
+        #expect(target?.path == "/generate_204?edge=1")
+        #expect(target?.isSecure == true)
+        #expect(target?.authority == "www.gstatic.com")
+    }
+
+    @Test func latencyTargetDefaultsPortsAndRootPath() {
+        #expect(LatencyTarget(url: "http://example.com")?.port == 80)
+        #expect(LatencyTarget(url: "http://example.com")?.path == "/")
+        #expect(LatencyTarget(url: "https://example.com")?.port == 443)
+
+        let explicit = LatencyTarget(url: "http://example.com:8080/health")
+        #expect(explicit?.port == 8080)
+        #expect(explicit?.path == "/health")
+        #expect(explicit?.authority == "example.com:8080")
+    }
+
+    @Test func latencyTargetRejectsUndialableURLs() {
+        #expect(LatencyTarget(url: "ftp://example.com") == nil)
+        #expect(LatencyTarget(url: "example.com/generate_204") == nil)
+        #expect(LatencyTarget(url: "https:///path") == nil)
+    }
+
+    @Test func captivePortalTargetMirrorsLegacyDefaults() {
+        let target = LatencyTarget.captivePortal
+        #expect(target.scheme == .http)
+        #expect(target.host == "captive.apple.com")
+        #expect(target.port == 80)
+        #expect(target.path == "/")
+        #expect(target.authority == "captive.apple.com")
+    }
+
+    @Test func groupProbeTargetUsesConfiguredURLOrDefault() {
+        let withURL = RuntimeProxyGroup(
+            name: "Auto", kind: .urlTest, memberIDs: [UUID()],
+            url: "https://www.gstatic.com/generate_204"
+        )
+        #expect(withURL.probeTarget.host == "www.gstatic.com")
+        #expect(withURL.probeTarget.scheme == .https)
+
+        let withoutURL = RuntimeProxyGroup(name: "Manual", kind: .fallback, memberIDs: [UUID()])
+        #expect(withoutURL.probeTarget.host == LatencyTarget.captivePortal.host)
+    }
+
+    @Test func probePlanMeasuresDirectNodesAndFallbackPicksLeadingDirectNode() {
+        let compiled = ConfigurationCoordinator().compile(text: """
+            [Proxy]
+            D = direct
+            P = socks5://5.6.7.8:1080#P
+            [Proxy Group]
+            Fall = fallback, D, P
+            """).compiled
+
+        let nodes = Dictionary(uniqueKeysWithValues: compiled.proxies.map { ($0.id, $0) })
+        guard let direct = compiled.proxies.first(where: { $0.isDirect }),
+              let proxy = compiled.proxies.first(where: { $0.name == "P" }),
+              let group = compiled.policyGroups.first else {
+            Issue.record("expected a direct node, a proxy node, and one automatic group")
+            return
+        }
+
+        // The prober must measure the direct node, not skip it.
+        let targets = ProxyProbePlan.memberTargets(groups: compiled.policyGroups, nodes: nodes)
+        #expect(targets[direct.id] != nil)
+        #expect(targets[proxy.id] != nil)
+
+        // A reachable direct member that leads the group wins over a later proxy.
+        #expect(group.memberIDs.first == direct.id)
+        let chosen = ProxyGroupSelector.select(
+            group: group, latencies: [direct.id: 5, proxy.id: 9], roundRobinIndex: 0
+        )
+        #expect(chosen == direct.id)
+    }
 }
