@@ -109,15 +109,20 @@ nonisolated enum ResolvedHostFetcher {
         }
     }
 
-    private static func requestHead(
+    static func requestHead(
         _ request: URLRequest,
         url: URL,
         host: String,
         port: UInt16,
         secure: Bool
     ) -> Data {
-        var target = url.path.isEmpty ? "/" : url.path
-        if let query = url.query, !query.isEmpty { target += "?\(query)" }
+        // Use the percent-encoded components: `url.path` / `url.query` decode
+        // `%2F` and `%20`, which would turn "/sub/a%2Fb%20c" into "/sub/a/b c" on
+        // the wire — a different path plus a raw space, rejected by many servers.
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        var target = components?.percentEncodedPath ?? ""
+        if target.isEmpty { target = "/" }
+        if let query = components?.percentEncodedQuery, !query.isEmpty { target += "?\(query)" }
 
         let defaultPort: UInt16 = secure ? 443 : 80
         let hostHeader = port == defaultPort ? host : "\(host):\(port)"

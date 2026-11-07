@@ -150,32 +150,11 @@ nonisolated final class HTTPUpgradeConnection: Sendable {
                 throw NaiveFlowError.proxy(.httpUpgrade, .upgradeFailed(detail: "Cannot decode response headers"))
             }
 
-            let lines = headerString.split(separator: "\r\n")
-            guard let statusLine = lines.first else {
-                throw NaiveFlowError.proxy(.httpUpgrade, .upgradeFailed(detail: "Empty response"))
-            }
-
-            guard statusLine.contains("101") else {
-                throw NaiveFlowError.proxy(.httpUpgrade, .upgradeFailed(detail: "Expected HTTP 101, got: \(statusLine)"))
-            }
-
-            var hasUpgradeWebSocket = false
-            var hasConnectionUpgrade = false
-            for line in lines.dropFirst() {
-                let parts = line.split(separator: ":", maxSplits: 1)
-                guard parts.count == 2 else { continue }
-                let key = parts[0].trimmingCharacters(in: .whitespaces).lowercased()
-                let value = parts[1].trimmingCharacters(in: .whitespaces).lowercased()
-                if key == "upgrade" && value == "websocket" {
-                    hasUpgradeWebSocket = true
-                }
-                if key == "connection" && value == "upgrade" {
-                    hasConnectionUpgrade = true
-                }
-            }
-
-            guard hasUpgradeWebSocket && hasConnectionUpgrade else {
-                throw NaiveFlowError.proxy(.httpUpgrade, .upgradeFailed(detail: "Missing Upgrade/Connection headers in 101 response"))
+            // The parser rejects an empty block, a malformed status line, a
+            // non-101 status (even when the reason phrase contains "101"), and
+            // missing Upgrade/Connection upgrade tokens.
+            if let failure = Self.upgradeHandshakeFailure(headerString) {
+                throw NaiveFlowError.proxy(.httpUpgrade, .upgradeFailed(detail: failure))
             }
 
             let opened: Bool = state.withLock { $0.transition(to: .open) }
@@ -184,6 +163,32 @@ nonisolated final class HTTPUpgradeConnection: Sendable {
             }
             return
         }
+    }
+
+    // MARK: - Upgrade response validation
+
+    /// Validates an `httpupgrade` handshake response. Returns `nil` for a
+    /// conforming `101 Switching Protocols` reply that carries `Upgrade:
+    /// websocket` and a `Connection` token list including `upgrade`; otherwise a
+    /// human-readable reason.
+    ///
+    /// The status code is parsed as an integer, so `HTTP/1.1 401 error101` is
+    /// rejected, and header values are compared as token lists, so
+    /// `Connection: keep-alive, Upgrade` is accepted.
+    static func upgradeHandshakeFailure(_ headerString: String) -> String? {
+        guard let response = UpgradeHandshakeResponse(headerString: headerString) else {
+            return "Malformed or empty response head"
+        }
+        guard response.statusCode == 101 else {
+            return "Expected HTTP 101, got: \(response.statusLine)"
+        }
+        guard response.containsToken("websocket", in: "upgrade") else {
+            return "Missing or invalid Upgrade header in 101 response"
+        }
+        guard response.containsToken("upgrade", in: "connection") else {
+            return "Missing or invalid Connection header in 101 response"
+        }
+        return nil
     }
 
     // MARK: - Public API

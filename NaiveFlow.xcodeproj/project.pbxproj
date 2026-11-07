@@ -154,6 +154,7 @@
 				Networking/Protocols/Core/TransportReclaim.swift,
 				Networking/Protocols/Core/TunneledTransport.swift,
 				Networking/Protocols/Core/UDPFraming.swift,
+				Networking/Protocols/Core/UpgradeHandshakeResponse.swift,
 				Networking/Protocols/Direct/DirectConfiguration.swift,
 				Networking/Protocols/Direct/DirectProxyConnection.swift,
 				Networking/Protocols/Direct/DirectUDPProxyConnection.swift,

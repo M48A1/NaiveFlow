@@ -194,55 +194,29 @@ nonisolated final class WebSocketConnection: Sendable {
 
     /// Validates a WebSocket upgrade response. Returns `nil` when it is a
     /// conforming `101 Switching Protocols` handshake for `key`; otherwise a
-    /// human-readable reason. Rejects non-101 statuses (even when the body text
-    /// contains "101"), and requires the `Upgrade`, `Connection`, and
+    /// human-readable reason. Rejects non-101 statuses (even when the reason
+    /// phrase contains "101"), and requires the `Upgrade`, `Connection`, and
     /// `Sec-WebSocket-Accept` headers.
     static func upgradeHandshakeFailure(_ headerString: String, key: String) -> String? {
-        let lines = headerString.components(separatedBy: "\r\n").filter { !$0.isEmpty }
-        guard let statusLine = lines.first else {
-            return "Empty response"
+        guard let response = UpgradeHandshakeResponse(headerString: headerString) else {
+            return "Malformed or empty response head"
         }
-
-        // Status line: `HTTP/1.1 101 Switching Protocols`. Parse the code as an
-        // integer so a reason phrase such as "401 error101" cannot be accepted.
-        let statusParts = statusLine.split(separator: " ", omittingEmptySubsequences: true)
-        guard statusParts.count >= 2, statusParts[0].hasPrefix("HTTP/"), let statusCode = Int(statusParts[1]) else {
-            return "Malformed status line: \(statusLine)"
+        guard response.statusCode == 101 else {
+            return "Expected HTTP 101, got: \(response.statusLine)"
         }
-        guard statusCode == 101 else {
-            return "Expected HTTP 101, got: \(statusLine)"
-        }
-
-        var headers: [String: String] = [:]
-        for line in lines.dropFirst() {
-            guard let colon = line.firstIndex(of: ":") else { continue }
-            let name = line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
-            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-            if let existing = headers[name] {
-                headers[name] = existing + ", " + value
-            } else {
-                headers[name] = value
-            }
-        }
-
-        guard let upgrade = headers["upgrade"], upgrade.caseInsensitiveCompare("websocket") == .orderedSame else {
+        // Header values are token lists: `Connection: keep-alive, Upgrade` is valid.
+        guard response.containsToken("websocket", in: "upgrade") else {
             return "Missing or invalid Upgrade header in 101 response"
         }
-
-        let connectionTokens = (headers["connection"] ?? "")
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
-        guard connectionTokens.contains("upgrade") else {
+        guard response.containsToken("upgrade", in: "connection") else {
             return "Missing or invalid Connection header in 101 response"
         }
-
-        guard let accept = headers["sec-websocket-accept"] else {
+        guard let accept = response.value("sec-websocket-accept") else {
             return "Missing Sec-WebSocket-Accept header in 101 response"
         }
         guard accept == expectedAccept(for: key) else {
             return "Invalid Sec-WebSocket-Accept header in 101 response"
         }
-
         return nil
     }
 

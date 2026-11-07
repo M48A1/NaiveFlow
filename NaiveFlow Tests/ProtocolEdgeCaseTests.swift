@@ -118,6 +118,20 @@ struct ProtocolEdgeCaseTests {
         #expect(try GRPCConnection.headersPayload(strippingPaddingFrom: prioritised, flags: 0x08 | 0x20) == block)
     }
 
+    @Test func grpcHeadersFramePriorityWithoutPaddingIsStripped() throws {
+        // PRIORITY alone (no PADDED): [5-byte priority][header block]. The early
+        // `!PADDED` return previously left the priority field in front of the
+        // block, so a legal :status 200 was misread as an unknown :status header.
+        let block = Data([0x88]) // indexed :status 200
+        let payload = Data(repeating: 0x11, count: 5) + block
+        #expect(try GRPCConnection.headersPayload(strippingPaddingFrom: payload, flags: 0x20) == block)
+
+        // A truncated priority field cannot be stripped.
+        #expect(throws: (any Error).self) {
+            try GRPCConnection.headersPayload(strippingPaddingFrom: Data([0x11, 0x11]), flags: 0x20)
+        }
+    }
+
     @Test func grpcHeadersFramePaddingMalformedThrows() {
         #expect(throws: (any Error).self) {
             try GRPCConnection.headersPayload(strippingPaddingFrom: Data([0xFF, 0x88]), flags: 0x08)
@@ -197,5 +211,75 @@ struct ProtocolEdgeCaseTests {
         Sec-WebSocket-Accept: not-the-right-value
         """
         #expect(WebSocketConnection.upgradeHandshakeFailure(response, key: key) != nil)
+    }
+
+    // MARK: - HTTPUpgrade upgrade response validation
+
+    @Test func httpUpgradeAcceptsConnectionTokenList() {
+        // `Connection: keep-alive, Upgrade` is a valid token list; the previous
+        // exact-match check (`value == "upgrade"`) rejected it.
+        let response = """
+        HTTP/1.1 101 Switching Protocols\r
+        Upgrade: websocket\r
+        Connection: keep-alive, Upgrade
+        """
+        #expect(HTTPUpgradeConnection.upgradeHandshakeFailure(response) == nil)
+    }
+
+    @Test func httpUpgradeRejectsNon101EvenWhenReasonContains101() {
+        // The old check used `statusLine.contains("101")`, so this 401 slipped through.
+        let response = """
+        HTTP/1.1 401 error101\r
+        Upgrade: websocket\r
+        Connection: Upgrade
+        """
+        #expect(HTTPUpgradeConnection.upgradeHandshakeFailure(response) != nil)
+    }
+
+    @Test func httpUpgradeRejectsMissingUpgradeHeaders() {
+        // 101 with no Upgrade/Connection headers.
+        #expect(HTTPUpgradeConnection.upgradeHandshakeFailure("HTTP/1.1 101 Switching Protocols") != nil)
+
+        // 101 where Connection does not include the upgrade token.
+        let response = """
+        HTTP/1.1 101 Switching Protocols\r
+        Upgrade: websocket\r
+        Connection: keep-alive
+        """
+        #expect(HTTPUpgradeConnection.upgradeHandshakeFailure(response) != nil)
+    }
+
+    // MARK: - Subscription request target
+
+    @Test func subscriptionRequestTargetKeepsPercentEncoding() {
+        // `url.path` decodes `%2F`/`%20`, so "/sub/a%2Fb%20c" used to be sent as
+        // "/sub/a/b c" — a different path plus a raw space.
+        let url = URL(string: "https://sub.example.com/sub/a%2Fb%20c?token=a%2Fb%20c")!
+        let head = ResolvedHostFetcher.requestHead(
+            URLRequest(url: url),
+            url: url,
+            host: "sub.example.com",
+            port: 443,
+            secure: true
+        )
+        let requestLine = String(decoding: head, as: UTF8.self)
+            .components(separatedBy: "\r\n")
+            .first ?? ""
+        #expect(requestLine == "GET /sub/a%2Fb%20c?token=a%2Fb%20c HTTP/1.1")
+    }
+
+    @Test func subscriptionRequestTargetDefaultsToRootPath() {
+        let url = URL(string: "https://sub.example.com")!
+        let head = ResolvedHostFetcher.requestHead(
+            URLRequest(url: url),
+            url: url,
+            host: "sub.example.com",
+            port: 443,
+            secure: true
+        )
+        let requestLine = String(decoding: head, as: UTF8.self)
+            .components(separatedBy: "\r\n")
+            .first ?? ""
+        #expect(requestLine == "GET / HTTP/1.1")
     }
 }

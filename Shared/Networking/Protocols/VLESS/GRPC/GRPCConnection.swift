@@ -863,20 +863,35 @@ nonisolated extension GRPCConnection {
         return payload.dropFirst(1).dropLast(Int(padLengthByte))
     }
 
-    /// Removes HEADERS-frame padding so the header block reaches HPACK decoding
-    /// intact. A PADDED HEADERS payload is: 1-byte pad length, optional 5-byte
-    /// priority field (PRIORITY flag), the header block fragment, then pad bytes.
+    /// Removes the HEADERS-frame prefix fields so the header block reaches HPACK
+    /// decoding intact. A HEADERS payload is:
+    /// `[1-byte pad length][optional 5-byte priority field][header block][pad bytes]`.
+    ///
+    /// The PADDED and PRIORITY flags are independent: either can appear alone. An
+    /// early return on `!PADDED` would leave the 5-byte priority field in front of
+    /// the block, so a legal `:status 200` would be misread as an unknown
+    /// `:status` header.
     static func headersPayload(strippingPaddingFrom payload: Data, flags: UInt8) throws -> Data {
-        guard (flags & h2FlagPadded) != 0 else { return payload }
-        guard let padLengthByte = payload.first else {
-            throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "PADDED HEADERS frame with no pad length"))
+        var start = payload.startIndex
+        var end = payload.endIndex
+
+        if (flags & h2FlagPadded) != 0 {
+            guard let padLengthByte = payload.first else {
+                throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "PADDED HEADERS frame with no pad length"))
+            }
+            start += 1
+            end -= Int(padLengthByte)
         }
-        let padLength = Int(padLengthByte)
-        var start = payload.startIndex + 1
-        if (flags & h2FlagPriority) != 0 { start += 5 }
-        let end = payload.endIndex - padLength
+
+        if (flags & h2FlagPriority) != 0 {
+            // Exclusive flag + 31-bit stream dependency + 1-byte weight.
+            start += 5
+        }
+
         guard start <= end else {
-            throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "PADDED HEADERS frame with malformed padding"))
+            throw NaiveFlowError.proxy(.grpc, .protocolViolation(
+                detail: "HEADERS frame with malformed padding or priority field"
+            ))
         }
         return payload[start..<end]
     }
