@@ -345,8 +345,13 @@ nonisolated final class DomainRouter: Sendable {
     var usesNativeRules: Bool { routingState.withLock { $0.ordered != nil } }
 
     func nativeDecision(_ query: RouteQuery, allowResolution: Bool = true,
-                        deferOnHostUnknown: Bool = true) -> OrderedRouteMatcher.Evaluation? {
-        routingState.withLock { $0.ordered?.evaluate(query, allowAddressResolution: allowResolution, deferOnHostUnknown: deferOnHostUnknown) }
+                        deferOnHostUnknown: Bool = true,
+                        deferOnMissingMetadata: Bool = true) -> OrderedRouteMatcher.Evaluation? {
+        routingState.withLock {
+            $0.ordered?.evaluate(query, allowAddressResolution: allowResolution,
+                                 deferOnHostUnknown: deferOnHostUnknown,
+                                 deferOnMissingMetadata: deferOnMissingMetadata)
+        }
     }
 
     static func nativeMatch(_ result: OrderedRouteMatcher.Result) -> Match {

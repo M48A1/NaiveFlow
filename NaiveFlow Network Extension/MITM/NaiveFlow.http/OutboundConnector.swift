@@ -59,11 +59,16 @@ nonisolated enum OutboundConnector {
             // a host, and a script/DoH request's host is already final. Finish the
             // match so an earlier domain rule cannot leave a later IP/FINAL reject
             // stuck as a deferral that silently falls through to the default route.
-            var evaluation = router.nativeDecision(query, allowResolution: !context.preventDNSLeak, deferOnHostUnknown: false)
+            // These requests also carry no source address/port, and never will, so
+            // a SRC-IP/SRC-PORT rule must be skipped as a non-match rather than
+            // deferring the whole evaluation and letting a later REJECT be lost.
+            var evaluation = router.nativeDecision(query, allowResolution: !context.preventDNSLeak,
+                                                   deferOnHostUnknown: false, deferOnMissingMetadata: false)
             if case .needsAddress = evaluation, !isLiteral, !context.preventDNSLeak,
                let ip = await DNSResolver.localRequests.resolveHost(host, family: .ipv4, purpose: .ruleEvaluation) {
                 query.ip = ip
-                evaluation = router.nativeDecision(query, allowResolution: false, deferOnHostUnknown: false)
+                evaluation = router.nativeDecision(query, allowResolution: false,
+                                                   deferOnHostUnknown: false, deferOnMissingMetadata: false)
             }
             if case .matched(let result) = evaluation {
                 let match = DomainRouter.nativeMatch(result)

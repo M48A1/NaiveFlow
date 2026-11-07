@@ -268,8 +268,16 @@ nonisolated struct OrderedRouteMatcher: Sendable {
 
     /// Stop before a later rule can win when an earlier rule needs DNS or flow
     /// metadata. DNS-time previews must not cache a verdict for a later rule.
+    ///
+    /// `deferOnMissingMetadata` mirrors `deferOnHostUnknown` for flow metadata
+    /// (source address/port, destination port, protocol). When a field can never
+    /// be supplied for this flow — a script/DoH request, for example, has no
+    /// source address — the caller passes `false`, and a rule that needs the
+    /// absent field simply does not match while the scan continues. That lets a
+    /// later rule (a terminal `REJECT`, say) still decide the route instead of
+    /// the whole evaluation deferring and falling through to the default route.
     func evaluate(_ query: RouteQuery, allowAddressResolution: Bool = true, allowFinal: Bool = true,
-                  deferOnHostUnknown: Bool = true) -> Evaluation {
+                  deferOnHostUnknown: Bool = true, deferOnMissingMetadata: Bool = true) -> Evaluation {
         // A host-based rule earlier in order cannot match while the host is
         // unknown. Track that as an explicit state and defer any later verdict
         // (including FINAL) so an earlier domain rule can still win once the host
@@ -288,7 +296,13 @@ nonisolated struct OrderedRouteMatcher: Sendable {
                 continue
             case .address:
                 if !rule.noResolve && allowAddressResolution { return .needsAddress }
-            case .metadata: return .deferred
+            case .metadata:
+                // The field this rule needs will not be available for this flow,
+                // so the rule does not match. Keep scanning so a later rule can
+                // still decide the route (instead of deferring the whole
+                // evaluation and letting the caller fall through to default).
+                if deferOnMissingMetadata { return .deferred }
+                continue
             }
         }
         if sawHostUnknown, deferOnHostUnknown { return .deferred }

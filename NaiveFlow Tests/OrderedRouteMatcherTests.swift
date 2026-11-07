@@ -220,4 +220,98 @@ struct OrderedRouteMatcherTests {
             Issue.record("Expected deferral for NOT DOMAIN while the host is unknown")
         }
     }
+
+    // MARK: - Missing flow metadata (script HTTP / proxy DoH)
+
+    /// Mirrors how `OutboundConnector.resolveRoute` — the dialer used by script
+    /// HTTP and proxy DoH — collapses a native decision into one action: a matched
+    /// rule keeps its action, and anything that did not match falls back to the
+    /// default route. Those requests carry no source address/port and never will,
+    /// so the matcher is asked to treat missing metadata as a non-match rather than
+    /// a deferral (`deferOnMissingMetadata: false`).
+    private func resolveLikeScriptOrDoH(
+        _ matcher: OrderedRouteMatcher,
+        ip: String,
+        port: UInt16 = 443,
+        protocolName: String = "TCP"
+    ) -> RouteMatchAction {
+        let query = RouteQuery(ip: ip, destinationPort: port, protocolName: protocolName)
+        switch matcher.evaluate(query, deferOnHostUnknown: false, deferOnMissingMetadata: false) {
+        case .matched(let result):
+            return result.action
+        case .needsAddress, .deferred:
+            return .defaultProxy
+        }
+    }
+
+    @Test func sourceIPRuleDoesNotSinkLaterRejectWithoutSourceAddress() {
+        let matcher = OrderedRouteMatcher(
+            rules: [
+                rule(1, .sourceIP(CIDRPrefix.parse("192.0.2.0/24")!), .direct),
+                rule(2, .ipCIDR(CIDRPrefix.parse("1.2.3.4/32")!), .reject),
+            ],
+            finalAction: .direct
+        )
+
+        // Regression: with no source address the first rule cannot match. The scan
+        // must continue to the IP-CIDR reject instead of deferring and letting the
+        // caller fall through to the default route.
+        #expect(resolveLikeScriptOrDoH(matcher, ip: "1.2.3.4") == .reject)
+        // Destinations the later rules do not claim still reach FINAL.
+        #expect(resolveLikeScriptOrDoH(matcher, ip: "8.8.8.8") == .direct)
+    }
+
+    @Test func missingMetadataStillDefersByDefaultForPreviews() {
+        let matcher = OrderedRouteMatcher(
+            rules: [
+                rule(1, .sourceIP(CIDRPrefix.parse("192.0.2.0/24")!), .direct),
+                rule(2, .ipCIDR(CIDRPrefix.parse("1.2.3.4/32")!), .reject),
+            ],
+            finalAction: .direct
+        )
+
+        // Default semantics keep deferring: a DNS-time preview must not cache the
+        // IP-CIDR verdict while the source address is still unknown.
+        if case .deferred = matcher.evaluate(RouteQuery(ip: "1.2.3.4"), deferOnHostUnknown: false) {
+            // expected
+        } else {
+            Issue.record("Expected deferral when source metadata is missing and deferral is allowed")
+        }
+    }
+
+    @Test func matchingSourceAddressStillWinsUnderTerminalPolicy() {
+        let matcher = OrderedRouteMatcher(
+            rules: [
+                rule(1, .sourceIP(CIDRPrefix.parse("192.0.2.0/24")!), .direct),
+                rule(2, .ipCIDR(CIDRPrefix.parse("1.2.3.4/32")!), .reject),
+            ],
+            finalAction: .direct
+        )
+
+        // When the flow does carry a matching source address, the earlier rule
+        // still wins under the terminal policy.
+        if case .matched(let result) = matcher.evaluate(
+            RouteQuery(ip: "1.2.3.4", sourceIP: "192.0.2.10", destinationPort: 443, protocolName: "TCP"),
+            deferOnHostUnknown: false, deferOnMissingMetadata: false
+        ) {
+            #expect(result.action == .direct)
+            #expect(result.ruleLine == 1)
+        } else {
+            Issue.record("Expected the matching SRC-IP rule to win")
+        }
+    }
+
+    @Test func missingSourcePortSkipsRuleRatherThanDeferring() {
+        let matcher = OrderedRouteMatcher(
+            rules: [
+                rule(1, .sourcePort(1234), .direct),
+                rule(2, .destinationPort(443), .reject),
+            ],
+            finalAction: .direct
+        )
+
+        // SRC-PORT is unavailable for a script/DoH request; the later port reject
+        // must still fire instead of the evaluation deferring to the default route.
+        #expect(resolveLikeScriptOrDoH(matcher, ip: "1.2.3.4", port: 443) == .reject)
+    }
 }
