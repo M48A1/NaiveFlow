@@ -45,7 +45,8 @@ final class Operations {
     var routingRuleSets: RoutingRuleSetOperations {
         RoutingRuleSetOperations(
             routingRuleSetStore: container.routingRuleSetStore,
-            routingExportScheduler: container.routingExportScheduler
+            routingExportScheduler: container.routingExportScheduler,
+            coordinator: container.routingRefreshCoordinator
         )
     }
 
@@ -68,7 +69,8 @@ final class Operations {
     var mitmRuleSets: MITMRuleSetOperations {
         MITMRuleSetOperations(
             mitmRuleSetStore: container.mitmRuleSetStore,
-            mitmExportScheduler: container.mitmExportScheduler
+            mitmExportScheduler: container.mitmExportScheduler,
+            coordinator: container.mitmRefreshCoordinator
         )
     }
 
@@ -76,7 +78,8 @@ final class Operations {
         ModuleOperations(
             moduleStore: container.moduleStore,
             routingExportScheduler: container.routingExportScheduler,
-            mitmExportScheduler: container.mitmExportScheduler
+            mitmExportScheduler: container.mitmExportScheduler,
+            coordinator: container.moduleRefreshCoordinator
         )
     }
 

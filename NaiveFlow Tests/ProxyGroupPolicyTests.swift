@@ -206,9 +206,10 @@ struct ProxyGroupPolicyTests {
         }
 
         // The prober must measure the direct node, not skip it.
-        let targets = ProxyProbePlan.memberTargets(groups: compiled.policyGroups, nodes: nodes)
-        #expect(targets[direct.id] != nil)
-        #expect(targets[proxy.id] != nil)
+        let plans = ProxyProbePlan.groupProbes(groups: compiled.policyGroups, nodes: nodes)
+        let probedMembers = Set(plans.flatMap { $0.probes.map(\.memberID) })
+        #expect(probedMembers.contains(direct.id))
+        #expect(probedMembers.contains(proxy.id))
 
         // A reachable direct member that leads the group wins over a later proxy.
         #expect(group.memberIDs.first == direct.id)
@@ -216,5 +217,30 @@ struct ProxyGroupPolicyTests {
             group: group, latencies: [direct.id: 5, proxy.id: 9], roundRobinIndex: 0
         )
         #expect(chosen == direct.id)
+    }
+
+    @Test func sharedNodeIsProbedPerGroupAgainstEachGroupsURL() {
+        let shared = UUID()
+        let a = RuntimeProxyGroup(name: "A", kind: .urlTest, memberIDs: [shared],
+                                  url: "https://a.example/probe")
+        let b = RuntimeProxyGroup(name: "B", kind: .fallback, memberIDs: [shared],
+                                  url: "https://b.example/probe")
+        let nodes = [shared: ProxyConfiguration(
+            name: "S", serverAddress: "1.2.3.4", serverPort: 443,
+            outbound: .direct(DirectConfiguration())
+        )]
+
+        let plans = ProxyProbePlan.groupProbes(groups: [a, b], nodes: nodes)
+        // The shared node is scheduled once per group, not collapsed to the first.
+        #expect(plans.count == 2)
+        let planA = plans.first { $0.group.id == a.id }
+        let planB = plans.first { $0.group.id == b.id }
+        #expect(planA?.probes.map(\.memberID) == [shared])
+        #expect(planB?.probes.map(\.memberID) == [shared])
+        // Each plan measures the node against that group's own URL.
+        #expect(planA?.probes.first?.target.host == "a.example")
+        #expect(planB?.probes.first?.target.host == "b.example")
+        #expect(planA?.probes.first?.groupID == a.id)
+        #expect(planB?.probes.first?.groupID == b.id)
     }
 }

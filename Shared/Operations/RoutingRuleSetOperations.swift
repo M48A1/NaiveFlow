@@ -11,6 +11,11 @@ import Foundation
 struct RoutingRuleSetOperations {
     let routingRuleSetStore: RoutingRuleSetStore
     let routingExportScheduler: RoutingExportScheduler
+    /// Shared per-rule-set refresh coordination so a slow fetch cannot overwrite
+    /// a newer one. Defaulted so existing call sites/tests keep a private instance.
+    var coordinator = RefreshTicketCoordinator<UUID>()
+    /// Injectable fetch seam for tests; production uses the bounded downloader.
+    var fetchBodyOverride: (@MainActor (URL) async throws -> String)? = nil
 
     // MARK: - Assignments
 
@@ -74,19 +79,24 @@ struct RoutingRuleSetOperations {
         guard let url = routingRuleSetStore.customRuleSet(for: id)?.subscriptionURL else {
             throw CustomRoutingRuleSetRefreshError.missingSubscriptionURL
         }
+        let ticket = coordinator.begin(id)
+        defer { coordinator.end(id, ticket: ticket) }
 
-        let (data, response) = try await URLSession.shared.data(from: url)
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            throw CustomRoutingRuleSetRefreshError.invalidStatusCode(http.statusCode)
+        let body: String
+        if let fetchBodyOverride {
+            body = try await fetchBodyOverride(url)
+        } else {
+            body = try await Self.fetchBody(from: url)
         }
-        guard let body = String(data: data, encoding: .utf8) else {
-            throw CustomRoutingRuleSetRefreshError.undecodableBody
-        }
-
         let parsed = RoutingRuleSetParser.parse(body)
         guard parsed.rules.count <= CustomRoutingRuleSet.maxRuleCount else {
             throw CustomRoutingRuleSetRefreshError.tooManyRules
         }
+
+        // A superseded refresh (or one whose source was re-pointed mid-flight)
+        // must not commit; leave the current rule set untouched.
+        guard coordinator.isCurrent(id, ticket: ticket),
+              routingRuleSetStore.customRuleSet(for: id)?.subscriptionURL == url else { return }
 
         guard let current = routingRuleSetStore.customRuleSet(for: id),
               current.rules != parsed.rules
@@ -94,6 +104,17 @@ struct RoutingRuleSetOperations {
                 || current.iconDark != parsed.iconDark
         else { return }
         updateCustomRuleSet(id, rules: parsed.rules, icons: (parsed.iconLight, parsed.iconDark))
+    }
+
+    private static func fetchBody(from url: URL) async throws -> String {
+        let (data, http) = try await BoundedHTTPFetcher.fetch(url)
+        guard (200...299).contains(http.statusCode) else {
+            throw CustomRoutingRuleSetRefreshError.invalidStatusCode(http.statusCode)
+        }
+        guard let body = String(data: data, encoding: .utf8) else {
+            throw CustomRoutingRuleSetRefreshError.undecodableBody
+        }
+        return body
     }
 }
 

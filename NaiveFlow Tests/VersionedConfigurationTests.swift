@@ -199,4 +199,24 @@ struct VersionedConfigurationTests {
         view.install(["value": .absent])
         #expect(view.string(forKey: "value") == nil)
     }
+
+    /// Rolling back from the first text version returns the manually captured
+    /// baseline, whose head bundle carries `snapshotID == nil`. That is the signal
+    /// the app uses to restore editable manual mode (see ProxySelectionTests).
+    @Test func rollbackToManualBaselineYieldsNilSnapshotHead() async throws {
+        let (directory, activation) = workspace()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var captured: [UUID?] = []
+        let publisher = ConfigurationPublisher(activation: activation, tunnel: nil,
+            preferencesSink: { _ in }, stateSink: { captured.append($0.snapshotID) })
+        _ = try await publisher.publish(text: first)
+        let textHead = try #require(try publisher.bundleStore.head())
+        #expect(try publisher.bundleStore.load(textHead.current).snapshotID != nil)
+
+        _ = try await publisher.rollback()
+        let restoredHead = try #require(try publisher.bundleStore.head())
+        #expect(try publisher.bundleStore.load(restoredHead.current).snapshotID == nil)
+        // The app's selection sink received the manual baseline last.
+        #expect(captured.last! == nil)
+    }
 }

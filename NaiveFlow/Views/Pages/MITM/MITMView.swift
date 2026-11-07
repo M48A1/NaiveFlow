@@ -227,8 +227,8 @@ struct MITMView: View {
         }
         Task {
             do {
-                let (data, response) = try await URLSession.shared.data(from: url)
-                if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
+                let (data, httpResponse) = try await BoundedHTTPFetcher.fetch(url)
+                guard (200...299).contains(httpResponse.statusCode) else {
                     subscribeError = "HTTP \(httpResponse.statusCode)"
                     return
                 }

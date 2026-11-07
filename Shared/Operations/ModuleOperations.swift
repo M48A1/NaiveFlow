@@ -12,6 +12,11 @@ struct ModuleOperations {
     let moduleStore: ModuleStore
     let routingExportScheduler: RoutingExportScheduler
     let mitmExportScheduler: MITMExportScheduler
+    /// Shared per-module refresh coordination so a slow fetch cannot overwrite a
+    /// newer one. Defaulted so existing call sites/tests keep a private instance.
+    var coordinator = RefreshTicketCoordinator<UUID>()
+    /// Injectable fetch seam for tests; production uses the bounded downloader.
+    var fetchBodyOverride: (@MainActor (URL) async throws -> String)? = nil
 
     // MARK: - Modules
 
@@ -130,8 +135,8 @@ struct ModuleOperations {
     }
 
     static func fetchBody(from url: URL) async throws -> String {
-        let (data, response) = try await URLSession.shared.data(from: url)
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+        let (data, http) = try await BoundedHTTPFetcher.fetch(url)
+        guard (200...299).contains(http.statusCode) else {
             throw ModuleImportError.invalidStatusCode(http.statusCode)
         }
         guard let body = String(data: data, encoding: .utf8) else {
@@ -152,11 +157,31 @@ struct ModuleOperations {
         guard let url = moduleStore.module(id: id)?.subscriptionURL else {
             throw ModuleImportError.missingSubscriptionURL
         }
-        let body = try await Self.fetchBody(from: url)
+        let ticket = coordinator.begin(id)
+        defer { coordinator.end(id, ticket: ticket) }
+
+        let body: String
+        if let fetchBodyOverride {
+            body = try await fetchBodyOverride(url)
+        } else {
+            body = try await Self.fetchBody(from: url)
+        }
         let content = ModuleParser.parse(body)
+
+        // A superseded refresh must not overwrite newer content; hand back the
+        // current module unchanged instead of committing this stale response.
+        guard coordinator.isCurrent(id, ticket: ticket) else {
+            guard let current = moduleStore.module(id: id) else {
+                throw ModuleImportError.moduleRemoved
+            }
+            return current
+        }
         guard let current = moduleStore.module(id: id) else {
             throw ModuleImportError.moduleRemoved
         }
+        // The source may have been re-pointed while this request was in flight;
+        // drop the commit rather than apply content from the old URL.
+        guard current.subscriptionURL == url else { return current }
         try content.makeModule(name: current.name, subscriptionURL: url).validateLimits()
         guard let updated = moduleStore.applyRefreshedContent(content, to: id) else {
             throw ModuleImportError.moduleRemoved

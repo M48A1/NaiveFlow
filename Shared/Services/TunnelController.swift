@@ -25,6 +25,14 @@ final class TunnelController {
     @ObservationIgnored private var statusObserver: Task<Void, Never>?
     @ObservationIgnored private var reassertingDebounceTask: Task<Void, Never>?
     @ObservationIgnored private var publishQueue: Task<Void, Never>?
+    /// In-flight connect preparation. Disconnect/reconnect bump `intentGeneration`
+    /// and cancel this task so a preparation still awaiting cannot start the
+    /// tunnel after the user asked to stop (the "stop then start" race).
+    @ObservationIgnored private var connectTask: Task<Void, Never>?
+    @ObservationIgnored private var intentGeneration: UInt64 = 0
+    /// Test seam (mirrors the publisher's overrides): awaited after the connect's
+    /// preferences load and before `start`, so a test can interleave a disconnect.
+    @ObservationIgnored var connectPreparationOverride: (@MainActor () async throws -> Void)? = nil
     private static let reassertingDebounceInterval: Duration = .seconds(5)
 
     init(provider: TunnelProviding) {
@@ -34,6 +42,7 @@ final class TunnelController {
     deinit {
         statusObserver?.cancel()
         reassertingDebounceTask?.cancel()
+        connectTask?.cancel()
     }
 
     func start() {
@@ -55,23 +64,36 @@ final class TunnelController {
 
     func connect(using configuration: ProxyConfiguration) {
         guard isManagerReady else { return }
-        Task {
+        intentGeneration &+= 1
+        let generation = intentGeneration
+        connectTask?.cancel()
+        connectTask = Task { [weak self] in
             if let head = try? RuntimeBundleStore().head(),
                let version = try? RuntimeBundleStore().load(head.current) {
                 AWCore.installRuntimePreferences(version.preferences)
             }
-            await publish(configuration, refreshingIP: true)
+            guard let self else { return }
+            await self.publish(configuration, refreshingIP: true)
+            // The user may have disconnected while the publication was in flight.
+            guard !Task.isCancelled, self.intentGeneration == generation else { return }
             do {
-                var request = TunnelStartRequest()
-                #if !os(tvOS)
-                request.includeAllNetworks = AWCore.getTunnelIncludeAllNetworks()
-                request.excludeLocalNetworks = AWCore.getTunnelExcludeLocalNetworks()
-                request.excludeAPNs = AWCore.getTunnelExcludeAPNs()
-                request.excludeCellularServices = AWCore.getTunnelExcludeCellularServices()
-                request.excludeDeviceCommunication = AWCore.getTunnelExcludeDeviceCommunication()
-                #endif
-                request.alwaysOn = AWCore.getAlwaysOnEnabled()
-                try await provider.start(request)
+                try await self.connectPreparationOverride?()
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, self.intentGeneration == generation else { return }
+
+            var request = TunnelStartRequest()
+            #if !os(tvOS)
+            request.includeAllNetworks = AWCore.getTunnelIncludeAllNetworks()
+            request.excludeLocalNetworks = AWCore.getTunnelExcludeLocalNetworks()
+            request.excludeAPNs = AWCore.getTunnelExcludeAPNs()
+            request.excludeCellularServices = AWCore.getTunnelExcludeCellularServices()
+            request.excludeDeviceCommunication = AWCore.getTunnelExcludeDeviceCommunication()
+            #endif
+            request.alwaysOn = AWCore.getAlwaysOnEnabled()
+            do {
+                try await self.provider.start(request)
             } catch {
                 self.startError = error.localizedDescription
             }
@@ -80,12 +102,20 @@ final class TunnelController {
 
     func disconnect() {
         pendingReconnect = false
+        // Invalidate any in-flight connect preparation, then stop.
+        intentGeneration &+= 1
+        connectTask?.cancel()
+        connectTask = nil
         Task { await provider.stop(disablingAlwaysOn: true) }
     }
     
     func reconnect() {
         guard rawStatus == .connected || rawStatus == .connecting else { return }
         pendingReconnect = true
+        // A pending connect must not race the reconnect's stop/start.
+        intentGeneration &+= 1
+        connectTask?.cancel()
+        connectTask = nil
         Task { await provider.stop(disablingAlwaysOn: true) }
     }
     

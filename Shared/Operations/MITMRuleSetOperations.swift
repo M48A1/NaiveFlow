@@ -11,6 +11,11 @@ import Foundation
 struct MITMRuleSetOperations {
     let mitmRuleSetStore: MITMRuleSetStore
     let mitmExportScheduler: MITMExportScheduler
+    /// Shared per-rule-set refresh coordination so a slow fetch cannot overwrite
+    /// a newer one. Defaulted so existing call sites/tests keep a private instance.
+    var coordinator = RefreshTicketCoordinator<UUID>()
+    /// Injectable fetch seam for tests; production uses the bounded downloader.
+    var fetchBodyOverride: (@MainActor (URL) async throws -> String)? = nil
 
     func setEnabled(_ enabled: Bool) {
         mitmRuleSetStore.setEnabled(enabled)
@@ -61,18 +66,28 @@ struct MITMRuleSetOperations {
         guard let url = mitmRuleSetStore.ruleSet(id: id)?.subscriptionURL else {
             throw MITMRuleSetRefreshError.missingSubscriptionURL
         }
+        let ticket = coordinator.begin(id)
+        defer { coordinator.end(id, ticket: ticket) }
 
-        let (data, response) = try await URLSession.shared.data(from: url)
-        if let httpResponse = response as? HTTPURLResponse, !(200...299).contains(httpResponse.statusCode) {
-            throw MITMRuleSetRefreshError.invalidStatusCode(httpResponse.statusCode)
+        let body: String
+        if let fetchBodyOverride {
+            body = try await fetchBodyOverride(url)
+        } else {
+            body = try await Self.fetchBody(from: url)
         }
-        guard let body = String(data: data, encoding: .utf8) else {
-            throw MITMRuleSetRefreshError.undecodableBody
-        }
-
         let parsed = MITMRuleSetParser.parse(body)
         guard parsed.rules.count <= MITMRuleSet.maxRuleCount else {
             throw MITMRuleSetRefreshError.tooManyRules
+        }
+
+        // A superseded refresh (or one whose source was re-pointed mid-flight)
+        // must not commit; return the current rule set unchanged.
+        guard coordinator.isCurrent(id, ticket: ticket),
+              mitmRuleSetStore.ruleSet(id: id)?.subscriptionURL == url else {
+            guard let current = mitmRuleSetStore.ruleSet(id: id) else {
+                throw MITMRuleSetRefreshError.ruleSetRemoved
+            }
+            return current
         }
         guard let updated = mitmRuleSetStore.applyRefreshedContent(
             domainSuffixes: parsed.domainSuffixes,
@@ -86,5 +101,16 @@ struct MITMRuleSetOperations {
         }
         mitmExportScheduler.schedule()
         return updated
+    }
+
+    private static func fetchBody(from url: URL) async throws -> String {
+        let (data, http) = try await BoundedHTTPFetcher.fetch(url)
+        guard (200...299).contains(http.statusCode) else {
+            throw MITMRuleSetRefreshError.invalidStatusCode(http.statusCode)
+        }
+        guard let body = String(data: data, encoding: .utf8) else {
+            throw MITMRuleSetRefreshError.undecodableBody
+        }
+        return body
     }
 }

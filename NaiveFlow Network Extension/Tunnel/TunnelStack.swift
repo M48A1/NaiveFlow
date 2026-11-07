@@ -579,8 +579,9 @@ actor TunnelStack {
         if let nativeBundle, nativeBundle.rules != nil {
             snapshot = (AWCore.getMITMEnabled(), nativeBundle.mitmRuleSets)
         } else {
-            let data = nativeBundle?.legacyMITM ?? AWCore.getMITMData()
-            snapshot = data.flatMap(MITMBinaryReader.decode)
+            // Manual mode — including a rolled-back manual baseline — reads the
+            // live export so MITM edits take effect instead of a frozen snapshot.
+            snapshot = AWCore.getMITMData().flatMap(MITMBinaryReader.decode)
         }
         guard let snapshot, snapshot.enabled else {
             _mitmEnabled.store(false, ordering: .relaxed)

@@ -40,9 +40,11 @@ nonisolated final class DomainRouter: Sendable {
         var policyGroups: [UUID: RuntimeProxyGroup] = [:]
         /// Per-group dial counter for `load-balance` round-robin.
         var roundRobin: [UUID: Int] = [:]
-        /// Latest probe results keyed by member node id (`ms`). Absent = unknown
-        /// or unreachable. Fed by the in-tunnel prober.
-        var latencies: [UUID: Int] = [:]
+        /// Latest probe results keyed by policy-group id, then member node id
+        /// (`ms`). Absent = unknown or unreachable. Keyed per group so a node
+        /// shared by several groups keeps each group's independent verdict
+        /// (groups may probe different URLs). Fed by the in-tunnel prober.
+        var latencies: [UUID: [UUID: Int]] = [:]
         var ruleSetNames: [String] = []
         var version: UInt64 = 1
 
@@ -416,16 +418,17 @@ nonisolated final class DomainRouter: Sendable {
                 let index = state.roundRobin[id] ?? 0
                 state.roundRobin[id] = index &+ 1
                 guard let memberID = ProxyGroupSelector.select(
-                    group: group, latencies: state.latencies, roundRobinIndex: index
+                    group: group, latencies: state.latencies[group.id] ?? [:], roundRobinIndex: index
                 ) else { return nil }
                 return state.configurationMap[memberID]
             }
         }
     }
 
-    /// Replaces the probe-result table the group selector consults. Absent ids
-    /// are treated as unknown/unreachable.
-    func updateLatencies(_ latencies: [UUID: Int]) {
-        routingState.withLock { $0.latencies = latencies }
+    /// Publishes one group's probe results, leaving every other group's results
+    /// intact. Groups probe on independent schedules, so a whole-table replace
+    /// would let one group's pass erase another's still-fresh measurements.
+    func updateLatencies(groupID: UUID, results: [UUID: Int]) {
+        routingState.withLock { $0.latencies[groupID] = results }
     }
 }

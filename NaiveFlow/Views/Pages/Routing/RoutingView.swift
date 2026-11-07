@@ -270,8 +270,8 @@ struct RoutingView: View {
         }
         Task {
             do {
-                let (data, response) = try await URLSession.shared.data(from: url)
-                if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                let (data, http) = try await BoundedHTTPFetcher.fetch(url)
+                guard (200...299).contains(http.statusCode) else {
                     subscribeError = "HTTP \(http.statusCode)"
                     return
                 }

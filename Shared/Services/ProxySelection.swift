@@ -15,7 +15,28 @@ final class ProxySelection {
     private(set) var runtimeConfiguration: ProxyConfiguration?
     var usesRuntimeVersion: Bool { runtimeConfiguration != nil }
     var effectiveConfiguration: ProxyConfiguration? { runtimeConfiguration ?? selectedConfiguration }
-    func showRuntimeVersion(_ bundle: RuntimeConfigurationBundle) { runtimeConfiguration = bundle.selectedNode }
+
+    /// Adopts the active head configuration.
+    ///
+    /// A published text version (`snapshotID != nil`) pins the selection: the
+    /// document controls routing and the manual library is read-only. The
+    /// manually captured baseline (`snapshotID == nil`) instead *restores manual
+    /// mode* — the selection is un-locked (so `select`/`selectChain` work again)
+    /// and the baseline's node becomes the live selection, matching the node the
+    /// extension installs for the same baseline.
+    func showRuntimeVersion(_ bundle: RuntimeConfigurationBundle) {
+        guard let node = bundle.selectedNode else { return }
+        if bundle.snapshotID != nil {
+            runtimeConfiguration = node
+        } else {
+            runtimeConfiguration = nil
+            selectedChainId = nil
+            AWCore.setSelectedChainId(nil)
+            AWCore.setSelectedConfigurationId(node.id)
+            selectedConfiguration = node
+        }
+    }
+
     private(set) var selectedChainId: UUID?
 
     // MARK: - Mutations

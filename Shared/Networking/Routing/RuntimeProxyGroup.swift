@@ -137,28 +137,40 @@ nonisolated extension RuntimeProxyGroup {
     }
 }
 
-/// Builds the member -> target worklist the automatic-group prober measures.
+/// One scheduled member probe: which group measured which member against which
+/// target. `groupID` is carried so results can be published (and stored) per
+/// group, keeping a node that two groups share from collapsing to one verdict.
+nonisolated struct ProxyProbe: Sendable, Hashable {
+    let groupID: UUID
+    let memberID: UUID
+    let target: LatencyTarget
+}
+
+/// Builds the per-group probe worklists the automatic-group prober measures.
 nonisolated enum ProxyProbePlan {
-    /// Every dialable member of an automatic group, keyed to the target it is
-    /// measured against (a member shared by several groups keeps the first
-    /// group's target).
+    /// Each automatic group's dialable members, paired with the target *that
+    /// group* is measured against. A member shared by two groups is scheduled
+    /// once per group, so a node that reaches one group's probe URL but not
+    /// another's is judged independently instead of inheriting the first group's
+    /// result.
     ///
     /// `direct` nodes are intentionally included: an explicit direct member is a
     /// real route, so a `fallback` group that lists one first must be able to
     /// pick it once it proves reachable instead of always resolving to a heavier
     /// proxy further down.
-    static func memberTargets(
+    static func groupProbes(
         groups: [RuntimeProxyGroup],
         nodes: [UUID: ProxyConfiguration]
-    ) -> [UUID: LatencyTarget] {
-        var targets: [UUID: LatencyTarget] = [:]
-        for group in groups {
+    ) -> [(group: RuntimeProxyGroup, probes: [ProxyProbe])] {
+        groups.compactMap { group in
             let target = group.probeTarget
-            for memberID in group.memberIDs where targets[memberID] == nil {
-                guard nodes[memberID] != nil else { continue }
-                targets[memberID] = target
+            var seen = Set<UUID>()
+            var probes: [ProxyProbe] = []
+            for memberID in group.memberIDs {
+                guard nodes[memberID] != nil, seen.insert(memberID).inserted else { continue }
+                probes.append(ProxyProbe(groupID: group.id, memberID: memberID, target: target))
             }
+            return probes.isEmpty ? nil : (group, probes)
         }
-        return targets
     }
 }

@@ -70,6 +70,14 @@ struct ToggleVPNIntent: SetValueIntent {
             // The extension reads lastConfigurationData from the App Group.
             try manager.connection.startVPNTunnel()
         } else {
+            // Mirror the app's stop semantics: clear the on-demand reconnect rule
+            // before stopping, so "off" from Control Center is persistent even
+            // with Always On enabled (otherwise the system reconnects later when
+            // the on-demand conditions are met again).
+            if manager.isOnDemandEnabled {
+                manager.isOnDemandEnabled = false
+                try await manager.saveToPreferences()
+            }
             manager.connection.stopVPNTunnel()
         }
 
