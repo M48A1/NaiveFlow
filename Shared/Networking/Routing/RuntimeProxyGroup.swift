@@ -28,10 +28,12 @@ nonisolated struct RuntimeProxyGroup: Codable, Sendable, Hashable {
     let id: UUID
     let name: String
     let kind: Kind
-    /// Member node ids in declaration order. An automatic group may not list
-    /// another group as a member — validation rejects that case because the
-    /// engine cannot carry a child group's `selected`/strategy through a flat
-    /// member list — so these are always dialable leaf nodes.
+    /// Member node ids in declaration order. A nested `select` group member is
+    /// delegated to the single node it selects (its `selected`, else first
+    /// member), so the parent honors that child's choice instead of probing
+    /// every leaf. A nested *automatic* group cannot be carried through this
+    /// flat list, so validation rejects it. These are always dialable leaf
+    /// nodes.
     let memberIDs: [UUID]
     /// `select`: the manually chosen member, when the document names one.
     let selectedID: UUID?

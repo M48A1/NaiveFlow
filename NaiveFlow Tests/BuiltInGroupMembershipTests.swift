@@ -60,13 +60,13 @@ struct BuiltInGroupMembershipTests {
 
     // MARK: - Nested groups inside an automatic group
 
-    /// A parent automatic group selects among *its* probeable members. This
-    /// engine models those members as a flat list of node ids, so a member that
-    /// names another group would be flattened to every leaf of that group and
-    /// the parent could dial a node the child never chose (for a `select` child,
-    /// one whose `selected` pointer was ignored). That configuration must be
-    /// refused at activation instead of silently expanding.
-    @Test func automaticGroupRejectsNestedSelectGroupMember() {
+    /// A nested `select` group always routes to exactly one node (its
+    /// `selected`, else its first member), so the parent must *delegate* to that
+    /// node rather than flattening the child to every leaf. Flattening let a
+    /// `url-test` parent dial a node the child's `selected` explicitly skipped.
+    /// Here `Auto` must carry only `B` — the node `Choice` selects — even though
+    /// `A` has far lower latency in the probe results.
+    @Test func automaticGroupDelegatesToNestedSelectGroupSelection() {
         let result = compile("""
             [Proxy]
             A = socks5://1.2.3.4:1080#A
@@ -77,12 +77,51 @@ struct BuiltInGroupMembershipTests {
             [Rule]
             FINAL, Auto
             """)
-        #expect(!result.isActivatable)
-        #expect(result.diagnostics.contains {
-            $0.severity == .error && $0.message.contains("Choice") && $0.message.lowercased().contains("nested")
-        })
+        #expect(result.isActivatable)
+        #expect(!result.diagnostics.contains { $0.severity == .error })
+
+        let compiled = result.compiled
+        guard let group = compiled.policyGroups.first(where: { $0.name == "Auto" }) else {
+            Issue.record("expected the Auto group to compile")
+            return
+        }
+        let aID = compiled.proxies.first { $0.name == "A" }?.id
+        let bID = compiled.proxies.first { $0.name == "B" }?.id
+        #expect(group.memberIDs == [bID])
+
+        // Even with A measured as much faster, the delegated member is B.
+        guard let aID, let bID else { Issue.record("expected A and B nodes"); return }
+        let chosen = ProxyGroupSelector.select(
+            group: group, latencies: [aID: 1, bID: 5_000], roundRobinIndex: 0
+        )
+        #expect(chosen == bID)
     }
 
+    /// A `select` child with no `selected` defaults to its first member, so the
+    /// parent carries that first node.
+    @Test func automaticGroupDelegatesToNestedSelectGroupDefaultFirstMember() {
+        let result = compile("""
+            [Proxy]
+            A = socks5://1.2.3.4:1080#A
+            B = socks5://5.6.7.8:1080#B
+            [Proxy Group]
+            Choice = select, A, B
+            Auto = fallback, Choice
+            [Rule]
+            FINAL, Auto
+            """)
+        #expect(result.isActivatable)
+        guard let group = result.compiled.policyGroups.first(where: { $0.name == "Auto" }) else {
+            Issue.record("expected the Auto group to compile")
+            return
+        }
+        let aID = result.compiled.proxies.first { $0.name == "A" }?.id
+        #expect(group.memberIDs == [aID])
+    }
+
+    /// A nested *automatic* group picks its member at dial time (by probing),
+    /// which cannot be collapsed into the parent's flat probe list without
+    /// losing its strategy — reject it at activation rather than flattening.
     @Test func automaticGroupRejectsNestedFallbackGroupMember() {
         let result = compile("""
             [Proxy]
@@ -114,6 +153,29 @@ struct BuiltInGroupMembershipTests {
         #expect(!result.isActivatable)
         #expect(result.diagnostics.contains {
             $0.severity == .error && $0.message.contains("Inner") && $0.message.lowercased().contains("nested")
+        })
+    }
+
+    /// A `select` child resolves to one node only while its `selected`/first
+    /// link stays within `select` groups. Once the chain reaches an automatic
+    /// group the parent has no single compile-time node to carry (the automatic
+    /// group's pick is dial-time), so the document must be rejected — not
+    /// silently flattened to that group's leaves.
+    @Test func automaticGroupRejectsNestedSelectChainReachingAutomaticGroup() {
+        let result = compile("""
+            [Proxy]
+            A = socks5://1.2.3.4:1080#A
+            B = socks5://5.6.7.8:1080#B
+            [Proxy Group]
+            Inner = url-test, A, B
+            Choice = select, Inner, selected = Inner
+            Outer = fallback, Choice
+            [Rule]
+            FINAL, Outer
+            """)
+        #expect(!result.isActivatable)
+        #expect(result.diagnostics.contains {
+            $0.severity == .error && $0.message.contains("Choice") && $0.message.lowercased().contains("nested")
         })
     }
 

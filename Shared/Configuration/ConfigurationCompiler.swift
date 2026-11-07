@@ -438,9 +438,12 @@ nonisolated extension ConfigurationCompiler {
     /// Builds the engine's group-policy list, preserving `url-test` / `fallback`
     /// / `load-balance` strategies instead of flattening every group to a plain
     /// `servers` container. Members resolve to dialable node ids, and `selected`
-    /// resolves to a concrete member id. A nested group member is refused by the
-    /// validator (the flat member list cannot carry the child's selection), so
-    /// an accepted automatic group always lists leaf nodes.
+    /// resolves to a concrete member id. A nested `select` group is *delegated*:
+    /// it deterministically routes to one node (its `selected`, else its first
+    /// member), so the parent carries that node and honors the child's choice. A
+    /// nested *automatic* group cannot be flattened this way (its choice depends
+    /// on dial-time probing), so the validator rejects it and it never reaches
+    /// here for an activatable document.
     static func compilePolicyGroups(
         _ configuration: ParsedConfiguration,
         proxyIds: [String: UUID],
@@ -460,13 +463,11 @@ nonisolated extension ConfigurationCompiler {
             case .smart, .random: return nil   // reported as errors by the validator
             }
 
-            var visited = Set<String>()
-            let memberIDs = expandedMembers(
-                of: group.name,
+            let memberIDs = automaticPolicyMembers(
+                of: group,
                 configuration: configuration,
                 proxyIds: proxyIds,
-                directNodeID: directNodeID,
-                visited: &visited
+                directNodeID: directNodeID
             )
             guard !memberIDs.isEmpty else { return nil }
 
@@ -519,6 +520,68 @@ nonisolated extension ConfigurationCompiler {
         )
     }
 
+    /// Resolves a nested group member to the single node an automatic parent can
+    /// carry, following only `select` links (`selected`, else first member).
+    /// Returns `nil` when the chain reaches an automatic group — whose member is
+    /// picked at dial time and so cannot be collapsed into one compile-time node
+    /// — or a cycle. Such a document is rejected by the validator.
+    private static func selectChainNodeID(
+        named name: String,
+        configuration: ParsedConfiguration,
+        proxyIds: [String: UUID],
+        directNodeID: UUID?,
+        visiting: Set<String> = []
+    ) -> UUID? {
+        if let id = proxyIds[name] { return id }
+        if ConfigurationValidator.builtInPolicyName(name) == "DIRECT" { return directNodeID }
+        guard !visiting.contains(name),
+              let group = configuration.proxyGroup(named: name),
+              group.kind == .select,
+              let selected = group.parameters["selected"] ?? group.members.first else { return nil }
+        return selectChainNodeID(
+            named: selected,
+            configuration: configuration,
+            proxyIds: proxyIds,
+            directNodeID: directNodeID,
+            visiting: visiting.union([name])
+        )
+    }
+
+    /// The member list for an automatic policy group. Nodes and `DIRECT` map to
+    /// their ids; a nested `select` group is *delegated* to the single node it
+    /// resolves to, so the parent honors the child's `selected` instead of
+    /// flattening to every leaf (which let `url-test` dial a node the child's
+    /// `selected` skipped). A nested automatic group (or a `select` chain that
+    /// reaches one) is unrepresentable and contributes nothing; the validator
+    /// rejects such a document, so an activatable group never hits that case.
+    private static func automaticPolicyMembers(
+        of group: ParsedProxyGroup,
+        configuration: ParsedConfiguration,
+        proxyIds: [String: UUID],
+        directNodeID: UUID?
+    ) -> [UUID] {
+        var ids: [UUID] = []
+        for member in group.members {
+            let resolved: UUID?
+            if let proxyID = proxyIds[member] {
+                resolved = proxyID
+            } else if ConfigurationValidator.builtInPolicyName(member) == "DIRECT" {
+                resolved = directNodeID
+            } else if configuration.proxyGroup(named: member) != nil {
+                resolved = selectChainNodeID(
+                    named: member,
+                    configuration: configuration,
+                    proxyIds: proxyIds,
+                    directNodeID: directNodeID
+                )
+            } else {
+                resolved = nil
+            }
+            if let resolved, !ids.contains(resolved) { ids.append(resolved) }
+        }
+        return ids
+    }
+
     /// True when any proxy group lists the built-in `DIRECT` policy as a member,
     /// so a shared probeable direct node must be synthesized instead of the
     /// token being dropped during member expansion.
@@ -539,10 +602,10 @@ nonisolated extension ConfigurationCompiler {
     }
 
     /// Flattens nested group references into proxy ids, guarding against cycles
-    /// that validation has already reported. This still backs the UI-facing
-    /// `servers` container, but an automatic group that reaches a nested group is
-    /// rejected by the validator, so this expansion only ever sees leaf members
-    /// for an activatable automatic group.
+    /// that validation has already reported. This backs only the UI-facing
+    /// `servers` container (a display/inventory list); the dial-time member list
+    /// for an automatic group is built by `automaticPolicyMembers`, which
+    /// delegates a nested `select` child to the single node it selects.
     static func expandedMembers(
         of name: String,
         configuration: ParsedConfiguration,

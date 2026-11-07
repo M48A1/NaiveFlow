@@ -397,14 +397,16 @@ nonisolated extension ConfigurationValidator {
             //
             // A member that names another proxy group is a nested group. This
             // engine models an automatic group's members as a flat list of
-            // dialable node ids, so a nested group would be flattened to all of
-            // that group's leaves and the parent could dial a node the child
-            // never chose — for a `select` child, one its `selected` pointer
-            // explicitly skipped. Refuse it at activation instead of accepting
-            // the document and silently expanding it. (`select` groups may still
-            // point at another group: their `selected` resolves to that group's
-            // stable id and the engine applies the child's strategy at dial time,
-            // so only the automatic-parent case below is rejected.)
+            // dialable node ids, so a nested automatic group (whose member is
+            // chosen at dial time by probing) cannot be flattened without
+            // dialing a node the child never selected — refuse it at activation
+            // instead of silently expanding it. A nested `select` group, by
+            // contrast, always routes to exactly one node (`selected`, else its
+            // first member, followed through further `select` links), so the
+            // compiler can delegate the parent to that node and honor the
+            // child's choice; those are allowed. A nested reference that is not
+            // reducible to one node — an automatic group, or a `select` chain
+            // that reaches one — is rejected.
             if kind != .select {
                 for member in group.members {
                     switch Self.builtInPolicyName(member) {
@@ -420,16 +422,17 @@ nonisolated extension ConfigurationValidator {
                         )
                     default:
                         // A proxy of the same name takes precedence when the id
-                        // is resolved (`expandedMembers` checks proxies first), so
+                        // is resolved (the compiler checks proxies first), so
                         // only a name that is *solely* a group is a nested ref.
-                        if groupNames.contains(member), !proxyNames.contains(member) {
+                        if groupNames.contains(member), !proxyNames.contains(member),
+                           !configuredSelectChainReducesToNode(named: member, configuration: configuration) {
                             diagnostics.append(
                                 ConfigurationDiagnostic(
                                     severity: .error,
                                     code: .unresolvedPolicy,
                                     line: group.line,
                                     section: ConfigurationDocument.SectionKind.proxyGroup.displayName,
-                                    message: "Automatic proxy group '\(group.name)' lists the group '\(member)'; nested groups are not supported because this build cannot preserve the child group's selection or strategy. List the child's member nodes directly instead."
+                                    message: "Automatic proxy group '\(group.name)' lists the automatic group '\(member)'; a nested automatic group (url-test / fallback / load-balance) picks its member at dial time and cannot be flattened into this group's probe list. Reference a `select` group that resolves to one node, or list the child's member nodes directly."
                                 )
                             )
                         }
@@ -451,6 +454,43 @@ nonisolated extension ConfigurationValidator {
         }
 
         diagnostics.append(contentsOf: groupCycles(configuration.proxyGroups))
+    }
+
+    /// True when `name` reduces to a single dialable node by following only
+    /// `select` links (`selected`, else first member), matching the compiler's
+    /// delegation of a nested `select` member. An automatic group has no
+    /// single compile-time node, and a cycle or unresolved link does not
+    /// reduce, so both return false — those documents are rejected.
+    private static func configuredSelectChainReducesToNode(
+        named name: String,
+        configuration: ParsedConfiguration
+    ) -> Bool {
+        reducesToSingleNode(
+            named: name,
+            configuration: configuration,
+            proxyNames: Set(configuration.proxies.map(\.name)),
+            visiting: []
+        )
+    }
+
+    private static func reducesToSingleNode(
+        named name: String,
+        configuration: ParsedConfiguration,
+        proxyNames: Set<String>,
+        visiting: Set<String>
+    ) -> Bool {
+        if proxyNames.contains(name) { return true }
+        if builtInPolicyName(name) != nil { return builtInPolicyName(name) == "DIRECT" }
+        guard !visiting.contains(name),
+              let group = configuration.proxyGroup(named: name),
+              group.kind == .select,
+              let selected = group.parameters["selected"] ?? group.members.first else { return false }
+        return reducesToSingleNode(
+            named: selected,
+            configuration: configuration,
+            proxyNames: proxyNames,
+            visiting: visiting.union([name])
+        )
     }
 
     /// Returns the canonical spelling of `DIRECT` / `REJECT` / `PROXY`, or `nil`
