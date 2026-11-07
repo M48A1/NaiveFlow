@@ -77,13 +77,13 @@ struct ProxyGroupPolicyTests {
 
     // MARK: - Compilation
 
-    @Test func compilerPreservesGroupKindMembersAndInterval() {
+    @Test func compilerPreservesGroupKindMembersIntervalAndURL() {
         let compiled = ConfigurationCoordinator().compile(text: """
             [Proxy]
             A = socks5://1.2.3.4:1080#A
             B = socks5://5.6.7.8:1080#B
             [Proxy Group]
-            Auto = url-test, A, B, interval = 120
+            Auto = url-test, A, B, interval = 120, url = http://www.gstatic.com/generate_204
             """).compiled
         #expect(compiled.policyGroups.count == 1)
         let group = compiled.policyGroups[0]
@@ -91,6 +91,18 @@ struct ProxyGroupPolicyTests {
         #expect(group.name == "Auto")
         #expect(group.memberIDs.count == 2)
         #expect(group.interval == 120)
+        #expect(group.url == "http://www.gstatic.com/generate_204")
+    }
+
+    @Test func compilerRejectsNonHTTPProbeURL() {
+        let compiled = ConfigurationCoordinator().compile(text: """
+            [Proxy]
+            A = socks5://1.2.3.4:1080#A
+            [Proxy Group]
+            Auto = url-test, A, url = ftp://example.com
+            """).compiled
+        let group = compiled.policyGroups[0]
+        #expect(group.url == nil)
     }
 
     @Test func selectGroupFlattensToItsSelectedNode() {

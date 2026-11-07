@@ -40,6 +40,9 @@ nonisolated final class DomainRouter: Sendable {
         var policyGroups: [UUID: RuntimeProxyGroup] = [:]
         /// Per-group dial counter for `load-balance` round-robin.
         var roundRobin: [UUID: Int] = [:]
+        /// Latest probe results keyed by member node id (`ms`). Absent = unknown
+        /// or unreachable. Fed by the in-tunnel prober.
+        var latencies: [UUID: Int] = [:]
         var ruleSetNames: [String] = []
         var version: UInt64 = 1
 
@@ -401,18 +404,22 @@ nonisolated final class DomainRouter: Sendable {
             return routingState.withLock { state in
                 if let configuration = state.configurationMap[id] { return configuration }
                 // The id names a policy group: apply its selection strategy to
-                // pick a member node. Probe results arrive later (the in-tunnel
-                // prober is not wired yet), so `latencies` is empty for now —
-                // `select` honors its manual choice, the others use the first
-                // member, and `load-balance` round-robins.
+                // pick a member node, using the latest probe results (absent =
+                // unknown/unreachable).
                 guard let group = state.policyGroups[id] else { return nil }
                 let index = state.roundRobin[id] ?? 0
                 state.roundRobin[id] = index &+ 1
                 guard let memberID = ProxyGroupSelector.select(
-                    group: group, latencies: [:], roundRobinIndex: index
+                    group: group, latencies: state.latencies, roundRobinIndex: index
                 ) else { return nil }
                 return state.configurationMap[memberID]
             }
         }
+    }
+
+    /// Replaces the probe-result table the group selector consults. Absent ids
+    /// are treated as unknown/unreachable.
+    func updateLatencies(_ latencies: [UUID: Int]) {
+        routingState.withLock { $0.latencies = latencies }
     }
 }

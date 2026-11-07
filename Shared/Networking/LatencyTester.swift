@@ -15,7 +15,11 @@ nonisolated enum LatencyTester {
     private static let latencyHost = "captive.apple.com"
     private static let latencyPort: UInt16 = 80
     
-    nonisolated static func test(_ configuration: ProxyConfiguration) async -> LatencyResult {
+    nonisolated static func test(
+        _ configuration: ProxyConfiguration,
+        host: String = latencyHost,
+        port: UInt16 = latencyPort
+    ) async -> LatencyResult {
         ConnectionMetrics.shared.suspendRecording()
         defer { ConnectionMetrics.shared.resumeRecording() }
 
@@ -23,7 +27,7 @@ nonisolated enum LatencyTester {
             let latencyMilliseconds = try await withThrowingTaskGroup(of: Int.self) { group in
                 group.addTask {
                     let testConfiguration = await Self.resolvedConfiguration(configuration)
-                    return try await Self.performTest(testConfiguration)
+                    return try await Self.performTest(testConfiguration, host: host, port: port)
                 }
                 group.addTask {
                     try await Task.sleep(for: Self.timeout, precision: .relaxed)
@@ -64,7 +68,7 @@ nonisolated enum LatencyTester {
         return configuration.withChain([resolvedEntry] + chain.dropFirst())
     }
 
-    private static func performTest(_ configuration: ProxyConfiguration) async throws -> Int {
+    private static func performTest(_ configuration: ProxyConfiguration, host: String, port: UInt16) async throws -> Int {
         let entry = configuration.chain?.first ?? configuration
         if !entry.isDirect {
             _ = await DNSResolver.proxies.resolveAll(entry.serverAddress)
@@ -74,9 +78,9 @@ nonisolated enum LatencyTester {
 
         do {
             let ms = try await withTaskCancellationHandler {
-                let proxyConnection = try await Self.establishWarmedConnection(client: client)
+                let proxyConnection = try await Self.establishWarmedConnection(client: client, host: host, port: port)
                 
-                let httpRequest = "HEAD / HTTP/1.1\r\nHost: \(Self.latencyHost)\r\nConnection: close\r\n\r\n".data(using: .utf8)!
+                let httpRequest = "HEAD / HTTP/1.1\r\nHost: \(host)\r\nConnection: close\r\n\r\n".data(using: .utf8)!
                 try await proxyConnection.send(httpRequest)
                 
                 let clock = ContinuousClock()
@@ -104,10 +108,10 @@ nonisolated enum LatencyTester {
         }
     }
     
-    private static func establishWarmedConnection(client: ProxyClient) async throws -> ProxyConnection {
-        let proxyConnection = try await client.connect(to: Self.latencyHost, port: Self.latencyPort)
+    private static func establishWarmedConnection(client: ProxyClient, host: String, port: UInt16) async throws -> ProxyConnection {
+        let proxyConnection = try await client.connect(to: host, port: port)
         
-        let warmupRequest = "HEAD / HTTP/1.1\r\nHost: \(Self.latencyHost)\r\n\r\n".data(using: .utf8)!
+        let warmupRequest = "HEAD / HTTP/1.1\r\nHost: \(host)\r\n\r\n".data(using: .utf8)!
         try await proxyConnection.send(warmupRequest)
 
         let warmupData = try await proxyConnection.receive()

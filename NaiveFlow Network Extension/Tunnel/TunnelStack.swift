@@ -443,6 +443,8 @@ actor TunnelStack {
 
     nonisolated let domainRouter: DomainRouter
 
+    nonisolated let groupProber = GroupProber()
+
     nonisolated let requestLog = RequestLog()
     
     nonisolated let tcpActivity = ActivityPool(capacity: TunnelConstants.tcpActivityPoolCapacity)
@@ -534,8 +536,13 @@ actor TunnelStack {
             case .rule:
                 if proxyMode == .rule {
                     if let nativeBundle {
-                        if nativeBundle.rules != nil { domainRouter.installNative(nativeBundle) }
-                        else { domainRouter.installBaseline(nativeBundle.legacyRouting) }
+                        if nativeBundle.rules != nil {
+                            domainRouter.installNative(nativeBundle)
+                            Task { await groupProber.start(router: domainRouter, nodes: nativeBundle.nodes, groups: nativeBundle.policyGroups) }
+                        } else {
+                            domainRouter.installBaseline(nativeBundle.legacyRouting)
+                            Task { await groupProber.stop() }
+                        }
                     } else if let precompiledRouting {
                         domainRouter.install(precompiledRouting)
                     } else {
@@ -543,6 +550,7 @@ actor TunnelStack {
                     }
                 } else {
                     domainRouter.reset()
+                    Task { await groupProber.stop() }
                 }
             }
             runtime.complete(ticket)

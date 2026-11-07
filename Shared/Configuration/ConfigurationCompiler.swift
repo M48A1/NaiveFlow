@@ -459,13 +459,15 @@ nonisolated extension ConfigurationCompiler {
             if let text = group.parameters["interval"], let value = TimeInterval(text), value > 0 {
                 interval = value
             }
+            let url = group.parameters["url"].flatMap(Self.normalizeProbeURL)
 
             return RuntimeProxyGroup(
                 name: group.name,
                 kind: kind,
                 memberIDs: memberIDs,
                 selectedID: selectedID,
-                interval: interval
+                interval: interval,
+                url: url
             )
         }
     }
@@ -487,6 +489,16 @@ nonisolated extension ConfigurationCompiler {
             proxyIds: proxyIds,
             visiting: visiting.union([name])
         )
+    }
+
+    /// Accepts an http/https probe URL and rejects anything the prober cannot
+    /// dial (missing host, non-http scheme).
+    private static func normalizeProbeURL(_ raw: String) -> String? {
+        guard let components = URLComponents(string: raw),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              components.host != nil else { return nil }
+        return raw
     }
 
     /// Flattens nested group references into proxy ids, guarding against cycles

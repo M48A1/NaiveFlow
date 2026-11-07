@@ -35,13 +35,17 @@ nonisolated struct RuntimeProxyGroup: Codable, Sendable, Hashable {
     let selectedID: UUID?
     /// `url-test`: probe interval in seconds.
     let interval: TimeInterval
+    /// Probe target (e.g. `http://www.gstatic.com/generate_204`). `nil` uses the
+    /// built-in default.
+    let url: String?
 
     init(
         name: String,
         kind: Kind,
         memberIDs: [UUID],
         selectedID: UUID? = nil,
-        interval: TimeInterval = 600
+        interval: TimeInterval = 600,
+        url: String? = nil
     ) {
         self.id = RuntimeProxyGroup.stableID(name: name)
         self.name = name
@@ -49,6 +53,7 @@ nonisolated struct RuntimeProxyGroup: Codable, Sendable, Hashable {
         self.memberIDs = memberIDs
         self.selectedID = selectedID
         self.interval = interval
+        self.url = url
     }
 
     /// A deterministic UUID (v5-style) from a group name.
