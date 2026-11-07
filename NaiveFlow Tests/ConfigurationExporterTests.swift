@@ -127,11 +127,14 @@ struct ConfigurationExporterTests {
         #expect(processed.compiled.isActivatable)
     }
 
-    @Test func groupPolicyResolvesToItsFirstMember() throws {
+    @Test func selectGroupFlattensToItsFirstMember() throws {
         let processed = TextConfigurationPipeline.process(
             text: ConfigurationExporter.export(source()).text
         )
 
+        // A `select` group without an explicit `selected` resolves to its first
+        // member; the automatic kinds (url-test / fallback / load-balance) are
+        // the ones modeled as runtime policy groups.
         let relayId = try #require(processed.compiled.proxies.first { $0.name == "Relay" }?.id)
         #expect(processed.compiled.ruleSets.first?.policy == .proxy(relayId))
         #expect(processed.compiled.finalAction == .defaultProxy)

@@ -36,6 +36,10 @@ nonisolated final class DomainRouter: Sendable {
         var matcher = TieredRouteMatcher<RulePayload>(tierCount: Tier.allCases.count)
         var ordered: OrderedRouteMatcher?
         var configurationMap: [UUID: ProxyConfiguration] = [:]
+        /// Text-configured groups by stable id, resolved to a member at dial time.
+        var policyGroups: [UUID: RuntimeProxyGroup] = [:]
+        /// Per-group dial counter for `load-balance` round-robin.
+        var roundRobin: [UUID: Int] = [:]
         var ruleSetNames: [String] = []
         var version: UInt64 = 1
 
@@ -331,6 +335,7 @@ nonisolated final class DomainRouter: Sendable {
         state.ordered = OrderedRouteMatcher(rules: bundle.rules ?? [], finalAction: bundle.finalAction,
             geoIP: bundle.geo, geoSite: bundle.geo)
         state.configurationMap = Dictionary(uniqueKeysWithValues: bundle.nodes.map { ($0.id, $0) })
+        state.policyGroups = Dictionary(uniqueKeysWithValues: bundle.policyGroups.map { ($0.id, $0) })
         _ = replaceRoutingState(with: state)
     }
 
@@ -393,7 +398,21 @@ nonisolated final class DomainRouter: Sendable {
         case .default, .defaultProxy, .direct, .reject:
             return nil
         case .proxy(let id):
-            return routingState.withLock { $0.configurationMap[id] }
+            return routingState.withLock { state in
+                if let configuration = state.configurationMap[id] { return configuration }
+                // The id names a policy group: apply its selection strategy to
+                // pick a member node. Probe results arrive later (the in-tunnel
+                // prober is not wired yet), so `latencies` is empty for now —
+                // `select` honors its manual choice, the others use the first
+                // member, and `load-balance` round-robins.
+                guard let group = state.policyGroups[id] else { return nil }
+                let index = state.roundRobin[id] ?? 0
+                state.roundRobin[id] = index &+ 1
+                guard let memberID = ProxyGroupSelector.select(
+                    group: group, latencies: [:], roundRobinIndex: index
+                ) else { return nil }
+                return state.configurationMap[memberID]
+            }
         }
     }
 }

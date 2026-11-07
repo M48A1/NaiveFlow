@@ -20,6 +20,9 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
     let rules: [OrderedRoutingRule]?
     let finalAction: RouteMatchAction
     let mitmRuleSets: [MITMRuleSet]
+    /// Text-configured groups with their automatic-selection strategy. Defaults
+    /// to empty so bundles published before this field existed still decode.
+    var policyGroups: [RuntimeProxyGroup] = []
     /// Used only by the preserved manual/app configuration baseline.
     let legacyRouting: Data?
     let legacyMITM: Data?
@@ -53,7 +56,9 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
             if let address = node.resolvedIP { try IPv4Only.requireHost(address) }
             for hop in node.chain ?? [] { try IPv4Only.requireHost(hop.serverAddress) }
         }
-        let ids = Set(nodes.map(\.id))
+        // A `.proxy` action may name a node or a text-configured group; both
+        // carry stable ids in the bundle.
+        let ids = Set(nodes.map(\.id)).union(policyGroups.map(\.id))
         for rule in rules ?? [] {
             if case .proxy(let id) = rule.action, !ids.contains(id) { throw RuntimeConfigurationFailure.invalidBundle }
             try validateMatcher(rule.matcher, depth: 0)

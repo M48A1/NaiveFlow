@@ -98,6 +98,7 @@ struct ConfigurationPublisher {
         let bundle = RuntimeConfigurationBundle(id: UUID(), snapshotID: snapshot.id, parentID: previous.id,
             preferences: preferences, nodes: nodes, selectedNodeID: selected.id,
             rules: compiled.orderedRules, finalAction: compiled.finalAction, mitmRuleSets: mitm,
+            policyGroups: compiled.policyGroups,
             legacyRouting: nil, legacyMITM: nil, geo: compiled.geo)
         let previousCompiled = activation.active?.compiled
         let plan = ConfigurationCoordinator().plan(from: previousCompiled, to: compiled)

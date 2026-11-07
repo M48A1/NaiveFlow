@@ -192,7 +192,10 @@ extension ConfigurationTextTests {
 
         #expect(result.compiled.diagnostics.errors.isEmpty)
         #expect(result.compiled.proxies.count == 1)
-        #expect(result.parsed.finalRule != nil)
+        // The template deliberately has no FINAL line; an absent FINAL resolves
+        // to the default `PROXY` action.
+        #expect(result.parsed.finalRule == nil)
+        #expect(result.compiled.finalAction == .defaultProxy)
 
         let policies = result.compiled.ruleSets.map(\.policy)
         #expect(policies.contains(.direct))

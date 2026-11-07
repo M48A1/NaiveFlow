@@ -14,6 +14,11 @@ import Foundation
 nonisolated struct CompiledConfiguration: Sendable {
     let proxies: [ProxyConfiguration]
     let proxyGroups: [ProxyGroup]
+    /// Text-configured groups with their automatic-selection strategy intact
+    /// (`url-test` / `fallback` / `load-balance`), the engine's group-policy
+    /// input. Distinct from `proxyGroups`, which only models hand-built
+    /// `servers` / `chains` containers for the app UI.
+    let policyGroups: [RuntimeProxyGroup]
     let ruleSets: [CompiledRuleSet]
     /// Rules in document order, including kinds the current binary payload
     /// cannot carry yet. Used for previews and by the ordered matcher.
@@ -66,14 +71,14 @@ nonisolated enum ConfigurationCompiler {
             proxyIds: proxyIds,
             diagnostics: &diagnostics
         )
+        let policyGroups = compilePolicyGroups(configuration, proxyIds: proxyIds)
         let chains = compileChains(configuration, proxyIds: proxyIds, diagnostics: &diagnostics)
         let chainIds = Dictionary(chains.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
         let policies = policyTargets(
             configuration,
             proxyIds: proxyIds,
             chainIds: chainIds,
-            groups: groups,
-            diagnostics: &diagnostics
+            policyGroups: policyGroups
         )
         let ruleSets = compileRules(
             configuration,
@@ -105,6 +110,7 @@ nonisolated enum ConfigurationCompiler {
         return CompiledConfiguration(
             proxies: proxies,
             proxyGroups: groups,
+            policyGroups: policyGroups,
             ruleSets: ruleSets,
             orderedRules: ordered.rules,
             finalAction: ordered.finalAction,
@@ -409,6 +415,80 @@ nonisolated extension ConfigurationCompiler {
         }
     }
 
+    /// Builds the engine's group-policy list, preserving `url-test` / `fallback`
+    /// / `load-balance` strategies instead of flattening every group to a plain
+    /// `servers` container. Members are expanded to dialable node ids (nested
+    /// groups are flattened), and `selected` resolves to a concrete member id.
+    static func compilePolicyGroups(
+        _ configuration: ParsedConfiguration,
+        proxyIds: [String: UUID]
+    ) -> [RuntimeProxyGroup] {
+        configuration.proxyGroups.compactMap { group in
+            guard let parsedKind = group.kind else { return nil }
+            let kind: RuntimeProxyGroup.Kind
+            switch parsedKind {
+            // `select` keeps its recursive "selected" semantics (which may name
+            // a built-in policy like DIRECT), so it is not modeled as a runtime
+            // policy group.
+            case .select: return nil
+            case .urlTest: kind = .urlTest
+            case .fallback: kind = .fallback
+            case .loadBalance: kind = .loadBalance
+            case .smart, .random: return nil   // reported as errors by the validator
+            }
+
+            var visited = Set<String>()
+            let memberIDs = expandedMembers(
+                of: group.name,
+                configuration: configuration,
+                proxyIds: proxyIds,
+                visited: &visited
+            )
+            guard !memberIDs.isEmpty else { return nil }
+
+            var selectedID: UUID?
+            if let selectedName = group.parameters["selected"] {
+                selectedID = resolveMemberID(
+                    named: selectedName,
+                    configuration: configuration,
+                    proxyIds: proxyIds
+                )
+            }
+
+            var interval: TimeInterval = 600
+            if let text = group.parameters["interval"], let value = TimeInterval(text), value > 0 {
+                interval = value
+            }
+
+            return RuntimeProxyGroup(
+                name: group.name,
+                kind: kind,
+                memberIDs: memberIDs,
+                selectedID: selectedID,
+                interval: interval
+            )
+        }
+    }
+
+    /// Resolves a member name (a node or a nested group) to a dialable node id.
+    private static func resolveMemberID(
+        named name: String,
+        configuration: ParsedConfiguration,
+        proxyIds: [String: UUID],
+        visiting: Set<String> = []
+    ) -> UUID? {
+        if let id = proxyIds[name] { return id }
+        guard !visiting.contains(name),
+              let group = configuration.proxyGroup(named: name),
+              let selected = group.parameters["selected"] ?? group.members.first else { return nil }
+        return resolveMemberID(
+            named: selected,
+            configuration: configuration,
+            proxyIds: proxyIds,
+            visiting: visiting.union([name])
+        )
+    }
+
     /// Flattens nested group references into proxy ids, guarding against cycles
     /// that validation has already reported.
     static func expandedMembers(
@@ -442,15 +522,15 @@ nonisolated extension ConfigurationCompiler {
         return ids
     }
 
-    /// Resolves every policy name to a route target. Groups resolve to their
-    /// first dialable member because this build has one selected proxy per
-    /// route; `select` semantics are otherwise identical to that.
+    /// Resolves every policy name to a route target. A group resolves to its
+    /// own stable id (not to a flattened first member); the engine applies the
+    /// group's selection strategy — `select` / `url-test` / `fallback` /
+    /// `load-balance` — at dial time.
     static func policyTargets(
         _ configuration: ParsedConfiguration,
         proxyIds: [String: UUID],
         chainIds: [String: UUID],
-        groups: [ProxyGroup],
-        diagnostics: inout [ConfigurationDiagnostic]
+        policyGroups: [RuntimeProxyGroup]
     ) -> [String: RouteTarget] {
         var targets: [String: RouteTarget] = [:]
         for proxy in configuration.proxies {
@@ -463,6 +543,11 @@ nonisolated extension ConfigurationCompiler {
                 targets[chain.name] = .proxy(id)
             }
         }
+        // Automatic groups (url-test / fallback / load-balance) resolve to their
+        // own id; the engine applies the selection strategy at dial time. `select`
+        // groups keep recursive "selected" semantics (which may name a built-in
+        // policy or another group).
+        let groupIds = Dictionary(policyGroups.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
         func resolve(_ name: String, visiting: Set<String>) -> RouteTarget? {
             switch ParsedRule.Policy(token: name) {
             case .direct: return .direct
@@ -473,18 +558,14 @@ nonisolated extension ConfigurationCompiler {
             }
             if let id = proxyIds[name] { return .proxy(id) }
             if let id = chainIds[name] { return .proxy(id) }
+            if let id = groupIds[name] { return .proxy(id) }
             guard !visiting.contains(name), let group = configuration.proxyGroup(named: name),
                   let selected = group.parameters["selected"] ?? group.members.first else { return nil }
             return resolve(selected, visiting: visiting.union([name]))
         }
-        for group in groups {
+        for group in configuration.proxyGroups {
             if let target = resolve(group.name, visiting: []) { targets[group.name] = target }
-            else {
-                diagnostics.append(.init(severity: .error, code: .unresolvedPolicy, section: "Proxy Group",
-                    message: "Group '\(group.name)' has no resolvable selected member."))
-            }
         }
-
         return targets
     }
 }
