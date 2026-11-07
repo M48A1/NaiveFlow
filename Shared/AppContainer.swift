@@ -30,6 +30,7 @@ final class AppContainer {
     let moduleStore: ModuleStore
     let certificateStore: CertificateStore
     let configurationCloud: ConfigurationCloudStore
+    let subscriptionRefreshCoordinator = SubscriptionRefreshCoordinator()
 
     private let routingExportDebouncer = Debouncer(interval: .seconds(2))
     private let mitmExportDebouncer = Debouncer(interval: .milliseconds(500))

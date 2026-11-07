@@ -12,6 +12,10 @@ struct SubscriptionOperations {
     let store: SubscriptionStore
     let configurationStore: ConfigurationStore
     let reaction: StoreMutationReaction
+    let coordinator: SubscriptionRefreshCoordinator
+    var fetch: @MainActor (String) async throws -> SubscriptionFetcher.Result = { url in
+        try await SubscriptionFetcher.fetch(url: url)
+    }
 
     func add(_ subscription: Subscription, result: SubscriptionFetcher.Result) {
         store.add(subscription)
@@ -44,8 +48,15 @@ struct SubscriptionOperations {
     
     func refresh(_ subscription: Subscription) async throws {
         let subscriptionId = subscription.id
+        let ticket = coordinator.begin(subscriptionId)
+        defer { coordinator.end(subscriptionId, ticket: ticket) }
+
         let url = store.subscriptions.first { $0.id == subscriptionId }?.url ?? subscription.url
-        let result = try await SubscriptionFetcher.fetch(url: url)
+        let result = try await fetch(url)
+
+        // Only the newest refresh may commit; a superseded one is dropped so it
+        // cannot overwrite the nodes or metadata a newer request already wrote.
+        guard coordinator.isCurrent(subscriptionId, ticket: ticket) else { return }
 
         guard let current = store.subscriptions.first(where: { $0.id == subscriptionId }) else { return }
 

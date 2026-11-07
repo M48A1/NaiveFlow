@@ -29,7 +29,8 @@ final class Operations {
         SubscriptionOperations(
             store: container.subscriptionStore,
             configurationStore: container.configurationStore,
-            reaction: container.mutationReaction
+            reaction: container.mutationReaction,
+            coordinator: container.subscriptionRefreshCoordinator
         )
     }
 
