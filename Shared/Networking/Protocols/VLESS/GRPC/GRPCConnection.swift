@@ -268,6 +268,7 @@ nonisolated extension GRPCConnection {
     static let h2FlagEndStream: UInt8 = 0x01
     static let h2FlagEndHeaders: UInt8 = 0x04
     static let h2FlagAck: UInt8 = 0x01
+    static let h2FlagPadded: UInt8 = 0x08
 
     static let h2ConnectionWindowSize: UInt32 = 1_073_741_824 // 1 GB
 }
@@ -849,6 +850,16 @@ nonisolated extension GRPCConnection {
         state.withLock { $0.h2ResponseReceived = true }
     }
 
+    /// Removes DATA-frame padding (PADDED flag: 1-byte pad length, then data,
+    /// then pad bytes). Flow control still counts the raw frame elsewhere.
+    static func dataPayload(strippingPaddingFrom payload: Data, flags: UInt8) throws -> Data {
+        guard (flags & h2FlagPadded) != 0 else { return payload }
+        guard let padLengthByte = payload.first, payload.count >= 1 + Int(padLengthByte) else {
+            throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "PADDED DATA frame with malformed padding"))
+        }
+        return payload.dropFirst(1).dropLast(Int(padLengthByte))
+    }
+
     private func handleDataFrame(
         frame: (type: UInt8, flags: UInt8, streamId: UInt32, payload: Data),
         isOurStream: Bool
@@ -859,14 +870,16 @@ nonisolated extension GRPCConnection {
 
         guard isOurStream else { return .keepReading }
 
+        let dataPayload = try Self.dataPayload(strippingPaddingFrom: frame.payload, flags: frame.flags)
+
         enum DecodeResult {
             case overflow
             case parsed(decoded: Data, streamClosed: Bool, decodeError: Error?)
         }
 
         let result: DecodeResult = state.withLock { state in
-            if !frame.payload.isEmpty {
-                state.grpcFrameBuffer.append(frame.payload)
+            if !dataPayload.isEmpty {
+                state.grpcFrameBuffer.append(dataPayload)
                 if state.grpcFrameBuffer.count > Self.maxGRPCFrameBufferSize {
                     state.grpcFrameBuffer.removeAll()
                     return .overflow

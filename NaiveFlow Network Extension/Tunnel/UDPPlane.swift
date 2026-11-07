@@ -260,8 +260,16 @@ actor UDPPlane {
                 flowConfiguration = configuration
             }
         case .reject(let matchedRuleSet):
-            stack.requestLog.record(protocol: .udp, host: dstHost, port: dstPort, routeTarget: .reject, ruleSetName: matchedRuleSet)
-            return
+            // A FINAL reject before the domain is known (real IP via encrypted
+            // DNS) must not preempt QUIC sniffing: keep the reject as the
+            // fallback and let the post-sniff re-match override it.
+            if decision.isFinal, !decision.hostIsResolvedDomain {
+                routeTarget = .reject
+                ruleSetName = matchedRuleSet
+            } else {
+                stack.requestLog.record(protocol: .udp, host: dstHost, port: dstPort, routeTarget: .reject, ruleSetName: matchedRuleSet)
+                return
+            }
         case .unreachable:
             stack.sendICMPPortUnreachable(rejecting: datagram)
             return
@@ -327,6 +335,14 @@ actor UDPPlane {
 
         if isQUIC, blocksQUIC(routedTo: routeTarget, udpConfig: udpConfig) {
             blockQUIC(datagram, flowKey: flowKey, cause: .proxied(routeTarget))
+            return
+        }
+
+        // FINAL REJECT fallback: no domain was sniffed, so the deferred verdict
+        // stands and the datagram must not be routed anywhere.
+        if case .reject = routeTarget {
+            if isQUIC { recordQUICBlock(flowKey, cause: .rejected) }
+            stack.requestLog.record(protocol: .udp, host: policyHost, port: dstPort, routeTarget: .reject, ruleSetName: ruleSetName)
             return
         }
 

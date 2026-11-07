@@ -63,6 +63,10 @@ extension TLSClient {
         var offset = 0
         var foundServerHelloDone = false
         var pastServerHello = false
+        // A handshake message may span record boundaries; accumulate record
+        // payloads and only consume whole messages.
+        var pendingHandshake = Data()
+        var pendingStart = 0
 
         while offset + 5 <= buffer.count {
             let contentType = buffer[offset]
@@ -71,17 +75,20 @@ extension TLSClient {
             guard offset + 5 + recordLen <= buffer.count else { break }
 
             if contentType == TLSContentType.handshake {
-                let recordBody = buffer.subdata(in: (offset + 5)..<(offset + 5 + recordLen))
+                if pendingHandshake.isEmpty {
+                    pendingStart = offset + 5
+                }
+                pendingHandshake.append(buffer.subdata(in: (offset + 5)..<(offset + 5 + recordLen)))
+
                 var hsOffset = 0
+                while hsOffset + 4 <= pendingHandshake.count {
+                    let hsType = pendingHandshake[hsOffset]
+                    let hsLen = Int(pendingHandshake[hsOffset + 1]) << 16 | Int(pendingHandshake[hsOffset + 2]) << 8 | Int(pendingHandshake[hsOffset + 3])
 
-                while hsOffset + 4 <= recordBody.count {
-                    let hsType = recordBody[hsOffset]
-                    let hsLen = Int(recordBody[hsOffset + 1]) << 16 | Int(recordBody[hsOffset + 2]) << 8 | Int(recordBody[hsOffset + 3])
+                    guard hsOffset + 4 + hsLen <= pendingHandshake.count else { break }
 
-                    guard hsOffset + 4 + hsLen <= recordBody.count else { break }
-
-                    let hsMessage = recordBody.subdata(in: hsOffset..<(hsOffset + 4 + hsLen))
-                    let hsBody = recordBody.subdata(in: (hsOffset + 4)..<(hsOffset + 4 + hsLen))
+                    let hsMessage = pendingHandshake.subdata(in: hsOffset..<(hsOffset + 4 + hsLen))
+                    let hsBody = pendingHandshake.subdata(in: (hsOffset + 4)..<(hsOffset + 4 + hsLen))
 
                     switch hsType {
                     case TLSHandshakeType.serverHello:
@@ -103,7 +110,7 @@ extension TLSClient {
 
                     case TLSHandshakeType.serverHelloDone:
                         result.handshakeBytes.append(hsMessage)
-                        result.serverHelloDoneOffset = offset + 5 + hsOffset + 4 + hsLen
+                        result.serverHelloDoneOffset = pendingStart + hsOffset + 4 + hsLen
                         foundServerHelloDone = true
 
                     default:
@@ -113,6 +120,11 @@ extension TLSClient {
                     }
 
                     hsOffset += 4 + hsLen
+                }
+
+                if hsOffset > 0 {
+                    pendingHandshake = Data(pendingHandshake.dropFirst(hsOffset))
+                    pendingStart += hsOffset
                 }
             }
 

@@ -79,4 +79,25 @@ struct ProtocolEdgeCaseTests {
         #expect(SOCKS5Handshake.isWildcardRelayAddress("::0"))
         #expect(SOCKS5Handshake.isWildcardRelayAddress(""))
     }
+
+    // MARK: - gRPC DATA-frame padding
+
+    @Test func grpcDataFramePaddingIsStripped() throws {
+        // No PADDED flag: payload passes through unchanged.
+        let raw = Data([0x01, 0x02, 0x03])
+        #expect(try GRPCConnection.dataPayload(strippingPaddingFrom: raw, flags: 0x00) == raw)
+
+        // PADDED flag: [padLen=3][data][3 pad bytes].
+        let padded = Data([0x03, 0xAA, 0xBB, 0x00, 0x00, 0x00])
+        let stripped = try GRPCConnection.dataPayload(strippingPaddingFrom: padded, flags: 0x08)
+        #expect(stripped == Data([0xAA, 0xBB]))
+    }
+
+    @Test func grpcDataFramePaddingMalformedThrows() {
+        // Pad length exceeds the payload.
+        let malformed = Data([0x05, 0xAA])
+        #expect(throws: (any Error).self) {
+            try GRPCConnection.dataPayload(strippingPaddingFrom: malformed, flags: 0x08)
+        }
+    }
 }

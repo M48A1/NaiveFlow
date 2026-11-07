@@ -20,6 +20,10 @@ nonisolated struct RouteDecision {
     let action: Action
 
     var ipRuleLookupPending = false
+    /// True when the verdict came from the terminal `FINAL` action rather than
+    /// an explicit rule. A FINAL verdict must not preempt domain sniffing when
+    /// the domain is not yet known.
+    var isFinal = false
 }
 
 nonisolated final class ConnectionRouter: Sendable {
@@ -58,7 +62,8 @@ nonisolated final class ConnectionRouter: Sendable {
             switch domainRouter.nativeDecision(query, allowResolution: allowAddressResolution && !preventDNSLeak.load(ordering: .relaxed)) {
             case .matched(let result):
                 return RouteDecision(host: host ?? ip, hostIsResolvedDomain: synthetic,
-                                     action: action(for: DomainRouter.nativeMatch(result)))
+                                     action: action(for: DomainRouter.nativeMatch(result)),
+                                     isFinal: result.isFinal)
             case .needsAddress:
                 if let host { DNSResolver.localRequests.prewarm(host, family: .ipv4, purpose: .ruleEvaluation) }
                 return RouteDecision(host: host ?? ip, hostIsResolvedDomain: synthetic,
@@ -216,7 +221,8 @@ nonisolated final class ConnectionRouter: Sendable {
             switch domainRouter.nativeDecision(query, allowResolution: allowAddressResolution && !preventDNSLeak.load(ordering: .relaxed)) {
             case .matched(let result):
                 return RouteDecision(host: host, hostIsResolvedDomain: true,
-                                     action: action(for: DomainRouter.nativeMatch(result)))
+                                     action: action(for: DomainRouter.nativeMatch(result)),
+                                     isFinal: result.isFinal)
             case .needsAddress:
                 if allowAddressResolution {
                     DNSResolver.localRequests.prewarm(host, family: .ipv4, purpose: .ruleEvaluation)

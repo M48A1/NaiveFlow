@@ -144,4 +144,22 @@ struct OrderedRouteMatcherTests {
         #expect(matcher.match(RouteQuery(host: "example.com", protocolName: "UDP")).action == .direct)
         #expect(matcher.match(RouteQuery(host: "example.com", destinationPort: 8443, protocolName: "UDP")).action == .direct)
     }
+
+    @Test func finalVerdictIsDistinguishedFromRuleMatch() {
+        let matcher = OrderedRouteMatcher(
+            rules: [rule(1, .domainSuffix("example.com"), .direct)],
+            finalAction: .reject
+        )
+
+        // An explicit rule match is not FINAL…
+        let ruleHit = matcher.match(RouteQuery(host: "example.com"))
+        #expect(ruleHit.isFinal == false)
+        #expect(ruleHit.action == .direct)
+
+        // …while the terminal catch-all is, so callers can defer a FINAL reject
+        // until domain sniffing completes.
+        let finalHit = matcher.match(RouteQuery(host: "other.org"))
+        #expect(finalHit.isFinal == true)
+        #expect(finalHit.action == .reject)
+    }
 }

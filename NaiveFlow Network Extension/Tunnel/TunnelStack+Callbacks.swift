@@ -124,14 +124,22 @@ extension TunnelStack {
                 connectionConfiguration = configuration
             }
         case .reject(let matchedRuleSet):
-            requestLog.record(
-                protocol: .tcp,
-                host: decision.host,
-                port: dstPort,
-                routeTarget: .reject,
-                ruleSetName: matchedRuleSet
-            )
-            pending.reject(reset: false); return nil
+            // A FINAL reject before the domain is known (real IP via encrypted
+            // DNS) must not preempt SNI sniffing: keep the reject as the fallback
+            // and let the post-sniff re-match override it with a domain rule.
+            if decision.isFinal, !decision.hostIsResolvedDomain {
+                routeTarget = .reject
+                ruleSetName = matchedRuleSet
+            } else {
+                requestLog.record(
+                    protocol: .tcp,
+                    host: decision.host,
+                    port: dstPort,
+                    routeTarget: .reject,
+                    ruleSetName: matchedRuleSet
+                )
+                pending.reject(reset: false); return nil
+            }
         case .unreachable:
             pending.reject(); return nil
         }
