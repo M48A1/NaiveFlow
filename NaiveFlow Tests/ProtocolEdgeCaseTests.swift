@@ -100,4 +100,102 @@ struct ProtocolEdgeCaseTests {
             try GRPCConnection.dataPayload(strippingPaddingFrom: malformed, flags: 0x08)
         }
     }
+
+    // MARK: - gRPC HEADERS-frame padding
+
+    @Test func grpcHeadersFramePaddingIsStripped() throws {
+        let block = Data([0x88]) // indexed :status 200
+
+        // No PADDED flag: payload passes through unchanged.
+        #expect(try GRPCConnection.headersPayload(strippingPaddingFrom: block, flags: 0x00) == block)
+
+        // PADDED flag: [padLen=2][header block][2 pad bytes].
+        let padded = Data([0x02]) + block + Data([0x00, 0x00])
+        #expect(try GRPCConnection.headersPayload(strippingPaddingFrom: padded, flags: 0x08) == block)
+
+        // PADDED + PRIORITY: [padLen=1][5-byte priority][header block][1 pad byte].
+        let prioritised = Data([0x01]) + Data(repeating: 0x11, count: 5) + block + Data([0x00])
+        #expect(try GRPCConnection.headersPayload(strippingPaddingFrom: prioritised, flags: 0x08 | 0x20) == block)
+    }
+
+    @Test func grpcHeadersFramePaddingMalformedThrows() {
+        #expect(throws: (any Error).self) {
+            try GRPCConnection.headersPayload(strippingPaddingFrom: Data([0xFF, 0x88]), flags: 0x08)
+        }
+    }
+
+    // MARK: - gRPC custom service path
+
+    @Test func grpcCustomServicePathNeverTraps() throws {
+        // Regression: "/Tun" and "/" previously built a reversed string range
+        // (`start > end`) and trapped inside resolvedPath().
+        #expect(try GRPCConfiguration(serviceName: "/Tun").resolvedPath() == "/Tun")
+        #expect(try GRPCConfiguration(serviceName: "/svc/method").resolvedPath() == "/svc/method")
+        #expect(try GRPCConfiguration(serviceName: "/svc/Tun|TunMulti", multiMode: true).resolvedPath() == "/svc/TunMulti")
+
+        // Plain names still map to /<name>/Tun.
+        #expect(try GRPCConfiguration(serviceName: "svc").resolvedPath() == "/svc/Tun")
+    }
+
+    @Test func grpcCustomServicePathWithoutStreamIsConfigError() {
+        // A custom path that cannot name a stream must surface a configuration
+        // error rather than crash.
+        #expect(throws: (any Error).self) {
+            try GRPCConfiguration(serviceName: "/").resolvedPath()
+        }
+        #expect(throws: (any Error).self) {
+            try GRPCConfiguration(serviceName: "/svc/").resolvedPath()
+        }
+    }
+
+    // MARK: - WebSocket upgrade response validation
+
+    @Test func webSocketAcceptMatchesRFCExample() {
+        // RFC 6455 §1.3 worked example.
+        #expect(
+            WebSocketConnection.expectedAccept(for: "dGhlIHNhbXBsZSBub25jZQ==")
+                == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+        )
+    }
+
+    @Test func webSocketAcceptsConformingHandshake() {
+        let key = "dGhlIHNhbXBsZSBub25jZQ=="
+        let accept = WebSocketConnection.expectedAccept(for: key)
+        let response = """
+        HTTP/1.1 101 Switching Protocols\r
+        Upgrade: websocket\r
+        Connection: keep-alive, Upgrade\r
+        Sec-WebSocket-Accept: \(accept)
+        """
+        #expect(WebSocketConnection.upgradeHandshakeFailure(response, key: key) == nil)
+    }
+
+    @Test func webSocketRejectsNon101EvenWhenReasonContains101() {
+        // The old check used `firstLine.contains("101")`, so this 401 slipped through.
+        let key = "dGhlIHNhbXBsZSBub25jZQ=="
+        let accept = WebSocketConnection.expectedAccept(for: key)
+        let response = """
+        HTTP/1.1 401 error101\r
+        Upgrade: websocket\r
+        Connection: Upgrade\r
+        Sec-WebSocket-Accept: \(accept)
+        """
+        #expect(WebSocketConnection.upgradeHandshakeFailure(response, key: key) != nil)
+    }
+
+    @Test func webSocketRejectsMissingHandshakeHeaders() {
+        let key = "dGhlIHNhbXBsZSBub25jZQ=="
+
+        // 101 with no Upgrade/Connection/Accept headers.
+        #expect(WebSocketConnection.upgradeHandshakeFailure("HTTP/1.1 101 Switching Protocols", key: key) != nil)
+
+        // 101 with headers but a wrong Sec-WebSocket-Accept.
+        let response = """
+        HTTP/1.1 101 Switching Protocols\r
+        Upgrade: websocket\r
+        Connection: Upgrade\r
+        Sec-WebSocket-Accept: not-the-right-value
+        """
+        #expect(WebSocketConnection.upgradeHandshakeFailure(response, key: key) != nil)
+    }
 }

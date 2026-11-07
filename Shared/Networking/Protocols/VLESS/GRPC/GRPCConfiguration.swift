@@ -92,30 +92,45 @@ nonisolated struct GRPCConfiguration: Codable, Equatable, Hashable {
 
     /// Returns the HTTP/2 `:path`: `/<escaped serviceName>/Tun[Multi]`, or the custom
     /// path when `serviceName` starts with `/`. Components are URL-path-escaped.
-    func resolvedPath() -> String {
+    ///
+    /// Throws a configuration error when a custom path cannot name a stream (for
+    /// example `/` or a trailing slash), rather than trapping on a reversed string
+    /// range. The editor/parser accept these strings, so the failure must surface as
+    /// an ``NaiveFlowError/Proxy/invalidConfiguration(detail:)`` at dial time.
+    func resolvedPath() throws -> String {
         let name = serviceName.isEmpty ? Self.defaultServiceName : serviceName
         if !name.hasPrefix("/") {
             let stream = multiMode ? "TunMulti" : "Tun"
             return "/\(urlPathEscape(name))/\(stream)"
         }
-        let lastSlashIndex = name.range(of: "/", options: .backwards)?.lowerBound ?? name.startIndex
-        let serviceRawStart = name.index(after: name.startIndex)
-        let serviceRaw = String(name[serviceRawStart..<lastSlashIndex])
-        let streamEnd = name.endIndex
-        let endingPath = String(name[name.index(after: lastSlashIndex)..<streamEnd])
+
+        // Custom full path: drop the leading slash and split off the final segment,
+        // which names the stream. `lastIndex(of:)` (rather than a backwards
+        // `range(of:)`) keeps the bounds valid for both `/` and `/name`, where the
+        // single slash leaves no service component.
+        let trimmed = name.dropFirst()
+        let lastSlash = trimmed.lastIndex(of: "/")
+        let serviceRaw = lastSlash.map { String(trimmed[trimmed.startIndex..<$0]) } ?? ""
+        let endingSegment = lastSlash.map { String(trimmed[trimmed.index(after: $0)...]) } ?? String(trimmed)
 
         let servicePart = serviceRaw
             .split(separator: "/", omittingEmptySubsequences: false)
             .map { urlPathEscape(String($0)) }
             .joined(separator: "/")
 
+        let parts = endingSegment.split(separator: "|", omittingEmptySubsequences: false).map { String($0) }
         let streamName: String
-        let parts = endingPath.split(separator: "|", omittingEmptySubsequences: false).map { String($0) }
         if multiMode {
             // `|` splits the Tun name (before) from the TunMulti name (after); without it one name serves both.
-            streamName = parts.count >= 2 ? parts[1] : parts[0]
+            streamName = parts.count >= 2 ? parts[1] : (parts.first ?? "")
         } else {
-            streamName = parts[0]
+            streamName = parts.first ?? ""
+        }
+
+        guard !streamName.isEmpty else {
+            throw NaiveFlowError.proxy(.grpc, .invalidConfiguration(
+                detail: "gRPC serviceName '\(name)' does not resolve to a stream name"
+            ))
         }
 
         let prefix = servicePart.isEmpty ? "" : "/\(servicePart)"

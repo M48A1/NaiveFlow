@@ -122,7 +122,7 @@ nonisolated final class GRPCConnection: Sendable {
         windowUpdatePayload[3] = UInt8(connWindowInc & 0xFF)
         initData.append(buildH2Frame(type: Self.h2FrameWindowUpdate, flags: 0, streamId: 0, payload: windowUpdatePayload))
 
-        let headerBlock = encodeGRPCRequestHeaders()
+        let headerBlock = try encodeGRPCRequestHeaders()
         initData.append(buildH2Frame(
             type: Self.h2FrameHeaders,
             flags: Self.h2FlagEndHeaders,
@@ -160,11 +160,12 @@ nonisolated final class GRPCConnection: Sendable {
 
             case Self.h2FrameHeaders:
                 if frame.streamId == Self.streamId {
-                    if let rejection = checkH2ResponseStatus(frame.payload) {
+                    let headerBlock = try Self.headersPayload(strippingPaddingFrom: frame.payload, flags: frame.flags)
+                    if let rejection = checkH2ResponseStatus(headerBlock) {
                         throw NaiveFlowError.proxy(.grpc, .handshakeFailed(detail: "gRPC response rejected: \(rejection)"))
                     }
                     if frame.flags & Self.h2FlagEndStream != 0 {
-                        if let grpcError = Self.parseGRPCTrailer(frame.payload) {
+                        if let grpcError = Self.parseGRPCTrailer(headerBlock) {
                             markClosed()
                             throw NaiveFlowError.proxy(.grpc, .handshakeFailed(detail: grpcError.localizedDescription))
                         }
@@ -269,6 +270,7 @@ nonisolated extension GRPCConnection {
     static let h2FlagEndHeaders: UInt8 = 0x04
     static let h2FlagAck: UInt8 = 0x01
     static let h2FlagPadded: UInt8 = 0x08
+    static let h2FlagPriority: UInt8 = 0x20
 
     static let h2ConnectionWindowSize: UInt32 = 1_073_741_824 // 1 GB
 }
@@ -393,7 +395,7 @@ nonisolated extension GRPCConnection {
 // MARK: - HPACK encoding for request HEADERS
 
 nonisolated extension GRPCConnection {
-    fileprivate func encodeGRPCRequestHeaders() -> Data {
+    fileprivate func encodeGRPCRequestHeaders() throws -> Data {
         var block = Data()
 
         var authBytes = Self.hpackEncodeInteger(1, prefixBits: 6)
@@ -403,7 +405,7 @@ nonisolated extension GRPCConnection {
 
         block.append(0x83)
 
-        let path = configuration.resolvedPath()
+        let path = try configuration.resolvedPath()
         var pathBytes = Self.hpackEncodeInteger(4, prefixBits: 6)
         pathBytes[0] |= 0x40
         block.append(contentsOf: pathBytes)
@@ -766,10 +768,11 @@ nonisolated extension GRPCConnection {
 
             case Self.h2FrameHeaders:
                 if isOurStream {
+                    let headerBlock = try Self.headersPayload(strippingPaddingFrom: frame.payload, flags: frame.flags)
                     let endOfStream = (frame.flags & Self.h2FlagEndStream) != 0
-                    try markResponseReceivedIfNeeded(frame.payload)
+                    try markResponseReceivedIfNeeded(headerBlock)
                     if endOfStream {
-                        let grpcError = Self.parseGRPCTrailer(frame.payload)
+                        let grpcError = Self.parseGRPCTrailer(headerBlock)
                         let leftover: Data = state.withLock { state in
                             state.transition(to: .halfClosed)
                             let leftover = state.decodedBuffer
@@ -858,6 +861,24 @@ nonisolated extension GRPCConnection {
             throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "PADDED DATA frame with malformed padding"))
         }
         return payload.dropFirst(1).dropLast(Int(padLengthByte))
+    }
+
+    /// Removes HEADERS-frame padding so the header block reaches HPACK decoding
+    /// intact. A PADDED HEADERS payload is: 1-byte pad length, optional 5-byte
+    /// priority field (PRIORITY flag), the header block fragment, then pad bytes.
+    static func headersPayload(strippingPaddingFrom payload: Data, flags: UInt8) throws -> Data {
+        guard (flags & h2FlagPadded) != 0 else { return payload }
+        guard let padLengthByte = payload.first else {
+            throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "PADDED HEADERS frame with no pad length"))
+        }
+        let padLength = Int(padLengthByte)
+        var start = payload.startIndex + 1
+        if (flags & h2FlagPriority) != 0 { start += 5 }
+        let end = payload.endIndex - padLength
+        guard start <= end else {
+            throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "PADDED HEADERS frame with malformed padding"))
+        }
+        return payload[start..<end]
     }
 
     private func handleDataFrame(

@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import CryptoKit
 import Synchronization
 
 nonisolated final class WebSocketConnection: Sendable {
@@ -124,11 +125,11 @@ nonisolated final class WebSocketConnection: Sendable {
             throw NaiveFlowError.capture(error, context: "WebSocket upgrade request")
         }
 
-        try await receiveUpgradeResponse()
+        try await receiveUpgradeResponse(key: wsKey)
     }
 
     /// Reads the HTTP 101 response, buffers any leftover data after the header.
-    private func receiveUpgradeResponse() async throws {
+    private func receiveUpgradeResponse(key: String) async throws {
         while true {
             let chunk: TransportChunk
             do {
@@ -166,9 +167,8 @@ nonisolated final class WebSocketConnection: Sendable {
                 throw NaiveFlowError.proxy(.webSocket, .upgradeFailed(detail: "Cannot decode response headers"))
             }
 
-            let firstLine = headerString.split(separator: "\r\n", maxSplits: 1).first ?? ""
-            guard firstLine.contains("101") else {
-                throw NaiveFlowError.proxy(.webSocket, .upgradeFailed(detail: "Expected HTTP 101, got: \(firstLine)"))
+            if let failure = Self.upgradeHandshakeFailure(headerString, key: key) {
+                throw NaiveFlowError.proxy(.webSocket, .upgradeFailed(detail: failure))
             }
 
             let opened: Bool = self.state.withLock { $0.transition(to: .open) }
@@ -178,6 +178,72 @@ nonisolated final class WebSocketConnection: Sendable {
             self.startHeartbeat()
             return
         }
+    }
+
+    // MARK: - Upgrade response validation
+
+    /// RFC 6455 §4.1 magic GUID appended to the client key before hashing.
+    private static let webSocketAcceptGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+    /// Computes the `Sec-WebSocket-Accept` value a conforming server must return
+    /// for `key`: `base64(SHA1(key + GUID))`.
+    static func expectedAccept(for key: String) -> String {
+        let digest = Insecure.SHA1.hash(data: Data((key + webSocketAcceptGUID).utf8))
+        return Data(digest).base64EncodedString()
+    }
+
+    /// Validates a WebSocket upgrade response. Returns `nil` when it is a
+    /// conforming `101 Switching Protocols` handshake for `key`; otherwise a
+    /// human-readable reason. Rejects non-101 statuses (even when the body text
+    /// contains "101"), and requires the `Upgrade`, `Connection`, and
+    /// `Sec-WebSocket-Accept` headers.
+    static func upgradeHandshakeFailure(_ headerString: String, key: String) -> String? {
+        let lines = headerString.components(separatedBy: "\r\n").filter { !$0.isEmpty }
+        guard let statusLine = lines.first else {
+            return "Empty response"
+        }
+
+        // Status line: `HTTP/1.1 101 Switching Protocols`. Parse the code as an
+        // integer so a reason phrase such as "401 error101" cannot be accepted.
+        let statusParts = statusLine.split(separator: " ", omittingEmptySubsequences: true)
+        guard statusParts.count >= 2, statusParts[0].hasPrefix("HTTP/"), let statusCode = Int(statusParts[1]) else {
+            return "Malformed status line: \(statusLine)"
+        }
+        guard statusCode == 101 else {
+            return "Expected HTTP 101, got: \(statusLine)"
+        }
+
+        var headers: [String: String] = [:]
+        for line in lines.dropFirst() {
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let name = line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
+            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            if let existing = headers[name] {
+                headers[name] = existing + ", " + value
+            } else {
+                headers[name] = value
+            }
+        }
+
+        guard let upgrade = headers["upgrade"], upgrade.caseInsensitiveCompare("websocket") == .orderedSame else {
+            return "Missing or invalid Upgrade header in 101 response"
+        }
+
+        let connectionTokens = (headers["connection"] ?? "")
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+        guard connectionTokens.contains("upgrade") else {
+            return "Missing or invalid Connection header in 101 response"
+        }
+
+        guard let accept = headers["sec-websocket-accept"] else {
+            return "Missing Sec-WebSocket-Accept header in 101 response"
+        }
+        guard accept == expectedAccept(for: key) else {
+            return "Invalid Sec-WebSocket-Accept header in 101 response"
+        }
+
+        return nil
     }
 
     // MARK: - Public API
