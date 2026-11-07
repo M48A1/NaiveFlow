@@ -55,11 +55,15 @@ nonisolated enum OutboundConnector {
                 destinationPort: port,
                 protocolName: protocolName
             )
-            var evaluation = router.nativeDecision(query, allowResolution: !context.preventDNSLeak)
+            // No sniffing occurs at this layer: an IP-literal request never yields
+            // a host, and a script/DoH request's host is already final. Finish the
+            // match so an earlier domain rule cannot leave a later IP/FINAL reject
+            // stuck as a deferral that silently falls through to the default route.
+            var evaluation = router.nativeDecision(query, allowResolution: !context.preventDNSLeak, deferOnHostUnknown: false)
             if case .needsAddress = evaluation, !isLiteral, !context.preventDNSLeak,
                let ip = await DNSResolver.localRequests.resolveHost(host, family: .ipv4, purpose: .ruleEvaluation) {
                 query.ip = ip
-                evaluation = router.nativeDecision(query, allowResolution: false)
+                evaluation = router.nativeDecision(query, allowResolution: false, deferOnHostUnknown: false)
             }
             if case .matched(let result) = evaluation {
                 let match = DomainRouter.nativeMatch(result)

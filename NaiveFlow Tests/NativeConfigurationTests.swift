@@ -188,4 +188,33 @@ struct NativeConfigurationTests {
         #expect(restored.first?.parameterValues == set.parameterValues)
         #expect(restored.first?.rules.first?.operation == set.rules.first?.operation)
     }
+
+    @Test func ipLiteralCommitsRejectOnceNoHostCanBeRecovered() {
+        // "Domain allow, then IP reject": an IP-literal request carries no host
+        // and (unlike TCP/UDP sniff paths) has no later sniff to recover one.
+        let result = TextConfigurationPipeline.process(text: """
+            [Rule]
+            DOMAIN-SUFFIX, example.com, DIRECT
+            IP-CIDR, 203.0.113.0/24, REJECT
+            FINAL, PROXY
+            """)
+        let matcher = OrderedRouteMatcher(rules: result.compiled.orderedRules, finalAction: result.compiled.finalAction)
+        let literal = RouteQuery(ip: "203.0.113.5")
+
+        // Pre-sniff default: the earlier host rule cannot match yet, so the later
+        // IP reject must defer rather than win early.
+        if case .deferred = matcher.evaluate(literal, allowAddressResolution: false) {
+            // expected
+        } else {
+            Issue.record("An IP literal must defer while a preceding host rule is unknown")
+        }
+
+        // Post-deferral (host will never be known): the full match commits the
+        // IP reject instead of leaving it as the default route.
+        if case .matched(let match) = matcher.evaluate(literal, allowAddressResolution: false, deferOnHostUnknown: false) {
+            #expect(match.action == .reject)
+        } else {
+            Issue.record("IP reject must commit once no host can be recovered")
+        }
+    }
 }
