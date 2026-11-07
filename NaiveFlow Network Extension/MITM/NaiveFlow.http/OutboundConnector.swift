@@ -70,6 +70,16 @@ nonisolated enum OutboundConnector {
                 evaluation = router.nativeDecision(query, allowResolution: false,
                                                    deferOnHostUnknown: false, deferOnMissingMetadata: false)
             }
+            // The address may still be unknown: resolution returned nil (NXDOMAIN,
+            // SERVFAIL, timeout or a filtered reply) or leak prevention forbade the
+            // lookup. Re-run once with resolution disallowed so the address-dependent
+            // rule is skipped as a non-match and the evaluator still reaches FINAL.
+            // Left as `.needsAddress`, the caller would see no decision and a later
+            // terminal `FINAL,REJECT` would be lost to the default outbound.
+            if case .needsAddress = evaluation {
+                evaluation = router.nativeDecision(query, allowResolution: false,
+                                                   deferOnHostUnknown: false, deferOnMissingMetadata: false)
+            }
             if case .matched(let result) = evaluation {
                 let match = DomainRouter.nativeMatch(result)
                 // Private/loopback destinations keep the legacy direct fallback unless

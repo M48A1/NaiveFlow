@@ -314,4 +314,89 @@ struct OrderedRouteMatcherTests {
         // must still fire instead of the evaluation deferring to the default route.
         #expect(resolveLikeScriptOrDoH(matcher, ip: "1.2.3.4", port: 443) == .reject)
     }
+
+    // MARK: - Address resolution failure (native resolveRoute path)
+
+    /// What `DNSResolver.resolveHost` can hand back for a rule-evaluation lookup.
+    private enum ResolutionOutcome {
+        case resolved(String)
+        case noAddress          // lookup returned no A record (NXDOMAIN / filtered)
+        case timedOut           // lookup aborted after the timeout budget
+    }
+
+    /// Mirrors `OutboundConnector.resolveRoute`'s native path end to end,
+    /// including the address-resolution step. A domain request whose first pass
+    /// returns `.needsAddress` resolves an address for the IP rule; when the
+    /// lookup fails (no address or timeout) the route must still finish with the
+    /// terminal FINAL action rather than falling through to the default route.
+    private func resolveLikeScriptOrDoH(
+        _ matcher: OrderedRouteMatcher,
+        host: String,
+        resolution: ResolutionOutcome,
+        port: UInt16 = 443,
+        protocolName: String = "TCP"
+    ) -> RouteMatchAction {
+        var query = RouteQuery(host: host, destinationPort: port, protocolName: protocolName)
+        var evaluation = matcher.evaluate(query, allowAddressResolution: true,
+                                          deferOnHostUnknown: false, deferOnMissingMetadata: false)
+        if case .needsAddress = evaluation, case .resolved(let ip) = resolution {
+            query.ip = ip
+            evaluation = matcher.evaluate(query, allowAddressResolution: false,
+                                          deferOnHostUnknown: false, deferOnMissingMetadata: false)
+        }
+        // A nil lookup (.noAddress / .timedOut) leaves `.needsAddress`; finish the
+        // terminal match without an address so FINAL still decides the route.
+        if case .needsAddress = evaluation {
+            evaluation = matcher.evaluate(query, allowAddressResolution: false,
+                                          deferOnHostUnknown: false, deferOnMissingMetadata: false)
+        }
+        if case .matched(let result) = evaluation { return result.action }
+        return .defaultProxy
+    }
+
+    @Test func unresolvedAddressStillReachesFinalReject() {
+        let matcher = OrderedRouteMatcher(
+            rules: [rule(1, .ipCIDR(CIDRPrefix.parse("1.2.3.4/32")!), .direct)],
+            finalAction: .reject
+        )
+
+        // Regression: the IP rule triggers an address lookup, DNS returns nothing,
+        // and a naive early-return drops the connection to the default route — even
+        // though `FINAL,REJECT` says otherwise. The terminal REJECT must win.
+        #expect(resolveLikeScriptOrDoH(matcher, host: "example.com", resolution: .noAddress) == .reject)
+    }
+
+    @Test func resolutionTimeoutStillReachesFinalReject() {
+        let matcher = OrderedRouteMatcher(
+            rules: [rule(1, .ipCIDR(CIDRPrefix.parse("1.2.3.4/32")!), .direct)],
+            finalAction: .reject
+        )
+
+        // A lookup that times out is indistinguishable from "no address" to the
+        // matcher: either way the IP rule cannot be evaluated, so FINAL,REJECT
+        // must still decide the route.
+        #expect(resolveLikeScriptOrDoH(matcher, host: "example.com", resolution: .timedOut) == .reject)
+    }
+
+    @Test func resolvedAddressThatMissesRulesReachesFinalReject() {
+        let matcher = OrderedRouteMatcher(
+            rules: [rule(1, .ipCIDR(CIDRPrefix.parse("1.2.3.4/32")!), .direct)],
+            finalAction: .reject
+        )
+
+        // Resolution succeeds but the address is not covered by any rule, so the
+        // IP rule is a non-match and the terminal REJECT still applies.
+        #expect(resolveLikeScriptOrDoH(matcher, host: "example.com", resolution: .resolved("8.8.8.8")) == .reject)
+    }
+
+    @Test func resolvedAddressThatMatchesRuleBeatsFinal() {
+        let matcher = OrderedRouteMatcher(
+            rules: [rule(1, .ipCIDR(CIDRPrefix.parse("1.2.3.4/32")!), .direct)],
+            finalAction: .reject
+        )
+
+        // When the address resolves and is covered, the earlier IP rule wins over
+        // the terminal action — resolution failure handling must not disturb this.
+        #expect(resolveLikeScriptOrDoH(matcher, host: "example.com", resolution: .resolved("1.2.3.4")) == .direct)
+    }
 }
