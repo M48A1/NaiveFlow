@@ -163,7 +163,9 @@ actor UDPPlane {
         pendingResolutions[flowKey] = PendingDatagrams(generation: generation, datagrams: [datagram],
                                                        byteCount: datagram.payload.count)
         Task { [weak self] in
-            _ = await DNSResolver.localRequests.resolveHost(domain, family: .ipv4)
+            // The router warms the `.ruleEvaluation` cache; wait on that same
+            // purpose so the re-match sees the address an IP/GeoIP rule needs.
+            _ = await DNSResolver.localRequests.resolveHost(domain, family: .ipv4, purpose: .ruleEvaluation)
             await self?.resumeAfterResolution(flowKey: flowKey, generation: generation)
         }
         return true
@@ -280,20 +282,34 @@ actor UDPPlane {
             }
         }
 
-        if let sniffedServerName,
-           let action = stack.connectionRouter.action(forSniffedHost: sniffedServerName) {
-            switch action {
-            case .route(let target, let configuration, let matchedRuleSet):
-                routeTarget = target
-                ruleSetName = matchedRuleSet
-                flowConfiguration = configuration ?? defaultConfiguration
-            case .reject(let matchedRuleSet):
-                recordQUICBlock(flowKey, cause: .rejected)
-                stack.requestLog.record(protocol: .udp, host: sniffedServerName, port: dstPort, routeTarget: .reject, ruleSetName: matchedRuleSet)
-                return
-            case .unreachable:
-                stack.sendICMPPortUnreachable(rejecting: datagram)
-                return
+        if let sniffedServerName {
+            let sniffedDecision = stack.connectionRouter.decision(
+                forSniffedHost: sniffedServerName,
+                ip: dstAddress.description,
+                sourceIP: datagram.source.address.description,
+                sourcePort: datagram.source.port,
+                destinationPort: dstPort,
+                protocolName: "UDP",
+                allowAddressResolution: !awaitedResolution
+            )
+            if let sniffedDecision {
+                switch sniffedDecision.action {
+                case .route(let target, let configuration, let matchedRuleSet):
+                    routeTarget = target
+                    ruleSetName = matchedRuleSet
+                    flowConfiguration = configuration ?? defaultConfiguration
+                case .reject(let matchedRuleSet):
+                    recordQUICBlock(flowKey, cause: .rejected)
+                    stack.requestLog.record(protocol: .udp, host: sniffedServerName, port: dstPort, routeTarget: .reject, ruleSetName: matchedRuleSet)
+                    return
+                case .unreachable:
+                    stack.sendICMPPortUnreachable(rejecting: datagram)
+                    return
+                }
+                if sniffedDecision.ipRuleLookupPending, !awaitedResolution,
+                   deferUntilResolved(datagram, flowKey: flowKey, domain: sniffedServerName) {
+                    return
+                }
             }
         }
 

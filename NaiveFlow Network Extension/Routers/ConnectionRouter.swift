@@ -193,9 +193,44 @@ nonisolated final class ConnectionRouter: Sendable {
 
     // MARK: - Sniffed host
 
-    func action(forSniffedHost host: String) -> RouteDecision.Action? {
+    /// Re-evaluates routing after QUIC sniffing recovered a domain, carrying the
+    /// connection's full context (address, port, protocol) so rules like
+    /// `domain X and port 443 → REJECT` still match. The pre-sniff query only
+    /// lacked the domain.
+    func decision(
+        forSniffedHost host: String,
+        ip: String,
+        sourceIP: String? = nil,
+        sourcePort: UInt16? = nil,
+        destinationPort: UInt16? = nil,
+        protocolName: String? = nil,
+        allowAddressResolution: Bool = true
+    ) -> RouteDecision? {
+        if domainRouter.usesNativeRules {
+            let synthetic = SyntheticAddressPool.isSyntheticAddress(ip)
+            let resolved = synthetic
+                ? DNSResolver.localRequests.cachedIPs(for: host, family: .ipv4, purpose: .ruleEvaluation)?.first
+                : ip
+            let query = RouteQuery(host: host, ip: resolved, sourceIP: sourceIP, sourcePort: sourcePort,
+                                   destinationPort: destinationPort, protocolName: protocolName)
+            switch domainRouter.nativeDecision(query, allowResolution: allowAddressResolution && !preventDNSLeak.load(ordering: .relaxed)) {
+            case .matched(let result):
+                return RouteDecision(host: host, hostIsResolvedDomain: true,
+                                     action: action(for: DomainRouter.nativeMatch(result)))
+            case .needsAddress:
+                if allowAddressResolution {
+                    DNSResolver.localRequests.prewarm(host, family: .ipv4, purpose: .ruleEvaluation)
+                }
+                return RouteDecision(host: host, hostIsResolvedDomain: true,
+                                     action: .route(target: .default, configuration: nil, ruleSetName: nil),
+                                     ipRuleLookupPending: allowAddressResolution)
+            default:
+                return RouteDecision(host: host, hostIsResolvedDomain: true,
+                                     action: .route(target: .default, configuration: nil, ruleSetName: nil))
+            }
+        }
         guard let match = domainRouter.matchDomain(host) else { return nil }
-        return action(for: match)
+        return RouteDecision(host: host, hostIsResolvedDomain: true, action: action(for: match))
     }
 
     private func action(for match: DomainRouter.Match) -> RouteDecision.Action {

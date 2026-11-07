@@ -435,95 +435,83 @@ actor TLSClient {
 
     // MARK: - ServerHello Parsing
 
-    private func bufferContainsCompleteServerHello(_ buffer: Data) -> Bool {
+    /// Reassembles handshake messages from buffered TLS records. A handshake
+    /// message (e.g. ServerHello) may span record boundaries, so the complete
+    /// message is reconstructed before any parsing. Returns the complete
+    /// ServerHello handshake message (type + length + body) or nil while it is
+    /// still incomplete.
+    private func reassembledServerHello(from buffer: Data) -> Data? {
+        // Collect handshake record payloads in order, stopping at the first
+        // record that is not yet fully received.
+        var handshake = Data()
         var offset = 0
         while offset + 5 <= buffer.count {
+            let contentType = buffer[offset]
             let recordLen = Int(buffer[offset + 3]) << 8 | Int(buffer[offset + 4])
-
-            if offset + 5 + recordLen > buffer.count { return false }
-
-            if buffer[offset] == TLSContentType.handshake && offset + 5 < buffer.count && buffer[offset + 5] == TLSHandshakeType.serverHello {
-                return true
+            let recordStart = offset + 5
+            guard recordStart + recordLen <= buffer.count else { break }
+            if contentType == TLSContentType.handshake {
+                handshake.append(buffer.subdata(in: recordStart..<(recordStart + recordLen)))
             }
-
-            offset += 5 + recordLen
+            offset = recordStart + recordLen
         }
 
-        return false
+        // Walk the handshake message stream looking for ServerHello.
+        var hsOffset = 0
+        while hsOffset + 4 <= handshake.count {
+            let hsType = handshake[hsOffset]
+            let hsLen = Int(handshake[hsOffset + 1]) << 16 | Int(handshake[hsOffset + 2]) << 8 | Int(handshake[hsOffset + 3])
+            guard hsOffset + 4 + hsLen <= handshake.count else { return nil }
+            if hsType == TLSHandshakeType.serverHello {
+                return handshake.subdata(in: hsOffset..<(hsOffset + 4 + hsLen))
+            }
+            hsOffset += 4 + hsLen
+        }
+        return nil
+    }
+
+    private func bufferContainsCompleteServerHello(_ buffer: Data) -> Bool {
+        reassembledServerHello(from: buffer) != nil
     }
 
     func extractServerHelloMessage(from buffer: Data) -> Data {
-        var offset = 0
-        while offset + 5 < buffer.count {
-            let contentType = buffer[offset]
-            let recordLen = Int(buffer[offset + 3]) << 8 | Int(buffer[offset + 4])
-
-            if contentType == TLSContentType.handshake {
-                let recordStart = offset + 5
-                let recordEnd = min(recordStart + recordLen, buffer.count)
-                var hsOffset = recordStart
-                while hsOffset + 4 <= recordEnd {
-                    let hsType = buffer[hsOffset]
-                    let hsLen = Int(buffer[hsOffset + 1]) << 16 | Int(buffer[hsOffset + 2]) << 8 | Int(buffer[hsOffset + 3])
-                    guard hsOffset + 4 + hsLen <= recordEnd else { break }
-                    if hsType == TLSHandshakeType.serverHello {
-                        return buffer.subdata(in: hsOffset..<(hsOffset + 4 + hsLen))
-                    }
-                    hsOffset += 4 + hsLen
-                }
-            }
-
-            offset += 5 + recordLen
-        }
-        return Data()
+        reassembledServerHello(from: buffer) ?? Data()
     }
 
     private func parseServerHello(data: Data) -> ServerHelloResult? {
-        var offset = 0
+        guard let message = reassembledServerHello(from: data) else { return nil }
+        // message = [type(1)][len(3)][body]; body starts at offset 4.
 
-        while offset + 5 < data.count {
-            let contentType = data[offset]
-            guard contentType == TLSContentType.handshake else { break }
+        let randomOffset = 1 + 3 + 2
+        guard randomOffset + 32 <= message.count else { return nil }
 
-            let recordLen = Int(data[offset + 3]) << 8 | Int(data[offset + 4])
-            offset += 5
+        let legacyVersion = UInt16(message[4]) << 8 | UInt16(message[5])
+        let srvRandom = message.subdata(in: randomOffset..<(randomOffset + 32))
 
-            guard offset + recordLen <= data.count else { break }
-            guard data[offset] == TLSHandshakeType.serverHello else {
-                offset += recordLen
-                continue
-            }
+        if srvRandom == TLSRandom.helloRetryRequest {
+            return .helloRetryRequest
+        }
 
-            let randomOffset = offset + 1 + 3 + 2
-            guard randomOffset + 32 <= data.count else { return nil }
+        var shOffset = randomOffset + 32
+        guard shOffset < message.count else { return nil }
 
-            let legacyVersion = UInt16(data[offset + 4]) << 8 | UInt16(data[offset + 5])
-            let srvRandom = data.subdata(in: randomOffset..<(randomOffset + 32))
+        let sessionIdLen = Int(message[shOffset])
+        guard sessionIdLen <= 32, shOffset + 1 + sessionIdLen <= message.count else { return nil }
+        let sessionIDEcho = message.subdata(in: (shOffset + 1)..<(shOffset + 1 + sessionIdLen))
+        shOffset += 1 + sessionIdLen
 
-            if srvRandom == TLSRandom.helloRetryRequest {
-                return .helloRetryRequest
-            }
+        guard shOffset + 3 <= message.count else { return nil }
+        let cipherSuite = UInt16(message[shOffset]) << 8 | UInt16(message[shOffset + 1])
+        guard message[shOffset + 2] == 0 else { return nil }
+        shOffset += 3
 
-            var shOffset = randomOffset + 32
-            guard shOffset < data.count else { return nil }
+        guard shOffset + 2 <= message.count else { return nil }
 
-            let sessionIdLen = Int(data[shOffset])
-            guard sessionIdLen <= 32, shOffset + 1 + sessionIdLen <= data.count else { return nil }
-            let sessionIDEcho = data.subdata(in: (shOffset + 1)..<(shOffset + 1 + sessionIdLen))
-            shOffset += 1 + sessionIdLen
+        let extLen = Int(message[shOffset]) << 8 | Int(message[shOffset + 1])
+        shOffset += 2
 
-            guard shOffset + 3 <= data.count else { return nil }
-            let cipherSuite = UInt16(data[shOffset]) << 8 | UInt16(data[shOffset + 1])
-            guard data[shOffset + 2] == 0 else { return nil }
-            shOffset += 3
-
-            guard shOffset + 2 <= data.count else { return nil }
-
-            let extLen = Int(data[shOffset]) << 8 | Int(data[shOffset + 1])
-            shOffset += 2
-
-            let extEnd = shOffset + extLen
-            guard extEnd <= data.count else { return nil }
+        let extEnd = shOffset + extLen
+        guard extEnd <= message.count else { return nil }
 
             var foundVersion: UInt16 = 0
             var keyShareData: Data?
@@ -533,8 +521,8 @@ actor TLSClient {
 
             var extOffset = shOffset
             while extOffset + 4 <= extEnd {
-                let extType = UInt16(data[extOffset]) << 8 | UInt16(data[extOffset + 1])
-                let extDataLen = Int(data[extOffset + 2]) << 8 | Int(data[extOffset + 3])
+                let extType = UInt16(message[extOffset]) << 8 | UInt16(message[extOffset + 1])
+                let extDataLen = Int(message[extOffset + 2]) << 8 | Int(message[extOffset + 3])
                 extOffset += 4
 
                 guard extOffset + extDataLen <= extEnd else { return nil }
@@ -547,20 +535,20 @@ actor TLSClient {
                 switch extType {
                 case TLSExtensionType.supportedVersions:
                     if extDataLen == 2 {
-                        foundVersion = UInt16(data[extOffset]) << 8 | UInt16(data[extOffset + 1])
+                        foundVersion = UInt16(message[extOffset]) << 8 | UInt16(message[extOffset + 1])
                     }
 
                 case TLSExtensionType.keyShare:
                     if extDataLen >= 4 {
-                        let group = UInt16(data[extOffset]) << 8 | UInt16(data[extOffset + 1])
-                        let keyLen = Int(data[extOffset + 2]) << 8 | Int(data[extOffset + 3])
+                        let group = UInt16(message[extOffset]) << 8 | UInt16(message[extOffset + 1])
+                        let keyLen = Int(message[extOffset + 2]) << 8 | Int(message[extOffset + 3])
                         if group == TLSNamedGroup.x25519 && keyLen == 32, 4 + 32 <= extDataLen {
-                            keyShareData = data.subdata(in: (extOffset + 4)..<(extOffset + 4 + 32))
+                            keyShareData = message.subdata(in: (extOffset + 4)..<(extOffset + 4 + 32))
                             keyShareGroup = group
                         } else if group == TLSNamedGroup.x25519MLKEM768,
                                   keyLen == 1120, 4 + 1120 <= extDataLen,
                                   offeredHybridKeyShare {
-                            keyShareData = data.subdata(in: (extOffset + 4)..<(extOffset + 4 + 1120))
+                            keyShareData = message.subdata(in: (extOffset + 4)..<(extOffset + 4 + 1120))
                             keyShareGroup = group
                         }
                     }
@@ -570,12 +558,12 @@ actor TLSClient {
 
                 case TLSExtensionType.applicationLayerProtocolNegotiation:
                     if extDataLen >= 3 {
-                        let listLen = Int(data[extOffset]) << 8 | Int(data[extOffset + 1])
+                        let listLen = Int(message[extOffset]) << 8 | Int(message[extOffset + 1])
                         if 2 + listLen <= extDataLen {
-                            let nameLen = Int(data[extOffset + 2])
+                            let nameLen = Int(message[extOffset + 2])
                             if 3 + nameLen <= extDataLen {
                                 let nameStart = extOffset + 3
-                                let name = data.subdata(in: nameStart..<(nameStart + nameLen))
+                                let name = message.subdata(in: nameStart..<(nameStart + nameLen))
                                 if let alpnProtocol = String(data: name, encoding: .utf8) {
                                     guard (configuration.alpn ?? ["h2", "http/1.1"]).contains(alpnProtocol) else {
                                         return nil
@@ -614,10 +602,7 @@ actor TLSClient {
 
             let version = foundVersion != 0 ? foundVersion : legacyVersion
             guard Self.supportedTLS12CipherSuites.contains(cipherSuite) else { return nil }
-            return .tls12(cipherSuite: cipherSuite, serverRandom: srvRandom, version: version, extendedMasterSecret: hasEMS)
-        }
-
-        return nil
+        return .tls12(cipherSuite: cipherSuite, serverRandom: srvRandom, version: version, extendedMasterSecret: hasEMS)
     }
 
     // MARK: - Certificate Validation

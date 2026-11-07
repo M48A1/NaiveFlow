@@ -126,7 +126,15 @@ nonisolated enum SOCKS5Handshake {
             host: "0.0.0.0",
             port: 0
         )
-        return UDPRelayInfo(host: serverAddress, port: info.port)
+        // Prefer the relay address the server reported; only a wildcard bound
+        // address (0.0.0.0 / ::) means "same host as the TCP connection", in
+        // which case fall back to the server address.
+        let host = Self.isWildcardRelayAddress(info.host) ? serverAddress : info.host
+        return UDPRelayInfo(host: host, port: info.port)
+    }
+
+    private static func isWildcardRelayAddress(_ host: String) -> Bool {
+        host.isEmpty || host == "0.0.0.0" || host == "::" || host == "::0"
     }
 
     // MARK: - Authentication
