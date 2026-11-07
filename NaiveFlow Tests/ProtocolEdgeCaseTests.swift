@@ -391,6 +391,18 @@ struct ProtocolEdgeCaseTests {
         }
     }
 
+    // MARK: - HPACK :status decoding
+
+    @Test func hpackLiteralNameStatusDecodes() throws {
+        // Literal without indexing, literal name ":status", value "200". The old
+        // hand-written gRPC parser required a static-table name index (8...14)
+        // and rejected this legal encoding as "unknown :status header".
+        let block = Data([0x00, 0x07]) + Data(":status".utf8) + Data([0x03]) + Data("200".utf8)
+        let decoder = HPACKDecoder()
+        let decoded = try #require(decoder.decodeHeaders(from: block))
+        #expect(decoded.fields.contains(where: { $0.name == ":status" && $0.value == "200" }))
+    }
+
     @Test func xhttpHeaderBlockReassemblesAcrossContinuation() throws {
         var accumulator = XHTTPHeaderBlockAccumulator(maxBlockSize: 64)
         let partial = try accumulator.ingest(

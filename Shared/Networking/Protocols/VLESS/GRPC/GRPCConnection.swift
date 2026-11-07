@@ -48,6 +48,7 @@ nonisolated final class GRPCConnection: Sendable {
         var h2ResponseReceived = false
 
         var h2HeaderBlock = H2HeaderBlockAccumulator(maxBlockSize: GRPCConnection.maxH2HeaderBlockSize)
+        var hpackDecoder = HPACKDecoder()
 
         var h2PeerConnectionWindow: Int = 65535
         var h2PeerStreamSendWindow: Int = 65535
@@ -65,6 +66,7 @@ nonisolated final class GRPCConnection: Sendable {
         var keepaliveDeadline: DeadlineToken?
         var pendingPingPayload: Data?
         var healthCheckDeadline: DeadlineToken?
+        var nextPingSequence: UInt64 = 0
     }
 
     private let state: Mutex<State>
@@ -173,7 +175,7 @@ nonisolated final class GRPCConnection: Sendable {
                             throw NaiveFlowError.proxy(.grpc, .handshakeFailed(detail: "gRPC response rejected: \(rejection)"))
                         }
                         if assembled.endStream {
-                            if let grpcError = Self.parseGRPCTrailer(assembled.block) {
+                            if let grpcError = parseGRPCTrailer(assembled.block) {
                                 markClosed()
                                 throw NaiveFlowError.proxy(.grpc, .handshakeFailed(detail: grpcError.localizedDescription))
                             }
@@ -557,93 +559,18 @@ nonisolated extension GRPCConnection {
 // MARK: - HPACK decoding for response :status
 
 nonisolated extension GRPCConnection {
+    /// Decodes the response header block with the connection-level HPACK decoder
+    /// and returns `nil` for a 200 status, otherwise a human-readable reason.
+    /// Using `HPACKDecoder` accepts every legal HPACK representation of `:status`
+    /// (indexed, literal name/value, Huffman), not just static-table name indices.
     fileprivate func checkH2ResponseStatus(_ headerBlock: Data) -> String? {
-        guard !headerBlock.isEmpty else { return "empty header block" }
-
-        var offset = headerBlock.startIndex
-        while offset < headerBlock.endIndex, headerBlock[offset] & 0xE0 == 0x20 {
-            let initial = headerBlock[offset] & 0x1F
-            offset += 1
-            if initial == 0x1F {
-                while offset < headerBlock.endIndex, headerBlock[offset] & 0x80 != 0 {
-                    offset += 1
-                }
-                offset += 1
-            }
+        guard let decoded = state.withLock({ $0.hpackDecoder.decodeHeaders(from: headerBlock) }) else {
+            return "undecodable HPACK header block"
         }
-        guard offset < headerBlock.endIndex else { return "empty header block (only table-size updates)" }
-
-        let first = headerBlock[offset]
-        let remaining = headerBlock[offset...]
-
-        if first & 0x80 != 0 {
-            if first == 0x88 { return nil }
-            let indexedStatus: [UInt8: String] = [
-                0x89: "204", 0x8a: "206", 0x8b: "304",
-                0x8c: "400", 0x8d: "404", 0x8e: "500",
-            ]
-            if let status = indexedStatus[first] { return "status \(status)" }
-            return "status (indexed \(first & 0x7F))"
+        guard let status = decoded.fields.first(where: { $0.name == ":status" })?.value else {
+            return "missing :status header"
         }
-
-        let nameIndex: UInt8
-        if first & 0xF0 == 0x00 {
-            nameIndex = first & 0x0F
-        } else if first & 0xF0 == 0x10 {
-            nameIndex = first & 0x0F
-        } else if first & 0xC0 == 0x40 {
-            nameIndex = first & 0x3F
-        } else {
-            return "unknown header representation"
-        }
-
-        guard (8...14).contains(nameIndex), remaining.count >= 2 else {
-            return "unknown :status header"
-        }
-
-        let valueMeta = remaining[remaining.startIndex + 1]
-        let isHuffman = (valueMeta & 0x80) != 0
-        let valueLen = Int(valueMeta & 0x7F)
-        let valueStart = remaining.startIndex + 2
-
-        guard remaining.count >= 2 + valueLen, valueLen > 0 else { return "status (?)" }
-
-        let valueData = Data(remaining[valueStart..<(valueStart + valueLen)])
-        if !isHuffman {
-            let status = String(data: valueData, encoding: .ascii) ?? "?"
-            return status == "200" ? nil : "status \(status)"
-        }
-        let status = Self.huffmanDecodeDigits(valueData)
-        if status.isEmpty { return "status (huffman)" }
         return status == "200" ? nil : "status \(status)"
-    }
-
-    private static func huffmanDecodeDigits(_ data: Data) -> String {
-        var result = ""
-        var bits: UInt32 = 0
-        var numBits = 0
-        for byte in data {
-            bits = (bits << 8) | UInt32(byte)
-            numBits += 8
-        }
-        while numBits >= 5 {
-            let top5 = Int((bits >> (numBits - 5)) & 0x1F)
-            if top5 <= 0x02 {
-                result.append(Character(UnicodeScalar(48 + top5)!))
-                numBits -= 5
-                continue
-            }
-            guard numBits >= 6 else { break }
-            let top6 = Int((bits >> (numBits - 6)) & 0x3F)
-            if top6 >= 0x19 && top6 <= 0x1F {
-                let digit = top6 - 0x19 + 3
-                result.append(Character(UnicodeScalar(48 + digit)!))
-                numBits -= 6
-                continue
-            }
-            break
-        }
-        return result
     }
 }
 
@@ -943,7 +870,7 @@ nonisolated extension GRPCConnection {
     /// transitions to half-closed, and returns any buffered decoded data (or a
     /// `nil` delivery when the stream is empty).
     private func finishStreamAfterTrailer(_ block: Data) throws -> FrameOutcome {
-        let grpcError = Self.parseGRPCTrailer(block)
+        let grpcError = parseGRPCTrailer(block)
         let leftover: Data = state.withLock { state in
             state.transition(to: .halfClosed)
             let leftover = state.decodedBuffer
@@ -1155,7 +1082,15 @@ nonisolated extension GRPCConnection {
 
     private func sendKeepalivePing() async {
         if state.withLock({ $0.phase != .live }) { return }
-        let payload = Data([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+        // A unique payload per ping disambiguates ACKs and health-check rounds:
+        // a stale timer from a previous round can no longer match a new round's
+        // pending ping (they all used to share the same 8 zero bytes).
+        let payload = state.withLock { state -> Data in
+            let sequence = state.nextPingSequence
+            state.nextPingSequence &+= 1
+            var value = sequence.bigEndian
+            return withUnsafeBytes(of: &value) { Data($0) }
+        }
         let ping = buildH2Frame(type: Self.h2FramePing, flags: 0, streamId: 0, payload: payload)
 
         // Register the pending ping *before* sending: a fast ACK can arrive while
@@ -1204,12 +1139,18 @@ nonisolated extension GRPCConnection {
             guard let self else { return }
             Task { await self.healthCheckFired(payload: payload) }
         }
-        state.withLock { state in
-            // Keep the deadline only if our ping is still the pending one (an ACK
-            // may have raced in between the two locks).
+        let adopted = state.withLock { state -> Bool in
             if state.pendingPingPayload == payload {
                 state.healthCheckDeadline = deadline
+                return true
             }
+            return false
+        }
+        if !adopted {
+            // An ACK raced in and cleared the pending ping before we stored the
+            // deadline; cancel the now-orphaned timer so it cannot fire and hit a
+            // later round's pending state.
+            deadline.cancel()
         }
     }
 
@@ -1298,13 +1239,19 @@ nonisolated extension GRPCConnection {
 // MARK: - gRPC trailer parsing
 
 nonisolated extension GRPCConnection {
-    fileprivate static func parseGRPCTrailer(_ payload: Data) -> NaiveFlowError? {
-        let headers = decodeHPACKHeaders(payload)
+    fileprivate func parseGRPCTrailer(_ payload: Data) -> NaiveFlowError? {
+        guard let decoded = state.withLock({ $0.hpackDecoder.decodeHeaders(from: payload) }) else {
+            return nil
+        }
+        var headers: [String: String] = [:]
+        for field in decoded.fields {
+            headers[field.name.lowercased()] = field.value
+        }
         guard let statusStr = headers["grpc-status"], let status = Int(statusStr), status != 0 else {
             return nil
         }
         let message = headers["grpc-message"]
-        return .proxy(.grpc, .rpcFailed(status: status, method: grpcStatusName(status), message: message))
+        return .proxy(.grpc, .rpcFailed(status: status, method: Self.grpcStatusName(status), message: message))
     }
 
     fileprivate static func grpcStatusName(_ code: Int) -> String {
@@ -1330,228 +1277,4 @@ nonisolated extension GRPCConnection {
         }
     }
 
-    fileprivate static func decodeHPACKHeaders(_ payload: Data) -> [String: String] {
-        var headers: [String: String] = [:]
-        var offset = payload.startIndex
-
-        while offset < payload.endIndex {
-            let b = payload[offset]
-
-            if b & 0x80 != 0 {
-                let (idx, consumed) = decodeHPACKInteger(payload, at: offset, prefixBits: 7)
-                offset += consumed
-                if let entry = staticTableEntry(at: idx), let value = entry.value {
-                    headers[entry.name] = value
-                }
-                continue
-            }
-
-            if b & 0xC0 == 0x40 {
-                let (nameIdx, nameConsumed) = decodeHPACKInteger(payload, at: offset, prefixBits: 6)
-                offset += nameConsumed
-                let name: String
-                if nameIdx == 0 {
-                    guard let (n, c) = decodeHPACKString(payload, at: offset) else { return headers }
-                    name = n
-                    offset += c
-                } else {
-                    name = staticTableEntry(at: nameIdx)?.name ?? ""
-                }
-                guard let (value, vc) = decodeHPACKString(payload, at: offset) else { return headers }
-                offset += vc
-                if !name.isEmpty { headers[name.lowercased()] = value }
-                continue
-            }
-
-            if b & 0xE0 == 0x20 {
-                let (_, consumed) = decodeHPACKInteger(payload, at: offset, prefixBits: 5)
-                offset += consumed
-                continue
-            }
-
-            if b & 0xF0 == 0x00 || b & 0xF0 == 0x10 {
-                let (nameIdx, nameConsumed) = decodeHPACKInteger(payload, at: offset, prefixBits: 4)
-                offset += nameConsumed
-                let name: String
-                if nameIdx == 0 {
-                    guard let (n, c) = decodeHPACKString(payload, at: offset) else { return headers }
-                    name = n
-                    offset += c
-                } else {
-                    name = staticTableEntry(at: nameIdx)?.name ?? ""
-                }
-                guard let (value, vc) = decodeHPACKString(payload, at: offset) else { return headers }
-                offset += vc
-                if !name.isEmpty { headers[name.lowercased()] = value }
-                continue
-            }
-
-            return headers
-        }
-        return headers
-    }
-
-    private static func decodeHPACKInteger(_ data: Data, at start: Int, prefixBits: Int) -> (Int, Int) {
-        guard start < data.endIndex else { return (0, 0) }
-        var offset = start
-        guard let value = HPACKEncoder.decodeInteger(from: data, at: &offset, prefixBits: prefixBits) else {
-            return (0, data.endIndex - start)
-        }
-        return (value, offset - start)
-    }
-
-    private static func decodeHPACKString(_ data: Data, at start: Int) -> (String, Int)? {
-        guard start < data.endIndex else { return nil }
-        let meta = data[start]
-        let isHuffman = (meta & 0x80) != 0
-        let (length, lenConsumed) = decodeHPACKInteger(data, at: start, prefixBits: 7)
-        let bytesStart = start + lenConsumed
-        guard length >= 0, length <= data.endIndex - bytesStart else { return nil }
-        let bytes = data.subdata(in: bytesStart ..< bytesStart + length)
-        let string: String
-        if isHuffman {
-            string = huffmanDecode(bytes) ?? ""
-        } else {
-            string = String(data: bytes, encoding: .utf8) ?? ""
-        }
-        return (string, lenConsumed + length)
-    }
-
-    private static func staticTableEntry(at index: Int) -> (name: String, value: String?)? {
-        switch index {
-        case 1:  return (":authority", nil)
-        case 2:  return (":method", "GET")
-        case 3:  return (":method", "POST")
-        case 4:  return (":path", "/")
-        case 5:  return (":path", "/index.html")
-        case 6:  return (":scheme", "http")
-        case 7:  return (":scheme", "https")
-        case 8:  return (":status", "200")
-        case 9:  return (":status", "204")
-        case 10: return (":status", "206")
-        case 11: return (":status", "304")
-        case 12: return (":status", "400")
-        case 13: return (":status", "404")
-        case 14: return (":status", "500")
-        case 31: return ("content-type", nil)
-        case 28: return ("content-length", nil)
-        case 58: return ("user-agent", nil)
-        default: return nil
-        }
-    }
-
-    private static func huffmanDecode(_ data: Data) -> String? {
-        var result = [UInt8]()
-        var code: UInt32 = 0
-        var bits = 0
-
-        for byte in data {
-            code = (code << 8) | UInt32(byte)
-            bits += 8
-            while bits >= 5 {
-                var matched = false
-                for length in 5...min(bits, 30) {
-                    let candidate = (code >> (bits - length)) & ((1 << length) - 1)
-                    if let symbol = huffmanLookup(code: candidate, length: length) {
-                        if symbol == 256 { return String(bytes: result, encoding: .utf8) }
-                        result.append(UInt8(symbol & 0xFF))
-                        bits -= length
-                        matched = true
-                        break
-                    }
-                }
-                if !matched { break }
-            }
-        }
-
-        if bits > 0 {
-            let trailing = code & ((1 << bits) - 1)
-            let allOnes: UInt32 = (1 << bits) - 1
-            if trailing != allOnes { return nil }
-        }
-
-        return String(bytes: result, encoding: .utf8)
-    }
-
-    private static func huffmanLookup(code: UInt32, length: Int) -> Int? {
-        return huffmanTable[HuffmanKey(code: code, length: length)]
-    }
-
-    private struct HuffmanKey: Hashable { let code: UInt32; let length: Int }
-
-    private static let huffmanTable: [HuffmanKey: Int] = {
-        let entries: [(code: UInt32, length: Int, symbol: Int)] = [
-            (0x1ff8, 13, 0), (0x7fffd8, 23, 1), (0xfffffe2, 28, 2), (0xfffffe3, 28, 3),
-            (0xfffffe4, 28, 4), (0xfffffe5, 28, 5), (0xfffffe6, 28, 6), (0xfffffe7, 28, 7),
-            (0xfffffe8, 28, 8), (0xffffea, 24, 9), (0x3ffffffc, 30, 10), (0xfffffe9, 28, 11),
-            (0xfffffea, 28, 12), (0x3ffffffd, 30, 13), (0xfffffeb, 28, 14), (0xfffffec, 28, 15),
-            (0xfffffed, 28, 16), (0xfffffee, 28, 17), (0xfffffef, 28, 18), (0xffffff0, 28, 19),
-            (0xffffff1, 28, 20), (0xffffff2, 28, 21), (0x3ffffffe, 30, 22), (0xffffff3, 28, 23),
-            (0xffffff4, 28, 24), (0xffffff5, 28, 25), (0xffffff6, 28, 26), (0xffffff7, 28, 27),
-            (0xffffff8, 28, 28), (0xffffff9, 28, 29), (0xffffffa, 28, 30), (0xffffffb, 28, 31),
-            (0x14, 6, 32), (0x3f8, 10, 33), (0x3f9, 10, 34), (0xffa, 12, 35),
-            (0x1ff9, 13, 36), (0x15, 6, 37), (0xf8, 8, 38), (0x7fa, 11, 39),
-            (0x3fa, 10, 40), (0x3fb, 10, 41), (0xf9, 8, 42), (0x7fb, 11, 43),
-            (0xfa, 8, 44), (0x16, 6, 45), (0x17, 6, 46), (0x18, 6, 47),
-            (0x0, 5, 48), (0x1, 5, 49), (0x2, 5, 50), (0x19, 6, 51),
-            (0x1a, 6, 52), (0x1b, 6, 53), (0x1c, 6, 54), (0x1d, 6, 55),
-            (0x1e, 6, 56), (0x1f, 6, 57), (0x5c, 7, 58), (0xfb, 8, 59),
-            (0x7ffc, 15, 60), (0x20, 6, 61), (0xffb, 12, 62), (0x3fc, 10, 63),
-            (0x1ffa, 13, 64), (0x21, 6, 65), (0x5d, 7, 66), (0x5e, 7, 67),
-            (0x5f, 7, 68), (0x60, 7, 69), (0x61, 7, 70), (0x62, 7, 71),
-            (0x63, 7, 72), (0x64, 7, 73), (0x65, 7, 74), (0x66, 7, 75),
-            (0x67, 7, 76), (0x68, 7, 77), (0x69, 7, 78), (0x6a, 7, 79),
-            (0x6b, 7, 80), (0x6c, 7, 81), (0x6d, 7, 82), (0x6e, 7, 83),
-            (0x6f, 7, 84), (0x70, 7, 85), (0x71, 7, 86), (0x72, 7, 87),
-            (0xfc, 8, 88), (0x73, 7, 89), (0xfd, 8, 90), (0x1ffb, 13, 91),
-            (0x7fff0, 19, 92), (0x1ffc, 13, 93), (0x3ffc, 14, 94), (0x22, 6, 95),
-            (0x7ffd, 15, 96), (0x3, 5, 97), (0x23, 6, 98), (0x4, 5, 99),
-            (0x24, 6, 100), (0x5, 5, 101), (0x25, 6, 102), (0x26, 6, 103),
-            (0x27, 6, 104), (0x6, 5, 105), (0x74, 7, 106), (0x75, 7, 107),
-            (0x28, 6, 108), (0x29, 6, 109), (0x2a, 6, 110), (0x7, 5, 111),
-            (0x2b, 6, 112), (0x76, 7, 113), (0x2c, 6, 114), (0x8, 5, 115),
-            (0x9, 5, 116), (0x2d, 6, 117), (0x77, 7, 118), (0x78, 7, 119),
-            (0x79, 7, 120), (0x7a, 7, 121), (0x7b, 7, 122), (0x7ffe, 15, 123),
-            (0x7fc, 11, 124), (0x3ffd, 14, 125), (0x1ffd, 13, 126), (0xffffffc, 28, 127),
-            (0xfffe6, 20, 128), (0x3fffd2, 22, 129), (0xfffe7, 20, 130), (0xfffe8, 20, 131),
-            (0x3fffd3, 22, 132), (0x3fffd4, 22, 133), (0x3fffd5, 22, 134), (0x7fffd9, 23, 135),
-            (0x3fffd6, 22, 136), (0x7fffda, 23, 137), (0x7fffdb, 23, 138), (0x7fffdc, 23, 139),
-            (0x7fffdd, 23, 140), (0x7fffde, 23, 141), (0xffffeb, 24, 142), (0x7fffdf, 23, 143),
-            (0xffffec, 24, 144), (0xffffed, 24, 145), (0x3fffd7, 22, 146), (0x7fffe0, 23, 147),
-            (0xffffee, 24, 148), (0x7fffe1, 23, 149), (0x7fffe2, 23, 150), (0x7fffe3, 23, 151),
-            (0x7fffe4, 23, 152), (0x1fffdc, 21, 153), (0x3fffd8, 22, 154), (0x7fffe5, 23, 155),
-            (0x3fffd9, 22, 156), (0x7fffe6, 23, 157), (0x7fffe7, 23, 158), (0xffffef, 24, 159),
-            (0x3fffda, 22, 160), (0x1fffdd, 21, 161), (0xfffe9, 20, 162), (0x3fffdb, 22, 163),
-            (0x3fffdc, 22, 164), (0x7fffe8, 23, 165), (0x7fffe9, 23, 166), (0x1fffde, 21, 167),
-            (0x7fffea, 23, 168), (0x3fffdd, 22, 169), (0x3fffde, 22, 170), (0xfffff0, 24, 171),
-            (0x1fffdf, 21, 172), (0x3fffdf, 22, 173), (0x7fffeb, 23, 174), (0x7fffec, 23, 175),
-            (0x1fffe0, 21, 176), (0x1fffe1, 21, 177), (0x3fffe0, 22, 178), (0x1fffe2, 21, 179),
-            (0x7fffed, 23, 180), (0x3fffe1, 22, 181), (0x7fffee, 23, 182), (0x7fffef, 23, 183),
-            (0xfffea, 20, 184), (0x3fffe2, 22, 185), (0x3fffe3, 22, 186), (0x3fffe4, 22, 187),
-            (0x7ffff0, 23, 188), (0x3fffe5, 22, 189), (0x3fffe6, 22, 190), (0x7ffff1, 23, 191),
-            (0x3ffffe0, 26, 192), (0x3ffffe1, 26, 193), (0xfffeb, 20, 194), (0x7fff1, 19, 195),
-            (0x3fffe7, 22, 196), (0x7ffff2, 23, 197), (0x3fffe8, 22, 198), (0x1ffffec, 25, 199),
-            (0x3ffffe2, 26, 200), (0x3ffffe3, 26, 201), (0x3ffffe4, 26, 202), (0x7ffffde, 27, 203),
-            (0x7ffffdf, 27, 204), (0x3ffffe5, 26, 205), (0xfffff1, 24, 206), (0x1ffffed, 25, 207),
-            (0x7fff2, 19, 208), (0x1fffe3, 21, 209), (0x3ffffe6, 26, 210), (0x7ffffe0, 27, 211),
-            (0x7ffffe1, 27, 212), (0x3ffffe7, 26, 213), (0x7ffffe2, 27, 214), (0xfffff2, 24, 215),
-            (0x1fffe4, 21, 216), (0x1fffe5, 21, 217), (0x3ffffe8, 26, 218), (0x3ffffe9, 26, 219),
-            (0xffffffd, 28, 220), (0x7ffffe3, 27, 221), (0x7ffffe4, 27, 222), (0x7ffffe5, 27, 223),
-            (0xfffec, 20, 224), (0xfffff3, 24, 225), (0xfffed, 20, 226), (0x1fffe6, 21, 227),
-            (0x3fffe9, 22, 228), (0x1fffe7, 21, 229), (0x1fffe8, 21, 230), (0x7ffff3, 23, 231),
-            (0x3fffea, 22, 232), (0x3fffeb, 22, 233), (0x1ffffee, 25, 234), (0x1ffffef, 25, 235),
-            (0xfffff4, 24, 236), (0xfffff5, 24, 237), (0x3ffffea, 26, 238), (0x7ffff4, 23, 239),
-            (0x3ffffeb, 26, 240), (0x7ffffe6, 27, 241), (0x3ffffec, 26, 242), (0x3ffffed, 26, 243),
-            (0x7ffffe7, 27, 244), (0x7ffffe8, 27, 245), (0x7ffffe9, 27, 246), (0x7ffffea, 27, 247),
-            (0x7ffffeb, 27, 248), (0xffffffe, 28, 249), (0x7ffffec, 27, 250), (0x7ffffed, 27, 251),
-            (0x7ffffee, 27, 252), (0x7ffffef, 27, 253), (0x7fffff0, 27, 254), (0x3ffffee, 26, 255),
-            (0x3fffffff, 30, 256),
-        ]
-        var table: [HuffmanKey: Int] = [:]
-        table.reserveCapacity(entries.count)
-        for entry in entries {
-            table[HuffmanKey(code: entry.code, length: entry.length)] = entry.symbol
-        }
-        return table
-    }()
 }
