@@ -923,6 +923,9 @@ actor MITMScriptEngine {
     /// requested by the host app; without it the request is silently dropped by
     /// the system.
     nonisolated private static func postScriptNotification(title: String, subtitle: String, body: String) {
+        #if !os(tvOS)
+        // tvOS exposes UNMutableNotificationContent but none of title/subtitle/
+        // body/sound, so the script notification is a no-op there.
         let content = UNMutableNotificationContent()
         content.title = title
         if !subtitle.isEmpty { content.subtitle = subtitle }
@@ -930,6 +933,7 @@ actor MITMScriptEngine {
         content.sound = .default
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
+        #endif
     }
 
     /// Surge-style `$httpClient` with callback signatures

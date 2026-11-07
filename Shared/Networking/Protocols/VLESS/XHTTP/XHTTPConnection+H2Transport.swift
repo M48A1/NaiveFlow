@@ -469,13 +469,19 @@ extension XHTTPConnection {
             case Self.h2FrameHeaders, Self.h2FrameContinuation:
                 if isDownloadStream {
                     if let assembled = try assembleH2HeaderBlock(frame) {
+                        if !state.withLock({ $0.h2ResponseReceived }) {
+                            // Reject a non-200 response rather than feeding an error
+                            // page through the tunnel; a trailers-only rejection
+                            // (END_STREAM) must surface as an error too, not EOF.
+                            if let rejection = checkH2ResponseStatus(assembled.block) {
+                                markH2Closed()
+                                throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "H2 response rejected: \(rejection)"))
+                            }
+                            state.withLock { $0.h2ResponseReceived = true }
+                        }
                         if assembled.endStream {
                             markH2Closed()
                             return nil
-                        } else if !state.withLock({ $0.h2ResponseReceived }) {
-                            if checkH2ResponseStatus(assembled.block) == nil {
-                                state.withLock { $0.h2ResponseReceived = true }
-                            }
                         }
                     }
                 }

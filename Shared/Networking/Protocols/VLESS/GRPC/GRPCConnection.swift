@@ -1168,7 +1168,19 @@ nonisolated extension GRPCConnection {
     /// Arms the ACK timeout for a just-sent keepalive ping. If the peer does not
     /// PING-ACK within `healthCheckTimeout` (default 20s), the connection is
     /// treated as dead and torn down.
+    ///
+    /// Only the first unacknowledged ping arms the deadline; subsequent pings
+    /// must not reset it, otherwise an interval shorter than the timeout would
+    /// keep postponing the health check forever (a dead peer would never be
+    /// detected).
     private func armHealthCheck(_ payload: Data) {
+        let firstOutstanding = state.withLock { state -> Bool in
+            if state.pendingPingPayload != nil { return false }
+            state.pendingPingPayload = payload
+            return true
+        }
+        guard firstOutstanding else { return }
+
         let configured = configuration.healthCheckTimeout
         let timeout = configured > 0 ? configured : Self.defaultHealthCheckTimeout
         let deadline = TickScheduler.shared.schedule(in: .seconds(timeout), precision: .relaxed) { [weak self] in
@@ -1176,9 +1188,11 @@ nonisolated extension GRPCConnection {
             Task { await self.healthCheckFired(payload: payload) }
         }
         state.withLock { state in
-            state.healthCheckDeadline?.cancel()
-            state.pendingPingPayload = payload
-            state.healthCheckDeadline = deadline
+            // Keep the deadline only if our ping is still the pending one (an ACK
+            // may have raced in between the two locks).
+            if state.pendingPingPayload == payload {
+                state.healthCheckDeadline = deadline
+            }
         }
     }
 
