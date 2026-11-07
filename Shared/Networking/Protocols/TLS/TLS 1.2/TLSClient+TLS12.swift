@@ -668,6 +668,8 @@ extension TLSClient {
         var foundCCS = false
         var serverSeqNum: UInt64 = 0
         var transcriptThroughCCS = tls12Transcript
+        // The Finished message may span records; accumulate decrypted bytes.
+        var decryptedHandshake = Data()
 
         while offset + 5 <= buffer.count {
             let contentType = buffer[offset]
@@ -694,12 +696,24 @@ extension TLSClient {
                         serverIV: keys.serverIV,
                         serverMACKey: keys.serverMACKey
                     )
+                    decryptedHandshake.append(decrypted)
 
-                    guard decrypted.count >= 16, decrypted[0] == TLSHandshakeType.finished else {
+                    // Reassemble the Finished message from the accumulated
+                    // decrypted bytes (it may span records).
+                    guard decryptedHandshake.count >= 4 else {
+                        offset += 5 + recordLen
+                        continue
+                    }
+                    guard decryptedHandshake[0] == TLSHandshakeType.finished else {
                         return .failure(NaiveFlowError.tls(.handshakeFailed(detail: "Invalid server Finished")))
                     }
+                    let finishedLen = Int(decryptedHandshake[1]) << 16 | Int(decryptedHandshake[2]) << 8 | Int(decryptedHandshake[3])
+                    guard decryptedHandshake.count >= 4 + finishedLen else {
+                        offset += 5 + recordLen
+                        continue
+                    }
 
-                    let verifyData = decrypted.subdata(in: 4..<16)
+                    let verifyData = decryptedHandshake.subdata(in: 4..<(4 + finishedLen))
 
                     guard let ms = masterSecret, let transcript = transcriptThroughCCS else {
                         return .failure(NaiveFlowError.tls(.handshakeFailed(detail: "Missing state for Finished verification")))

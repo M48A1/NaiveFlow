@@ -479,6 +479,12 @@ actor TCPConnection: MITMSessionHost {
         }
 
         let router = stack.domainRouter
+        // Native rules are re-matched with the full connection context (host +
+        // IP + port) in applyIPRuleMatch(). Matching the domain alone here would
+        // skip earlier IP/port rules and could reject a connection a full query
+        // would allow, so leave the verdict to that full match.
+        if router.usesNativeRules { return }
+
         guard let match = router.matchDomain(sni) else {
             return
         }
