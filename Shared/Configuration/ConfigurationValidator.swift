@@ -390,9 +390,21 @@ nonisolated extension ConfigurationValidator {
             }
 
             // Automatic groups (url-test / fallback / load-balance) select among
-            // probeable members. `DIRECT` now maps to a real probeable node, but
-            // REJECT / PROXY cannot be probed or dialed as a member, so reject
-            // them instead of silently dropping the token and changing the group.
+            // their members by probing each one. `DIRECT` now maps to a real
+            // probeable node, but REJECT / PROXY cannot be probed or dialed as a
+            // member, so reject them instead of silently dropping the token and
+            // changing the group.
+            //
+            // A member that names another proxy group is a nested group. This
+            // engine models an automatic group's members as a flat list of
+            // dialable node ids, so a nested group would be flattened to all of
+            // that group's leaves and the parent could dial a node the child
+            // never chose — for a `select` child, one its `selected` pointer
+            // explicitly skipped. Refuse it at activation instead of accepting
+            // the document and silently expanding it. (`select` groups may still
+            // point at another group: their `selected` resolves to that group's
+            // stable id and the engine applies the child's strategy at dial time,
+            // so only the automatic-parent case below is rejected.)
             if kind != .select {
                 for member in group.members {
                     switch Self.builtInPolicyName(member) {
@@ -403,11 +415,24 @@ nonisolated extension ConfigurationValidator {
                                 code: .unresolvedPolicy,
                                 line: group.line,
                                 section: ConfigurationDocument.SectionKind.proxyGroup.displayName,
-                                message: "Automatic proxy group '\(group.name)' cannot include the built-in policy '\(member)'; only nodes, groups and DIRECT can be probed and selected."
+                                message: "Automatic proxy group '\(group.name)' cannot include the built-in policy '\(member)'; only nodes and DIRECT can be probed and selected."
                             )
                         )
                     default:
-                        break
+                        // A proxy of the same name takes precedence when the id
+                        // is resolved (`expandedMembers` checks proxies first), so
+                        // only a name that is *solely* a group is a nested ref.
+                        if groupNames.contains(member), !proxyNames.contains(member) {
+                            diagnostics.append(
+                                ConfigurationDiagnostic(
+                                    severity: .error,
+                                    code: .unresolvedPolicy,
+                                    line: group.line,
+                                    section: ConfigurationDocument.SectionKind.proxyGroup.displayName,
+                                    message: "Automatic proxy group '\(group.name)' lists the group '\(member)'; nested groups are not supported because this build cannot preserve the child group's selection or strategy. List the child's member nodes directly instead."
+                                )
+                            )
+                        }
                     }
                 }
             }

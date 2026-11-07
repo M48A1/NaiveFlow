@@ -437,8 +437,10 @@ nonisolated extension ConfigurationCompiler {
 
     /// Builds the engine's group-policy list, preserving `url-test` / `fallback`
     /// / `load-balance` strategies instead of flattening every group to a plain
-    /// `servers` container. Members are expanded to dialable node ids (nested
-    /// groups are flattened), and `selected` resolves to a concrete member id.
+    /// `servers` container. Members resolve to dialable node ids, and `selected`
+    /// resolves to a concrete member id. A nested group member is refused by the
+    /// validator (the flat member list cannot carry the child's selection), so
+    /// an accepted automatic group always lists leaf nodes.
     static func compilePolicyGroups(
         _ configuration: ParsedConfiguration,
         proxyIds: [String: UUID],
@@ -537,7 +539,10 @@ nonisolated extension ConfigurationCompiler {
     }
 
     /// Flattens nested group references into proxy ids, guarding against cycles
-    /// that validation has already reported.
+    /// that validation has already reported. This still backs the UI-facing
+    /// `servers` container, but an automatic group that reaches a nested group is
+    /// rejected by the validator, so this expansion only ever sees leaf members
+    /// for an activatable automatic group.
     static func expandedMembers(
         of name: String,
         configuration: ParsedConfiguration,
