@@ -7,6 +7,17 @@ nonisolated enum NativeRuleSet {
     static let maximumTotalBytes = 16 * 1024 * 1024
     static let maximumSources = 64
     static let maximumRules = 100_000
+    /// Rule kinds a provider may contain. Providers hold conditions only, so
+    /// anything needing tunnel metadata (PROCESS-NAME / USER-AGENT / URL-REGEX)
+    /// or a nested reference (RULE-SET / FINAL) is rejected here. Logical
+    /// composition (AND/OR/NOT) is allowed; a nested RULE-SET inside it is
+    /// caught by the matcher.
+    static let providerRuleKinds: Set<ParsedRule.Kind> = [
+        .domain, .domainSuffix, .domainKeyword, .domainWildcard, .domainRegex,
+        .ipCIDR, .ipASN, .sourceIP, .sourcePort, .destinationPort, .protocolType,
+        .geoIP, .geoASN, .geoSite,
+        .logicalAnd, .logicalOr, .logicalNot
+    ]
     typealias Loader = @Sendable (URL) async throws -> Data
 
     struct Failure: LocalizedError {
@@ -131,8 +142,8 @@ nonisolated enum NativeRuleSet {
                     throw Failure(message: "Expected TYPE, value[, no-resolve]; policies belong on the RULE-SET reference.")
                 }
                 let kind = ParsedRule.Kind(token: fields[0])
-                guard kind != .ruleSet, kind != .final, ConfigurationValidator.Capabilities.current.ruleKinds.contains(kind) else {
-                    throw Failure(message: "Unsupported provider rule type; nested RULE-SET and FINAL are not allowed.")
+                guard Self.providerRuleKinds.contains(kind) else {
+                    throw Failure(message: "Unsupported provider rule type; providers hold conditions only.")
                 }
                 let rule = ParsedRule(line: offset + 1, kind: kind, value: fields[1], policy: .direct,
                     options: fields.count == 3 ? [.noResolve] : [], raw: line)

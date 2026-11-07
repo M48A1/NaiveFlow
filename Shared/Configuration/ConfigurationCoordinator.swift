@@ -78,6 +78,7 @@ nonisolated extension ConfigurationModule {
         "ech-encrypted-dns-server": .dns,
         "synthetic-address-excluded-suffix": .dns,
         "prevent-dns-leak": .dns,
+        "dns-exempt-servers": .dns,
 
         // MITM: interception, its certificate and its exceptions.
         "mitm": .mitm,
@@ -374,7 +375,10 @@ nonisolated extension ConfigurationCoordinator {
         case .rule:
             let count = compiled.orderedRules.count
             let data = compiled.geo.entryCount
-            return count + data == 0 ? (0, "") : (count + data, "\(count) rule(s), \(data) geo entry/entries")
+            var parts: [String] = []
+            if count > 0 { parts.append("\(count) rule(s)") }
+            if data > 0 { parts.append("\(data) geo entry/entries") }
+            return (count + data, parts.joined(separator: ", "))
 
         case .dns:
             let count = compiled.hosts.count
