@@ -328,10 +328,12 @@ actor TCPConnection: MITMSessionHost {
             let ip = hostIsIP ? host : (DNSName.isIPAddress(dstHost) ? dstHost : nil)
             var query = RouteQuery(host: hostIsIP ? nil : host, ip: ip, sourceIP: sourceIP,
                 sourcePort: sourcePort, destinationPort: dstPort, protocolName: "TCP")
-            var evaluation = router.nativeDecision(query, allowResolution: !AWCore.getPreventDNSLeak())
+            // Sniffing is over; finish the IP/FINAL match even when the host is
+            // still unknown.
+            var evaluation = router.nativeDecision(query, allowResolution: !AWCore.getPreventDNSLeak(), deferOnHostUnknown: false)
             if case .needsAddress = evaluation {
                 query.ip = await DNSResolver.localRequests.resolveHost(host, family: .ipv4, purpose: .ruleEvaluation)
-                evaluation = router.nativeDecision(query, allowResolution: false)
+                evaluation = router.nativeDecision(query, allowResolution: false, deferOnHostUnknown: false)
             }
             guard phase != .closed, case .matched(let result) = evaluation else { return }
             match = DomainRouter.nativeMatch(result)

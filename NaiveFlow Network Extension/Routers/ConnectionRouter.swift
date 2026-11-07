@@ -24,6 +24,9 @@ nonisolated struct RouteDecision {
     /// an explicit rule. A FINAL verdict must not preempt domain sniffing when
     /// the domain is not yet known.
     var isFinal = false
+    /// True when the matcher deferred because the host was unknown, so the
+    /// caller should re-evaluate once the host is known (post-sniff).
+    var deferredForHost = false
 }
 
 nonisolated final class ConnectionRouter: Sendable {
@@ -48,7 +51,8 @@ nonisolated final class ConnectionRouter: Sendable {
     }
 
     func decision(forIP ip: String, sourceIP: String? = nil, sourcePort: UInt16? = nil,
-                  destinationPort: UInt16? = nil, protocolName: String? = nil, allowAddressResolution: Bool = true) -> RouteDecision {
+                  destinationPort: UInt16? = nil, protocolName: String? = nil,
+                  allowAddressResolution: Bool = true, deferOnHostUnknown: Bool = true) -> RouteDecision {
         guard IPv4Only.supportsHost(ip) else { return RouteDecision(host: ip, hostIsResolvedDomain: false, action: .unreachable) }
         if domainRouter.usesNativeRules {
             let synthetic = SyntheticAddressPool.isSyntheticAddress(ip)
@@ -59,7 +63,7 @@ nonisolated final class ConnectionRouter: Sendable {
             let resolved = synthetic ? host.flatMap { DNSResolver.localRequests.cachedIPs(for: $0, family: .ipv4, purpose: .ruleEvaluation)?.first } : ip
             let query = RouteQuery(host: host, ip: resolved, sourceIP: sourceIP, sourcePort: sourcePort,
                                    destinationPort: destinationPort, protocolName: protocolName)
-            switch domainRouter.nativeDecision(query, allowResolution: allowAddressResolution && !preventDNSLeak.load(ordering: .relaxed)) {
+            switch domainRouter.nativeDecision(query, allowResolution: allowAddressResolution && !preventDNSLeak.load(ordering: .relaxed), deferOnHostUnknown: deferOnHostUnknown) {
             case .matched(let result):
                 return RouteDecision(host: host ?? ip, hostIsResolvedDomain: synthetic,
                                      action: action(for: DomainRouter.nativeMatch(result)),
@@ -68,6 +72,10 @@ nonisolated final class ConnectionRouter: Sendable {
                 if let host { DNSResolver.localRequests.prewarm(host, family: .ipv4, purpose: .ruleEvaluation) }
                 return RouteDecision(host: host ?? ip, hostIsResolvedDomain: synthetic,
                                      action: .route(target: .default, configuration: nil, ruleSetName: nil), ipRuleLookupPending: true)
+            case .deferred:
+                return RouteDecision(host: host ?? ip, hostIsResolvedDomain: synthetic,
+                                     action: .route(target: .default, configuration: nil, ruleSetName: nil),
+                                     deferredForHost: deferOnHostUnknown)
             default:
                 return RouteDecision(host: host ?? ip, hostIsResolvedDomain: synthetic,
                                      action: .route(target: .default, configuration: nil, ruleSetName: nil))

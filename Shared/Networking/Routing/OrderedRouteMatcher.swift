@@ -206,8 +206,6 @@ nonisolated struct OrderedRoutingRule: Codable, Sendable, Identifiable, Equatabl
             case .domain, .domainSuffix, .domainKeyword, .domainWildcard,
                  .domainRegex, .geoSite:
                 return true
-            case .urlRegex:
-                return true
             default:
                 return false
             }
@@ -270,27 +268,30 @@ nonisolated struct OrderedRouteMatcher: Sendable {
 
     /// Stop before a later rule can win when an earlier rule needs DNS or flow
     /// metadata. DNS-time previews must not cache a verdict for a later rule.
-    func evaluate(_ query: RouteQuery, allowAddressResolution: Bool = true, allowFinal: Bool = true) -> Evaluation {
+    func evaluate(_ query: RouteQuery, allowAddressResolution: Bool = true, allowFinal: Bool = true,
+                  deferOnHostUnknown: Bool = true) -> Evaluation {
         // A host-based rule earlier in order cannot match while the host is
-        // unknown; if a later address-based rule then matches, that verdict is
-        // incomplete and must be deferred until the host is known (post-sniff),
-        // so an earlier domain rule can still win.
-        var sawHostRuleWithoutHost = false
+        // unknown. Track that as an explicit state and defer any later verdict
+        // (including FINAL) so an earlier domain rule can still win once the host
+        // is known. When the host can never be known (post-sniff), the caller
+        // passes deferOnHostUnknown: false to finish the IP/FINAL match.
+        var sawHostUnknown = false
         for rule in rules {
             switch Self.predicate(rule.matcher, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite) {
             case .yes:
-                if sawHostRuleWithoutHost, rule.matcher.requiresResolvedAddress { return .deferred }
+                if sawHostUnknown, deferOnHostUnknown { return .deferred }
                 return .matched(Result(action: rule.action, ruleLine: rule.line))
             case .no:
-                if query.host == nil, rule.matcher.requiresHost {
-                    sawHostRuleWithoutHost = true
-                }
+                continue
+            case .hostUnknown:
+                sawHostUnknown = true
                 continue
             case .address:
                 if !rule.noResolve && allowAddressResolution { return .needsAddress }
             case .metadata: return .deferred
             }
         }
+        if sawHostUnknown, deferOnHostUnknown { return .deferred }
         return allowFinal ? .matched(Result(action: finalAction, ruleLine: nil)) : .deferred
     }
 
@@ -312,7 +313,7 @@ nonisolated struct OrderedRouteMatcher: Sendable {
 
 nonisolated extension OrderedRouteMatcher {
 
-    private enum Predicate { case yes, no, address, metadata }
+    private enum Predicate { case yes, no, address, metadata, hostUnknown }
 
     private static func predicate(_ matcher: OrderedRoutingRule.Matcher, rule: OrderedRoutingRule,
                                   query: RouteQuery, geoIP: any GeoIPLookup, geoSite: any GeoSiteLookup) -> Predicate {
@@ -322,12 +323,14 @@ nonisolated extension OrderedRouteMatcher {
             if results.contains(where: { if case .no = $0 { true } else { false } }) { return .no }
             if results.contains(where: { if case .address = $0 { true } else { false } }) { return .address }
             if results.contains(where: { if case .metadata = $0 { true } else { false } }) { return .metadata }
+            if results.contains(where: { if case .hostUnknown = $0 { true } else { false } }) { return .hostUnknown }
             return .yes
         case .anyOf(let children):
             let results = children.map { predicate($0, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite) }
             if results.contains(where: { if case .yes = $0 { true } else { false } }) { return .yes }
             if results.contains(where: { if case .address = $0 { true } else { false } }) { return .address }
             if results.contains(where: { if case .metadata = $0 { true } else { false } }) { return .metadata }
+            if results.contains(where: { if case .hostUnknown = $0 { true } else { false } }) { return .hostUnknown }
             return .no
         case .negated(let child):
             switch predicate(child, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite) {
@@ -335,10 +338,12 @@ nonisolated extension OrderedRouteMatcher {
             case .no: return .yes
             case .address: return .address
             case .metadata: return .metadata
+            case .hostUnknown: return .hostUnknown
             }
         default:
             if matcher.requiresResolvedAddress && query.ip == nil { return .address }
             if matcher.lacksMetadata(query) { return .metadata }
+            if matcher.requiresHost && query.host == nil { return .hostUnknown }
             let leaf = OrderedRoutingRule(line: rule.line, matcher: matcher, action: rule.action, noResolve: rule.noResolve)
             return matches(leaf, query: query, geoIP: geoIP, geoSite: geoSite) ? .yes : .no
         }

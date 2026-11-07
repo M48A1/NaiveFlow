@@ -73,7 +73,7 @@ struct OrderedRouteMatcherTests {
 
         #expect(matcher.match(RouteQuery(host: "img.ads.example.com")).action == .reject)
         #expect(matcher.match(RouteQuery(host: "tracker.example.net")).action == .direct)
-        #expect(matcher.match(RouteQuery(url: "https://example.net/collect?id=1")).action == .reject)
+        #expect(matcher.match(RouteQuery(host: "example.net", url: "https://example.net/collect?id=1")).action == .reject)
         #expect(matcher.match(RouteQuery(host: "example.net")).action == .defaultProxy)
     }
 
@@ -183,6 +183,41 @@ struct OrderedRouteMatcherTests {
             // expected
         } else {
             Issue.record("Expected deferral when a host rule precedes an IP rule and the host is unknown")
+        }
+    }
+
+    @Test func hostUnknownDefersPortRulesToo() {
+        let matcher = OrderedRouteMatcher(
+            rules: [
+                rule(1, .domainSuffix("example.com"), .direct),
+                rule(2, .destinationPort(443), .reject),
+            ],
+            finalAction: .defaultProxy
+        )
+
+        // Without the host, the later port rule must not win before the earlier
+        // domain rule had a chance to match.
+        if case .deferred = matcher.evaluate(RouteQuery(ip: "1.2.3.4", destinationPort: 443), allowAddressResolution: false) {
+            // expected
+        } else {
+            Issue.record("Expected deferral when a host rule precedes a port rule and the host is unknown")
+        }
+    }
+
+    @Test func negatedDomainIsUnknownWithoutHost() {
+        let matcher = OrderedRouteMatcher(
+            rules: [
+                rule(1, .negated(.domain("example.com")), .reject),
+            ],
+            finalAction: .defaultProxy
+        )
+
+        // NOT DOMAIN cannot be decided while the host is unknown, so it defers
+        // rather than matching early.
+        if case .deferred = matcher.evaluate(RouteQuery(ip: "1.2.3.4"), allowAddressResolution: false) {
+            // expected
+        } else {
+            Issue.record("Expected deferral for NOT DOMAIN while the host is unknown")
         }
     }
 }

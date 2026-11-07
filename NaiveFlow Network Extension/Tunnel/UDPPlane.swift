@@ -321,6 +321,34 @@ actor UDPPlane {
             }
         }
 
+        // No domain was sniffed. If the decision deferred for an unknown host,
+        // finish the IP/FINAL match now so the datagram is not silently routed to
+        // the default exit (e.g. an IP REJECT after a domain allow rule).
+        if sniffedServerName == nil, decision.deferredForHost {
+            let finalDecision = stack.connectionRouter.decision(
+                forIP: dstAddress.description,
+                sourceIP: datagram.source.address.description,
+                sourcePort: datagram.source.port,
+                destinationPort: dstPort,
+                protocolName: "UDP",
+                allowAddressResolution: !awaitedResolution,
+                deferOnHostUnknown: false
+            )
+            switch finalDecision.action {
+            case .route(let target, let configuration, let matchedRuleSet):
+                routeTarget = target
+                ruleSetName = matchedRuleSet
+                if let configuration { flowConfiguration = configuration }
+            case .reject(let matchedRuleSet):
+                if isQUIC { recordQUICBlock(flowKey, cause: .rejected) }
+                stack.requestLog.record(protocol: .udp, host: dstHost, port: dstPort, routeTarget: .reject, ruleSetName: matchedRuleSet)
+                return
+            case .unreachable:
+                stack.sendICMPPortUnreachable(rejecting: datagram)
+                return
+            }
+        }
+
         let policyHost = sniffedServerName ?? dstHost
 
         if isQUIC, blocksQUIC(to: policyHost, udpConfig: udpConfig) {
