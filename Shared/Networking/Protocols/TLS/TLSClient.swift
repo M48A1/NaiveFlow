@@ -440,7 +440,7 @@ actor TLSClient {
     /// message is reconstructed before any parsing. Returns the complete
     /// ServerHello handshake message (type + length + body) or nil while it is
     /// still incomplete.
-    private func reassembledServerHello(from buffer: Data) -> Data? {
+    nonisolated static func reassembledServerHello(from buffer: Data) -> Data? {
         // Collect handshake record payloads in order, stopping at the first
         // record that is not yet fully received.
         var handshake = Data()
@@ -471,15 +471,15 @@ actor TLSClient {
     }
 
     private func bufferContainsCompleteServerHello(_ buffer: Data) -> Bool {
-        reassembledServerHello(from: buffer) != nil
+        Self.reassembledServerHello(from: buffer) != nil
     }
 
     func extractServerHelloMessage(from buffer: Data) -> Data {
-        reassembledServerHello(from: buffer) ?? Data()
+        Self.reassembledServerHello(from: buffer) ?? Data()
     }
 
     private func parseServerHello(data: Data) -> ServerHelloResult? {
-        guard let message = reassembledServerHello(from: data) else { return nil }
+        guard let message = Self.reassembledServerHello(from: data) else { return nil }
         // message = [type(1)][len(3)][body]; body starts at offset 4.
 
         let randomOffset = 1 + 3 + 2

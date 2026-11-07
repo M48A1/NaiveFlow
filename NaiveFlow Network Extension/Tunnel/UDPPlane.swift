@@ -165,7 +165,7 @@ actor UDPPlane {
         Task { [weak self] in
             // The router warms the `.ruleEvaluation` cache; wait on that same
             // purpose so the re-match sees the address an IP/GeoIP rule needs.
-            _ = await DNSResolver.localRequests.resolveHost(domain, family: .ipv4, purpose: .ruleEvaluation)
+            _ = await DNSResolver.localRequests.resolveForRuleEvaluation(domain)
             await self?.resumeAfterResolution(flowKey: flowKey, generation: generation)
         }
         return true

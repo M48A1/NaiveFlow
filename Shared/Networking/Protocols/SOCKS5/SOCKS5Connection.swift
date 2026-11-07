@@ -133,7 +133,7 @@ nonisolated enum SOCKS5Handshake {
         return UDPRelayInfo(host: host, port: info.port)
     }
 
-    private static func isWildcardRelayAddress(_ host: String) -> Bool {
+    static func isWildcardRelayAddress(_ host: String) -> Bool {
         host.isEmpty || host == "0.0.0.0" || host == "::" || host == "::0"
     }
 

@@ -96,6 +96,13 @@ nonisolated final class DNSResolver: Sendable {
                      purpose: DNSResolutionPurpose? = nil) async -> String? {
         await resolveAll(host, family: family, forceFresh: forceFresh, purpose: purpose).first
     }
+
+    /// Resolves a name for rule evaluation (IP / GeoIP matching). The purpose is
+    /// explicit so a rule lookup always shares the `.ruleEvaluation` cache key
+    /// and never reads (or races with) a DIRECT-connection answer.
+    func resolveForRuleEvaluation(_ host: String, family: DNSAddressFamily = .ipv4) async -> String? {
+        await resolveHost(host, family: family, purpose: .ruleEvaluation)
+    }
     
     func prewarm(_ host: String, family: DNSAddressFamily = .ipv4, purpose: DNSResolutionPurpose? = nil) {
         let bare = host

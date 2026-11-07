@@ -128,4 +128,20 @@ struct OrderedRouteMatcherTests {
         #expect(result.decidingLine(host: "x.blocked.com") == 4)
         #expect(result.decidingLine(host: "example.org") == nil)
     }
+
+    @Test func domainPlusPortAndProtocolRulesMatchTogether() {
+        let matcher = OrderedRouteMatcher(
+            rules: [
+                rule(1, .allOf([.domainSuffix("example.com"), .destinationPort(443), .protocolName("UDP")]), .reject),
+            ],
+            finalAction: .direct
+        )
+
+        // The post-sniff re-match carries the full connection context, so the
+        // combined rule hits; dropping any condition falls through to FINAL.
+        #expect(matcher.match(RouteQuery(host: "example.com", destinationPort: 443, protocolName: "UDP")).action == .reject)
+        #expect(matcher.match(RouteQuery(host: "example.com", destinationPort: 443)).action == .direct)
+        #expect(matcher.match(RouteQuery(host: "example.com", protocolName: "UDP")).action == .direct)
+        #expect(matcher.match(RouteQuery(host: "example.com", destinationPort: 8443, protocolName: "UDP")).action == .direct)
+    }
 }
