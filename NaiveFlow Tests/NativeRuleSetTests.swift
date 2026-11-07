@@ -135,18 +135,18 @@ struct NativeRuleSetTests {
         }, preferencesSink: { _ in })
         let text = "[Rule]\nRULE-SET, \(source), REJECT\nFINAL, DIRECT"
         _ = try await publisher.publish(text: text)
-        let first = try #require(publisher.bundleStore.head())
+        let first = try #require(try publisher.bundleStore.head())
         fixture.body.withLock { $0 = "DOMAIN-REGEX,[" }
         await #expect(throws: (any Error).self) { try await publisher.publish(text: text) }
         #expect(try publisher.bundleStore.head() == first)
         fixture.body.withLock { $0 = "DOMAIN,new.example" }
         _ = try await publisher.publish(text: text)
         publisher.ruleSetLoader = { _ in throw NativeRuleSet.Failure(message: "Network unavailable") }
-        let second = try #require(publisher.bundleStore.head())
+        let second = try #require(try publisher.bundleStore.head())
         await #expect(throws: (any Error).self) { try await publisher.publish(text: text) }
         #expect(try publisher.bundleStore.head() == second)
         _ = try await publisher.rollback()
-        let restored = try #require(publisher.bundleStore.head())
+        let restored = try #require(try publisher.bundleStore.head())
         #expect(restored.current == first.current)
         let bundle = try publisher.bundleStore.load(restored.current)
         let matcher = OrderedRouteMatcher(rules: bundle.rules ?? [], finalAction: bundle.finalAction)

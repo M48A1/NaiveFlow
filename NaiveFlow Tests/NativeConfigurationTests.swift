@@ -165,7 +165,8 @@ struct NativeConfigurationTests {
         let sets = try await result.compiled.textMITM.resolveScripts()
         let rule = try #require(sets.first?.rules.first)
         if case .script(let encoded) = rule.operation {
-            let text = try #require(String(data: try #require(Data(base64Encoded: encoded)), encoding: .utf8))
+            let decoded = try #require(Data(base64Encoded: encoded))
+            let text = try #require(String(data: decoded, encoding: .utf8))
             #expect(text.contains("const $argument = \"hello\";"))
         } else { Issue.record("Expected the native script operation") }
     }

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import NaiveFlow
 
@@ -20,7 +21,7 @@ struct VersionedConfigurationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let publisher = publisher(activation)
         let (active, _) = try await publisher.publish(text: first)
-        let head = try #require(publisher.bundleStore.head())
+        let head = try #require(try publisher.bundleStore.head())
         let bundle = try publisher.bundleStore.load(head.current)
         #expect(bundle.snapshotID == active.snapshot.id)
         #expect(bundle.finalAction == .direct)
@@ -36,7 +37,7 @@ struct VersionedConfigurationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         var publisher = publisher(activation)
         _ = try await publisher.publish(text: first)
-        let before = try #require(publisher.bundleStore.head())
+        let before = try #require(try publisher.bundleStore.head())
         let previous = try publisher.bundleStore.load(before.current)
         let oldManifest = activation.store.manifest()
         var delivered: [UUID] = []
@@ -48,7 +49,7 @@ struct VersionedConfigurationTests {
                 message: bundle.id == previous.id ? nil : "Injected module preparation failure")
         }
         await #expect(throws: (any Error).self) { try await publisher.publish(text: second) }
-        let after = try #require(publisher.bundleStore.head())
+        let after = try #require(try publisher.bundleStore.head())
         #expect(after.current == previous.id)
         #expect(delivered.count == 2 && delivered.last == previous.id)
         let restored = try publisher.bundleStore.load(after.current)
@@ -64,7 +65,7 @@ struct VersionedConfigurationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         var publisher = publisher(activation)
         _ = try await publisher.publish(text: first)
-        let before = try #require(publisher.bundleStore.head())
+        let before = try #require(try publisher.bundleStore.head())
         publisher.runningOverride = true
         publisher.deliveryOverride = { bundle, _ in
             .init(versionID: bundle.id, activeVersionID: before.current,
@@ -82,11 +83,11 @@ struct VersionedConfigurationTests {
         let text = first + "\n[MITM]\nenable = false\nhostname = example.com\n[Script]\nrewrite = type=http-response, pattern=^https://example.com/, source=base64:\(source)\n"
         let publisher = publisher(activation)
         _ = try await publisher.publish(text: text)
-        let firstHead = try #require(publisher.bundleStore.head())
+        let firstHead = try #require(try publisher.bundleStore.head())
         let pinned = try publisher.bundleStore.load(firstHead.current)
         _ = try await publisher.publish(text: second)
         _ = try await publisher.rollback()
-        let restoredHead = try #require(publisher.bundleStore.head())
+        let restoredHead = try #require(try publisher.bundleStore.head())
         let restored = try publisher.bundleStore.load(restoredHead.current)
         #expect(restored.id == pinned.id)
         #expect(restored.mitmRuleSets.map(\.rules).flatMap { $0 }.map(\.operation) == pinned.mitmRuleSets.map(\.rules).flatMap { $0 }.map(\.operation))
@@ -98,7 +99,7 @@ struct VersionedConfigurationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         var publisher = publisher(activation)
         _ = try await publisher.publish(text: first)
-        let saved = try #require(publisher.bundleStore.head())
+        let saved = try #require(try publisher.bundleStore.head())
         publisher.runningOverride = true
         publisher.deliveryOverride = { bundle, _ in
             .init(versionID: bundle.id, activeVersionID: bundle.id,
@@ -127,14 +128,14 @@ struct VersionedConfigurationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let publisher = publisher(activation)
         _ = try await publisher.publish(text: first)
-        let firstHead = try #require(publisher.bundleStore.head())
+        let firstHead = try #require(try publisher.bundleStore.head())
         let version = try publisher.bundleStore.load(firstHead.current)
         try publisher.bundleStore.record(.init(versionID: version.id, activeVersionID: version.id,
             snapshotID: version.snapshotID, status: .applied, message: nil))
         _ = try await publisher.publish(text: second)
-        _ = try publisher.bundleStore.rollback(expected: try #require(publisher.bundleStore.head()).current)
-        let restored = try #require(publisher.bundleStore.head())
-        let receipt = try #require(publisher.bundleStore.receipt(version.id))
+        _ = try publisher.bundleStore.rollback(expected: try #require(try publisher.bundleStore.head()).current)
+        let restored = try #require(try publisher.bundleStore.head())
+        let receipt = try #require(try publisher.bundleStore.receipt(version.id))
         #expect(receipt.requestID != restored.requestID)
         try publisher.reconcile()
         #expect(activation.store.manifest().appliedAt == nil)
@@ -145,9 +146,9 @@ struct VersionedConfigurationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let publisher = publisher(activation)
         let (firstActive, _) = try await publisher.publish(text: first)
-        let previous = try #require(publisher.bundleStore.head()).current
+        let previous = try #require(try publisher.bundleStore.head()).current
         _ = try await publisher.publish(text: second)
-        let current = try #require(publisher.bundleStore.head()).current
+        let current = try #require(try publisher.bundleStore.head()).current
         try publisher.bundleStore.record(.init(versionID: current, activeVersionID: previous,
             snapshotID: nil, status: .rejected, message: "Injected startup failure"))
         try publisher.reconcile()
@@ -160,12 +161,13 @@ struct VersionedConfigurationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let publisher = publisher(activation)
         _ = try await publisher.publish(text: first)
-        let old = try #require(publisher.bundleStore.head())
+        let old = try #require(try publisher.bundleStore.head())
         _ = try await publisher.publish(text: second)
-        let current = try #require(publisher.bundleStore.head())
+        let current = try #require(try publisher.bundleStore.head())
         #expect(throws: (any Error).self) { try publisher.bundleStore.rollback(expected: old.current) }
         let file = publisher.bundleStore.directory.appendingPathComponent("\(current.current.uuidString).json")
-        var envelope = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        let fileData = try Data(contentsOf: file)
+        var envelope = try #require(JSONSerialization.jsonObject(with: fileData) as? [String: Any])
         envelope["sha256"] = "tampered"
         try JSONSerialization.data(withJSONObject: envelope).write(to: file, options: .atomic)
         #expect(throws: (any Error).self) { try publisher.bundleStore.load(current.current) }

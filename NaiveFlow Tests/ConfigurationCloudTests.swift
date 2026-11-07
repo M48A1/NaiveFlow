@@ -58,7 +58,7 @@ struct ConfigurationCloudCodecTests {
 
     @Test func configurationDocumentsAreExcludedFromAutomaticSync() {
         #expect(!SyncStore.Key.configurationDocuments.automaticallySyncs)
-        #expect(SyncStore.Key.allCases.filter { $0 != .configurationDocuments }.allSatisfy(\.automaticallySyncs))
+        #expect(SyncStore.Key.allCases.filter { $0 != .configurationDocuments }.allSatisfy { $0.automaticallySyncs })
     }
 
 }
