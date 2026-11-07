@@ -455,13 +455,14 @@ extension XHTTPConnection {
                 }
 
                 if isDownloadStream {
+                    let data = try xhttpDataPayload(strippingPaddingFrom: frame.payload, flags: frame.flags)
                     if frame.flags & Self.h2FlagEndStream != 0 {
                         markH2Closed()
                     }
-                    if frame.payload.isEmpty {
+                    if data.isEmpty {
                         if frame.flags & Self.h2FlagEndStream != 0 { return nil }
                     } else {
-                        return frame.payload
+                        return data
                     }
                 }
 

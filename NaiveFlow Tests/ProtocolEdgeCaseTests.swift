@@ -377,6 +377,20 @@ struct ProtocolEdgeCaseTests {
         #expect(try xhttpHeadersPayload(strippingPaddingFrom: prioritised, flags: XHTTPConnection.h2FlagPriority) == Data([0x88]))
     }
 
+    @Test func xhttpDataPaddingIsStripped() throws {
+        // No PADDED flag: passthrough.
+        #expect(try xhttpDataPayload(strippingPaddingFrom: Data([0xAA, 0xBB]), flags: 0x00) == Data([0xAA, 0xBB]))
+
+        // PADDED: [padLen=2][data][2 pad bytes].
+        let padded = Data([0x02, 0xAA, 0xBB, 0x00, 0x00])
+        #expect(try xhttpDataPayload(strippingPaddingFrom: padded, flags: XHTTPConnection.h2FlagPadded) == Data([0xAA, 0xBB]))
+
+        // Malformed: pad length exceeds payload.
+        #expect(throws: (any Error).self) {
+            try xhttpDataPayload(strippingPaddingFrom: Data([0x05, 0xAA]), flags: XHTTPConnection.h2FlagPadded)
+        }
+    }
+
     @Test func xhttpHeaderBlockReassemblesAcrossContinuation() throws {
         var accumulator = XHTTPHeaderBlockAccumulator(maxBlockSize: 64)
         let partial = try accumulator.ingest(

@@ -31,6 +31,16 @@ nonisolated func xhttpHeadersPayload(strippingPaddingFrom payload: Data, flags: 
     return payload[start..<end]
 }
 
+/// Strips DATA-frame padding (PADDED flag: 1-byte pad length, then payload, then
+/// pad bytes). Flow control still counts the raw frame elsewhere, per RFC 7540.
+nonisolated func xhttpDataPayload(strippingPaddingFrom payload: Data, flags: UInt8) throws -> Data {
+    guard (flags & XHTTPConnection.h2FlagPadded) != 0 else { return payload }
+    guard let padLengthByte = payload.first, payload.count >= 1 + Int(padLengthByte) else {
+        throw NaiveFlowError.proxy(.xhttp, .protocolViolation(detail: "PADDED DATA frame with malformed padding"))
+    }
+    return payload.dropFirst(1).dropLast(Int(padLengthByte))
+}
+
 /// Reassembles a HEADERS + CONTINUATION header block for XHTTP's H2 download
 /// stream. The PADDED and PRIORITY flags are handled independently, and the
 /// cumulative block is capped so a peer cannot grow it without bound.
