@@ -20,6 +20,8 @@ nonisolated struct SubscriptionFetcher {
         let iconDark: Data?
     }
 
+    static let maxResponseBytes = 8 * 1024 * 1024
+
     static func fetch(url urlString: String) async throws -> Result {
         guard let url = URL(string: urlString) else {
             throw NaiveFlowError.subscription(.invalidURL)
@@ -37,13 +39,11 @@ nonisolated struct SubscriptionFetcher {
         do {
             if let viaUpstream = try await fetchViaConfiguredDNS(request, allowInsecure: allowInsecure) {
                 (data, response) = viaUpstream
-            } else if allowInsecure {
-                let session = URLSession(configuration: .default, delegate: InsecureSessionDelegate(), delegateQueue: nil)
-                defer { session.finishTasksAndInvalidate() }
-                (data, response) = try await session.data(for: request)
             } else {
-                (data, response) = try await URLSession.shared.data(for: request)
+                (data, response) = try await streamResponse(request, allowInsecure: allowInsecure)
             }
+        } catch let error as NaiveFlowError {
+            throw error
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as URLError where error.code == .cancelled {
@@ -127,6 +127,48 @@ nonisolated struct SubscriptionFetcher {
             iconLight: iconLight,
             iconDark: iconDark
         )
+    }
+
+    // MARK: - Streaming download
+
+    /// Streams the response body and enforces `maxResponseBytes`, cancelling the
+    /// task as soon as the cumulative size is exceeded (instead of loading the
+    /// whole body via `URLSession.data(for:)` without any bound).
+    private static func streamResponse(
+        _ request: URLRequest,
+        allowInsecure: Bool
+    ) async throws -> (data: Data, response: URLResponse) {
+        let session: URLSession
+        if allowInsecure {
+            session = URLSession(configuration: .default, delegate: InsecureSessionDelegate(), delegateQueue: nil)
+        } else {
+            session = .shared
+        }
+        defer {
+            if allowInsecure { session.finishTasksAndInvalidate() }
+        }
+
+        let (bytes, response) = try await session.bytes(for: request)
+        // Reject immediately when the server declares an over-limit Content-Length.
+        if response.expectedContentLength > Int64(maxResponseBytes) {
+            bytes.task.cancel()
+            throw NaiveFlowError.subscription(.responseTooLarge(limit: maxResponseBytes))
+        }
+
+        var data = Data()
+        if response.expectedContentLength > 0 {
+            data.reserveCapacity(min(Int(response.expectedContentLength), maxResponseBytes))
+        } else {
+            data.reserveCapacity(64 * 1024)
+        }
+        for try await byte in bytes {
+            guard data.count < maxResponseBytes else {
+                bytes.task.cancel()
+                throw NaiveFlowError.subscription(.responseTooLarge(limit: maxResponseBytes))
+            }
+            data.append(byte)
+        }
+        return (data, response)
     }
 
     // MARK: - Configured DNS

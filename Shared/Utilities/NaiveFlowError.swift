@@ -191,6 +191,7 @@ nonisolated enum NaiveFlowError: Error {
         case invalidURL
         case noConfigurations
         case fetchFailed(underlying: any Error)
+        case responseTooLarge(limit: Int)
     }
 
     // MARK: Transport
@@ -606,6 +607,8 @@ nonisolated extension NaiveFlowError.Subscription {
             String(localized: "No valid configurations found in subscription.")
         case .fetchFailed(let underlying):
             String(localized: "Network error: \(underlying.localizedDescription)")
+        case .responseTooLarge(let limit):
+            String(localized: "Subscription response exceeds \(limit) bytes.")
         }
     }
 }

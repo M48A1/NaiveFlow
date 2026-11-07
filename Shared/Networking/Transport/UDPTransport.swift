@@ -102,13 +102,15 @@ nonisolated final class UDPTransport: DatagramTransport, Sendable {
     func receive() async throws -> Data {
         while true {
             let engine = try activeEngine()
-            let content: Data
+            let content: Data?
             do {
                 content = try await engine.receive()
             } catch {
                 throw latchedFailure() ?? NaiveFlowError.networkFailure(error, operation: .receive)
             }
-            if !content.isEmpty { return content }
+            // A zero-length UDP datagram is a legal message and must be returned,
+            // not skipped; only a nil payload means "no datagram yet".
+            if let content { return content }
         }
     }
 
@@ -180,16 +182,18 @@ nonisolated final class UDPTransportEngine: Sendable {
         }
     }
 
-    func receive() async throws -> Data {
+    func receive() async throws -> Data? {
         let connection = connection
         let stall = stall
         return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, any Error>) in
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data?, any Error>) in
                 connection.receiveMessage { content, _, _, error in
                     if let error {
                         continuation.resume(throwing: stall.failure(for: error, operation: .receive))
                     } else {
-                        continuation.resume(returning: content ?? Data())
+                        // Preserve nil vs empty: a zero-length datagram is a legal
+                        // message, distinct from "no datagram yet" (nil).
+                        continuation.resume(returning: content)
                     }
                 }
             }
