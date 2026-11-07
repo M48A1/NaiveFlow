@@ -365,6 +365,61 @@ struct ProtocolEdgeCaseTests {
         }
     }
 
+    // MARK: - XHTTP H2 HEADERS / CONTINUATION reassembly
+
+    @Test func xhttpHeadersPaddingIsStripped() throws {
+        // PADDED: [padLen=1][block][1 pad byte].
+        let padded = Data([0x01, 0x88, 0x00])
+        #expect(try xhttpHeadersPayload(strippingPaddingFrom: padded, flags: XHTTPConnection.h2FlagPadded) == Data([0x88]))
+
+        // PRIORITY only: [5-byte priority][block].
+        let prioritised = Data(repeating: 0x11, count: 5) + Data([0x88])
+        #expect(try xhttpHeadersPayload(strippingPaddingFrom: prioritised, flags: XHTTPConnection.h2FlagPriority) == Data([0x88]))
+    }
+
+    @Test func xhttpHeaderBlockReassemblesAcrossContinuation() throws {
+        var accumulator = XHTTPHeaderBlockAccumulator(maxBlockSize: 64)
+        let partial = try accumulator.ingest(
+            type: XHTTPConnection.h2FrameHeaders,
+            flags: 0x00,
+            payload: Data([0x08, 0x03])
+        )
+        #expect(partial == nil)
+
+        let assembled = try accumulator.ingest(
+            type: XHTTPConnection.h2FrameContinuation,
+            flags: XHTTPConnection.h2FlagEndHeaders,
+            payload: Data([0x32, 0x30, 0x30])
+        )
+        #expect(assembled?.block == Data([0x08, 0x03, 0x32, 0x30, 0x30]))
+        #expect(assembled?.endStream == false)
+    }
+
+    @Test func xhttpHeaderBlockRejectsOversizedBlocks() {
+        #expect(throws: (any Error).self) {
+            var accumulator = XHTTPHeaderBlockAccumulator(maxBlockSize: 8)
+            _ = try accumulator.ingest(
+                type: XHTTPConnection.h2FrameHeaders,
+                flags: 0x00,
+                payload: Data(repeating: 0x11, count: 9)
+            )
+        }
+
+        #expect(throws: (any Error).self) {
+            var accumulator = XHTTPHeaderBlockAccumulator(maxBlockSize: 8)
+            _ = try accumulator.ingest(
+                type: XHTTPConnection.h2FrameHeaders,
+                flags: 0x00,
+                payload: Data(repeating: 0x11, count: 4)
+            )
+            _ = try accumulator.ingest(
+                type: XHTTPConnection.h2FrameContinuation,
+                flags: 0x00,
+                payload: Data(repeating: 0x22, count: 5)
+            )
+        }
+    }
+
     // MARK: - AnyTLS pool key isolation
 
     @Test func anyTLSRegistrySeparatesPoolsByTLSConfigurationAndDialHost() {

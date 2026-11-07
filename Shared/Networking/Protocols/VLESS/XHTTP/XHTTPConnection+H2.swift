@@ -21,10 +21,13 @@ nonisolated extension XHTTPConnection {
     static let h2FrameGoaway: UInt8 = 0x07
     static let h2FrameWindowUpdate: UInt8 = 0x08
     static let h2FrameRstStream: UInt8 = 0x03
+    static let h2FrameContinuation: UInt8 = 0x09
 
     static let h2FlagEndStream: UInt8 = 0x01
     static let h2FlagEndHeaders: UInt8 = 0x04
     static let h2FlagAck: UInt8 = 0x01
+    static let h2FlagPadded: UInt8 = 0x08
+    static let h2FlagPriority: UInt8 = 0x20
 
     static let h2SettingsEnablePush: UInt16 = 0x02
     static let h2SettingsInitialWindowSize: UInt16 = 0x04

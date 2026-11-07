@@ -38,6 +38,7 @@ nonisolated final class XHTTPConnection: Sendable {
     let h2FrameReader: H2FrameReader
     static let maxH2ReadBufferSize = 2_097_152
     static let maxResponseHeaderSize = 65_536
+    static let maxH2HeaderBlockSize = 1_048_576
 
     var h2UploadStreamId: UInt32 { state.withLock { $0.h2UploadStreamId } }
     var h2DownloadStreamId: UInt32 { state.withLock { $0.h2DownloadStreamId } }
@@ -102,6 +103,8 @@ nonisolated final class XHTTPConnection: Sendable {
         var h2LocalWindowSize: Int = 4_194_304
         var h2MaxFrameSize: Int = 16384
         var h2ResponseReceived = false
+
+        var h2HeaderBlock = XHTTPHeaderBlockAccumulator(maxBlockSize: XHTTPConnection.maxH2HeaderBlockSize)
 
         var h2FlowGate = H2FlowGate()
         var h2PacketStreamWindows: [UInt32: Int] = [:]

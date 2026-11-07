@@ -124,15 +124,20 @@ extension XHTTPConnection {
                 }
                 continue
 
-            case Self.h2FrameHeaders:
+            case Self.h2FrameHeaders, Self.h2FrameContinuation:
                 let isDownload = frame.streamId == 0 || frame.streamId == downloadStreamId
                 if isDownload {
-                    if let rejection = checkH2ResponseStatus(frame.payload) {
-                        throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "H2 response rejected: \(rejection)"))
+                    if let assembled = try assembleH2HeaderBlock(frame) {
+                        if let rejection = checkH2ResponseStatus(assembled.block) {
+                            throw NaiveFlowError.proxy(.xhttp, .handshakeFailed(detail: "H2 response rejected: \(rejection)"))
+                        }
+                        state.withLock { $0.h2ResponseReceived = true }
+                        return
                     }
-                    state.withLock { $0.h2ResponseReceived = true }
+                    // HEADERS without END_HEADERS: wait for CONTINUATION.
+                    continue
                 }
-                return
+                continue
 
             case Self.h2FrameWindowUpdate:
                 state.withLock { state in
@@ -171,6 +176,20 @@ extension XHTTPConnection {
         state.withLock { state in
             state.transition(to: .halfClosed)
             state.h2FlowGate.wakeAll()
+        }
+    }
+
+    /// Reassembles a HEADERS/CONTINUATION sequence into a complete header block.
+    /// Marks the connection closed and rethrows on a malformed or oversized
+    /// block, so a hostile peer cannot grow it without bound.
+    private func assembleH2HeaderBlock(_ frame: H2Framing.Frame) throws -> (block: Data, endStream: Bool)? {
+        do {
+            return try state.withLock {
+                try $0.h2HeaderBlock.ingest(type: frame.type, flags: frame.flags, payload: frame.payload)
+            }
+        } catch {
+            markH2Closed()
+            throw error
         }
     }
 
@@ -446,14 +465,16 @@ extension XHTTPConnection {
                     }
                 }
 
-            case Self.h2FrameHeaders:
+            case Self.h2FrameHeaders, Self.h2FrameContinuation:
                 if isDownloadStream {
-                    if frame.flags & Self.h2FlagEndStream != 0 {
-                        markH2Closed()
-                        return nil
-                    } else if !state.withLock({ $0.h2ResponseReceived }) {
-                        if checkH2ResponseStatus(frame.payload) == nil {
-                            state.withLock { $0.h2ResponseReceived = true }
+                    if let assembled = try assembleH2HeaderBlock(frame) {
+                        if assembled.endStream {
+                            markH2Closed()
+                            return nil
+                        } else if !state.withLock({ $0.h2ResponseReceived }) {
+                            if checkH2ResponseStatus(assembled.block) == nil {
+                                state.withLock { $0.h2ResponseReceived = true }
+                            }
                         }
                     }
                 }
