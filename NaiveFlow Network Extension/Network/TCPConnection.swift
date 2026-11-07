@@ -320,9 +320,13 @@ actor TCPConnection: MITMSessionHost {
         let router = stack.domainRouter
         let match: DomainRouter.Match
         if router.usesNativeRules {
-            let host = mitmSNI ?? dstHost
-            var query = RouteQuery(host: DNSName.isIPAddress(host) ? nil : host,
-                ip: DNSName.isIPAddress(host) ? host : nil, sourceIP: sourceIP,
+            // Prefer the sniffed SNI; when we recovered a domain, also pass the
+            // original destination IP so both domain rules and IP rules match in
+            // one query (an earlier MITM-only lookup dropped the domain here).
+            let host = sniffedSNI ?? mitmSNI ?? dstHost
+            let hostIsIP = DNSName.isIPAddress(host)
+            let ip = hostIsIP ? host : (DNSName.isIPAddress(dstHost) ? dstHost : nil)
+            var query = RouteQuery(host: hostIsIP ? nil : host, ip: ip, sourceIP: sourceIP,
                 sourcePort: sourcePort, destinationPort: dstPort, protocolName: "TCP")
             var evaluation = router.nativeDecision(query, allowResolution: !AWCore.getPreventDNSLeak())
             if case .needsAddress = evaluation {

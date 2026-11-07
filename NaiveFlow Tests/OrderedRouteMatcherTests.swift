@@ -162,4 +162,22 @@ struct OrderedRouteMatcherTests {
         #expect(finalHit.isFinal == true)
         #expect(finalHit.action == .reject)
     }
+
+    @Test func domainAndIPRulesBothMatchFromOneQuery() {
+        let matcher = OrderedRouteMatcher(
+            rules: [
+                rule(1, .domainSuffix("example.com"), .direct),
+                rule(2, .ipCIDR(CIDRPrefix.parse("10.0.0.0/8")!), .reject),
+            ],
+            finalAction: .defaultProxy
+        )
+
+        // A post-sniff query carries both the recovered domain and the original
+        // destination IP, so a domain rule can win over a later IP/FINAL rule.
+        let both = RouteQuery(host: "example.com", ip: "10.1.2.3")
+        #expect(matcher.match(both).action == .direct)
+
+        // With only the IP, the domain rule cannot match and the IP rule does.
+        #expect(matcher.match(RouteQuery(ip: "10.1.2.3")).action == .reject)
+    }
 }

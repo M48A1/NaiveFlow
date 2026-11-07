@@ -64,9 +64,19 @@ extension TLSClient {
         var foundServerHelloDone = false
         var pastServerHello = false
         // A handshake message may span record boundaries; accumulate record
-        // payloads and only consume whole messages.
+        // payloads and only consume whole messages. Each segment maps its
+        // reassembled range back to the original buffer so offsets stay correct
+        // across the record headers we skipped.
         var pendingHandshake = Data()
-        var pendingStart = 0
+        var segments: [(reassembledStart: Int, originalStart: Int, length: Int)] = []
+
+        func originalOffset(for index: Int) -> Int {
+            for (reassembledStart, originalStart, length) in segments
+            where index >= reassembledStart && index <= reassembledStart + length {
+                return originalStart + (index - reassembledStart)
+            }
+            return index
+        }
 
         while offset + 5 <= buffer.count {
             let contentType = buffer[offset]
@@ -75,10 +85,9 @@ extension TLSClient {
             guard offset + 5 + recordLen <= buffer.count else { break }
 
             if contentType == TLSContentType.handshake {
-                if pendingHandshake.isEmpty {
-                    pendingStart = offset + 5
-                }
-                pendingHandshake.append(buffer.subdata(in: (offset + 5)..<(offset + 5 + recordLen)))
+                let recordBody = buffer.subdata(in: (offset + 5)..<(offset + 5 + recordLen))
+                segments.append((reassembledStart: pendingHandshake.count, originalStart: offset + 5, length: recordLen))
+                pendingHandshake.append(recordBody)
 
                 var hsOffset = 0
                 while hsOffset + 4 <= pendingHandshake.count {
@@ -110,7 +119,7 @@ extension TLSClient {
 
                     case TLSHandshakeType.serverHelloDone:
                         result.handshakeBytes.append(hsMessage)
-                        result.serverHelloDoneOffset = pendingStart + hsOffset + 4 + hsLen
+                        result.serverHelloDoneOffset = originalOffset(for: hsOffset + 4 + hsLen)
                         foundServerHelloDone = true
 
                     default:
@@ -124,7 +133,17 @@ extension TLSClient {
 
                 if hsOffset > 0 {
                     pendingHandshake = Data(pendingHandshake.dropFirst(hsOffset))
-                    pendingStart += hsOffset
+                    var kept: [(reassembledStart: Int, originalStart: Int, length: Int)] = []
+                    for (reassembledStart, originalStart, length) in segments {
+                        let segmentEnd = reassembledStart + length
+                        if segmentEnd <= hsOffset { continue }
+                        if reassembledStart >= hsOffset {
+                            kept.append((reassembledStart - hsOffset, originalStart, length))
+                        } else {
+                            kept.append((0, originalStart + (hsOffset - reassembledStart), segmentEnd - hsOffset))
+                        }
+                    }
+                    segments = kept
                 }
             }
 
