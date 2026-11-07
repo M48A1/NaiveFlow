@@ -1157,12 +1157,29 @@ nonisolated extension GRPCConnection {
         if state.withLock({ $0.phase != .live }) { return }
         let payload = Data([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
         let ping = buildH2Frame(type: Self.h2FramePing, flags: 0, streamId: 0, payload: payload)
+
+        // Register the pending ping *before* sending: a fast ACK can arrive while
+        // `transport.send` is in flight, and it would be dropped if the pending
+        // payload were not yet recorded, later tearing down a healthy connection.
+        armHealthCheck(payload)
+
         do {
             try await transport.send(ping)
         } catch {
+            disarmHealthCheck(payload)
             return // the read path will surface the failure
         }
-        armHealthCheck(payload)
+    }
+
+    /// Clears a pending keepalive ping whose send failed, so its armed deadline
+    /// does not later fire and close the connection.
+    private func disarmHealthCheck(_ payload: Data) {
+        state.withLock { state in
+            guard state.pendingPingPayload == payload else { return }
+            state.pendingPingPayload = nil
+            state.healthCheckDeadline?.cancel()
+            state.healthCheckDeadline = nil
+        }
     }
 
     /// Arms the ACK timeout for a just-sent keepalive ping. If the peer does not
