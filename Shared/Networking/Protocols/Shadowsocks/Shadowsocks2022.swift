@@ -19,6 +19,74 @@ private nonisolated let maxPaddingLength = 900
 private nonisolated let maxTimestampDiff: Int64 = 30
 private nonisolated let tagSize = 16
 
+// MARK: - Replay Protection
+
+/// Sliding-window replay protection for Shadowsocks 2022 UDP (SIP022 §3.2.4 /
+/// §4.1). One filter per relay connection, keyed by the peer server session ID,
+/// so a client keeps accepting packets across a server restart (a client session
+/// may map to more than one server session) while rejecting duplicates and
+/// packets older than the 64-packet window. A packet ID is committed only after
+/// the caller has validated the authenticated header (type, timestamp and client
+/// session ID), matching the spec's "do not advance the window before successful
+/// header validation" requirement.
+nonisolated final class Shadowsocks2022ReplayFilter: Sendable {
+    private struct Window {
+        var initialized = false
+        var last: UInt64 = 0
+        var bitmap: UInt64 = 0
+        var lastSeen = ContinuousClock().now
+
+        /// WireGuard-style window: bit `i` set means packet `last - i` was seen.
+        mutating func accept(_ id: UInt64) -> Bool {
+            if !initialized {
+                initialized = true
+                last = id
+                bitmap = 1
+                return true
+            }
+            if id > last {
+                let shift = id - last
+                bitmap = shift >= 64 ? 1 : (bitmap << shift) | 1
+                last = id
+                return true
+            }
+            let diff = last - id
+            guard diff < 64 else { return false }        // older than the window
+            let mask: UInt64 = 1 << diff
+            guard bitmap & mask == 0 else { return false } // duplicate
+            bitmap |= mask
+            return true
+        }
+    }
+
+    private struct State {
+        var windows: [UInt64: Window] = [:]
+    }
+
+    private static let maxSessions = 16
+    private static let maxAge: Duration = .seconds(90)   // > the 60s NAT timeout
+    private let state = Mutex(State())
+
+    /// Returns `true` if `packetID` is fresh for `serverSession`, `false` for a
+    /// duplicate or an out-of-window packet. Call only after header validation.
+    func accept(serverSession: UInt64, packetID: UInt64) -> Bool {
+        let now = ContinuousClock().now
+        return state.withLock { state in
+            state.windows = state.windows.filter { now - $0.value.lastSeen < Self.maxAge }
+            var window = state.windows[serverSession] ?? Window(lastSeen: now)
+            let accepted = window.accept(packetID)
+            guard accepted else { return false }
+            window.lastSeen = now
+            state.windows[serverSession] = window
+            if state.windows.count > Self.maxSessions,
+               let oldest = state.windows.min(by: { $0.value.lastSeen < $1.value.lastSeen })?.key {
+                state.windows[oldest] = nil
+            }
+            return true
+        }
+    }
+}
+
 // MARK: - Shadowsocks2022Connection
 
 nonisolated final class Shadowsocks2022Connection: ProxyConnection {
@@ -390,6 +458,7 @@ nonisolated final class Shadowsocks2022AESUDPConnection: ProxyConnection {
     
     private struct RemoteSessionCache { var id: UInt64 = 0; var key: Data? }
     private let remoteSessionCache = Mutex(RemoteSessionCache())
+    private let replayFilter = Shadowsocks2022ReplayFilter()
 
     init(inner: ProxyConnection, cipher: ShadowsocksCipher, pskList: [Data], dstHost: String, dstPort: UInt16) {
         self.inner = inner
@@ -504,6 +573,15 @@ nonisolated final class Shadowsocks2022AESUDPConnection: ProxyConnection {
         }
         let remoteSession = UInt64(bigEndian: sidBE)
 
+        // The 16-byte separate header is session ID (8B) followed by packet ID
+        // (8B). Extract the packet ID for replay protection; it is committed only
+        // after the authenticated header validates below.
+        var serverPidBE: UInt64 = 0
+        _ = withUnsafeMutableBytes(of: &serverPidBE) { pointer in
+            header[8..<16].copyBytes(to: pointer)
+        }
+        let serverPacketID = UInt64(bigEndian: serverPidBE)
+
         let remoteCipherKey: Data
         if let cached = remoteSessionCache.withLock({ $0.id == remoteSession ? $0.key : nil }) {
             remoteCipherKey = cached
@@ -552,6 +630,11 @@ nonisolated final class Shadowsocks2022AESUDPConnection: ProxyConnection {
             throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed))
         }
         offset += 8
+        // Header authenticated (type, timestamp, client session). Reject a
+        // replay or out-of-window packet from this server session.
+        guard replayFilter.accept(serverSession: remoteSession, packetID: serverPacketID) else {
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+        }
 
         guard body.endIndex - offset >= 2 else { throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
         let paddingLen = Int(UInt16(body[offset]) << 8 | UInt16(body[offset + 1]))
@@ -577,18 +660,23 @@ nonisolated final class Shadowsocks2022ChaChaUDPConnection: ProxyConnection {
 
     private let sessionID: UInt64
     private let packetID = Atomic<UInt64>(0)
+    private let replayFilter = Shadowsocks2022ReplayFilter()
 
-    init(inner: ProxyConnection, psk: Data, dstHost: String, dstPort: UInt16) {
+    init(inner: ProxyConnection, psk: Data, dstHost: String, dstPort: UInt16, sessionID fixedSessionID: UInt64? = nil) {
         self.inner = inner
         self.psk = psk
         self.dstHost = dstHost
         self.dstPort = dstPort
 
-        var sid: UInt64 = 0
-        _ = withUnsafeMutableBytes(of: &sid) { pointer in
-            SecRandomCopyBytes(kSecRandomDefault, 8, pointer.baseAddress!)
+        if let fixedSessionID {
+            self.sessionID = fixedSessionID
+        } else {
+            var sid: UInt64 = 0
+            _ = withUnsafeMutableBytes(of: &sid) { pointer in
+                SecRandomCopyBytes(kSecRandomDefault, 8, pointer.baseAddress!)
+            }
+            self.sessionID = sid
         }
-        self.sessionID = sid
     }
 
     var isConnected: Bool { inner.isConnected }
@@ -664,7 +752,17 @@ nonisolated final class Shadowsocks2022ChaChaUDPConnection: ProxyConnection {
         }
 
         var offset = body.startIndex
+        var serverSidBE: UInt64 = 0
+        _ = withUnsafeMutableBytes(of: &serverSidBE) { pointer in
+            body[offset..<offset+8].copyBytes(to: pointer)
+        }
+        let serverSession = UInt64(bigEndian: serverSidBE)
         offset += 8
+        var serverPidBE: UInt64 = 0
+        _ = withUnsafeMutableBytes(of: &serverPidBE) { pointer in
+            body[offset..<offset+8].copyBytes(to: pointer)
+        }
+        let serverPacketID = UInt64(bigEndian: serverPidBE)
         offset += 8
 
         let headerType = body[offset]
@@ -693,6 +791,11 @@ nonisolated final class Shadowsocks2022ChaChaUDPConnection: ProxyConnection {
             throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed))
         }
         offset += 8
+        // Header authenticated (type, timestamp, client session). Reject a
+        // replay or out-of-window packet from this server session.
+        guard replayFilter.accept(serverSession: serverSession, packetID: serverPacketID) else {
+            throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed))
+        }
 
         guard body.endIndex - offset >= 2 else { throw NaiveFlowError.proxy(.shadowsocks, .cipher(.decryptionFailed)) }
         let paddingLen = Int(UInt16(body[offset]) << 8 | UInt16(body[offset + 1]))

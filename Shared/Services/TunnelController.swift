@@ -70,7 +70,7 @@ final class TunnelController {
         connectTask = Task { [weak self] in
             if let head = try? RuntimeBundleStore().head(),
                let version = try? RuntimeBundleStore().load(head.current) {
-                AWCore.installRuntimePreferences(version.preferences)
+                AWCore.installRuntimePreferences(version.runtimePreferencesForInstall)
             }
             guard let self else { return }
             await self.publish(configuration, refreshingIP: true)
@@ -183,8 +183,13 @@ final class TunnelController {
         let oldBundle = (activeID ?? bundle.parentID).flatMap { try? RuntimeBundleStore().load($0) }
         let reconnectKeys = ["alwaysOnEnabled", "tunnelIncludeAllNetworks", "tunnelExcludeLocalNetworks",
             "tunnelExcludeAPNs", "tunnelExcludeCellularServices", "tunnelExcludeDeviceCommunication"]
-        let reconnect = !wasUp || runtimeStatus?.phase != "running" || reconnectKeys.contains { oldBundle?.preferences[$0] != bundle.preferences[$0] }
-        AWCore.installRuntimePreferences(bundle.preferences)
+        // A manual baseline (snapshotID == nil) is applied by restarting the
+        // provider so startup re-reads the live manual ActiveConfiguration and
+        // live preferences; a pinned text version only reconnects when an OS
+        // connection-level key changed.
+        let reconnect = bundle.snapshotID == nil || !wasUp || runtimeStatus?.phase != "running"
+            || reconnectKeys.contains { oldBundle?.preferences[$0] != bundle.preferences[$0] }
+        AWCore.installRuntimePreferences(bundle.runtimePreferencesForInstall)
         if reconnect {
             pendingReconnect = false
             await provider.stop(disablingAlwaysOn: true)

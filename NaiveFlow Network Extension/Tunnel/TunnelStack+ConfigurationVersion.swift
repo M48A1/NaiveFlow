@@ -19,19 +19,27 @@ extension TunnelStack {
             let bundle = try store.load(head.current)
             try validateVersion(bundle)
             nativeBundle = bundle
-            AWCore.installRuntimePreferences(bundle.preferences)
-            return bundle.selectedNode
+            AWCore.installRuntimePreferences(bundle.runtimePreferencesForInstall)
+            return try startupConfiguration(for: bundle)
         } catch {
             let original = error
             guard let previousID = head.previous else { throw original }
             let previous = try store.load(previousID)
             try validateVersion(previous)
             nativeBundle = previous
-            AWCore.installRuntimePreferences(previous.preferences)
+            AWCore.installRuntimePreferences(previous.runtimePreferencesForInstall)
             try store.record(.init(versionID: head.current, activeVersionID: previousID,
                 snapshotID: nil, status: .rejected, message: original.localizedDescription))
-            return previous.selectedNode
+            return try startupConfiguration(for: previous)
         }
+    }
+
+    /// The node a version starts with. A pinned text version uses its bundled
+    /// selection; a manual baseline uses the live manual ActiveConfiguration so
+    /// the most recent user selection survives a restart or rollback.
+    private func startupConfiguration(for bundle: RuntimeConfigurationBundle) throws -> ProxyConfiguration? {
+        if bundle.pinsRuntimePreferences { return bundle.selectedNode }
+        return try ActiveConfiguration.load() ?? bundle.selectedNode
     }
 
     func restoreStartupVersion(after error: Error) throws -> ProxyConfiguration? {
@@ -40,10 +48,10 @@ extension TunnelStack {
         let previous = try store.load(previousID)
         try validateVersion(previous)
         nativeBundle = previous
-        AWCore.installRuntimePreferences(previous.preferences)
+        AWCore.installRuntimePreferences(previous.runtimePreferencesForInstall)
         try store.record(.init(versionID: head.current, activeVersionID: previousID,
             snapshotID: nil, status: .rejected, message: error.localizedDescription))
-        return previous.selectedNode
+        return try startupConfiguration(for: previous)
     }
 
     func confirmStartedVersion() throws {
@@ -95,9 +103,11 @@ extension TunnelStack {
             // No suspension between updating any module and starting intake.
             executeLifecycle(.stop, configuration: oldConfiguration)
             nativeBundle = bundle
-            AWCore.installRuntimePreferences(bundle.preferences)
+            AWCore.installRuntimePreferences(bundle.runtimePreferencesForInstall)
             CertificatePolicy.reload()
-            guard let selected = bundle.selectedNode else { throw RuntimeConfigurationFailure.invalidBundle }
+            guard let selected = try startupConfiguration(for: bundle) else {
+                throw RuntimeConfigurationFailure.invalidBundle
+            }
             executeLifecycle(.start, configuration: selected)
             let receipt = RuntimeConfigurationReceipt(versionID: bundle.id, activeVersionID: bundle.id,
                 snapshotID: bundle.snapshotID, status: .applied, message: nil)
@@ -112,7 +122,8 @@ extension TunnelStack {
             defer { configurationTransition.store(false, ordering: .releasing) }
             if phase == .running, runtime.epoch == epoch {
                 nativeBundle = old
-                AWCore.installRuntimePreferences(oldPreferences)
+                if let old { AWCore.installRuntimePreferences(old.runtimePreferencesForInstall) }
+                else { AWCore.installRuntimePreferences(nil) }
                 CertificatePolicy.reload()
                 do { try await applySettings(oldPreferences) }
                 catch {

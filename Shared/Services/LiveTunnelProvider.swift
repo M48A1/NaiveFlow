@@ -14,6 +14,7 @@ final class LiveTunnelProvider: TunnelProviding {
 
     private var manager: NETunnelProviderManager?
     private var loadedFromPreferences = false
+    private let sequencer = TunnelStartSequencer()
 
     var status: NEVPNStatus {
         guard let manager, loadedFromPreferences else { return .disconnected }
@@ -50,6 +51,7 @@ final class LiveTunnelProvider: TunnelProviding {
 
     func start(_ request: TunnelStartRequest) async throws {
         guard let manager else { return }
+        let token = sequencer.begin()
 
         let tunnelProtocol = NETunnelProviderProtocol()
         tunnelProtocol.providerBundleIdentifier = Self.providerBundleIdentifier
@@ -62,33 +64,47 @@ final class LiveTunnelProvider: TunnelProviding {
         tunnelProtocol.excludeDeviceCommunication = request.excludeDeviceCommunication
         #endif
 
-        manager.protocolConfiguration = tunnelProtocol
-        manager.localizedDescription = "NaiveFlow"
-        manager.isEnabled = true
+        try await sequencer.perform { [weak self] in
+            // A disconnect may have superseded this start before the preference
+            // write even began.
+            guard let self, self.sequencer.isCurrent(token) else { return }
 
-        if request.alwaysOn {
-            let rule = NEOnDemandRuleConnect()
-            rule.interfaceTypeMatch = .any
-            manager.onDemandRules = [rule]
-            manager.isOnDemandEnabled = true
-        } else {
-            manager.isOnDemandEnabled = false
-            manager.onDemandRules = nil
+            manager.protocolConfiguration = tunnelProtocol
+            manager.localizedDescription = "NaiveFlow"
+            manager.isEnabled = true
+
+            if request.alwaysOn {
+                let rule = NEOnDemandRuleConnect()
+                rule.interfaceTypeMatch = .any
+                manager.onDemandRules = [rule]
+                manager.isOnDemandEnabled = true
+            } else {
+                manager.isOnDemandEnabled = false
+                manager.onDemandRules = nil
+            }
+
+            try await manager.saveToPreferences()
+            // Saving suspends; a stop/disconnect can land here. Re-check before
+            // reloading and before dialing so we never "stop then start".
+            guard self.sequencer.isCurrent(token), !Task.isCancelled else { return }
+            try await manager.loadFromPreferences()
+            guard self.sequencer.isCurrent(token), !Task.isCancelled else { return }
+            self.loadedFromPreferences = true
+            try manager.connection.startVPNTunnel()
         }
-
-        try await manager.saveToPreferences()
-        try await manager.loadFromPreferences()
-        loadedFromPreferences = true
-        try manager.connection.startVPNTunnel()
     }
 
     func stop(disablingAlwaysOn: Bool) async {
+        // Invalidate any in-flight start first so its post-await guards bail.
+        sequencer.stop()
         guard let manager else { return }
-        if disablingAlwaysOn, manager.isOnDemandEnabled {
-            manager.isOnDemandEnabled = false
-            try? await manager.saveToPreferences()
+        try? await sequencer.perform {
+            if disablingAlwaysOn, manager.isOnDemandEnabled {
+                manager.isOnDemandEnabled = false
+                try? await manager.saveToPreferences()
+            }
+            manager.connection.stopVPNTunnel()
         }
-        manager.connection.stopVPNTunnel()
     }
 
     func send(_ data: Data) async -> Data? {

@@ -58,7 +58,7 @@ final class AppContainer {
             try publisher.reconcile()
             if let head = try RuntimeBundleStore().head() {
                 let version = try RuntimeBundleStore().load(head.current)
-                AWCore.installRuntimePreferences(version.preferences)
+                AWCore.installRuntimePreferences(version.runtimePreferencesForInstall)
                 selection.showRuntimeVersion(version)
             }
         } catch RuntimeConfigurationFailure.busy { }

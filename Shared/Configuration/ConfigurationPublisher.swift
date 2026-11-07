@@ -39,6 +39,12 @@ struct ConfigurationPublisher {
     var bundleStore: RuntimeBundleStore {
         RuntimeBundleStore(directory: activation.store.directory.appendingPathComponent("runtime", isDirectory: true))
     }
+    /// Feeds a restored bundle's preference view to the sink. A manual baseline
+    /// (`snapshotID == nil`) must not pin, so it sends `nil` to leave live manual
+    /// edits in effect; a text version pins its captured values.
+    private func sinkPreferences(_ bundle: RuntimeConfigurationBundle) {
+        preferencesSink(bundle.pinsRuntimePreferences ? bundle.preferences : nil)
+    }
 
     func publish(text: String) async throws -> (ConfigurationActivation.Activation, ConfigurationInstaller.Outcome) {
         try activation.saveDraft(text)
@@ -75,15 +81,21 @@ struct ConfigurationPublisher {
         let previous = try bundleStore.load(head.current)
         let compiled = result.compiled
         let snapshot = ConfigurationSnapshot(text: text, compiled: compiled)
-        var nodes = compiled.proxies.isEmpty ? [directNode()] : compiled.proxies
+        var nodes = compiled.proxies
         for chain in compiled.chains {
             if let composite = chain.resolveComposite(from: compiled.proxies) {
                 nodes.append(composite)
             }
         }
+        // Synthesized helper nodes (e.g. built-in DIRECT group members) must be
+        // dialable at runtime but are not counted as user proxies.
+        nodes.append(contentsOf: compiled.syntheticProxies)
+        if nodes.isEmpty { nodes = [directNode()] }
         let selected = nodes.first { $0.id == previous.selectedNodeID }
             ?? nodes.first { $0.name == previous.selectedNode?.name } ?? nodes[0]
-        let preferences = try AWCore.captureRuntimePreferences(base: previous.preferences) {
+        let preferences = try AWCore.captureRuntimePreferences(
+            base: previous.pinsRuntimePreferences ? previous.preferences : nil
+        ) {
             // Server fields select their transport; explicit mode fields run last.
             let keys = compiled.settings.values.keys.sorted {
                 let a = $0.hasSuffix("dns-mode"), b = $1.hasSuffix("dns-mode")
@@ -144,7 +156,7 @@ struct ConfigurationPublisher {
             do {
                 _ = try bundleStore.rollback(expected: bundle.id)
                 AWNotificationCenter.notifyConfigurationVersionChanged()
-                preferencesSink(previous.preferences)
+                sinkPreferences(previous)
                 stateSink(previous)
                 try activation.store.restoreManifest(originalManifest)
                 if wasRunning {
@@ -173,7 +185,7 @@ struct ConfigurationPublisher {
         activation.store.clearConfirmation()
         AWNotificationCenter.notifyConfigurationVersionChanged()
         do {
-            preferencesSink(previous.preferences)
+            preferencesSink(previous.pinsRuntimePreferences ? previous.preferences : nil)
             let receipt = try await deliver(previous, running: wasRunning)
             try validateReceipt(receipt, for: previous, required: wasRunning)
             stateSink(previous)
@@ -188,7 +200,7 @@ struct ConfigurationPublisher {
         } catch {
             let originalError = error
             try bundleStore.restoreHead(original, expected: previousID)
-            preferencesSink(current.preferences)
+            sinkPreferences(current)
             stateSink(current)
             try activation.store.restoreManifest(oldManifest)
             if wasRunning { try await restoreRunning(current) }
@@ -237,7 +249,7 @@ struct ConfigurationPublisher {
         case .applied:
             let bundle = try bundleStore.load(head.current)
             try validateReceipt(receipt, for: bundle, required: true)
-            preferencesSink(bundle.preferences)
+            sinkPreferences(bundle)
             stateSink(bundle)
             if let id = bundle.snapshotID { try activation.store.activate(id, confirmed: true) }
         case .rejected:
@@ -246,7 +258,7 @@ struct ConfigurationPublisher {
             _ = try bundleStore.rollback(expected: head.current)
             if let current = try bundleStore.head() {
                 let bundle = try bundleStore.load(current.current)
-                preferencesSink(bundle.preferences)
+                sinkPreferences(bundle)
                 stateSink(bundle)
                 try activation.store.restoreManifest(backup)
             }

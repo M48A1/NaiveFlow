@@ -30,6 +30,19 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
 
     var selectedNode: ProxyConfiguration? { nodes.first { $0.id == selectedNodeID } }
 
+    /// A text version (`snapshotID != nil`) pins every runtime preference so the
+    /// kernel reads exactly the published document. The preserved manual/app
+    /// baseline (`snapshotID == nil`) does NOT pin: rolling back to it must return
+    /// to a live, editable manual mode where later UserDefaults changes — proxy
+    /// mode, node switches, Always On, certificates — take effect again.
+    var pinsRuntimePreferences: Bool { snapshotID != nil }
+
+    /// The value to hand to `AWCore.installRuntimePreferences(_:)`: the captured
+    /// dict for a pinned text version, or `nil` (unpinned) for a manual baseline.
+    var runtimePreferencesForInstall: [String: RuntimePreferenceValue]? {
+        pinsRuntimePreferences ? preferences : nil
+    }
+
     func validate() throws {
         guard schemaVersion == Self.schema, selectedNode != nil,
               Set(nodes.map(\.id)).count == nodes.count,

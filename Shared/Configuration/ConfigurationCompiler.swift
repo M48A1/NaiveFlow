@@ -13,6 +13,11 @@ import Foundation
 /// a document can be validated, previewed, and applied atomically afterwards.
 nonisolated struct CompiledConfiguration: Sendable {
     let proxies: [ProxyConfiguration]
+    /// Helper nodes whose ids appear in group members (for example a built-in
+    /// `DIRECT` used inside an automatic group) but which are not user proxies.
+    /// Kept separate from `proxies` so counts, ordering and previews are
+    /// unaffected, yet merged into the runtime bundle's dialable nodes.
+    var syntheticProxies: [ProxyConfiguration] = []
     let proxyGroups: [ProxyGroup]
     /// Text-configured groups with their automatic-selection strategy intact
     /// (`url-test` / `fallback` / `load-balance`), the engine's group-policy
@@ -66,12 +71,24 @@ nonisolated enum ConfigurationCompiler {
         let proxies = compileProxies(configuration, diagnostics: &diagnostics)
         let proxyIds = Dictionary(proxies.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
 
+        // A built-in `DIRECT` used as a group member is neither a proxy nor a
+        // group, so `expandedMembers` would silently drop it. Synthesize one
+        // shared, probeable direct node so DIRECT in a group behaves like a
+        // declared `Name = direct` node instead of vanishing. It is carried in
+        // `syntheticProxies` (not `proxies`) so user-facing counts and ordering
+        // are unchanged.
+        let builtInDirectNode = referencesBuiltInDirect(configuration) && proxyIds["DIRECT"] == nil
+            ? ProxyConfiguration(name: "DIRECT", serverAddress: "", serverPort: 0, outbound: .direct(DirectConfiguration()))
+            : nil
+        let directNodeID = builtInDirectNode?.id
+
         let groups = compileProxyGroups(
             configuration,
             proxyIds: proxyIds,
+            directNodeID: directNodeID,
             diagnostics: &diagnostics
         )
-        let policyGroups = compilePolicyGroups(configuration, proxyIds: proxyIds)
+        let policyGroups = compilePolicyGroups(configuration, proxyIds: proxyIds, directNodeID: directNodeID)
         let chains = compileChains(configuration, proxyIds: proxyIds, diagnostics: &diagnostics)
         let chainIds = Dictionary(chains.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
         let policies = policyTargets(
@@ -109,6 +126,7 @@ nonisolated enum ConfigurationCompiler {
         let textMITM = TextMITMCompiler.compile(configuration, diagnostics: &diagnostics)
         return CompiledConfiguration(
             proxies: proxies,
+            syntheticProxies: builtInDirectNode.map { [$0] } ?? [],
             proxyGroups: groups,
             policyGroups: policyGroups,
             ruleSets: ruleSets,
@@ -386,6 +404,7 @@ nonisolated extension ConfigurationCompiler {
     static func compileProxyGroups(
         _ configuration: ParsedConfiguration,
         proxyIds: [String: UUID],
+        directNodeID: UUID?,
         diagnostics: inout [ConfigurationDiagnostic]
     ) -> [ProxyGroup] {
         var expanded: [String: [UUID]] = [:]
@@ -395,6 +414,7 @@ nonisolated extension ConfigurationCompiler {
                 of: group.name,
                 configuration: configuration,
                 proxyIds: proxyIds,
+                directNodeID: directNodeID,
                 visited: &visited
             )
             if expanded[group.name]?.isEmpty ?? true {
@@ -421,7 +441,8 @@ nonisolated extension ConfigurationCompiler {
     /// groups are flattened), and `selected` resolves to a concrete member id.
     static func compilePolicyGroups(
         _ configuration: ParsedConfiguration,
-        proxyIds: [String: UUID]
+        proxyIds: [String: UUID],
+        directNodeID: UUID?
     ) -> [RuntimeProxyGroup] {
         configuration.proxyGroups.compactMap { group in
             guard let parsedKind = group.kind else { return nil }
@@ -442,6 +463,7 @@ nonisolated extension ConfigurationCompiler {
                 of: group.name,
                 configuration: configuration,
                 proxyIds: proxyIds,
+                directNodeID: directNodeID,
                 visited: &visited
             )
             guard !memberIDs.isEmpty else { return nil }
@@ -451,7 +473,8 @@ nonisolated extension ConfigurationCompiler {
                 selectedID = resolveMemberID(
                     named: selectedName,
                     configuration: configuration,
-                    proxyIds: proxyIds
+                    proxyIds: proxyIds,
+                    directNodeID: directNodeID
                 )
             }
 
@@ -477,9 +500,11 @@ nonisolated extension ConfigurationCompiler {
         named name: String,
         configuration: ParsedConfiguration,
         proxyIds: [String: UUID],
+        directNodeID: UUID?,
         visiting: Set<String> = []
     ) -> UUID? {
         if let id = proxyIds[name] { return id }
+        if ConfigurationValidator.builtInPolicyName(name) == "DIRECT" { return directNodeID }
         guard !visiting.contains(name),
               let group = configuration.proxyGroup(named: name),
               let selected = group.parameters["selected"] ?? group.members.first else { return nil }
@@ -487,8 +512,18 @@ nonisolated extension ConfigurationCompiler {
             named: selected,
             configuration: configuration,
             proxyIds: proxyIds,
+            directNodeID: directNodeID,
             visiting: visiting.union([name])
         )
+    }
+
+    /// True when any proxy group lists the built-in `DIRECT` policy as a member,
+    /// so a shared probeable direct node must be synthesized instead of the
+    /// token being dropped during member expansion.
+    private static func referencesBuiltInDirect(_ configuration: ParsedConfiguration) -> Bool {
+        configuration.proxyGroups.contains { group in
+            group.members.contains { ConfigurationValidator.builtInPolicyName($0) == "DIRECT" }
+        }
     }
 
     /// Accepts an http/https probe URL and rejects anything the prober cannot
@@ -507,6 +542,7 @@ nonisolated extension ConfigurationCompiler {
         of name: String,
         configuration: ParsedConfiguration,
         proxyIds: [String: UUID],
+        directNodeID: UUID?,
         visited: inout Set<String>
     ) -> [UUID] {
         guard visited.insert(name).inserted else { return [] }
@@ -522,10 +558,15 @@ nonisolated extension ConfigurationCompiler {
                 if !ids.contains(id) { ids.append(id) }
                 continue
             }
+            if ConfigurationValidator.builtInPolicyName(member) == "DIRECT", let directNodeID {
+                if !ids.contains(directNodeID) { ids.append(directNodeID) }
+                continue
+            }
             for id in expandedMembers(
                 of: member,
                 configuration: configuration,
                 proxyIds: proxyIds,
+                directNodeID: directNodeID,
                 visited: &visited
             ) where !ids.contains(id) {
                 ids.append(id)

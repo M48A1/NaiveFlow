@@ -389,6 +389,29 @@ nonisolated extension ConfigurationValidator {
                 )
             }
 
+            // Automatic groups (url-test / fallback / load-balance) select among
+            // probeable members. `DIRECT` now maps to a real probeable node, but
+            // REJECT / PROXY cannot be probed or dialed as a member, so reject
+            // them instead of silently dropping the token and changing the group.
+            if kind != .select {
+                for member in group.members {
+                    switch Self.builtInPolicyName(member) {
+                    case "REJECT", "PROXY":
+                        diagnostics.append(
+                            ConfigurationDiagnostic(
+                                severity: .error,
+                                code: .unresolvedPolicy,
+                                line: group.line,
+                                section: ConfigurationDocument.SectionKind.proxyGroup.displayName,
+                                message: "Automatic proxy group '\(group.name)' cannot include the built-in policy '\(member)'; only nodes, groups and DIRECT can be probed and selected."
+                            )
+                        )
+                    default:
+                        break
+                    }
+                }
+            }
+
             if Set(group.members).count != group.members.count {
                 diagnostics.append(
                     ConfigurationDiagnostic(
