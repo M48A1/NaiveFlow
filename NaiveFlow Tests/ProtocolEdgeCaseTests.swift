@@ -282,4 +282,124 @@ struct ProtocolEdgeCaseTests {
             .first ?? ""
         #expect(requestLine == "GET / HTTP/1.1")
     }
+
+    // MARK: - gRPC HEADERS / CONTINUATION reassembly
+
+    @Test func grpcHeaderBlockReassemblesAcrossContinuation() throws {
+        var accumulator = H2HeaderBlockAccumulator()
+
+        // Literal ":status: 200" split so the HPACK block is invalid unless the
+        // fragments are concatenated: [0x08 0x03] + [0x32 0x30 0x30].
+        let partial = try accumulator.ingest(
+            type: GRPCConnection.h2FrameHeaders,
+            flags: 0x00, // no END_HEADERS yet
+            payload: Data([0x08, 0x03])
+        )
+        #expect(partial == nil)
+
+        let assembled = try accumulator.ingest(
+            type: GRPCConnection.h2FrameContinuation,
+            flags: GRPCConnection.h2FlagEndHeaders,
+            payload: Data([0x32, 0x30, 0x30])
+        )
+        #expect(assembled != nil)
+        #expect(assembled?.block == Data([0x08, 0x03, 0x32, 0x30, 0x30]))
+        #expect(assembled?.endStream == false)
+    }
+
+    @Test func grpcTrailerEndStreamCarriedAcrossContinuation() throws {
+        var accumulator = H2HeaderBlockAccumulator()
+
+        // Trailers-only response: END_STREAM is set on the HEADERS frame, which
+        // lacks END_HEADERS; it must be remembered until CONTINUATION completes.
+        _ = try accumulator.ingest(
+            type: GRPCConnection.h2FrameHeaders,
+            flags: GRPCConnection.h2FlagEndStream,
+            payload: Data([0x08])
+        )
+        let assembled = try accumulator.ingest(
+            type: GRPCConnection.h2FrameContinuation,
+            flags: GRPCConnection.h2FlagEndHeaders,
+            payload: Data([0x03, 0x32, 0x30, 0x30])
+        )
+        #expect(assembled?.endStream == true)
+        #expect(assembled?.block == Data([0x08, 0x03, 0x32, 0x30, 0x30]))
+    }
+
+    @Test func grpcSingleHeadersFrameWithEndHeadersAssemblesImmediately() throws {
+        var accumulator = H2HeaderBlockAccumulator()
+        let assembled = try accumulator.ingest(
+            type: GRPCConnection.h2FrameHeaders,
+            flags: GRPCConnection.h2FlagEndHeaders,
+            payload: Data([0x88]) // indexed :status 200
+        )
+        #expect(assembled?.block == Data([0x88]))
+        #expect(assembled?.endStream == false)
+    }
+
+    // MARK: - AnyTLS pool key isolation
+
+    @Test func anyTLSRegistrySeparatesPoolsByTLSConfigurationAndDialHost() {
+        let registry = AnyTLSMultiplexerRegistry.shared
+        defer { registry.closeAll() }
+
+        func makeConfig(_ tls: TLSConfiguration) -> ProxyConfiguration {
+            ProxyConfiguration(
+                name: "node",
+                serverAddress: "node.example.com",
+                serverPort: 443,
+                outbound: .anytls(AnyTLSConfiguration(password: "pw", securityLayer: .tls(tls)))
+            )
+        }
+
+        let dialOut: AnyTLSMultiplexerPool.DialOut = {
+            throw NaiveFlowError.transport(.terminated)
+        }
+
+        let tlsA = TLSConfiguration(serverName: "a.example.com", insecureSkipVerify: false)
+        let tlsB = TLSConfiguration(serverName: "b.example.com", insecureSkipVerify: false)
+        let tlsSkip = TLSConfiguration(serverName: "a.example.com", insecureSkipVerify: true)
+        let configA = makeConfig(tlsA)
+
+        let poolA1 = registry.pool(
+            for: configA, tls: tlsA, directDialHost: "1.2.3.4",
+            useResolvedAddressForDirectDial: true, dialOut: dialOut
+        )
+        let poolA2 = registry.pool(
+            for: configA, tls: tlsA, directDialHost: "1.2.3.4",
+            useResolvedAddressForDirectDial: true, dialOut: dialOut
+        )
+        #expect(poolA1 != nil)
+        #expect(poolA1 === poolA2)
+
+        // Different SNI must not reuse the first node's pool.
+        let poolB = registry.pool(
+            for: makeConfig(tlsB), tls: tlsB, directDialHost: "1.2.3.4",
+            useResolvedAddressForDirectDial: true, dialOut: dialOut
+        )
+        #expect(poolB != nil)
+        #expect(poolB !== poolA1)
+
+        // Same SNI but skip-verify must not reuse the strict-verify pool.
+        let poolSkip = registry.pool(
+            for: makeConfig(tlsSkip), tls: tlsSkip, directDialHost: "1.2.3.4",
+            useResolvedAddressForDirectDial: true, dialOut: dialOut
+        )
+        #expect(poolSkip != nil)
+        #expect(poolSkip !== poolA1)
+
+        // A different resolved dial address must not reuse the pool.
+        let poolOtherIP = registry.pool(
+            for: configA, tls: tlsA, directDialHost: "5.6.7.8",
+            useResolvedAddressForDirectDial: true, dialOut: dialOut
+        )
+        #expect(poolOtherIP !== poolA1)
+
+        // A different resolution flag must not reuse the pool.
+        let poolNoResolve = registry.pool(
+            for: configA, tls: tlsA, directDialHost: "node.example.com",
+            useResolvedAddressForDirectDial: false, dialOut: dialOut
+        )
+        #expect(poolNoResolve !== poolA1)
+    }
 }

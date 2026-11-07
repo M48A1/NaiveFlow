@@ -56,7 +56,13 @@ extension ProxyClient {
             }
             stream = opened
         } else {
-            guard let pool = AnyTLSMultiplexerRegistry.shared.pool(for: configuration, dialOut: dialOut) else {
+            guard let pool = AnyTLSMultiplexerRegistry.shared.pool(
+                for: configuration,
+                tls: tlsConfig,
+                directDialHost: directHost,
+                useResolvedAddressForDirectDial: useResolvedAddress,
+                dialOut: dialOut
+            ) else {
                 throw NaiveFlowError.proxy(.anyTLS, .notReady)
             }
             stream = try await pool.acquireStream()

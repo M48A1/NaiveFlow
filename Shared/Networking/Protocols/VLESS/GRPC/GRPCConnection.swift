@@ -47,6 +47,8 @@ nonisolated final class GRPCConnection: Sendable {
 
         var h2ResponseReceived = false
 
+        var h2HeaderBlock = H2HeaderBlockAccumulator()
+
         var h2PeerConnectionWindow: Int = 65535
         var h2PeerStreamSendWindow: Int = 65535
         var h2PeerInitialWindowSize: Int = 65535
@@ -158,22 +160,31 @@ nonisolated final class GRPCConnection: Sendable {
                 }
                 continue
 
-            case Self.h2FrameHeaders:
+            case Self.h2FrameHeaders, Self.h2FrameContinuation:
                 if frame.streamId == Self.streamId {
-                    let headerBlock = try Self.headersPayload(strippingPaddingFrom: frame.payload, flags: frame.flags)
-                    if let rejection = checkH2ResponseStatus(headerBlock) {
-                        throw NaiveFlowError.proxy(.grpc, .handshakeFailed(detail: "gRPC response rejected: \(rejection)"))
+                    // Reassemble the full header block across HEADERS + any
+                    // CONTINUATION frames before decoding :status / trailers.
+                    let assembled = try state.withLock {
+                        try $0.h2HeaderBlock.ingest(type: frame.type, flags: frame.flags, payload: frame.payload)
                     }
-                    if frame.flags & Self.h2FlagEndStream != 0 {
-                        if let grpcError = Self.parseGRPCTrailer(headerBlock) {
-                            markClosed()
-                            throw NaiveFlowError.proxy(.grpc, .handshakeFailed(detail: grpcError.localizedDescription))
+                    if let assembled {
+                        if let rejection = checkH2ResponseStatus(assembled.block) {
+                            throw NaiveFlowError.proxy(.grpc, .handshakeFailed(detail: "gRPC response rejected: \(rejection)"))
                         }
+                        if assembled.endStream {
+                            if let grpcError = Self.parseGRPCTrailer(assembled.block) {
+                                markClosed()
+                                throw NaiveFlowError.proxy(.grpc, .handshakeFailed(detail: grpcError.localizedDescription))
+                            }
+                        }
+                        state.withLock { $0.h2ResponseReceived = true }
+                        startKeepaliveIfNeeded()
+                        return
                     }
-                    state.withLock { $0.h2ResponseReceived = true }
+                    // HEADERS without END_HEADERS: wait for CONTINUATION.
+                    continue
                 }
-                startKeepaliveIfNeeded()
-                return
+                continue
 
             case Self.h2FrameWindowUpdate:
                 handleWindowUpdate(frame: frame)
@@ -265,6 +276,7 @@ nonisolated extension GRPCConnection {
     static let h2FramePing: UInt8 = 0x06
     static let h2FrameGoaway: UInt8 = 0x07
     static let h2FrameWindowUpdate: UInt8 = 0x08
+    static let h2FrameContinuation: UInt8 = 0x09
 
     static let h2FlagEndStream: UInt8 = 0x01
     static let h2FlagEndHeaders: UInt8 = 0x04
@@ -273,6 +285,37 @@ nonisolated extension GRPCConnection {
     static let h2FlagPriority: UInt8 = 0x20
 
     static let h2ConnectionWindowSize: UInt32 = 1_073_741_824 // 1 GB
+}
+
+/// Accumulates the header-block fragments of a single HTTP/2 stream until
+/// END_HEADERS, so a HEADERS + CONTINUATION sequence is decoded as one block
+/// instead of treating the first fragment as complete and dropping the rest.
+nonisolated struct H2HeaderBlockAccumulator: Sendable {
+    private(set) var buffer = Data()
+    private(set) var endStream = false
+
+    /// Feeds one HEADERS or CONTINUATION frame. Returns the assembled block and
+    /// the stream's END_STREAM flag once END_HEADERS is seen, otherwise `nil`.
+    mutating func ingest(
+        type: UInt8,
+        flags: UInt8,
+        payload: Data
+    ) throws -> (block: Data, endStream: Bool)? {
+        if type == GRPCConnection.h2FrameHeaders {
+            // A HEADERS frame starts a new block (padding/priority stripped).
+            buffer = try GRPCConnection.headersPayload(strippingPaddingFrom: payload, flags: flags)
+            endStream = (flags & GRPCConnection.h2FlagEndStream) != 0
+        } else {
+            // CONTINUATION carries a raw fragment, no padding or priority.
+            buffer.append(payload)
+        }
+        guard (flags & GRPCConnection.h2FlagEndHeaders) != 0 else { return nil }
+        let assembled = buffer
+        let streamEnded = endStream
+        buffer.removeAll(keepingCapacity: true)
+        endStream = false
+        return (assembled, streamEnded)
+    }
 }
 
 // MARK: - Frame I/O
@@ -766,22 +809,17 @@ nonisolated extension GRPCConnection {
             case Self.h2FrameData:
                 outcome = try await handleDataFrame(frame: frame, isOurStream: isOurStream)
 
-            case Self.h2FrameHeaders:
+            case Self.h2FrameHeaders, Self.h2FrameContinuation:
                 if isOurStream {
-                    let headerBlock = try Self.headersPayload(strippingPaddingFrom: frame.payload, flags: frame.flags)
-                    let endOfStream = (frame.flags & Self.h2FlagEndStream) != 0
-                    try markResponseReceivedIfNeeded(headerBlock)
-                    if endOfStream {
-                        let grpcError = Self.parseGRPCTrailer(headerBlock)
-                        let leftover: Data = state.withLock { state in
-                            state.transition(to: .halfClosed)
-                            let leftover = state.decodedBuffer
-                            state.decodedBuffer.removeAll(keepingCapacity: true)
-                            return leftover
-                        }
-                        drainFlowResumptions()
-                        if let grpcError { throw grpcError }
-                        outcome = .deliver(leftover.isEmpty ? nil : leftover)
+                    // Reassemble across HEADERS + CONTINUATION before decoding.
+                    let assembled = try state.withLock {
+                        try $0.h2HeaderBlock.ingest(type: frame.type, flags: frame.flags, payload: frame.payload)
+                    }
+                    if let assembled {
+                        try markResponseReceivedIfNeeded(assembled.block)
+                        outcome = assembled.endStream
+                            ? try finishStreamAfterTrailer(assembled.block)
+                            : .keepReading
                     } else {
                         outcome = .keepReading
                     }
@@ -851,6 +889,22 @@ nonisolated extension GRPCConnection {
             throw NaiveFlowError.proxy(.grpc, .protocolViolation(detail: "gRPC response rejected: \(rejection)"))
         }
         state.withLock { $0.h2ResponseReceived = true }
+    }
+
+    /// Finalizes the stream once a trailers block arrives: parses grpc-status,
+    /// transitions to half-closed, and returns any buffered decoded data (or a
+    /// `nil` delivery when the stream is empty).
+    private func finishStreamAfterTrailer(_ block: Data) throws -> FrameOutcome {
+        let grpcError = Self.parseGRPCTrailer(block)
+        let leftover: Data = state.withLock { state in
+            state.transition(to: .halfClosed)
+            let leftover = state.decodedBuffer
+            state.decodedBuffer.removeAll(keepingCapacity: true)
+            return leftover
+        }
+        drainFlowResumptions()
+        if let grpcError { throw grpcError }
+        return .deliver(leftover.isEmpty ? nil : leftover)
     }
 
     /// Removes DATA-frame padding (PADDED flag: 1-byte pad length, then data,

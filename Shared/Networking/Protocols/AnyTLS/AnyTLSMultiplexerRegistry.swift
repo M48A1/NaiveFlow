@@ -16,6 +16,18 @@ nonisolated final class AnyTLSMultiplexerRegistry: Sendable {
         let port: UInt16
         let password: String
         let chain: [ProxyConfiguration]
+
+        /// The TLS handshake settings (SNI, certificate verification, ALPN,
+        /// fingerprint, ECH, version range). Two nodes that share address/port/
+        /// password but differ here must not share a pool — the pool pins the
+        /// first node's dial closure, so a strict-verify node would otherwise
+        /// keep using a skip-verify connection.
+        let tls: TLSConfiguration
+
+        /// The actual address dialed (resolved IP when address resolution is
+        /// used, otherwise the server address), plus the resolution flag.
+        let directDialHost: String
+        let useResolvedAddressForDirectDial: Bool
     }
 
     private struct State {
@@ -32,6 +44,9 @@ nonisolated final class AnyTLSMultiplexerRegistry: Sendable {
 
     func pool(
         for configuration: ProxyConfiguration,
+        tls: TLSConfiguration,
+        directDialHost: String,
+        useResolvedAddressForDirectDial: Bool,
         dialOut: @escaping AnyTLSMultiplexerPool.DialOut
     ) -> AnyTLSMultiplexerPool? {
         guard let anytls = configuration.anytls else { return nil }
@@ -39,7 +54,10 @@ nonisolated final class AnyTLSMultiplexerRegistry: Sendable {
             host: configuration.serverAddress,
             port: configuration.serverPort,
             password: anytls.password,
-            chain: configuration.chain ?? []
+            chain: configuration.chain ?? [],
+            tls: tls,
+            directDialHost: directDialHost,
+            useResolvedAddressForDirectDial: useResolvedAddressForDirectDial
         )
         let pool = state.withLock { state -> AnyTLSMultiplexerPool? in
             if let existing = state.pools[key] {
