@@ -28,7 +28,9 @@ private nonisolated let tagSize = 16
 /// packets older than the 64-packet window. A packet ID is committed only after
 /// the caller has validated the authenticated header (type, timestamp and client
 /// session ID), matching the spec's "do not advance the window before successful
-/// header validation" requirement.
+/// header validation" requirement. Sessions are only forgotten once older than
+/// `maxAge`; at the session cap a new session is refused rather than evicting a
+/// live window, so capacity control can never reopen a replay window.
 nonisolated final class Shadowsocks2022ReplayFilter: Sendable {
     private struct Window {
         var initialized = false
@@ -72,16 +74,23 @@ nonisolated final class Shadowsocks2022ReplayFilter: Sendable {
     func accept(serverSession: UInt64, packetID: UInt64) -> Bool {
         let now = ContinuousClock().now
         return state.withLock { state in
+            // Age is dropped only past `maxAge`, which is longer than the packet
+            // timestamp tolerance, so any datagram that can still authenticate is
+            // for a session we still track.
             state.windows = state.windows.filter { now - $0.value.lastSeen < Self.maxAge }
+            if state.windows[serverSession] == nil, state.windows.count >= Self.maxSessions {
+                // At capacity with only still-valid sessions. Evicting one would
+                // forget an accepted session and reopen its replay window, so fail
+                // closed for a session we cannot safely track. Reaching the cap
+                // needs many server-session changes within `maxAge`, far beyond
+                // normal churn (a restart, not sixteen within 90s).
+                return false
+            }
             var window = state.windows[serverSession] ?? Window(lastSeen: now)
             let accepted = window.accept(packetID)
             guard accepted else { return false }
             window.lastSeen = now
             state.windows[serverSession] = window
-            if state.windows.count > Self.maxSessions,
-               let oldest = state.windows.min(by: { $0.value.lastSeen < $1.value.lastSeen })?.key {
-                state.windows[oldest] = nil
-            }
             return true
         }
     }

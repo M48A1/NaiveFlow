@@ -88,4 +88,32 @@ struct Shadowsocks2022ReplayTests {
         let second = try await connection.receiveRaw()
         #expect(second == nil)
     }
+
+    // MARK: - Session capacity
+
+    /// Reaching the session cap must not evict a still-valid session; otherwise a
+    /// replayed datagram for the evicted session would be re-accepted as a "new"
+    /// first packet. New sessions beyond the cap are refused (fail closed) while
+    /// the existing windows stay intact.
+    @Test func sessionCapRefusesNewSessionsInsteadOfEvictingValidOnes() {
+        let filter = Shadowsocks2022ReplayFilter()
+
+        // First session accepts packet 5, then rejects an immediate replay.
+        #expect(filter.accept(serverSession: 1, packetID: 5))
+        #expect(!filter.accept(serverSession: 1, packetID: 5))
+
+        // Fill the rest of the capacity with distinct, still-valid sessions.
+        for session: UInt64 in 2...16 {
+            #expect(filter.accept(serverSession: session, packetID: 1))
+        }
+
+        // A 17th session cannot be tracked within `maxAge`; it is refused rather
+        // than dropping a live window.
+        #expect(!filter.accept(serverSession: 17, packetID: 1))
+
+        // Session 1 was never evicted: its replay is still rejected and it can
+        // still advance to a fresh packet.
+        #expect(!filter.accept(serverSession: 1, packetID: 5))
+        #expect(filter.accept(serverSession: 1, packetID: 6))
+    }
 }
