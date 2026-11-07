@@ -286,7 +286,7 @@ struct ProtocolEdgeCaseTests {
     // MARK: - gRPC HEADERS / CONTINUATION reassembly
 
     @Test func grpcHeaderBlockReassemblesAcrossContinuation() throws {
-        var accumulator = H2HeaderBlockAccumulator()
+        var accumulator = H2HeaderBlockAccumulator(maxBlockSize: 64)
 
         // Literal ":status: 200" split so the HPACK block is invalid unless the
         // fragments are concatenated: [0x08 0x03] + [0x32 0x30 0x30].
@@ -308,7 +308,7 @@ struct ProtocolEdgeCaseTests {
     }
 
     @Test func grpcTrailerEndStreamCarriedAcrossContinuation() throws {
-        var accumulator = H2HeaderBlockAccumulator()
+        var accumulator = H2HeaderBlockAccumulator(maxBlockSize: 64)
 
         // Trailers-only response: END_STREAM is set on the HEADERS frame, which
         // lacks END_HEADERS; it must be remembered until CONTINUATION completes.
@@ -327,7 +327,7 @@ struct ProtocolEdgeCaseTests {
     }
 
     @Test func grpcSingleHeadersFrameWithEndHeadersAssemblesImmediately() throws {
-        var accumulator = H2HeaderBlockAccumulator()
+        var accumulator = H2HeaderBlockAccumulator(maxBlockSize: 64)
         let assembled = try accumulator.ingest(
             type: GRPCConnection.h2FrameHeaders,
             flags: GRPCConnection.h2FlagEndHeaders,
@@ -335,6 +335,34 @@ struct ProtocolEdgeCaseTests {
         )
         #expect(assembled?.block == Data([0x88]))
         #expect(assembled?.endStream == false)
+    }
+
+    @Test func grpcHeaderBlockReassemblyRejectsOversizedBlocks() {
+        // A single HEADERS fragment larger than the cap is rejected immediately.
+        #expect(throws: (any Error).self) {
+            var accumulator = H2HeaderBlockAccumulator(maxBlockSize: 8)
+            _ = try accumulator.ingest(
+                type: GRPCConnection.h2FrameHeaders,
+                flags: 0x00,
+                payload: Data(repeating: 0x11, count: 9)
+            )
+        }
+
+        // Accumulation across CONTINUATION must also respect the cumulative cap,
+        // even though each individual frame fits under it.
+        #expect(throws: (any Error).self) {
+            var accumulator = H2HeaderBlockAccumulator(maxBlockSize: 8)
+            _ = try accumulator.ingest(
+                type: GRPCConnection.h2FrameHeaders,
+                flags: 0x00,
+                payload: Data(repeating: 0x11, count: 4)
+            )
+            _ = try accumulator.ingest(
+                type: GRPCConnection.h2FrameContinuation,
+                flags: 0x00,
+                payload: Data(repeating: 0x22, count: 5)
+            )
+        }
     }
 
     // MARK: - AnyTLS pool key isolation

@@ -47,7 +47,7 @@ nonisolated final class GRPCConnection: Sendable {
 
         var h2ResponseReceived = false
 
-        var h2HeaderBlock = H2HeaderBlockAccumulator()
+        var h2HeaderBlock = H2HeaderBlockAccumulator(maxBlockSize: GRPCConnection.maxH2HeaderBlockSize)
 
         var h2PeerConnectionWindow: Int = 65535
         var h2PeerStreamSendWindow: Int = 65535
@@ -63,6 +63,8 @@ nonisolated final class GRPCConnection: Sendable {
         var h2FlowGate = H2FlowGate()
 
         var keepaliveDeadline: DeadlineToken?
+        var pendingPingPayload: Data?
+        var healthCheckDeadline: DeadlineToken?
     }
 
     private let state: Mutex<State>
@@ -71,6 +73,7 @@ nonisolated final class GRPCConnection: Sendable {
 
     private static let maxH2ReadBufferSize = 2_097_152
     private static let maxGRPCFrameBufferSize = 16_777_216
+    private static let maxH2HeaderBlockSize = 1_048_576
 
     var isConnected: Bool {
         state.withLock { $0.phase != .cancelled }
@@ -164,9 +167,7 @@ nonisolated final class GRPCConnection: Sendable {
                 if frame.streamId == Self.streamId {
                     // Reassemble the full header block across HEADERS + any
                     // CONTINUATION frames before decoding :status / trailers.
-                    let assembled = try state.withLock {
-                        try $0.h2HeaderBlock.ingest(type: frame.type, flags: frame.flags, payload: frame.payload)
-                    }
+                    let assembled = try assembleHeaderBlock(frame)
                     if let assembled {
                         if let rejection = checkH2ResponseStatus(assembled.block) {
                             throw NaiveFlowError.proxy(.grpc, .handshakeFailed(detail: "gRPC response rejected: \(rejection)"))
@@ -191,7 +192,9 @@ nonisolated final class GRPCConnection: Sendable {
                 continue
 
             case Self.h2FramePing:
-                if frame.flags & Self.h2FlagAck == 0 {
+                if frame.flags & Self.h2FlagAck != 0 {
+                    acknowledgePing(frame.payload)
+                } else {
                     let pong = buildH2Frame(type: Self.h2FramePing, flags: Self.h2FlagAck, streamId: 0, payload: frame.payload)
                     try? await transport.send(pong)
                 }
@@ -211,6 +214,22 @@ nonisolated final class GRPCConnection: Sendable {
             default:
                 continue
             }
+        }
+    }
+
+    /// Reassembles a HEADERS/CONTINUATION sequence into a complete header block.
+    /// Marks the connection closed and rethrows when the block is malformed or
+    /// exceeds the size cap, so a hostile peer cannot grow it without bound.
+    private func assembleHeaderBlock(
+        _ frame: (type: UInt8, flags: UInt8, streamId: UInt32, payload: Data)
+    ) throws -> (block: Data, endStream: Bool)? {
+        do {
+            return try state.withLock {
+                try $0.h2HeaderBlock.ingest(type: frame.type, flags: frame.flags, payload: frame.payload)
+            }
+        } catch {
+            markClosed()
+            throw error
         }
     }
 
@@ -243,22 +262,29 @@ nonisolated final class GRPCConnection: Sendable {
     // MARK: - Cancel
 
     func cancel() {
-        let keepalive: DeadlineToken? = state.withLock { state in
+        let pending: (keepalive: DeadlineToken?, healthCheck: DeadlineToken?) = state.withLock { state in
             state.transition(to: .cancelled)
             state.h2ReadBuffer.removeAll()
             state.grpcFrameBuffer.removeAll()
             state.decodedBuffer.removeAll()
             let keepalive = state.keepaliveDeadline
+            let healthCheck = state.healthCheckDeadline
             state.keepaliveDeadline = nil
+            state.healthCheckDeadline = nil
+            state.pendingPingPayload = nil
             state.h2FlowGate.wakeAll()
-            return keepalive
+            return (keepalive, healthCheck)
         }
-        keepalive?.cancel()
+        pending.keepalive?.cancel()
+        pending.healthCheck?.cancel()
         transport.cancel()
     }
 
     deinit {
-        state.withLock { $0.keepaliveDeadline?.cancel() }
+        state.withLock {
+            $0.keepaliveDeadline?.cancel()
+            $0.healthCheckDeadline?.cancel()
+        }
     }
 }
 
@@ -294,8 +320,19 @@ nonisolated struct H2HeaderBlockAccumulator: Sendable {
     private(set) var buffer = Data()
     private(set) var endStream = false
 
+    /// Cumulative cap on the reassembled header block. A single frame is already
+    /// bounded by the read buffer, but CONTINUATION keeps appending across
+    /// frames; without this the block would grow without bound and exhaust the
+    /// network extension's memory.
+    let maxBlockSize: Int
+
+    init(maxBlockSize: Int) {
+        self.maxBlockSize = maxBlockSize
+    }
+
     /// Feeds one HEADERS or CONTINUATION frame. Returns the assembled block and
     /// the stream's END_STREAM flag once END_HEADERS is seen, otherwise `nil`.
+    /// Throws when the reassembled block would exceed `maxBlockSize`.
     mutating func ingest(
         type: UInt8,
         flags: UInt8,
@@ -303,10 +340,21 @@ nonisolated struct H2HeaderBlockAccumulator: Sendable {
     ) throws -> (block: Data, endStream: Bool)? {
         if type == GRPCConnection.h2FrameHeaders {
             // A HEADERS frame starts a new block (padding/priority stripped).
-            buffer = try GRPCConnection.headersPayload(strippingPaddingFrom: payload, flags: flags)
+            let fragment = try GRPCConnection.headersPayload(strippingPaddingFrom: payload, flags: flags)
+            guard fragment.count <= maxBlockSize else {
+                throw NaiveFlowError.proxy(.grpc, .protocolViolation(
+                    detail: "gRPC header block exceeds \(maxBlockSize) bytes"
+                ))
+            }
+            buffer = fragment
             endStream = (flags & GRPCConnection.h2FlagEndStream) != 0
         } else {
             // CONTINUATION carries a raw fragment, no padding or priority.
+            guard buffer.count + payload.count <= maxBlockSize else {
+                throw NaiveFlowError.proxy(.grpc, .protocolViolation(
+                    detail: "gRPC header block exceeds \(maxBlockSize) bytes"
+                ))
+            }
             buffer.append(payload)
         }
         guard (flags & GRPCConnection.h2FlagEndHeaders) != 0 else { return nil }
@@ -812,9 +860,7 @@ nonisolated extension GRPCConnection {
             case Self.h2FrameHeaders, Self.h2FrameContinuation:
                 if isOurStream {
                     // Reassemble across HEADERS + CONTINUATION before decoding.
-                    let assembled = try state.withLock {
-                        try $0.h2HeaderBlock.ingest(type: frame.type, flags: frame.flags, payload: frame.payload)
-                    }
+                    let assembled = try assembleHeaderBlock(frame)
                     if let assembled {
                         try markResponseReceivedIfNeeded(assembled.block)
                         outcome = assembled.endStream
@@ -840,7 +886,9 @@ nonisolated extension GRPCConnection {
                 outcome = .keepReading
 
             case Self.h2FramePing:
-                if frame.flags & Self.h2FlagAck == 0 {
+                if frame.flags & Self.h2FlagAck != 0 {
+                    acknowledgePing(frame.payload)
+                } else {
                     let pong = buildH2Frame(type: Self.h2FramePing, flags: Self.h2FlagAck, streamId: 0, payload: frame.payload)
                     try? await transport.send(pong)
                 }
@@ -1076,6 +1124,9 @@ nonisolated extension GRPCConnection {
 // MARK: - Keepalive
 
 nonisolated extension GRPCConnection {
+    /// Keepalive ping ACK timeout in seconds when `healthCheckTimeout` is unset.
+    private static let defaultHealthCheckTimeout = 20
+
     fileprivate func startKeepaliveIfNeeded() {
         let interval = configuration.idleTimeout
         guard interval > 0 else { return }
@@ -1106,7 +1157,55 @@ nonisolated extension GRPCConnection {
         if state.withLock({ $0.phase != .live }) { return }
         let payload = Data([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
         let ping = buildH2Frame(type: Self.h2FramePing, flags: 0, streamId: 0, payload: payload)
-        try? await transport.send(ping)
+        do {
+            try await transport.send(ping)
+        } catch {
+            return // the read path will surface the failure
+        }
+        armHealthCheck(payload)
+    }
+
+    /// Arms the ACK timeout for a just-sent keepalive ping. If the peer does not
+    /// PING-ACK within `healthCheckTimeout` (default 20s), the connection is
+    /// treated as dead and torn down.
+    private func armHealthCheck(_ payload: Data) {
+        let configured = configuration.healthCheckTimeout
+        let timeout = configured > 0 ? configured : Self.defaultHealthCheckTimeout
+        let deadline = TickScheduler.shared.schedule(in: .seconds(timeout), precision: .relaxed) { [weak self] in
+            guard let self else { return }
+            Task { await self.healthCheckFired(payload: payload) }
+        }
+        state.withLock { state in
+            state.healthCheckDeadline?.cancel()
+            state.pendingPingPayload = payload
+            state.healthCheckDeadline = deadline
+        }
+    }
+
+    /// Clears the outstanding keepalive ping when the peer ACKs it, proving the
+    /// connection is alive.
+    private func acknowledgePing(_ payload: Data) {
+        state.withLock { state in
+            guard state.pendingPingPayload == payload else { return }
+            state.pendingPingPayload = nil
+            state.healthCheckDeadline?.cancel()
+            state.healthCheckDeadline = nil
+        }
+    }
+
+    /// Fires when a keepalive ping was never ACKed: the peer is unresponsive, so
+    /// close the stream and tear down the transport.
+    private func healthCheckFired(payload: Data) async {
+        let stale: Bool = state.withLock { state in
+            guard state.phase == .live else { return false }
+            guard state.pendingPingPayload == payload else { return false }
+            state.pendingPingPayload = nil
+            state.healthCheckDeadline = nil
+            return true
+        }
+        guard stale else { return }
+        markClosed()
+        transport.cancel()
     }
 }
 
