@@ -241,7 +241,7 @@ nonisolated extension ConfigurationValidator {
                         code: .reservedPolicyName,
                         line: proxy.line,
                         section: ConfigurationDocument.SectionKind.proxy.displayName,
-                        message: "Proxy '\\(proxy.name)' is named like the built-in policy '\\(proxy.name.uppercased())', so a rule pointing at '\\(proxy.name)' uses that built-in action instead of this node. Rename the node to route to it."
+                        message: "Proxy '\(proxy.name)' is named like the built-in policy '\(proxy.name.uppercased())', so a rule pointing at '\(proxy.name)' uses that built-in action instead of this node. Rename the node to route to it."
                     )
                 )
             }
@@ -321,7 +321,7 @@ nonisolated extension ConfigurationValidator {
                         code: .reservedPolicyName,
                         line: group.line,
                         section: ConfigurationDocument.SectionKind.proxyGroup.displayName,
-                        message: "Proxy group '\\(group.name)' is named like the built-in policy '\\(group.name.uppercased())', so a rule pointing at '\\(group.name)' uses that built-in action instead of this group. Rename the group to route to it."
+                        message: "Proxy group '\(group.name)' is named like the built-in policy '\(group.name.uppercased())', so a rule pointing at '\(group.name)' uses that built-in action instead of this group. Rename the group to route to it."
                     )
                 )
             }

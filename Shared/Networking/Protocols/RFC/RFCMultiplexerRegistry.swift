@@ -17,6 +17,8 @@ nonisolated final class RFCMultiplexerRegistry: Sendable {
         let serverName: String
         let alpn: String
         let fingerprint: String
+        let minVersion: TLSVersion?
+        let maxVersion: TLSVersion?
         let insecureSkipVerify: Bool
         let echEnabled: Bool
         let echConfig: String
@@ -47,6 +49,8 @@ nonisolated final class RFCMultiplexerRegistry: Sendable {
             serverName: tls.serverName,
             alpn: (tls.alpn ?? RFCProtocol.defaultALPN).joined(separator: ","),
             fingerprint: tls.fingerprint.rawValue,
+            minVersion: tls.minVersion,
+            maxVersion: tls.maxVersion,
             insecureSkipVerify: tls.insecureSkipVerify,
             echEnabled: tls.echEnabled,
             echConfig: tls.echConfig ?? "",
