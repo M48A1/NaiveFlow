@@ -83,8 +83,12 @@ struct NativeConfigurationTests {
             """)
         #expect(result.isActivatable)
         #expect(result.route(host: "api.example.org").action == .direct)
-        #expect(result.route(ip: "10.0.0.1").action == .reject)
-        #expect(result.route(ip: "192.0.2.100").action == .reject)
+        // GeoIP/ASN rules match when the host is known and not in the GeoSite set.
+        #expect(result.route(host: "unrelated.org", ip: "10.0.0.1").action == .reject)
+        #expect(result.route(host: "unrelated.org", ip: "192.0.2.100").action == .reject)
+        // An IP alone cannot decide when a GeoSite rule earlier in order needs
+        // the host, so it falls back to the terminal action.
+        #expect(result.route(ip: "10.0.0.1").action == .defaultProxy)
         #expect(result.route(ip: "203.0.113.1").action == .defaultProxy)
     }
 

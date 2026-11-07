@@ -638,8 +638,12 @@ extension TLSClient {
         while true {
             if let finishedResult = parseTLS12ServerCCSAndFinished(buffer: buffer, keys: keys) {
                 switch finishedResult {
-                case .success(let remainingData):
-                    return try buildTLS12Connection(keys: keys, remainingBuffer: remainingData)
+                case .success(let finishedResult):
+                    return try buildTLS12Connection(
+                        keys: keys,
+                        remainingBuffer: finishedResult.remaining,
+                        initialServerSeqNum: finishedResult.serverSeqNum
+                    )
                 case .failure(let error):
                     throw error
                 }
@@ -663,7 +667,7 @@ extension TLSClient {
     private func parseTLS12ServerCCSAndFinished(
         buffer: Data,
         keys: TLS12HandshakeKeys
-    ) -> Result<Data?, Error>? {
+    ) -> Result<(remaining: Data?, serverSeqNum: UInt64), Error>? {
         var offset = 0
         var foundCCS = false
         var serverSeqNum: UInt64 = 0
@@ -733,7 +737,7 @@ extension TLSClient {
 
                     offset += 5 + recordLen
                     let remaining = offset < buffer.count ? Data(buffer[offset...]) : nil
-                    return .success(remaining)
+                    return .success((remaining: remaining, serverSeqNum: serverSeqNum))
                 } catch {
                     return .failure(error)
                 }
@@ -892,7 +896,8 @@ extension TLSClient {
 
     private func buildTLS12Connection(
         keys: TLS12HandshakeKeys,
-        remainingBuffer: Data?
+        remainingBuffer: Data?,
+        initialServerSeqNum: UInt64
     ) throws -> TLSRecordConnection {
         let tlsConnection = TLSRecordConnection(
             tls12ClientKey: keys.clientKey,
@@ -904,7 +909,7 @@ extension TLSClient {
             cipherSuite: tls12CipherSuite,
             protocolVersion: negotiatedVersion,
             initialClientSeqNum: 1,
-            initialServerSeqNum: 1
+            initialServerSeqNum: initialServerSeqNum
         )
         try commitHandshake(tlsConnection)
         tlsConnection.publishNegotiatedALPN(self.negotiatedALPN)

@@ -177,7 +177,12 @@ struct OrderedRouteMatcherTests {
         let both = RouteQuery(host: "example.com", ip: "10.1.2.3")
         #expect(matcher.match(both).action == .direct)
 
-        // With only the IP, the domain rule cannot match and the IP rule does.
-        #expect(matcher.match(RouteQuery(ip: "10.1.2.3")).action == .reject)
+        // With only the IP, the earlier domain rule cannot match yet, so the
+        // matcher defers instead of letting the later IP rule win early.
+        if case .deferred = matcher.evaluate(RouteQuery(ip: "10.1.2.3"), allowAddressResolution: false) {
+            // expected
+        } else {
+            Issue.record("Expected deferral when a host rule precedes an IP rule and the host is unknown")
+        }
     }
 }

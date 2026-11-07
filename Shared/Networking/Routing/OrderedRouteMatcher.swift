@@ -271,10 +271,21 @@ nonisolated struct OrderedRouteMatcher: Sendable {
     /// Stop before a later rule can win when an earlier rule needs DNS or flow
     /// metadata. DNS-time previews must not cache a verdict for a later rule.
     func evaluate(_ query: RouteQuery, allowAddressResolution: Bool = true, allowFinal: Bool = true) -> Evaluation {
+        // A host-based rule earlier in order cannot match while the host is
+        // unknown; if a later address-based rule then matches, that verdict is
+        // incomplete and must be deferred until the host is known (post-sniff),
+        // so an earlier domain rule can still win.
+        var sawHostRuleWithoutHost = false
         for rule in rules {
             switch Self.predicate(rule.matcher, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite) {
-            case .yes: return .matched(Result(action: rule.action, ruleLine: rule.line))
-            case .no: continue
+            case .yes:
+                if sawHostRuleWithoutHost, rule.matcher.requiresResolvedAddress { return .deferred }
+                return .matched(Result(action: rule.action, ruleLine: rule.line))
+            case .no:
+                if query.host == nil, rule.matcher.requiresHost {
+                    sawHostRuleWithoutHost = true
+                }
+                continue
             case .address:
                 if !rule.noResolve && allowAddressResolution { return .needsAddress }
             case .metadata: return .deferred
