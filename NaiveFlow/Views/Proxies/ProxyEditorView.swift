@@ -352,6 +352,7 @@ struct ProxyEditorView: View {
                     TextWithColorfulIcon(title: "Password", systemName: "key.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
                 }
             }
+        }
     }
     
     @ViewBuilder
@@ -705,6 +706,7 @@ struct ProxyEditorView: View {
                     TextWithColorfulIcon(title: "Fingerprint", systemName: "hand.raised.fingers.spread.fill", foregroundStyle: .white, backgroundStyle: .orange.gradient)
                 }
             }
+        }
     @ViewBuilder
     private var moreSettings: some View {
         if isVLESS && vlessTransport == "xhttp" {

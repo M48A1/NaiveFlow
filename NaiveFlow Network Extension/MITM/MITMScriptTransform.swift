@@ -130,7 +130,14 @@ nonisolated enum MITMScriptTransform {
     }
 
     private static func reserveNativeBodyEdit(_ bytes: Int) -> Bool {
+        #if os(iOS) || os(tvOS) || os(watchOS)
         let available = os_proc_available_memory()
+        #else
+        // os_proc_available_memory is unavailable on macOS. Keep the bounded
+        // reservation policy; the process-level limit is enforced by the
+        // extension host and the fixed cap remains the conservative fallback.
+        let available = 0
+        #endif
         let limit = available > 0
             ? min(available - nativeBodyEditHeadroom, maxNativeBodyEditReservedBytes)
             : maxNativeBodyEditReservedBytes

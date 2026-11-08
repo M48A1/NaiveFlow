@@ -23,6 +23,9 @@
 		CB1C10652F23B81500B74CD8 = { "path" = "NaiveFlow.app"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.application"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
 
 /* Begin PBXBuildFile section */
+		E10000000000000000000004 /* MITMRuleSetParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000001; };
+		E10000000000000000000005 /* ModuleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000002; };
+		E10000000000000000000006 /* RoutingRuleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000003; };
 		382A1871306A04490032C2BF /* NaiveFlowIP in Frameworks */ = {isa = PBXBuildFile; productRef = 382A1870306A04490032C2BF /* NaiveFlowIP */; };
 		3853793F30753251000675B7 /* NaiveFlowQUIC in Frameworks */ = {isa = PBXBuildFile; productRef = 3853793E30753251000675B7 /* NaiveFlowQUIC */; };
 		3853794130753258000675B7 /* NaiveFlowQUIC in Frameworks */ = {isa = PBXBuildFile; productRef = 3853794030753258000675B7 /* NaiveFlowQUIC */; };
@@ -79,9 +82,23 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D10000000000000000000006 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				D10000000000000000000007 /* NaiveFlow Network Extension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		E10000000000000000000001 /* MITMRuleSetParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NaiveFlow/Views/Pages/MITM/MITMRuleSetParser.swift"; sourceTree = SOURCE_ROOT; };
+		E10000000000000000000002 /* ModuleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NaiveFlow/Views/Pages/Modules/ModuleParser.swift"; sourceTree = SOURCE_ROOT; };
+		E10000000000000000000003 /* RoutingRuleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NaiveFlow/Views/Pages/Routing/RoutingRuleParser.swift"; sourceTree = SOURCE_ROOT; };
 		CB65476A2F65715600C85E4A /* Exceptions for "Shared" folder in "NaiveFlow Network Extension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -376,6 +393,13 @@
 			);
 			target = CB2B549B2F6C3E2700F24AC2 /* NaiveFlow TV */;
 		};
+		D10000000000000000000010 /* Exceptions for "NaiveFlow macOS" folder in "NaiveFlow macOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = D1000000000000000000000C /* NaiveFlow macOS */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -424,6 +448,14 @@
 				CB71D2EE2F838FF3002B9E1D /* Exceptions for "Shared" folder in "NaiveFlow Widget" target */,
 			);
 			path = Shared;
+			sourceTree = "<group>";
+		};
+		D10000000000000000000001 /* NaiveFlow macOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D10000000000000000000010 /* Exceptions for "NaiveFlow macOS" folder in "NaiveFlow macOS" target */,
+			);
+			path = "NaiveFlow macOS";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -476,6 +508,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D10000000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D10000000000000000000008 /* NaiveFlowQUIC in Frameworks */,
+				D10000000000000000000009 /* YAML in Frameworks */,
+				D1000000000000000000000A /* BLAKE in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -487,6 +529,7 @@
 				CB2B549D2F6C3E2700F24AC2 /* NaiveFlow TV */,
 				CB1C107B2F23B82F00B74CD8 /* NaiveFlow Network Extension */,
 				CB71CDC82F837D11002B9E1D /* NaiveFlow Widget */,
+				D10000000000000000000001 /* NaiveFlow macOS */,
 				78B6DF9B2FE7B70D0084897A /* NaiveFlow Tests */,
 				CB1C10782F23B82F00B74CD8 /* Frameworks */,
 				CB1C10662F23B81500B74CD8 /* Products */,
@@ -500,6 +543,7 @@
 				CB1C10772F23B82F00B74CD8 /* NaiveFlow Network Extension.appex */,
 				CB2B549C2F6C3E2700F24AC2 /* NaiveFlow TV.app */,
 				CB71CDC32F837D11002B9E1D /* NaiveFlow Widget.appex */,
+				D10000000000000000000002 /* NaiveFlow macOS.app */,
 				78B6DF9A2FE7B70D0084897A /* NaiveFlow Tests.xctest */,
 			);
 			name = Products;
@@ -645,6 +689,34 @@
 			productReference = CB71CDC32F837D11002B9E1D /* NaiveFlow Widget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		D1000000000000000000000C /* NaiveFlow macOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D1000000000000000000000D /* Build configuration list for PBXNativeTarget "NaiveFlow macOS" */;
+			buildPhases = (
+				D10000000000000000000003 /* Sources */,
+				D10000000000000000000004 /* Frameworks */,
+				D10000000000000000000005 /* Resources */,
+				D10000000000000000000006 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D1000000000000000000000B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D10000000000000000000001 /* NaiveFlow macOS */,
+				CB7A00022F65700100C85E4A /* Shared */,
+			);
+			name = "NaiveFlow macOS";
+			packageProductDependencies = (
+				3853794030753258000675B7 /* NaiveFlowQUIC */,
+				38B2C4A3307A1F0100D4E6F1 /* YAML */,
+				38B2C49B7761D5E2B8BE528B /* BLAKE */,
+			);
+			productName = NaiveFlow;
+			productReference = D10000000000000000000002 /* NaiveFlow macOS.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -661,6 +733,9 @@
 					};
 					CB1C10642F23B81500B74CD8 = {
 						CreatedOnToolsVersion = 26.0.1;
+					};
+					D1000000000000000000000C = {
+						CreatedOnToolsVersion = 27.0;
 					};
 					CB1C10762F23B82F00B74CD8 = {
 						CreatedOnToolsVersion = 26.0.1;
@@ -701,6 +776,7 @@
 			projectRoot = "";
 			targets = (
 				CB1C10642F23B81500B74CD8 /* NaiveFlow */,
+				D1000000000000000000000C /* NaiveFlow macOS */,
 				CB2B549B2F6C3E2700F24AC2 /* NaiveFlow TV */,
 				CB1C10762F23B82F00B74CD8 /* NaiveFlow Network Extension */,
 				CB71CDC22F837D11002B9E1D /* NaiveFlow Widget */,
@@ -745,6 +821,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D10000000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -783,6 +866,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D10000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E10000000000000000000004 /* MITMRuleSetParser.swift in Sources */,
+				E10000000000000000000005 /* ModuleParser.swift in Sources */,
+				E10000000000000000000006 /* RoutingRuleParser.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -805,6 +898,11 @@
 			isa = PBXTargetDependency;
 			target = CB71CDC22F837D11002B9E1D /* NaiveFlow Widget */;
 			targetProxy = CB71CDD22F837D11002B9E1D /* PBXContainerItemProxy */;
+		};
+		D1000000000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CB1C10762F23B82F00B74CD8;
+			targetProxy = CB1C10802F23B82F00B74CD8;
 		};
 /* End PBXTargetDependency section */
 
@@ -1055,6 +1153,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1095,7 +1194,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) NETWORK_EXTENSION";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -1120,6 +1219,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "NaiveFlow Network Extension";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1130,7 +1230,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) NETWORK_EXTENSION";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -1276,6 +1376,44 @@
 			};
 			name = Release;
 		};
+		D1000000000000000000000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = "NaiveFlow/NaiveFlow.entitlements";
+				CURRENT_PROJECT_VERSION = 414;
+				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				INFOPLIST_FILE = "NaiveFlow macOS/Info.plist";
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 2.5;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.NaiveFlow.macOS;
+				PRODUCT_NAME = "NaiveFlow";
+				SDKROOT = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		D1000000000000000000000F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = "NaiveFlow/NaiveFlow.entitlements";
+				CURRENT_PROJECT_VERSION = 414;
+				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				INFOPLIST_FILE = "NaiveFlow macOS/Info.plist";
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 2.5;
+				PRODUCT_BUNDLE_IDENTIFIER = com.argsment.NaiveFlow.macOS;
+				PRODUCT_NAME = "NaiveFlow";
+				SDKROOT = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1329,6 +1467,15 @@
 			buildConfigurations = (
 				CB71CDD52F837D11002B9E1D /* Debug */,
 				CB71CDD62F837D11002B9E1D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D1000000000000000000000D /* Build configuration list for PBXNativeTarget "NaiveFlow macOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D1000000000000000000000E /* Debug */,
+				D1000000000000000000000F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
