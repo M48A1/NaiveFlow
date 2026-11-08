@@ -87,6 +87,38 @@ struct LiveRequestMonitorTests {
         #expect(model.requests.map(\.id) == [fresh.id])
     }
 
+    @Test func cancelledPollKeepsLastSnapshotAndResumeFetchesCurrentMetrics() async throws {
+        let id = UUID()
+        let row = TunnelRequestEntry(timestamp: 20, protocol: .tcp, host: "same.test", port: 443,
+                                     routeTarget: .direct, activityID: id)
+        let provider = ScriptedTunnelProvider()
+        let tunnel = TunnelController(provider: provider)
+        let model = RequestsModel(now: { Date(timeIntervalSinceReferenceDate: 31) })
+        let initial = try JSONEncoder().encode(RequestsResponse(requests: [row], activities: [connection(id)]))
+        provider.onMessage = { _ in initial }
+        await model.poll(using: tunnel)
+        let snapshot = model.requests
+
+        let updated = try JSONEncoder().encode(RequestsResponse(requests: [row], activities: [
+            connection(id, state: .closed, bytes: 99)
+        ]))
+        provider.onMessage = { _ in
+            // Pausing cancels the polling task even if its provider reply is already in flight.
+            withUnsafeCurrentTask { $0?.cancel() }
+            return updated
+        }
+        let polling = Task { await model.poll(using: tunnel) }
+        await polling.value
+        #expect(model.requests == snapshot)
+        #expect(model.refreshState == .current)
+
+        provider.onMessage = { _ in updated }
+        await model.poll(using: tunnel)
+        #expect(model.requests.first?.id == row.id)
+        #expect(model.requests.first?.state == .closed)
+        #expect(model.requests.first?.activity?.bytesIn == 99)
+    }
+
     @Test func callbackTimeoutAndCancellationReturnWithoutWaitingForTheProvider() async throws {
         let callback = Mutex<(@Sendable (Data?) -> Void)?>(nil)
         let start = ContinuousClock.now

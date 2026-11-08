@@ -526,7 +526,9 @@ actor TCPConnection: MITMSessionHost {
             ruleSetName = match.ruleSetName
             routeTarget = .reject
             hasRequestRecord = true
-            stack.requestLog.record(protocol: .tcp, host: sni, port: dstPort, routeTarget: .reject, ruleSetName: match.ruleSetName, deduplicationKey: rejectionLogKey)
+            stack.requestLog.record(protocol: .tcp, host: sni, port: dstPort, routeTarget: .reject,
+                                    ruleSetName: match.ruleSetName, deduplicationKey: rejectionLogKey,
+                                    activityID: activityRecord.id)
             publishRoute()
             rejectSilently()
         case .proxy(let id):
