@@ -110,7 +110,8 @@ extension TunnelStack {
             return delegate
         }
         let decision = connectionRouter.decision(forIP: dstIPString, sourceIP: pending.source.address.description,
-            sourcePort: pending.source.port, destinationPort: dstPort, protocolName: "TCP")
+            sourcePort: pending.source.port, destinationPort: dstPort, protocolName: "TCP",
+            consumingGroupSelection: false)
 
         var connectionConfiguration = defaultConfiguration
         var routeTarget: RouteTarget = .default

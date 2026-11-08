@@ -28,6 +28,11 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
     let legacyMITM: Data?
     var geo = NativeGeoDatabase()
 
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, id, snapshotID, parentID, preferences, nodes, selectedNodeID
+        case rules, finalAction, mitmRuleSets, policyGroups, legacyRouting, legacyMITM, geo
+    }
+
     var selectedNode: ProxyConfiguration? { nodes.first { $0.id == selectedNodeID } }
 
     /// A text version (`snapshotID != nil`) pins every runtime preference so the
@@ -126,6 +131,28 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
         }
     }
 
+}
+
+// Keep the memberwise initializer while decoding fields added to schema 1
+// explicitly: synthesized Decodable does not use stored-property defaults.
+nonisolated extension RuntimeConfigurationBundle {
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try values.decode(Int.self, forKey: .schemaVersion)
+        id = try values.decode(UUID.self, forKey: .id)
+        snapshotID = try values.decodeIfPresent(UUID.self, forKey: .snapshotID)
+        parentID = try values.decodeIfPresent(UUID.self, forKey: .parentID)
+        preferences = try values.decode([String: RuntimePreferenceValue].self, forKey: .preferences)
+        nodes = try values.decode([ProxyConfiguration].self, forKey: .nodes)
+        selectedNodeID = try values.decode(UUID.self, forKey: .selectedNodeID)
+        rules = try values.decodeIfPresent([OrderedRoutingRule].self, forKey: .rules)
+        finalAction = try values.decode(RouteMatchAction.self, forKey: .finalAction)
+        mitmRuleSets = try values.decode([MITMRuleSet].self, forKey: .mitmRuleSets)
+        policyGroups = try values.decodeIfPresent([RuntimeProxyGroup].self, forKey: .policyGroups) ?? []
+        legacyRouting = try values.decodeIfPresent(Data.self, forKey: .legacyRouting)
+        legacyMITM = try values.decodeIfPresent(Data.self, forKey: .legacyMITM)
+        geo = try values.decodeIfPresent(NativeGeoDatabase.self, forKey: .geo) ?? NativeGeoDatabase()
+    }
 }
 
 nonisolated enum RuntimeConfigurationFailure: LocalizedError {

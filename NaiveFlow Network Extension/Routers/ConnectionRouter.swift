@@ -52,7 +52,8 @@ nonisolated final class ConnectionRouter: Sendable {
 
     func decision(forIP ip: String, sourceIP: String? = nil, sourcePort: UInt16? = nil,
                   destinationPort: UInt16? = nil, protocolName: String? = nil,
-                  allowAddressResolution: Bool = true, deferOnHostUnknown: Bool = true) -> RouteDecision {
+                  allowAddressResolution: Bool = true, deferOnHostUnknown: Bool = true,
+                  consumingGroupSelection: Bool = true) -> RouteDecision {
         guard IPv4Only.supportsHost(ip) else { return RouteDecision(host: ip, hostIsResolvedDomain: false, action: .unreachable) }
         if domainRouter.usesNativeRules {
             let synthetic = SyntheticAddressPool.isSyntheticAddress(ip)
@@ -66,7 +67,7 @@ nonisolated final class ConnectionRouter: Sendable {
             switch domainRouter.nativeDecision(query, allowResolution: allowAddressResolution && !preventDNSLeak.load(ordering: .relaxed), deferOnHostUnknown: deferOnHostUnknown) {
             case .matched(let result):
                 return RouteDecision(host: host ?? ip, hostIsResolvedDomain: synthetic,
-                                     action: action(for: DomainRouter.nativeMatch(result)),
+                                     action: action(for: DomainRouter.nativeMatch(result), consumingGroupSelection: consumingGroupSelection),
                                      isFinal: result.isFinal)
             case .needsAddress:
                 if let host { DNSResolver.localRequests.prewarm(host, family: .ipv4, purpose: .ruleEvaluation) }
@@ -247,7 +248,7 @@ nonisolated final class ConnectionRouter: Sendable {
         return RouteDecision(host: host, hostIsResolvedDomain: true, action: action(for: match))
     }
 
-    private func action(for match: DomainRouter.Match) -> RouteDecision.Action {
+    private func action(for match: DomainRouter.Match, consumingGroupSelection: Bool = true) -> RouteDecision.Action {
         switch match.action {
         case .default, .defaultProxy:
             return .route(target: match.action, configuration: nil, ruleSetName: match.ruleSetName)
@@ -256,7 +257,7 @@ nonisolated final class ConnectionRouter: Sendable {
         case .reject:
             return .reject(ruleSetName: match.ruleSetName)
         case .proxy(let id):
-            let configuration = domainRouter.resolveConfiguration(action: match.action)
+            let configuration = domainRouter.resolveConfiguration(action: match.action, consumingGroupSelection: consumingGroupSelection)
             return .route(target: .proxy(id), configuration: configuration, ruleSetName: match.ruleSetName)
         }
     }

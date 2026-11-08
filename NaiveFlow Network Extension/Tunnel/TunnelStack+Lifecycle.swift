@@ -282,6 +282,7 @@ extension TunnelStack {
                 guard let configuration else { continue }
                 bringUpDataPlane(configuration: configuration)
             case .releaseModules:
+                groupProber.stop()
                 purgeOutputBuffer()
                 attachPacketFlow(nil)
                 OutboundConnector.setRoutingContext(nil)

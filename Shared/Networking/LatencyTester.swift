@@ -156,14 +156,14 @@ nonisolated enum LatencyTester {
                 // Warm the tunnel so the measured round trip is steady state: the
                 // proxy handshake and first response land before the clock starts.
                 try await connection.send(Self.wireRequest(target: target, closeAfter: false))
-                try Self.expectSuccess(try await connection.receive())
+                var responses = LatencyProbeResponseReader()
+                try await responses.readSuccess(from: connection)
 
                 let clock = ContinuousClock()
                 let start = clock.now
                 try await connection.send(Self.wireRequest(target: target, closeAfter: true))
-                let response = try await connection.receive()
+                try await responses.readSuccess(from: connection)
                 let elapsed = clock.now - start
-                try Self.expectSuccess(response)
 
                 return Int(elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000)
             } onCancel: {
@@ -187,22 +187,43 @@ nonisolated enum LatencyTester {
         return Data(head.utf8)
     }
 
-    /// Accepts any `2xx`: a `204` from `/generate_204` is as healthy as a `200`
-    /// from a captive-portal page.
-    private static func expectSuccess(_ data: Data?) throws {
-        let statusLine = data.flatMap { String(data: $0, encoding: .utf8) }?
-            .split(separator: "\r\n", maxSplits: 1).first.map(String.init)
-        guard let statusLine, let status = Self.statusCode(from: statusLine) else {
-            throw NaiveFlowError.diagnostics(.latencyProbeFailed(status: statusLine ?? "no response"))
-        }
-        guard (200..<300).contains(status) else {
-            throw NaiveFlowError.diagnostics(.latencyProbeFailed(status: statusLine))
+}
+
+/// HEAD responses have no body, so consuming each complete header also drains
+/// that response. Keep surplus bytes for the next response and cap header size.
+nonisolated struct LatencyProbeResponseReader: Sendable {
+    private var buffer = Data()
+    private static let maximumHeaderBytes = 65_536
+    private static let terminator = Data([13, 10, 13, 10])
+
+    mutating func readSuccess(from connection: any ProxyConnection) async throws {
+        while true {
+            if let end = buffer.range(of: Self.terminator) {
+                let length = buffer.distance(from: buffer.startIndex, to: end.upperBound)
+                guard length <= Self.maximumHeaderBytes else { throw failure("response header too large") }
+                let header = buffer.prefix(length)
+                buffer = Data(buffer.dropFirst(length))
+                let line = String(decoding: header, as: UTF8.self)
+                    .components(separatedBy: "\r\n")[0]
+                let parts = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+                guard parts.count >= 2, ["HTTP/1.0", "HTTP/1.1"].contains(parts[0]),
+                      parts[1].count == 3, let status = Int(parts[1]) else {
+                    throw failure(line)
+                }
+                // A server may send informational headers before the final one.
+                if (100..<200).contains(status), status != 101 { continue }
+                guard (200..<300).contains(status) else { throw failure(line) }
+                return
+            }
+            guard buffer.count < Self.maximumHeaderBytes else { throw failure("response header too large") }
+            guard let chunk = try await connection.receive(), !chunk.isEmpty else {
+                throw failure("incomplete response header")
+            }
+            buffer.append(chunk)
         }
     }
 
-    private static func statusCode(from statusLine: String) -> Int? {
-        let parts = statusLine.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
-        guard parts.count >= 2, parts[0].uppercased().hasPrefix("HTTP/") else { return nil }
-        return Int(parts[1])
+    private func failure(_ status: String) -> NaiveFlowError {
+        .diagnostics(.latencyProbeFailed(status: status))
     }
 }

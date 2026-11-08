@@ -178,3 +178,17 @@ nonisolated enum ProxyProbePlan {
         }
     }
 }
+
+/// Routing previews must not consume a dial's round-robin slot. TCP can match
+/// once at intake and again after sniffing before committing its actual route.
+nonisolated struct ProxyGroupSelection: Sendable {
+    private var roundRobinIndex = 0
+
+    mutating func select(group: RuntimeProxyGroup, latencies: ProxyGroupSelector.Latencies,
+                         consuming: Bool = true) -> UUID? {
+        let member = ProxyGroupSelector.select(group: group, latencies: latencies,
+                                               roundRobinIndex: roundRobinIndex)
+        if consuming, member != nil, group.kind == .loadBalance { roundRobinIndex &+= 1 }
+        return member
+    }
+}

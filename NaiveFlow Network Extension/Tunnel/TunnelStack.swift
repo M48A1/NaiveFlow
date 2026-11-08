@@ -538,10 +538,10 @@ actor TunnelStack {
                     if let nativeBundle {
                         if nativeBundle.rules != nil {
                             domainRouter.installNative(nativeBundle)
-                            Task { await groupProber.start(router: domainRouter, nodes: nativeBundle.nodes, groups: nativeBundle.policyGroups) }
+                            groupProber.start(router: domainRouter, nodes: nativeBundle.nodes, groups: nativeBundle.policyGroups)
                         } else {
                             domainRouter.installBaseline(nativeBundle.legacyRouting)
-                            Task { await groupProber.stop() }
+                            groupProber.stop()
                         }
                     } else if let precompiledRouting {
                         domainRouter.install(precompiledRouting)
@@ -550,7 +550,7 @@ actor TunnelStack {
                     }
                 } else {
                     domainRouter.reset()
-                    Task { await groupProber.stop() }
+                    groupProber.stop()
                 }
             }
             runtime.complete(ticket)

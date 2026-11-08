@@ -361,7 +361,11 @@ actor TCPConnection: MITMSessionHost {
             publishRoute()
             rejectSilently()
         case .proxy(let id):
-            guard let resolved = router.resolveConfiguration(action: match.action) else { return }
+            // Intercepted sessions choose their actual upstream in
+            // commitUpstreamRoute(); this pass only previews that route.
+            guard let resolved = router.resolveConfiguration(
+                action: match.action, consumingGroupSelection: !mitmEnabled
+            ) else { return }
             ruleMatched = true
             ruleSetName = match.ruleSetName
             routeTarget = .proxy(id)

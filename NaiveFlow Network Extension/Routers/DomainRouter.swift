@@ -39,7 +39,7 @@ nonisolated final class DomainRouter: Sendable {
         /// Text-configured groups by stable id, resolved to a member at dial time.
         var policyGroups: [UUID: RuntimeProxyGroup] = [:]
         /// Per-group dial counter for `load-balance` round-robin.
-        var roundRobin: [UUID: Int] = [:]
+        var selections: [UUID: ProxyGroupSelection] = [:]
         /// Latest probe results keyed by policy-group id, then member node id
         /// (`ms`). Absent = unknown or unreachable. Keyed per group so a node
         /// shared by several groups keeps each group's independent verdict
@@ -404,7 +404,7 @@ nonisolated final class DomainRouter: Sendable {
         }
     }
 
-    func resolveConfiguration(action: RouteTarget) -> ProxyConfiguration? {
+    func resolveConfiguration(action: RouteTarget, consumingGroupSelection: Bool = true) -> ProxyConfiguration? {
         switch action {
         case .default, .defaultProxy, .direct, .reject:
             return nil
@@ -415,10 +415,8 @@ nonisolated final class DomainRouter: Sendable {
                 // pick a member node, using the latest probe results (absent =
                 // unknown/unreachable).
                 guard let group = state.policyGroups[id] else { return nil }
-                let index = state.roundRobin[id] ?? 0
-                state.roundRobin[id] = index &+ 1
-                guard let memberID = ProxyGroupSelector.select(
-                    group: group, latencies: state.latencies[group.id] ?? [:], roundRobinIndex: index
+                guard let memberID = state.selections[id, default: ProxyGroupSelection()].select(
+                    group: group, latencies: state.latencies[group.id] ?? [:], consuming: consumingGroupSelection
                 ) else { return nil }
                 return state.configurationMap[memberID]
             }
