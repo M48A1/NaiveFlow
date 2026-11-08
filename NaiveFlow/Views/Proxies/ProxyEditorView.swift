@@ -78,20 +78,6 @@ struct ProxyEditorView: View {
     @State private var hysteriaObfuscationMinText = String(HysteriaObfuscation.geckoMinPacketSizeDefault)
     @State private var hysteriaSNI = ""
     
-    @State private var sudokuKey = ""
-    @State private var sudokuAEADMethod: SudokuAEADMethod = .chacha20Poly1305
-    @State private var sudokuPaddingMinText = "5"
-    @State private var sudokuPaddingMaxText = "15"
-    @State private var sudokuASCIIMode: SudokuASCIIMode = .preferEntropy
-    @State private var sudokuCustomTablesText = ""
-    @State private var sudokuEnablePureDownlink = true
-    @State private var sudokuMultiplex: SudokuMultiplex = .off
-    @State private var sudokuHTTPMaskEnabled = true
-    @State private var sudokuHTTPMaskMode: SudokuHTTPMaskMode = .legacy
-    @State private var sudokuHTTPMaskTLS = false
-    @State private var sudokuHTTPMaskHost = ""
-    @State private var sudokuHTTPMaskPathRoot = ""
-    
     @State private var trojanPassword = ""
     @State private var trojanSNI = ""
     @State private var trojanALPN = ""
@@ -107,32 +93,20 @@ struct ProxyEditorView: View {
     @State private var anytlsFingerprint: TLSFingerprint = .default
     
     @State private var ssPassword = ""
-    @State private var ssMethod = "aes-128-gcm"
+    @State private var ssMethod = "2022-blake3-aes-256-gcm"
     
     @State private var socks5Username = ""
     @State private var socks5Password = ""
-    
-    @State private var rfcUsername = ""
-    @State private var rfcPassword = ""
-    @State private var rfcSecurity = "tls"
-    @State private var rfcSNI = ""
-    @State private var rfcALPN = ""
-    @State private var rfcECHEnabled = false
-    @State private var rfcECHConfig = ""
-    @State private var rfcFingerprint: TLSFingerprint = .default
     
     private var isNowhere: Bool { selectedProtocol == .nowhere }
     private var isVLESS: Bool { selectedProtocol == .vless }
     private var isVLESSReality: Bool { vlessSecurity == "reality" }
     private var isVLESSTLS: Bool { vlessSecurity == "tls" }
     private var isHysteria: Bool { selectedProtocol == .hysteria }
-    private var isSudoku: Bool { selectedProtocol == .sudoku }
     private var isTrojan: Bool { selectedProtocol == .trojan }
     private var isAnyTLS: Bool { selectedProtocol == .anytls }
     private var isShadowsocks: Bool { selectedProtocol == .shadowsocks }
     private var isSOCKS5: Bool { selectedProtocol == .socks5 }
-    private var isRFC: Bool { selectedProtocol == .rfc }
-    private var isRFCTLS: Bool { rfcSecurity == "tls" }
     private var isDirect: Bool { selectedProtocol == .direct }
     
     private var isValid: Bool {
@@ -161,11 +135,6 @@ struct ProxyEditorView: View {
             }
             return true
         }
-        if isSudoku {
-            guard !sudokuKey.isEmpty else { return false }
-            guard let min = Int(sudokuPaddingMinText), let max = Int(sudokuPaddingMaxText) else { return false }
-            return (0...100).contains(min) && min <= max && max <= 100
-        }
         if isTrojan {
             return !trojanPassword.isEmpty
         }
@@ -177,9 +146,6 @@ struct ProxyEditorView: View {
         }
         if isSOCKS5 {
             return true
-        }
-        if isRFC {
-            return !rfcUsername.contains(":")
         }
         return false
     }
@@ -208,12 +174,10 @@ struct ProxyEditorView: View {
                         Text(String("Nowhere")).tag(OutboundProtocol.nowhere)
                         Text(String("VLESS")).tag(OutboundProtocol.vless)
                         Text(String("Hysteria")).tag(OutboundProtocol.hysteria)
-                        Text(String("Sudoku")).tag(OutboundProtocol.sudoku)
                         Text(String("Trojan")).tag(OutboundProtocol.trojan)
                         Text(String("AnyTLS")).tag(OutboundProtocol.anytls)
                         Text(String("Shadowsocks")).tag(OutboundProtocol.shadowsocks)
                         Text(String("SOCKS5")).tag(OutboundProtocol.socks5)
-                        Text(String("RFC")).tag(OutboundProtocol.rfc)
                         Text(String("Direct")).tag(OutboundProtocol.direct)
                     } label: {
                         TextWithColorfulIcon(title: "Protocol", systemName: "arrow.down.left.arrow.up.right.circle.fill", foregroundStyle: .white, backgroundStyle: .orange.gradient)
@@ -336,51 +300,6 @@ struct ProxyEditorView: View {
                         TextWithColorfulIcon(title: "Minimum Packet Size", comment: "Minimum Packet Size for Hysteria protocol Gecko obfuscation", systemName: "minus.circle.fill", foregroundStyle: .white, backgroundStyle: .orange.gradient)
                     }
                 }
-            } else if isSudoku {
-                LabeledContent {
-                    TextField(String(localized: "Key", comment: "Key for Sudoku protocol"), text: $sudokuKey)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    TextWithColorfulIcon(title: "Key", comment: "Key for Sudoku protocol", systemName: "key.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
-                }
-                Picker(selection: $sudokuAEADMethod) {
-                    ForEach(SudokuAEADMethod.allCases, id: \.self) { method in
-                        Text(method.displayName).tag(method)
-                    }
-                } label: {
-                    TextWithColorfulIcon(title: "AEAD", comment: "AEAD for Sudoku protocol", systemName: "lock.fill", foregroundStyle: .white, backgroundStyle: .red.gradient)
-                }
-                LabeledContent {
-                    TextField(String("15"), text: $sudokuPaddingMaxText)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    TextWithColorfulIcon(title: "Maximum Padding", comment: "Maximum Padding for Sudoku protocol", systemName: "plus.circle.fill", foregroundStyle: .white, backgroundStyle: .orange.gradient)
-                }
-                LabeledContent {
-                    TextField(String("5"), text: $sudokuPaddingMinText)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    TextWithColorfulIcon(title: "Minimum Padding", comment: "Minimum Padding for Sudoku protocol", systemName: "minus.circle.fill", foregroundStyle: .white, backgroundStyle: .orange.gradient)
-                }
-                Picker(selection: $sudokuASCIIMode) {
-                    ForEach(SudokuASCIIMode.allCases, id: \.self) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                } label: {
-                    TextWithColorfulIcon(title: "ASCII Mode", comment: "ASCII Mode for Sudoku protocol", systemName: "gearshape.fill", foregroundStyle: .white, backgroundStyle: .gray.gradient)
-                }
-                LabeledContent {
-                    TextField("Comma Separated", text: $sudokuCustomTablesText)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    TextWithColorfulIcon(title: "Custom Tables", comment: "Custom Tables for Sudoku protocol", systemName: "square.stack.3d.up.fill", foregroundStyle: .white, backgroundStyle: .indigo.gradient)
-                }
             } else if isTrojan {
                 LabeledContent {
                     TextField("Password", text: $trojanPassword)
@@ -409,10 +328,6 @@ struct ProxyEditorView: View {
                     TextWithColorfulIcon(title: "Password", systemName: "key.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
                 }
                 Picker(selection: $ssMethod) {
-                    Text("None").tag("none")
-                    Text(String("AES-128-GCM")).tag("aes-128-gcm")
-                    Text(String("AES-256-GCM")).tag("aes-256-gcm")
-                    Text(String("ChaCha20-Poly1305")).tag("chacha20-ietf-poly1305")
                     Text(String("BLAKE3-AES-128-GCM")).tag("2022-blake3-aes-128-gcm")
                     Text(String("BLAKE3-AES-256-GCM")).tag("2022-blake3-aes-256-gcm")
                     Text(String("BLAKE3-ChaCha20-Poly1305")).tag("2022-blake3-chacha20-poly1305")
@@ -436,25 +351,7 @@ struct ProxyEditorView: View {
                 } label: {
                     TextWithColorfulIcon(title: "Password", systemName: "key.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
                 }
-            } else if isRFC {
-                LabeledContent {
-                    TextField("Username", text: $rfcUsername)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    TextWithColorfulIcon(title: "Username", systemName: "person.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
-                }
-                LabeledContent {
-                    TextField("Password", text: $rfcPassword)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .multilineTextAlignment(.trailing)
-                } label: {
-                    TextWithColorfulIcon(title: "Password", systemName: "key.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
-                }
             }
-        }
     }
     
     @ViewBuilder
@@ -624,17 +521,6 @@ struct ProxyEditorView: View {
                         TextWithColorfulIcon(title: "Download Speed", comment: "Download Speed for Hysteria protocol", systemName: "arrow.down.circle.fill", foregroundStyle: .white, backgroundStyle: .blue.gradient)
                     }
                 }
-            }
-        } else if isSudoku {
-            Toggle(isOn: $sudokuEnablePureDownlink) {
-                TextWithColorfulIcon(title: "Pure Downlink", comment: "Pure Downlink for Sudoku protocol", systemName: "arrow.down.to.line.compact", foregroundStyle: .white, backgroundStyle: .blue.gradient)
-            }
-            Picker(selection: $sudokuMultiplex) {
-                ForEach(SudokuMultiplex.allCases, id: \.self) { mode in
-                    Text(mode.displayName).tag(mode)
-                }
-            } label: {
-                TextWithColorfulIcon(title: "Multiplex", systemName: "rectangle.split.3x1.fill", foregroundStyle: .white, backgroundStyle: .teal.gradient)
             }
         }
     }
@@ -819,57 +705,6 @@ struct ProxyEditorView: View {
                     TextWithColorfulIcon(title: "Fingerprint", systemName: "hand.raised.fingers.spread.fill", foregroundStyle: .white, backgroundStyle: .orange.gradient)
                 }
             }
-        } else if isRFC {
-            Section("TLS") {
-                Picker(selection: $rfcSecurity) {
-                    Text("None").tag("none")
-                    Text("TLS").tag("tls")
-                } label: {
-                    TextWithColorfulIcon(title: "Security", comment: "Security for RFC protocol", systemName: "shield.lefthalf.filled", foregroundStyle: .white, backgroundStyle: .blue.gradient)
-                }
-                if isRFCTLS {
-                    LabeledContent {
-                        TextField("SNI", text: $rfcSNI)
-                            .keyboardType(.URL)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .multilineTextAlignment(.trailing)
-                    } label: {
-                        TextWithColorfulIcon(title: "SNI", systemName: "network", foregroundStyle: .white, backgroundStyle: .blue.gradient)
-                    }
-                    LabeledContent {
-                        TextField("h2,http/1.1", text: $rfcALPN)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .multilineTextAlignment(.trailing)
-                    } label: {
-                        TextWithColorfulIcon(title: "ALPN", systemName: "list.bullet", foregroundStyle: .white, backgroundStyle: .blue.gradient)
-                    }
-                    Toggle(isOn: $rfcECHEnabled) {
-                        TextWithColorfulIcon(title: "Enable ECH", systemName: "lock.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
-                    }
-                    if rfcECHEnabled {
-                        LabeledContent {
-                            TextField("Base64", text: $rfcECHConfig)
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
-                                .multilineTextAlignment(.trailing)
-                        } label: {
-                            TextWithColorfulIcon(title: "ECH Config", systemName: "doc.text.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
-                        }
-                    }
-                    Picker(selection: $rfcFingerprint) {
-                        ForEach(TLSFingerprint.allCases, id: \.self) { fp in
-                            Text(fp.displayName).tag(fp)
-                        }
-                    } label: {
-                        TextWithColorfulIcon(title: "Fingerprint", systemName: "hand.raised.fingers.spread.fill", foregroundStyle: .white, backgroundStyle: .orange.gradient)
-                    }
-                }
-            }
-        }
-    }
-    
     @ViewBuilder
     private var moreSettings: some View {
         if isVLESS && vlessTransport == "xhttp" {
@@ -987,41 +822,6 @@ struct ProxyEditorView: View {
             }
         }
         
-        if isSudoku {
-            Section {
-                Toggle(isOn: $sudokuHTTPMaskEnabled) {
-                    TextWithColorfulIcon(title: "HTTP Mask", comment: "HTTP Mask for Sudoku protocol", systemName: "theatermasks.fill", foregroundStyle: .white, backgroundStyle: .purple.gradient)
-                }
-                if sudokuHTTPMaskEnabled {
-                    Picker(selection: $sudokuHTTPMaskMode) {
-                        ForEach(SudokuHTTPMaskMode.allCases, id: \.self) { mode in
-                            Text(mode.displayName).tag(mode)
-                        }
-                    } label: {
-                        TextWithColorfulIcon(title: "Mode", systemName: "gearshape.fill", foregroundStyle: .white, backgroundStyle: .gray.gradient)
-                    }
-                    Toggle(isOn: $sudokuHTTPMaskTLS) {
-                        TextWithColorfulIcon(title: "TLS", systemName: "lock.fill", foregroundStyle: .white, backgroundStyle: .blue.gradient)
-                    }
-                    LabeledContent {
-                        TextField("Host", text: $sudokuHTTPMaskHost)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .multilineTextAlignment(.trailing)
-                    } label: {
-                        TextWithColorfulIcon(title: "Host", systemName: "network", foregroundStyle: .white, backgroundStyle: .blue.gradient)
-                    }
-                    LabeledContent {
-                        TextField("Path Root", text: $sudokuHTTPMaskPathRoot)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .multilineTextAlignment(.trailing)
-                    } label: {
-                        TextWithColorfulIcon(title: "Path Root", comment: "Path Root for Sudoku protocol HTTP Mask feature", systemName: "point.topleft.down.to.point.bottomright.curvepath", foregroundStyle: .white, backgroundStyle: .blue.gradient)
-                    }
-                }
-            }
-        }
     }
     
     private func populateFromExisting() {
@@ -1127,20 +927,6 @@ struct ProxyEditorView: View {
                 }
             }
             hysteriaSNI = configuration.serverName
-        case .sudoku(let configuration):
-            sudokuKey = configuration.key
-            sudokuAEADMethod = configuration.aeadMethod
-            sudokuPaddingMinText = String(configuration.paddingMin)
-            sudokuPaddingMaxText = String(configuration.paddingMax)
-            sudokuASCIIMode = configuration.asciiMode
-            sudokuCustomTablesText = configuration.customTables.joined(separator: ",")
-            sudokuEnablePureDownlink = configuration.enablePureDownlink
-            sudokuMultiplex = configuration.multiplex
-            sudokuHTTPMaskEnabled = !configuration.httpMask.disable
-            sudokuHTTPMaskMode = configuration.httpMask.mode
-            sudokuHTTPMaskTLS = configuration.httpMask.tls
-            sudokuHTTPMaskHost = configuration.httpMask.host
-            sudokuHTTPMaskPathRoot = configuration.httpMask.pathRoot
         case .trojan(let configuration):
             let tls = configuration.tlsConfiguration ?? TLSConfiguration(serverName: "")
             trojanPassword = configuration.password
@@ -1163,17 +949,6 @@ struct ProxyEditorView: View {
         case .socks5(let configuration):
             socks5Username = configuration.username ?? ""
             socks5Password = configuration.password ?? ""
-        case .rfc(let configuration):
-            rfcUsername = configuration.username ?? ""
-            rfcPassword = configuration.password ?? ""
-            rfcSecurity = configuration.securityLayer.tag
-            if let tls = configuration.tlsConfiguration {
-                rfcSNI = tls.serverName
-                rfcALPN = tls.alpn?.joined(separator: ",") ?? ""
-                rfcECHEnabled = tls.echEnabled
-                rfcECHConfig = tls.echConfig ?? ""
-                rfcFingerprint = tls.fingerprint
-            }
         case .direct:
             break
         }
@@ -1233,7 +1008,7 @@ struct ProxyEditorView: View {
             port = parsedPort
         }
         let parsedUUID: UUID
-        if isNowhere || isHysteria || isTrojan || isAnyTLS || isShadowsocks || isSOCKS5 || isSudoku || isRFC || isDirect {
+        if isNowhere || isHysteria || isTrojan || isAnyTLS || isShadowsocks || isSOCKS5 || isDirect {
             parsedUUID = self.configuration?.id ?? UUID()
         } else {
             guard let uuid = UUID(vlessString: vlessUUID) else { return }
@@ -1359,29 +1134,6 @@ struct ProxyEditorView: View {
                     serverName: hysteriaSNI.isEmpty ? bareAddress : hysteriaSNI
                 )
             )
-        case .sudoku:
-            outbound = .sudoku(
-                SudokuConfiguration(
-                    key: sudokuKey,
-                    aeadMethod: sudokuAEADMethod,
-                    paddingMin: Int(sudokuPaddingMinText) ?? 5,
-                    paddingMax: Int(sudokuPaddingMaxText) ?? 15,
-                    asciiMode: sudokuASCIIMode,
-                    customTables: sudokuCustomTablesText
-                        .split(separator: ",")
-                        .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-                        .filter { !$0.isEmpty },
-                    enablePureDownlink: sudokuEnablePureDownlink,
-                    multiplex: sudokuMultiplex,
-                    httpMask: SudokuHTTPMaskConfiguration(
-                        disable: !sudokuHTTPMaskEnabled,
-                        mode: sudokuHTTPMaskMode,
-                        tls: sudokuHTTPMaskTLS,
-                        host: sudokuHTTPMaskHost,
-                        pathRoot: sudokuHTTPMaskPathRoot
-                    )
-                )
-            )
         case .trojan:
             let sni = trojanSNI.isEmpty ? bareAddress : trojanSNI
             let alpn: [String]? = trojanALPN.isEmpty ? nil : trojanALPN.split(separator: ",").map { String($0) }
@@ -1414,29 +1166,6 @@ struct ProxyEditorView: View {
             )
         case .direct:
             outbound = .direct(DirectConfiguration())
-        case .rfc:
-            let securityLayer: GenericSecurityLayer
-            if isRFCTLS {
-                let sni = rfcSNI.isEmpty ? bareAddress : rfcSNI
-                let alpn: [String]? = rfcALPN.isEmpty ? nil : rfcALPN.split(separator: ",").map { String($0) }
-                let ech = rfcECHConfig.trimmingCharacters(in: .whitespacesAndNewlines)
-                securityLayer = .tls(TLSConfiguration(
-                    serverName: sni,
-                    alpn: alpn,
-                    echEnabled: rfcECHEnabled,
-                    echConfig: rfcECHEnabled && !ech.isEmpty ? ech : nil,
-                    fingerprint: rfcFingerprint
-                ))
-            } else {
-                securityLayer = .none
-            }
-            outbound = .rfc(
-                RFCConfiguration(
-                    username: rfcUsername.isEmpty ? nil : rfcUsername,
-                    password: rfcPassword.isEmpty ? nil : rfcPassword,
-                    securityLayer: securityLayer
-                )
-            )
         }
         
         let configuration = ProxyConfiguration(

@@ -8,7 +8,7 @@
 import Foundation
 
 nonisolated extension ProxyConfiguration {
-    static let parsableURLPrefixes = ["nowhere://", "vless://", "hysteria2://", "hy2://", "trojan://", "anytls://", "ss://", "socks5://", "socks://", "sudoku://", "rfc://", "direct://"]
+    static let parsableURLPrefixes = ["nowhere://", "vless://", "hysteria2://", "hy2://", "trojan://", "anytls://", "ss://", "socks5://", "socks://", "direct://"]
     static let subscriptionOnlyURLPrefixes = ["https://", "http://"]
     static let subscriptionEntryPrefixes = parsableURLPrefixes + subscriptionOnlyURLPrefixes
 
@@ -24,7 +24,7 @@ nonisolated extension ProxyConfiguration {
         guard subscriptionOnlyURLPrefixes.contains(where: { url.hasPrefix($0) }) else {
             return try parse(url: url)
         }
-        return try parseRFCOverWebScheme(url: url)
+        throw NaiveFlowError.parse(.invalidURL("HTTP proxy URL import is not supported."))
     }
     
     static func parse(url: String) throws -> ProxyConfiguration {
@@ -43,9 +43,6 @@ nonisolated extension ProxyConfiguration {
         if url.hasPrefix("hysteria2://") || url.hasPrefix("hy2://") {
             return try parseHysteria(url: url)
         }
-        if url.hasPrefix("sudoku://") {
-            return try parseSudoku(url: url)
-        }
         if url.hasPrefix("trojan://") {
             return try parseTrojan(url: url)
         }
@@ -58,13 +55,10 @@ nonisolated extension ProxyConfiguration {
         if url.hasPrefix("socks5://") || url.hasPrefix("socks://") {
             return try parseSOCKS5(url: url)
         }
-        if url.hasPrefix("rfc://") {
-            return try parseRFC(url: url)
-        }
         if url.hasPrefix("direct://") {
             return try parseDirect(url: url)
         }
-        throw NaiveFlowError.parse(.invalidURL("URL must start with nowhere://, vless://, hysteria2://, sudoku://, trojan://, anytls://, ss://, socks5://, rfc://, or direct://"))
+        throw NaiveFlowError.parse(.invalidURL("Unsupported proxy URL scheme. Supported schemes are nowhere://, vless://, hysteria2://, trojan://, anytls://, ss://, socks5://, and direct://."))
     }
 
     // MARK: - Per-Scheme Parsers
@@ -238,76 +232,6 @@ nonisolated extension ProxyConfiguration {
         )
     }
     
-    private static func parseSudoku(url: String) throws -> ProxyConfiguration {
-        let encoded = String(url.dropFirst("sudoku://".count))
-        guard let payload = Data(base64URLEncoded: encoded),
-              let json = try JSONSerialization.jsonObject(with: payload) as? [String: Any] else {
-            throw NaiveFlowError.parse(.invalidURL("Invalid Sudoku short link payload"))
-        }
-
-        guard let host = json["h"] as? String,
-              let portValue = json["p"],
-              let key = json["k"] as? String,
-              !host.isEmpty,
-              !key.isEmpty else {
-            throw NaiveFlowError.parse(.invalidURL("Sudoku short link is missing required fields"))
-        }
-
-        let portInt: Int
-        if let number = portValue as? NSNumber {
-            portInt = number.intValue
-        } else {
-            portInt = Int("\(portValue)") ?? 0
-        }
-        guard let port = UInt16(exactly: portInt), port > 0 else {
-            throw NaiveFlowError.parse(.invalidURL("Invalid Sudoku short link port"))
-        }
-
-        let aead = SudokuAEADMethod(rawValue: (json["e"] as? String) ?? SudokuAEADMethod.none.rawValue) ?? .none
-        let asciiMode = SudokuASCIIMode(normalized: (json["a"] as? String) ?? SudokuASCIIMode.preferEntropy.shortLinkToken) ?? .preferEntropy
-        let name = (json["n"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let displayName = name.flatMap { $0.isEmpty ? nil : $0 } ?? host
-        let legacyCustomTable = (
-            (json["t"] as? String)
-                ?? (json["table"] as? String)
-                ?? (json["custom_table"] as? String)
-                ?? ""
-        ).trimmingCharacters(in: .whitespacesAndNewlines)
-        let rawCustomTables = json["ts"] as? [String]
-        let customTables = SudokuConfiguration.normalizeCustomTables(
-            rawCustomTables ?? [],
-            legacy: legacyCustomTable,
-            legacyFallback: true
-        )
-        let enablePureDownlink = !((json["x"] as? Bool) ?? false)
-        let httpMask = SudokuHTTPMaskConfiguration(
-            disable: (json["hd"] as? Bool) ?? false,
-            mode: SudokuHTTPMaskMode(rawValue: (json["hm"] as? String) ?? SudokuHTTPMaskMode.legacy.rawValue) ?? .legacy,
-            tls: (json["ht"] as? Bool) ?? false,
-            host: (json["hh"] as? String) ?? "",
-            pathRoot: (json["hy"] as? String) ?? ""
-        )
-
-        let config = SudokuConfiguration(
-            key: key,
-            aeadMethod: aead,
-            paddingMin: 5,
-            paddingMax: 15,
-            asciiMode: asciiMode,
-            customTables: customTables,
-            enablePureDownlink: enablePureDownlink,
-            multiplex: SudokuMultiplex(normalized: (json["hx"] as? String) ?? ""),
-            httpMask: httpMask
-        )
-
-        return ProxyConfiguration(
-            name: displayName,
-            serverAddress: host,
-            serverPort: port,
-            outbound: .sudoku(config)
-        )
-    }
-    
     private static func parseTrojan(url: String) throws -> ProxyConfiguration {
         let body = try splitLinkBody(url, scheme: "trojan://", label: "trojan")
         
@@ -470,107 +394,6 @@ nonisolated extension ProxyConfiguration {
             serverPort: port,
             outbound: .socks5(SOCKS5Configuration(username: username, password: password))
         )
-    }
-
-    private struct RFCLink {
-        let username: String?
-        let password: String?
-        let host: String
-        let port: UInt16
-        let parameters: [String: String]
-        let fragment: String?
-
-        func configuration(securityLayer: GenericSecurityLayer) -> ProxyConfiguration {
-            ProxyConfiguration(
-                name: fragment ?? "Untitled",
-                serverAddress: host,
-                serverPort: port,
-                outbound: .rfc(RFCConfiguration(username: username, password: password, securityLayer: securityLayer))
-            )
-        }
-    }
-
-    private static func splitRFCLink(
-        _ url: String,
-        scheme: String,
-        defaultPort: UInt16? = nil,
-        rejectsPath: Bool = false
-    ) throws -> RFCLink {
-        var remaining = String(url.dropFirst(scheme.count))
-        var fragmentName = extractFragment(&remaining)
-        DeviceCensorship.deCensor(&fragmentName)
-
-        var queryString: String?
-        if let questionIndex = remaining.firstIndex(of: "?") {
-            queryString = String(remaining[remaining.index(after: questionIndex)...])
-            remaining = String(remaining[..<questionIndex])
-        }
-        let parameters = parseQueryParams(queryString)
-
-        var username: String?
-        var password: String?
-        var serverPart = remaining
-
-        if let atIndex = remaining.lastIndex(of: "@") {
-            let userInfo = String(remaining[..<atIndex])
-            serverPart = String(remaining[remaining.index(after: atIndex)...])
-            if let colonIndex = userInfo.firstIndex(of: ":") {
-                let rawUser = String(userInfo[..<colonIndex])
-                let rawPassword = String(userInfo[userInfo.index(after: colonIndex)...])
-                username = rawUser.removingPercentEncoding ?? rawUser
-                password = rawPassword.removingPercentEncoding ?? rawPassword
-            } else if !userInfo.isEmpty {
-                username = userInfo.removingPercentEncoding ?? userInfo
-            }
-            if let username, username.contains(":") {
-                throw NaiveFlowError.parse(.invalidURL("RFC username may not contain a colon"))
-            }
-            if username?.isEmpty == true, password?.isEmpty == true {
-                username = nil
-                password = nil
-            }
-        }
-
-        if serverPart.hasSuffix("/") { serverPart.removeLast() }
-        if let slashIndex = serverPart.firstIndex(of: "/") {
-            guard !rejectsPath else {
-                throw NaiveFlowError.parse(.invalidURL("RFC URL may not carry a path"))
-            }
-            serverPart = String(serverPart[..<slashIndex])
-        }
-
-        let (host, port) = try parseHostPort(serverPart, defaultPort: defaultPort)
-
-        return RFCLink(
-            username: username,
-            password: password,
-            host: host,
-            port: port,
-            parameters: parameters,
-            fragment: fragmentName
-        )
-    }
-    
-    private static func parseRFC(url: String) throws -> ProxyConfiguration {
-        let link = try splitRFCLink(url, scheme: "rfc://")
-        let securityLayer: GenericSecurityLayer = link.parameters["security"] == "none"
-            ? .none
-            : .tls(standardTLSConfiguration(from: link.parameters, host: link.host))
-        return link.configuration(securityLayer: securityLayer)
-    }
-    
-    private static func parseRFCOverWebScheme(url: String) throws -> ProxyConfiguration {
-        let isSecure = url.hasPrefix("https://")
-        let link = try splitRFCLink(
-            url,
-            scheme: isSecure ? "https://" : "http://",
-            defaultPort: isSecure ? 443 : 80,
-            rejectsPath: true
-        )
-        let securityLayer: GenericSecurityLayer = isSecure
-            ? .tls(standardTLSConfiguration(from: link.parameters, host: link.host))
-            : .none
-        return link.configuration(securityLayer: securityLayer)
     }
 
     // MARK: - Shared Link Decomposition

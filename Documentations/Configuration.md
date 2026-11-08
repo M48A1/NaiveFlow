@@ -227,8 +227,7 @@ forms end up as exactly the same outbound configuration.
 | `hysteria`, `hysteria2` | hysteria2 | `password`, `up`/`down`, obfs options |
 | `ss`, `shadowsocks` | ss | `cipher`/`method`, `password` |
 | `socks5` | socks5 | `username`, `password` |
-| `http`, `rfc` | http | `username`, `password`, `tls` |
-| `sudoku` | sudoku | parameters passed through |
+| `http` | http | `username`, `password`, `tls` |
 | `direct` | direct | no server needed |
 
 Option names are translated (`id` → `uuid`, `sni`/`peer` → `servername`,

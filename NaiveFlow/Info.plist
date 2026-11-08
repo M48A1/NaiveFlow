@@ -111,16 +111,6 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>CFBundleURLName</key>
-			<string>com.argsment.NaiveFlow.scheme.sudoku</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>sudoku</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>CFBundleURLName</key>
 			<string>com.argsment.NaiveFlow.scheme.trojan</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
@@ -145,16 +135,6 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>ss</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>CFBundleURLName</key>
-			<string>com.argsment.NaiveFlow.scheme.rfc</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>rfc</string>
 			</array>
 		</dict>
 	</array>

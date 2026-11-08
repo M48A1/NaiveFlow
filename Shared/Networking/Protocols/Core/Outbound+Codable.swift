@@ -10,7 +10,7 @@ import Foundation
 nonisolated extension Outbound: Codable {
     private enum CodingKeys: String, CodingKey {
         case `protocol`
-        case nowhere, vless, hysteria, sudoku, trojan, anytls, shadowsocks, socks5, rfc, direct
+        case nowhere, vless, hysteria, trojan, anytls, shadowsocks, socks5, direct
     }
 
     init(from decoder: Decoder) throws {
@@ -23,8 +23,6 @@ nonisolated extension Outbound: Codable {
             self = .vless(try container.decode(VLESSConfiguration.self, forKey: .vless))
         case .hysteria:
             self = .hysteria(try container.decode(HysteriaConfiguration.self, forKey: .hysteria))
-        case .sudoku:
-            self = .sudoku(try container.decode(SudokuConfiguration.self, forKey: .sudoku))
         case .trojan:
             self = .trojan(try container.decode(TrojanConfiguration.self, forKey: .trojan))
         case .anytls:
@@ -33,8 +31,6 @@ nonisolated extension Outbound: Codable {
             self = .shadowsocks(try container.decode(ShadowsocksConfiguration.self, forKey: .shadowsocks))
         case .socks5:
             self = .socks5(try container.decode(SOCKS5Configuration.self, forKey: .socks5))
-        case .rfc:
-            self = .rfc(try container.decode(RFCConfiguration.self, forKey: .rfc))
         case .direct:
             self = .direct(try container.decodeIfPresent(DirectConfiguration.self, forKey: .direct) ?? DirectConfiguration())
         }
@@ -51,8 +47,6 @@ nonisolated extension Outbound: Codable {
             try container.encode(configuration, forKey: .vless)
         case .hysteria(let configuration):
             try container.encode(configuration, forKey: .hysteria)
-        case .sudoku(let configuration):
-            try container.encode(configuration, forKey: .sudoku)
         case .trojan(let configuration):
             try container.encode(configuration, forKey: .trojan)
         case .anytls(let configuration):
@@ -61,8 +55,6 @@ nonisolated extension Outbound: Codable {
             try container.encode(configuration, forKey: .shadowsocks)
         case .socks5(let configuration):
             try container.encode(configuration, forKey: .socks5)
-        case .rfc(let configuration):
-            try container.encode(configuration, forKey: .rfc)
         case .direct(let configuration):
             try container.encode(configuration, forKey: .direct)
         }

@@ -26,8 +26,6 @@ extension ProxyConfiguration {
             return toVLESSURLString()
         case .hysteria:
             return toHysteriaURLString()
-        case .sudoku:
-            return toSudokuURLString()
         case .trojan:
             return toTrojanURLString()
         case .anytls:
@@ -36,8 +34,6 @@ extension ProxyConfiguration {
             return toShadowsocksURLString()
         case .socks5:
             return toSOCKS5URLString()
-        case .rfc:
-            return toRFCURLString()
         case .direct:
             return toDirectURLString()
         }
@@ -177,32 +173,6 @@ extension ProxyConfiguration {
         return "hysteria2://\(encodedPassword)@\(bracketedServerAddress):\(serverPort)/\(query)#\(fragment)"
     }
     
-    private func toSudokuURLString() -> String {
-        guard case .sudoku(let configuration) = outbound else { return "sudoku://" }
-        var payload: [String: Any] = [
-            "h": serverAddress,
-            "p": Int(serverPort),
-            "k": configuration.key,
-            "a": configuration.asciiMode.shortLinkToken,
-            "e": configuration.aeadMethod.rawValue,
-            "x": !configuration.enablePureDownlink
-        ]
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedName.isEmpty { payload["n"] = trimmedName }
-        if !configuration.customTables.isEmpty { payload["ts"] = configuration.customTables }
-        if configuration.httpMask.disable { payload["hd"] = true }
-        if configuration.httpMask.mode != .legacy { payload["hm"] = configuration.httpMask.mode.rawValue }
-        if configuration.httpMask.tls { payload["ht"] = true }
-        if !configuration.httpMask.host.isEmpty { payload["hh"] = configuration.httpMask.host }
-        if configuration.multiplex != .off { payload["hx"] = configuration.multiplex.rawValue }
-        if !configuration.httpMask.pathRoot.isEmpty { payload["hy"] = configuration.httpMask.pathRoot }
-
-        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else {
-            return "sudoku://"
-        }
-        return "sudoku://\(data.base64URLEncodedString())"
-    }
-
     private func toTrojanURLString() -> String {
         guard case .trojan(let configuration) = outbound,
               let tls = configuration.tlsConfiguration else { return "" }
@@ -285,39 +255,4 @@ extension ProxyConfiguration {
         return "socks5://\(bracketedServerAddress):\(serverPort)#\(fragment)"
     }
     
-    private func toRFCURLString() -> String {
-        guard case .rfc(let configuration) = outbound else { return "" }
-        let fragment = name.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) ?? name
-        
-        var userInfo = ""
-        let user = configuration.username ?? ""
-        let secret = configuration.password ?? ""
-        if !user.isEmpty || !secret.isEmpty {
-            let encodedUser = user.addingPercentEncoding(withAllowedCharacters: .urlUserAllowed) ?? user
-            let encodedPassword = secret.addingPercentEncoding(withAllowedCharacters: .urlPasswordAllowed) ?? secret
-            userInfo = "\(encodedUser):\(encodedPassword)@"
-        }
-
-        var parameters: [String] = []
-        switch configuration.securityLayer {
-        case .none:
-            parameters.append("security=none")
-        case .tls(let tls):
-            if tls.serverName != serverAddress {
-                parameters.append("sni=\(encodedQueryValue(tls.serverName))")
-            }
-            if let alpn = tls.alpn, !alpn.isEmpty {
-                let joined = alpn.joined(separator: ",")
-                parameters.append("alpn=\(encodedQueryValue(joined))")
-            }
-            if tls.fingerprint != .default {
-                parameters.append("fp=\(tls.fingerprint.rawValue)")
-            }
-            if let ech = tls.echQueryValue {
-                parameters.append("ech=\(ech)")
-            }
-        }
-        let query = parameters.isEmpty ? "" : "?\(parameters.joined(separator: "&"))"
-        return "rfc://\(userInfo)\(bracketedServerAddress):\(serverPort)\(query)#\(fragment)"
-    }
 }

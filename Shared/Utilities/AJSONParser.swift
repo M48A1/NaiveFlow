@@ -183,12 +183,10 @@ nonisolated enum AJSONParser {
         case .nowhere:      outbound = .nowhere(try parseNowhere(proxy))
         case .vless:        outbound = .vless(try parseVLESS(proxy, server: server))
         case .hysteria:     outbound = .hysteria(try parseHysteria(proxy, server: server))
-        case .sudoku:       outbound = .sudoku(try parseSudoku(proxy))
         case .trojan:       outbound = .trojan(try parseTrojan(proxy, server: server))
         case .anytls:       outbound = .anytls(try parseAnyTLS(proxy, server: server))
         case .shadowsocks:  outbound = .shadowsocks(try parseShadowsocks(proxy))
         case .socks5:       outbound = .socks5(try parseSOCKS5(proxy))
-        case .rfc:          outbound = .rfc(try parseRFC(proxy, server: server))
         case .direct:       outbound = .direct(DirectConfiguration())
         }
 
@@ -245,37 +243,6 @@ nonisolated enum AJSONParser {
         )
     }
 
-    private static func parseSudoku(_ proxy: Fields) throws -> SudokuConfiguration {
-        var asciiMode = SudokuASCIIMode.preferEntropy
-        if let rawASCIIMode = try proxy.string("asciiMode") {
-            guard let parsed = SudokuASCIIMode(normalized: rawASCIIMode) else { throw Invalid() }
-            asciiMode = parsed
-        }
-
-        var httpMask = SudokuHTTPMaskConfiguration()
-        if let mask = try proxy.object("httpMask") {
-            httpMask = SudokuHTTPMaskConfiguration(
-                disable: try mask.bool("disable") ?? false,
-                mode: try mask.enumeration("mode") ?? .legacy,
-                tls: try mask.bool("tls") ?? false,
-                host: try mask.string("host") ?? "",
-                pathRoot: try mask.string("pathRoot") ?? ""
-            )
-        }
-
-        return SudokuConfiguration(
-            key: try proxy.requiredString("key"),
-            aeadMethod: try proxy.enumeration("aeadMethod") ?? .chacha20Poly1305,
-            paddingMin: try proxy.int("paddingMin") ?? 5,
-            paddingMax: try proxy.int("paddingMax") ?? 15,
-            asciiMode: asciiMode,
-            customTables: try proxy.strings("customTables") ?? [],
-            enablePureDownlink: try proxy.bool("enablePureDownlink") ?? true,
-            multiplex: try proxy.enumeration("multiplex") ?? .off,
-            httpMask: httpMask
-        )
-    }
-
     private static func parseTrojan(_ proxy: Fields, server: String) throws -> TrojanConfiguration {
         TrojanConfiguration(
             password: try proxy.requiredString("password"),
@@ -303,16 +270,6 @@ nonisolated enum AJSONParser {
         SOCKS5Configuration(
             username: try proxy.nonEmptyString("username"),
             password: try proxy.string("password")
-        )
-    }
-
-    private static func parseRFC(_ proxy: Fields, server: String) throws -> RFCConfiguration {
-        let username = try proxy.nonEmptyString("username")
-        guard username?.contains(":") != true else { throw Invalid() }
-        return RFCConfiguration(
-            username: username,
-            password: try proxy.string("password"),
-            securityLayer: try parseGenericSecurity(proxy, server: server)
         )
     }
 

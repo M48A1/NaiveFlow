@@ -19,7 +19,7 @@ final class DeepLinkManager {
         switch url.scheme?.lowercased() {
         case "naiveflow":
             handleNaiveFlowScheme(url)
-        case "nowhere", "vless", "hysteria2", "hy2", "sudoku", "trojan", "anytls", "ss", "rfc":
+        case "nowhere", "vless", "hysteria2", "hy2", "trojan", "anytls", "ss":
             self.url = url.absoluteString
         default:
             break

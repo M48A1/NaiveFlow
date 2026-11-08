@@ -79,20 +79,6 @@ class TVProxyEditorViewController: UITableViewController {
     private var hysteriaObfuscationMinText = String(HysteriaObfuscation.geckoMinPacketSizeDefault)
     private var hysteriaSNI = ""
     
-    private var sudokuKey = ""
-    private var sudokuAEADMethod: SudokuAEADMethod = .chacha20Poly1305
-    private var sudokuPaddingMinText = "5"
-    private var sudokuPaddingMaxText = "15"
-    private var sudokuASCIIMode: SudokuASCIIMode = .preferEntropy
-    private var sudokuCustomTablesText = ""
-    private var sudokuPureDownlinkEnabled = true
-    private var sudokuMultiplex: SudokuMultiplex = .off
-    private var sudokuHTTPMaskEnabled = true
-    private var sudokuHTTPMaskMode: SudokuHTTPMaskMode = .legacy
-    private var sudokuHTTPMaskTLS = false
-    private var sudokuHTTPMaskHost = ""
-    private var sudokuHTTPMaskPathRoot = ""
-
     private var trojanPassword = ""
     private var trojanSNI = ""
     private var trojanALPN = ""
@@ -108,7 +94,7 @@ class TVProxyEditorViewController: UITableViewController {
     private var anytlsFingerprint: TLSFingerprint = .default
 
     private var ssPassword = ""
-    private var ssMethod = "aes-128-gcm"
+    private var ssMethod = "2022-blake3-aes-256-gcm"
 
     private var socks5Username = ""
     private var socks5Password = ""
@@ -127,7 +113,6 @@ class TVProxyEditorViewController: UITableViewController {
     private var isVLESSReality: Bool { vlessSecurity == "reality" }
     private var isVLESSTLS: Bool { vlessSecurity == "tls" }
     private var isHysteria: Bool { selectedProtocol == .hysteria }
-    private var isSudoku: Bool { selectedProtocol == .sudoku }
     private var isTrojan: Bool { selectedProtocol == .trojan }
     private var isAnyTLS: Bool { selectedProtocol == .anytls }
     private var isShadowsocks: Bool { selectedProtocol == .shadowsocks }
@@ -169,11 +154,6 @@ class TVProxyEditorViewController: UITableViewController {
         case hysteriaPassword, hysteriaCC, hysteriaUploadMbps, hysteriaDownloadMbps
         case hysteriaObfuscationType, hysteriaObfuscationPassword, hysteriaObfuscationMin, hysteriaObfuscationMax
         case hysteriaSNI
-        case sudokuKey, sudokuAEADMethod, sudokuPaddingMin, sudokuPaddingMax
-        case sudokuASCIIMode, sudokuCustomTables
-        case sudokuPureDownlink
-        case sudokuHTTPMaskEnabled, sudokuHTTPMaskMode, sudokuHTTPMaskTLS
-        case sudokuHTTPMaskHost, sudokuHTTPMaskPathRoot, sudokuMultiplex
         case trojanPassword, trojanSNI, trojanALPN, trojanECHEnabled, trojanECH, trojanFingerprint
         case anytlsPassword, anytlsSNI, anytlsALPN, anytlsECHEnabled, anytlsECH, anytlsFingerprint
         case ssPassword, ssMethod
@@ -192,7 +172,6 @@ class TVProxyEditorViewController: UITableViewController {
             ("Nowhere", "nowhere"),
             ("VLESS", "vless"),
             ("Hysteria", "hysteria"),
-            ("Sudoku", "sudoku"),
             ("Trojan", "trojan"),
             ("AnyTLS", "anytls"),
             ("Shadowsocks", "shadowsocks"),
@@ -232,13 +211,6 @@ class TVProxyEditorViewController: UITableViewController {
                 serverRows.append(.text(label: String(localized: "Maximum Packet Size", comment: "Maximum Packet Size for Hysteria protocol Gecko obfuscation"), value: hysteriaObfuscationMaxText, placeholder: String(HysteriaObfuscation.geckoMaxPacketSizeDefault), key: .hysteriaObfuscationMax))
                 serverRows.append(.text(label: String(localized: "Minimum Packet Size", comment: "Minimum Packet Size for Hysteria protocol Gecko obfuscation"), value: hysteriaObfuscationMinText, placeholder: String(HysteriaObfuscation.geckoMinPacketSizeDefault), key: .hysteriaObfuscationMin))
             }
-        } else if isSudoku {
-            serverRows.append(.text(label: String(localized: "Key", comment: "Key for Sudoku protocol"), value: sudokuKey, placeholder: String(localized: "Key", comment: "Key for Sudoku protocol"), key: .sudokuKey))
-            serverRows.append(.selection(label: String(localized: "AEAD", comment: "AEAD for Sudoku protocol"), value: sudokuAEADMethod.displayName, options: SudokuAEADMethod.allCases.map { ($0.displayName, $0.rawValue) }, key: .sudokuAEADMethod))
-            serverRows.append(.text(label: String(localized: "Maximum Padding", comment: "Maximum Padding for Sudoku protocol"), value: sudokuPaddingMaxText, placeholder: "15", key: .sudokuPaddingMax))
-            serverRows.append(.text(label: String(localized: "Minimum Padding", comment: "Minimum Padding for Sudoku protocol"), value: sudokuPaddingMinText, placeholder: "5", key: .sudokuPaddingMin))
-            serverRows.append(.selection(label: String(localized: "ASCII Mode", comment: "ASCII Mode for Sudoku protocol"), value: sudokuASCIIMode.displayName, options: SudokuASCIIMode.allCases.map { ($0.displayName, $0.rawValue) }, key: .sudokuASCIIMode))
-            serverRows.append(.text(label: String(localized: "Custom Tables", comment: "Custom Tables for Sudoku protocol"), value: sudokuCustomTablesText, placeholder: "comma,separated", key: .sudokuCustomTables))
         } else if isTrojan {
             serverRows.append(.text(label: String(localized: "Password"), value: trojanPassword, placeholder: String(localized: "Password"), key: .trojanPassword))
         } else if isAnyTLS {
@@ -246,10 +218,6 @@ class TVProxyEditorViewController: UITableViewController {
         } else if isShadowsocks {
             serverRows.append(.text(label: String(localized: "Password"), value: ssPassword, placeholder: String(localized: "Password"), key: .ssPassword))
             let methods: [(String, String)] = [
-                (String(localized: "None"), "none"),
-                ("AES-128-GCM", "aes-128-gcm"),
-                ("AES-256-GCM", "aes-256-gcm"),
-                ("ChaCha20-Poly1305", "chacha20-ietf-poly1305"),
                 ("BLAKE3-AES-128-GCM", "2022-blake3-aes-128-gcm"),
                 ("BLAKE3-AES-256-GCM", "2022-blake3-aes-256-gcm"),
                 ("BLAKE3-ChaCha20", "2022-blake3-chacha20-poly1305"),
@@ -334,48 +302,6 @@ class TVProxyEditorViewController: UITableViewController {
                 hysteriaNetworkRows.append(.text(label: String(localized: "Download Speed", comment: "Download Speed for Hysteria protocol"), value: hysteriaDownloadMbpsText, placeholder: String(localized: "Mbps"), key: .hysteriaDownloadMbps))
             }
             sections.append((nil, hysteriaNetworkRows))
-        } else if isSudoku {
-            sections.append((nil, [
-                .toggle(label: String(localized: "Pure Downlink", comment: "Pure Downlink for Sudoku protocol"), isOn: sudokuPureDownlinkEnabled, key: .sudokuPureDownlink),
-                .selection(
-                    label: String(localized: "Multiplex"),
-                    value: sudokuMultiplex.displayName,
-                    options: SudokuMultiplex.allCases.map { ($0.displayName, $0.rawValue) },
-                    key: .sudokuMultiplex
-                ),
-            ]))
-        }
-
-        if isVLESS {
-            var tlsRows: [RowType] = [
-                .selection(label: String(localized: "Security", comment: "Security for VLESS protocol"), value: securityDisplayValue, options: [
-                    (String("None"), "none"),
-                    ("TLS", "tls"),
-                    ("Reality", "reality"),
-                ], key: .vlessSecurity),
-            ]
-            if isVLESSTLS {
-                tlsRows.append(.text(label: String(localized: "SNI"), value: vlessTLSSNI, placeholder: String(localized: "SNI"), key: .vlessTLSSNI))
-                tlsRows.append(.text(label: String(localized: "ALPN"), value: vlessTLSALPN, placeholder: String(localized: "h2,http/1.1"), key: .vlessTLSALPN))
-                tlsRows.append(.toggle(label: String(localized: "Enable ECH"), isOn: vlessTLSECHEnabled, key: .vlessTLSECHEnabled))
-                if vlessTLSECHEnabled {
-                    tlsRows.append(.text(label: String(localized: "ECH Config"), value: vlessTLSECH, placeholder: String(localized: "Base64"), key: .vlessTLSECH))
-                }
-                tlsRows.append(.selection(label: String(localized: "Fingerprint"), value: vlessFingerprint.displayName, options: TLSFingerprint.allCases.map { ($0.displayName, $0.rawValue) }, key: .vlessFingerprint))
-            }
-            if isVLESSReality {
-                tlsRows.append(.text(label: String(localized: "SNI"), value: vlessRealitySNI, placeholder: String(localized: "SNI"), key: .vlessRealitySNI))
-                tlsRows.append(.text(label: String(localized: "Public Key", comment: "Public Key for Reality security layer"), value: vlessRealityPublicKey, placeholder: String(localized: "Public Key", comment: "Public Key for Reality security layer"), key: .vlessRealityPublicKey))
-                tlsRows.append(.text(label: String(localized: "Short ID", comment: "Short ID for Reality security layer"), value: vlessRealityShortId, placeholder: String(localized: "Short ID", comment: "Short ID for Reality security layer"), key: .vlessRealityShortId))
-                tlsRows.append(.selection(label: String(localized: "Fingerprint"), value: vlessFingerprint.displayName, options: TLSFingerprint.allCases.map { ($0.displayName, $0.rawValue) }, key: .vlessFingerprint))
-            }
-            let tlsTitle = (vlessTransport == "xhttp" && vlessXHTTPDownloadEnabled)
-                ? String(localized: "TLS (Upload)") : String(localized: "TLS")
-            sections.append((tlsTitle, tlsRows))
-        } else if isHysteria {
-            sections.append((String(localized: "TLS"), [
-                .text(label: String(localized: "SNI"), value: hysteriaSNI, placeholder: String(localized: "SNI"), key: .hysteriaSNI),
-            ]))
         } else if isTrojan {
             var trojanRows: [RowType] = [
                 .text(label: String(localized: "SNI"), value: trojanSNI, placeholder: String(localized: "SNI"), key: .trojanSNI),
@@ -452,19 +378,6 @@ class TVProxyEditorViewController: UITableViewController {
                 downloadRows.append(.text(label: String(localized: "Path"), value: vlessXHTTPDownloadPath, placeholder: String(localized: "Path"), key: .vlessXHTTPDownloadPath))
                 sections.append((String(localized: "TLS (Download)"), downloadRows))
             }
-        }
-
-        if isSudoku {
-            var httpMaskRows: [RowType] = [
-                .toggle(label: String(localized: "HTTP Mask", comment: "HTTP Mask for Sudoku protocol"), isOn: sudokuHTTPMaskEnabled, key: .sudokuHTTPMaskEnabled),
-            ]
-            if sudokuHTTPMaskEnabled {
-                httpMaskRows.append(.selection(label: String(localized: "Mode"), value: sudokuHTTPMaskMode.displayName, options: SudokuHTTPMaskMode.allCases.map { ($0.displayName, $0.rawValue) }, key: .sudokuHTTPMaskMode))
-                httpMaskRows.append(.toggle(label: String(localized: "TLS"), isOn: sudokuHTTPMaskTLS, key: .sudokuHTTPMaskTLS))
-                httpMaskRows.append(.text(label: String(localized: "Host"), value: sudokuHTTPMaskHost, placeholder: String(localized: "Host"), key: .sudokuHTTPMaskHost))
-                httpMaskRows.append(.text(label: String(localized: "Path Root", comment: "Path Root for Sudoku protocol HTTP Mask feature"), value: sudokuHTTPMaskPathRoot, placeholder: String(localized: "Path Root", comment: "Path Root for Sudoku protocol HTTP Mask feature"), key: .sudokuHTTPMaskPathRoot))
-            }
-            sections.append((nil, httpMaskRows))
         }
 
         return sections
@@ -579,11 +492,6 @@ class TVProxyEditorViewController: UITableViewController {
                 else { return false }
             }
             return true
-        }
-        if isSudoku {
-            guard !sudokuKey.isEmpty else { return false }
-            guard let min = Int(sudokuPaddingMinText), let max = Int(sudokuPaddingMaxText) else { return false }
-            return (0...100).contains(min) && min <= max && max <= 100
         }
         if isTrojan { return !trojanPassword.isEmpty }
         if isAnyTLS { return !anytlsPassword.isEmpty }
@@ -808,23 +716,6 @@ class TVProxyEditorViewController: UITableViewController {
         case .hysteriaObfuscationPassword: hysteriaObfuscationPassword = value
         case .hysteriaObfuscationMin: hysteriaObfuscationMinText = value
         case .hysteriaObfuscationMax: hysteriaObfuscationMaxText = value
-        case .sudokuKey: sudokuKey = value
-        case .sudokuAEADMethod:
-            if let method = SudokuAEADMethod(rawValue: value) { sudokuAEADMethod = method }
-        case .sudokuPaddingMin: sudokuPaddingMinText = value
-        case .sudokuPaddingMax: sudokuPaddingMaxText = value
-        case .sudokuASCIIMode:
-            if let mode = SudokuASCIIMode(rawValue: value) { sudokuASCIIMode = mode }
-        case .sudokuCustomTables: sudokuCustomTablesText = value
-        case .sudokuPureDownlink: sudokuPureDownlinkEnabled = value == "true"
-        case .sudokuHTTPMaskEnabled: sudokuHTTPMaskEnabled = value == "true"
-        case .sudokuHTTPMaskMode:
-            if let mode = SudokuHTTPMaskMode(rawValue: value) { sudokuHTTPMaskMode = mode }
-        case .sudokuHTTPMaskTLS: sudokuHTTPMaskTLS = value == "true"
-        case .sudokuHTTPMaskHost: sudokuHTTPMaskHost = value
-        case .sudokuHTTPMaskPathRoot: sudokuHTTPMaskPathRoot = value
-        case .sudokuMultiplex:
-            if let mode = SudokuMultiplex(rawValue: value) { sudokuMultiplex = mode }
         case .trojanPassword: trojanPassword = value
         case .trojanSNI: trojanSNI = value
         case .trojanALPN: trojanALPN = value
@@ -954,20 +845,6 @@ class TVProxyEditorViewController: UITableViewController {
                 }
             }
             hysteriaSNI = hysteria.serverName
-        case .sudoku(let sudoku):
-            sudokuKey = sudoku.key
-            sudokuAEADMethod = sudoku.aeadMethod
-            sudokuPaddingMinText = String(sudoku.paddingMin)
-            sudokuPaddingMaxText = String(sudoku.paddingMax)
-            sudokuASCIIMode = sudoku.asciiMode
-            sudokuCustomTablesText = sudoku.customTables.joined(separator: ",")
-            sudokuPureDownlinkEnabled = sudoku.enablePureDownlink
-            sudokuMultiplex = sudoku.multiplex
-            sudokuHTTPMaskEnabled = !sudoku.httpMask.disable
-            sudokuHTTPMaskMode = sudoku.httpMask.mode
-            sudokuHTTPMaskTLS = sudoku.httpMask.tls
-            sudokuHTTPMaskHost = sudoku.httpMask.host
-            sudokuHTTPMaskPathRoot = sudoku.httpMask.pathRoot
         case .trojan(let trojan):
             let tls = trojan.tlsConfiguration ?? TLSConfiguration(serverName: "")
             trojanPassword = trojan.password
@@ -1065,7 +942,7 @@ class TVProxyEditorViewController: UITableViewController {
             port = parsedPort
         }
         let parsedUUID: UUID
-        if isNowhere || isHysteria || isTrojan || isAnyTLS || isShadowsocks || isSOCKS5 || isSudoku || isRFC || isDirect {
+        if isNowhere || isHysteria || isTrojan || isAnyTLS || isShadowsocks || isSOCKS5 || isRFC || isDirect {
             parsedUUID = existingConfiguration?.id ?? UUID()
         } else {
             guard let parsed = UUID(uuidString: vlessUUID) else { return }
@@ -1171,29 +1048,6 @@ class TVProxyEditorViewController: UITableViewController {
                     downloadMbps: Int(hysteriaDownloadMbpsText) ?? HysteriaCongestionControl.downloadMbpsDefault,
                     obfuscation: hysteriaObfuscationValue,
                     serverName: hysteriaSNI.isEmpty ? bareAddress : hysteriaSNI
-                )
-            )
-        case .sudoku:
-            outbound = .sudoku(
-                SudokuConfiguration(
-                    key: sudokuKey,
-                    aeadMethod: sudokuAEADMethod,
-                    paddingMin: Int(sudokuPaddingMinText) ?? 5,
-                    paddingMax: Int(sudokuPaddingMaxText) ?? 15,
-                    asciiMode: sudokuASCIIMode,
-                    customTables: sudokuCustomTablesText
-                        .split(separator: ",")
-                        .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-                        .filter { !$0.isEmpty },
-                    enablePureDownlink: sudokuPureDownlinkEnabled,
-                    multiplex: sudokuMultiplex,
-                    httpMask: SudokuHTTPMaskConfiguration(
-                        disable: !sudokuHTTPMaskEnabled,
-                        mode: sudokuHTTPMaskMode,
-                        tls: sudokuHTTPMaskTLS,
-                        host: sudokuHTTPMaskHost,
-                        pathRoot: sudokuHTTPMaskPathRoot
-                    )
                 )
             )
         case .trojan:

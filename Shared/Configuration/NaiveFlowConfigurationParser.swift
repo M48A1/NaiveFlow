@@ -28,8 +28,8 @@ nonisolated enum NaiveFlowConfigurationParser {
     /// Proxy type tokens accepted in a `[Proxy]` field line. They match the
     /// token set `ClashProxyParser` understands, plus the app's own aliases.
     static let supportedProxyTypes: Set<String> = [
-        "vless", "hysteria", "hysteria2", "sudoku", "trojan", "anytls",
-        "ss", "shadowsocks", "socks5", "http", "rfc", "direct",
+        "vless", "hysteria", "hysteria2", "trojan", "anytls",
+        "ss", "shadowsocks", "socks5", "http", "direct",
     ]
 
     static func parse(text: String) -> ParseResult {
@@ -267,7 +267,7 @@ nonisolated extension NaiveFlowConfigurationParser {
 
 nonisolated extension NaiveFlowConfigurationParser {
 
-    /// Maps unlabelled positional values (`ss, host, 443, aes-128-gcm, pass`) to
+    /// Maps unlabelled positional values (`ss, host, 443, 2022-blake3-aes-256-gcm, pass`) to
     /// the parameter names each protocol expects, so the compact field form and
     /// Clash's labelled form compile to the same configuration.
     static func applyPositionalValues(
@@ -283,9 +283,9 @@ nonisolated extension NaiveFlowConfigurationParser {
         let keys: [String]
         switch type {
         case "vless": keys = ["uuid"]
-        case "hysteria", "hysteria2", "trojan", "anytls", "sudoku": keys = ["password"]
+        case "hysteria", "hysteria2", "trojan", "anytls": keys = ["password"]
         case "ss", "shadowsocks": keys = ["cipher", "password"]
-        case "socks5", "http", "rfc": keys = ["username", "password"]
+        case "socks5", "http": keys = ["username", "password"]
         case "direct": keys = []
         default: keys = []
         }

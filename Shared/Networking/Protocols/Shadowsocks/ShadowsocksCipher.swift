@@ -52,12 +52,12 @@ nonisolated enum ShadowsocksCipher {
         }
     }
 
+    /// Only Shadowsocks 2022 is exposed. The legacy cases remain internal so
+    /// old framing code can be removed independently without changing every
+    /// switch in one commit; they can no longer be constructed from config or
+    /// imported URLs.
     init?(method: String) {
         switch method.lowercased() {
-        case "aes-128-gcm": self = .aes128gcm
-        case "aes-256-gcm": self = .aes256gcm
-        case "chacha20-ietf-poly1305", "chacha20-poly1305": self = .chacha20poly1305
-        case "none", "plain": self = .none
         case "2022-blake3-aes-128-gcm": self = .blake3aes128gcm
         case "2022-blake3-aes-256-gcm": self = .blake3aes256gcm
         case "2022-blake3-chacha20-poly1305": self = .blake3chacha20poly1305

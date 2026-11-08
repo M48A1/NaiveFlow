@@ -4,7 +4,7 @@ AJSON is NaiveFlow's own subscription format: one JSON document that carries
 the subscription's name, icon, and usage together with its proxies, written in
 NaiveFlow's model rather than another client's. Compared with a Clash YAML
 `proxies:` list it has unambiguous types, one shape for TLS and transports
-across every protocol, every NaiveFlow-specific option (Nowhere, Sudoku, XHTTP),
+across every protocol, every NaiveFlow-specific option (Nowhere, XHTTP),
 reusable templates, and stable proxy identities that survive renames. This
 guide covers how a subscription is recognized, the document format, and how a
 refresh treats the proxies it contains.
@@ -101,7 +101,7 @@ Each element of `proxies` takes one of three forms.
 | `name`     | string  | **Required**, non-empty. Display name. |
 | `server`   | string  | **Required** except for `direct`. Host name or IP address; IPv4 only; unsupported address families are rejected. |
 | `port`     | integer | **Required** except for `direct`. 1–65535. |
-| `protocol` | string  | **Required.** One of `nowhere`, `vless`, `hysteria`, `sudoku`, `trojan`, `anytls`, `shadowsocks`, `socks5`, `rfc`, `direct`. |
+| `protocol` | string  | **Required.** One of `nowhere`, `vless`, `hysteria`, `trojan`, `anytls`, `shadowsocks`, `socks5`, `direct`. |
 | `id`       | string  | Stable key, unique in the document. See [Stable identities](#stable-identities). |
 | `use`      | string  | Name of a template to start from. See [Templates](#templates). |
 
@@ -109,8 +109,8 @@ The remaining keys depend on `protocol`; see [Protocols](#protocols).
 
 **A share link,** written as a plain string. It is read exactly like a line of
 a link-list subscription: `nowhere://`, `vless://`, `hysteria2://`, `hy2://`,
-`sudoku://`, `trojan://`, `anytls://`, `ss://`, `socks5://`, `socks://`,
-`rfc://`, and `direct://`.
+`trojan://`, `anytls://`, `ss://`, `socks5://`, `socks://`,
+and `direct://`.
 
 ```jsonc
 "ss://YWVzLTEyOC1nY206c2VjcmV0@ss.example.com:8388#Plain"
@@ -191,12 +191,10 @@ is checked strictly.
 | `nowhere`     | `key` | `network`: `tcp` / `udp` (`tcp`); `morph` (`true`); `morphPrelude`: `fade` / `full8` / `low7` (`fade`) | fixed TLS 1.3, not configurable |
 | `vless`       | `uuid` | `encryption` (`none`); `flow`; `transport` (`raw`) | `none`, `tls`, `reality`; default `none` |
 | `hysteria`    | `password` | `sni` (`server`); `congestion`: `brutal` / `bbr`; `upMbps` (20); `downMbps` (50); `obfs` | always TLS via `sni` |
-| `sudoku`      | `key` | `aeadMethod`; `paddingMin` (5); `paddingMax` (15); `asciiMode`; `customTables`; `enablePureDownlink` (`true`); `multiplex`; `httpMask` | — |
 | `trojan`      | `password` | — | `none`, `tls`; default `tls` |
 | `anytls`      | `password` | `idleCheckInterval` (30); `idleTimeout` (30); `minIdleSession` (0) | `none`, `tls`; default `tls` |
 | `shadowsocks` | `method` | `password` (empty) | — |
 | `socks5`      | — | `username`; `password` | — |
-| `rfc`         | — | `username` (no `:`); `password` | `none`, `tls`; default `tls` |
 | `direct`      | — | — | — |
 
 Protocol notes:
@@ -207,17 +205,8 @@ Protocol notes:
   given and to `bbr` otherwise; both rates are clamped to 0–1000. `obfs` is
   `{ "type": "salamander" | "gecko", "password": …, "minPacketSize": …,
   "maxPacketSize": … }`, and the packet sizes apply to `gecko` only.
-- **Sudoku** `aeadMethod` is `chacha20-poly1305` (default), `aes-128-gcm`, or
-  `none`. `asciiMode` is `prefer_entropy` (default), `prefer_ascii`,
-  `up_ascii_down_entropy`, or `up_entropy_down_ascii`. Padding is clamped to
-  0–100. `multiplex` is `off` (default), `auto`, or `on`. `httpMask` is
-  `{ "disable", "mode": "legacy" | "stream" | "poll" | "auto" | "ws",
-  "tls", "host", "pathRoot" }`.
-- **Shadowsocks** `method` is one of `aes-128-gcm`, `aes-256-gcm`,
-  `chacha20-ietf-poly1305`, `2022-blake3-aes-128-gcm`,
-  `2022-blake3-aes-256-gcm`, `2022-blake3-chacha20-poly1305`, or `none`.
-- **RFC** is an HTTP `CONNECT` proxy. With TLS and no `alpn`, it offers `h2`
-  and `http/1.1`.
+- **Shadowsocks** `method` must be one of `2022-blake3-aes-128-gcm`,
+  `2022-blake3-aes-256-gcm`, or `2022-blake3-chacha20-poly1305`.
 - **Direct** has no server. Requests assigned to it leave the device directly,
   as if routed `DIRECT`.
 

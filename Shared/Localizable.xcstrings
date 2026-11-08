@@ -2968,10 +2968,6 @@
         }
       }
     },
-    "AEAD" : {
-      "comment" : "AEAD for Sudoku protocol",
-      "shouldTranslate" : false
-    },
     "AES-128-GCM" : {
       "shouldTranslate" : false
     },
@@ -5612,10 +5608,6 @@
           }
         }
       }
-    },
-    "Custom Tables" : {
-      "comment" : "Custom Tables for Sudoku protocol",
-      "shouldTranslate" : false
     },
     "Dark" : {
       "localizations" : {
@@ -9376,10 +9368,6 @@
     "HTTP" : {
       "shouldTranslate" : false
     },
-    "HTTP Mask" : {
-      "comment" : "HTTP Mask for Sudoku protocol",
-      "shouldTranslate" : false
-    },
     "HTTPUpgrade" : {
       "shouldTranslate" : false
     },
@@ -10379,10 +10367,6 @@
           }
         }
       }
-    },
-    "Key" : {
-      "comment" : "Key for Sudoku protocol",
-      "shouldTranslate" : false
     },
     "Launchpad" : {
       "localizations" : {
@@ -13584,10 +13568,6 @@
         }
       }
     },
-    "Path Root" : {
-      "comment" : "Path Root for Sudoku protocol HTTP Mask feature",
-      "shouldTranslate" : false
-    },
     "Permission denied" : {
       "localizations" : {
         "ar" : {
@@ -14527,10 +14507,6 @@
           }
         }
       }
-    },
-    "Pure Downlink" : {
-      "comment" : "Pure Downlink for Sudoku protocol",
-      "shouldTranslate" : false
     },
     "Purify" : {
       "localizations" : {
@@ -18052,9 +18028,6 @@
           }
         }
       }
-    },
-    "Sudoku" : {
-      "shouldTranslate" : false
     },
     "Support Open Source" : {
       "localizations" : {

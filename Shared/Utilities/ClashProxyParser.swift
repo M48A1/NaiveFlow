@@ -40,12 +40,10 @@ nonisolated enum ClashProxyParser {
         switch type {
         case "vless":     return parseVLESSProxy(node)
         case "hysteria2": return parseHysteria2Proxy(node)
-        case "sudoku":    return parseSudokuProxy(node)
         case "trojan":    return parseTrojanProxy(node)
         case "anytls":    return parseAnyTLSProxy(node)
         case "ss":        return parseShadowsocksProxy(node)
         case "socks5":    return parseSOCKS5Proxy(node)
-        case "http":      return parseRFCProxy(node)
         case "direct":    return parseDirectProxy(node)
         default:          return nil
         }
@@ -198,73 +196,6 @@ nonisolated enum ClashProxyParser {
         )
     }
 
-    // MARK: - Sudoku
-
-    private static func parseSudokuProxy(_ node: YAML.Node) -> ProxyConfiguration? {
-        guard
-            let basics = parseBasics(node),
-            let key = node.string(forKey: "key")
-        else { return nil }
-
-        let aead = SudokuAEADMethod(
-            rawValue: node.string(forKey: "aead-method")
-                ?? node.string(forKey: "aead")
-                ?? SudokuAEADMethod.chacha20Poly1305.rawValue
-        ) ?? .chacha20Poly1305
-        let asciiMode = SudokuASCIIMode(
-            normalized: node.string(forKey: "table-type")
-                ?? node.string(forKey: "ascii")
-                ?? SudokuASCIIMode.preferEntropy.rawValue
-        ) ?? .preferEntropy
-        let legacyCustomTable = (
-            node.string(forKey: "custom-table")
-                ?? node.string(forKey: "custom_table")
-                ?? node.string(forKey: "table")
-                ?? ""
-        )
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let rawCustomTables = node.stringArray(forKey: "custom-tables")
-            ?? node.stringArray(forKey: "custom_tables")
-            ?? node.stringArray(forKey: "customTables")
-        let customTables = SudokuConfiguration.normalizeCustomTables(
-            rawCustomTables ?? [],
-            legacy: legacyCustomTable,
-            legacyFallback: true
-        )
-        let paddingMin = node.int(forKey: "padding-min") ?? node.int(forKey: "padding_min") ?? 5
-        let paddingMax = node.int(forKey: "padding-max") ?? node.int(forKey: "padding_max") ?? max(paddingMin, 15)
-        let pureDownlink = node.bool(forKey: "enable-pure-downlink") ?? node.bool(forKey: "enable_pure_downlink") ?? true
-
-        let httpMaskNode = node["httpmask"]
-        let httpMask = parseSudokuHTTPMask(httpMaskNode)
-        let legacyMultiplex = httpMaskNode?.string(forKey: "multiplex")?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let topLevelMultiplex = node.string(forKey: "multiplex") ?? ""
-        let multiplexValue = legacyMultiplex.flatMap { $0.isEmpty ? nil : $0 } ?? topLevelMultiplex
-        let multiplex = SudokuMultiplex(normalized: multiplexValue)
-
-        return ProxyConfiguration(
-            name: basics.name,
-            serverAddress: basics.server,
-            serverPort: basics.port,
-            outbound: .sudoku(
-                SudokuConfiguration(
-                    key: key,
-                    aeadMethod: aead,
-                    paddingMin: paddingMin,
-                    paddingMax: paddingMax,
-                    asciiMode: asciiMode,
-                    customTables: customTables,
-                    enablePureDownlink: pureDownlink,
-                    multiplex: multiplex,
-                    httpMask: httpMask
-                )
-            )
-        )
-    }
-
-    // MARK: - Trojan
-
     private static func parseTrojanProxy(_ node: YAML.Node) -> ProxyConfiguration? {
         guard
             let basics = parseBasics(node),
@@ -386,42 +317,6 @@ nonisolated enum ClashProxyParser {
         )
     }
 
-    // MARK: - RFC
-
-    private static func parseRFCProxy(_ node: YAML.Node) -> ProxyConfiguration? {
-        guard let basics = parseBasics(node) else { return nil }
-
-        let securityLayer: GenericSecurityLayer
-        if node.bool(forKey: "tls") == true {
-            let ech = echSettings(node)
-            securityLayer = .tls(TLSConfiguration(
-                serverName: parseSNI(node, server: basics.server),
-                alpn: node.stringArray(forKey: "alpn"),
-                echEnabled: ech.enabled,
-                echConfig: ech.config,
-                fingerprint: parseFingerprint(node)
-            ))
-        } else {
-            securityLayer = .none
-        }
-
-        let username = node.string(forKey: "username")
-        if username?.contains(":") == true { return nil }
-
-        return ProxyConfiguration(
-            name: basics.name,
-            serverAddress: basics.server,
-            serverPort: basics.port,
-            outbound: .rfc(
-                RFCConfiguration(
-                    username: username,
-                    password: node.string(forKey: "password"),
-                    securityLayer: securityLayer
-                )
-            )
-        )
-    }
-
     // MARK: - Shared option parsing
 
     private static func parseSNI(_ node: YAML.Node, server: String) -> String {
@@ -486,16 +381,7 @@ nonisolated enum ClashProxyParser {
         }
     }
 
-    private static func parseSudokuHTTPMask(_ node: YAML.Node?) -> SudokuHTTPMaskConfiguration {
-        guard let node, case .mapping = node else { return .init() }
-        return SudokuHTTPMaskConfiguration(
-            disable: node.bool(forKey: "disable") ?? false,
-            mode: SudokuHTTPMaskMode(rawValue: node.string(forKey: "mode") ?? SudokuHTTPMaskMode.legacy.rawValue) ?? .legacy,
-            tls: node.bool(forKey: "tls") ?? false,
-            host: node.string(forKey: "host") ?? "",
-            pathRoot: node.string(forKey: "path-root") ?? node.string(forKey: "path_root") ?? ""
-        )
-    }
+
 }
 
 // MARK: - Node access

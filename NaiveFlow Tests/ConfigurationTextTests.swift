@@ -58,7 +58,7 @@ struct ConfigurationTextTests {
     @Test func parsesFieldFormProxyWithPositionalValues() {
         let result = NaiveFlowConfigurationParser.parse(text: """
             [Proxy]
-            HK = ss, 1.2.3.4, 8388, aes-128-gcm, secret, udp = true
+            HK = ss, 1.2.3.4, 8388, 2022-blake3-aes-256-gcm, secret, udp = true
             """)
 
         let proxy = result.configuration.proxies.first
@@ -67,7 +67,7 @@ struct ConfigurationTextTests {
         #expect(proxy?.port == 8388)
 
         if case .fields(_, _, _, let parameters)? = proxy?.form {
-            #expect(parameters["cipher"] == "aes-128-gcm")
+            #expect(parameters["cipher"] == "2022-blake3-aes-256-gcm")
             #expect(parameters["password"] == "secret")
             #expect(parameters["udp"] == "true")
         } else {
@@ -260,6 +260,16 @@ extension ConfigurationTextTests {
             return
         }
         #expect(id == proxy.id)
+    }
+
+    @Test func rejectsRemovedSudokuProtocol() {
+        let result = TextConfigurationPipeline.process(text: """
+            [Proxy]
+            Old = sudoku, 1.2.3.4, 443, secret
+            [Rule]
+            FINAL, DIRECT
+            """)
+        #expect(!result.isActivatable)
     }
 }
 

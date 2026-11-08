@@ -512,33 +512,5 @@ struct ProtocolEdgeCaseTests {
         #expect(poolNoResolve !== poolA1)
     }
 
-    // MARK: - RFC (HTTP CONNECT) pool key isolation
 
-    @Test func rfcRegistrySeparatesPoolsByTLSVersion() {
-        let registry = RFCMultiplexerRegistry.shared
-        defer { registry.closeAll() }
-
-        func makeConfig(_ tls: TLSConfiguration) -> ProxyConfiguration {
-            ProxyConfiguration(
-                name: "node",
-                serverAddress: "node.example.com",
-                serverPort: 443,
-                outbound: .rfc(RFCConfiguration(securityLayer: .tls(tls)))
-            )
-        }
-
-        let tls12 = TLSConfiguration(serverName: "node.example.com", minVersion: .tls12, maxVersion: .tls12)
-        let tls13 = TLSConfiguration(serverName: "node.example.com", minVersion: .tls13, maxVersion: .tls13)
-
-        let pool12 = registry.pool(for: makeConfig(tls12))
-        let pool12Again = registry.pool(for: makeConfig(tls12))
-        #expect(pool12 != nil)
-        #expect(pool12 === pool12Again)
-
-        // Same server but a different TLS version range must not reuse the pool,
-        // otherwise a TLS 1.3 node could adopt a TLS 1.2 session.
-        let pool13 = registry.pool(for: makeConfig(tls13))
-        #expect(pool13 != nil)
-        #expect(pool13 !== pool12)
-    }
 }

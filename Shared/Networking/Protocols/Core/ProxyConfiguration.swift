@@ -11,12 +11,10 @@ nonisolated enum OutboundProtocol: String, Codable, CaseIterable {
     case nowhere
     case vless
     case hysteria
-    case sudoku
     case trojan
     case anytls
     case shadowsocks
     case socks5
-    case rfc
     case direct
 
     enum InitialDataPolicy: Equatable {
@@ -33,9 +31,9 @@ nonisolated enum OutboundProtocol: String, Codable, CaseIterable {
     
     var initialDataPolicy: InitialDataPolicy {
         switch self {
-        case .nowhere, .vless, .sudoku:
+        case .nowhere, .vless:
             return .unbounded
-        case .hysteria, .trojan, .anytls, .shadowsocks, .socks5, .rfc, .direct:
+        case .hysteria, .trojan, .anytls, .shadowsocks, .socks5, .direct:
             return .none
         }
     }
@@ -48,8 +46,6 @@ nonisolated enum OutboundProtocol: String, Codable, CaseIterable {
             return .tcp
         case .shadowsocks, .direct:
             return downstream
-        case .sudoku, .rfc:
-            return downstream == .tcp ? .tcp : nil
         }
     }
 
@@ -69,8 +65,6 @@ nonisolated enum OutboundProtocol: String, Codable, CaseIterable {
             "VLESS"
         case .hysteria:
             "Hysteria"
-        case .sudoku:
-            "Sudoku"
         case .trojan:
             "Trojan"
         case .anytls:
@@ -79,8 +73,6 @@ nonisolated enum OutboundProtocol: String, Codable, CaseIterable {
             "Shadowsocks"
         case .socks5:
             "SOCKS5"
-        case .rfc:
-            "RFC"
         case .direct:
             "Direct"
         }
@@ -93,12 +85,10 @@ nonisolated enum Outbound: Hashable, Sendable {
     case nowhere(NowhereConfiguration)
     case vless(VLESSConfiguration)
     case hysteria(HysteriaConfiguration)
-    case sudoku(SudokuConfiguration)
     case trojan(TrojanConfiguration)
     case anytls(AnyTLSConfiguration)
     case shadowsocks(ShadowsocksConfiguration)
     case socks5(SOCKS5Configuration)
-    case rfc(RFCConfiguration)
     case direct(DirectConfiguration)
 
     var outboundProtocol: OutboundProtocol {
@@ -106,12 +96,10 @@ nonisolated enum Outbound: Hashable, Sendable {
         case .nowhere:      .nowhere
         case .vless:        .vless
         case .hysteria:     .hysteria
-        case .sudoku:       .sudoku
         case .trojan:       .trojan
         case .anytls:       .anytls
         case .shadowsocks:  .shadowsocks
         case .socks5:       .socks5
-        case .rfc:          .rfc
         case .direct:       .direct
         }
     }
@@ -190,7 +178,6 @@ nonisolated struct ProxyConfiguration: Identifiable, Hashable, Codable, Sendable
         case .nowhere:                       .tls(NowhereConfiguration.tlsConfiguration(for: serverAddress))
         case .trojan(let configuration):    configuration.securityLayer
         case .anytls(let configuration):    configuration.securityLayer
-        case .rfc(let configuration):       configuration.securityLayer
         default:                            .none
         }
     }
@@ -203,12 +190,10 @@ nonisolated struct ProxyConfiguration: Identifiable, Hashable, Codable, Sendable
         case .vless:
             tag = vless?.displayNetworkTag
         case .hysteria:         tag = "UDP"
-        case .sudoku:           tag = "TCP"
         case .trojan:           tag = "TCP"
         case .anytls:           tag = "TCP"
         case .shadowsocks:      tag = nil
         case .socks5:           tag = nil
-        case .rfc:              tag = "TCP"
         case .direct:           tag = nil
         }
         return tag
@@ -226,7 +211,7 @@ nonisolated struct ProxyConfiguration: Identifiable, Hashable, Codable, Sendable
         case .vless:
             tag = vless?.displaySecurityLayerTag
         case .hysteria:         tag = "TLS"
-        case .trojan, .anytls, .rfc:
+        case .trojan, .anytls:
             switch genericSecurityLayer {
             case .none:         tag = nil
             case .tls:          tag = "TLS"
@@ -272,14 +257,14 @@ nonisolated struct ProxyConfiguration: Identifiable, Hashable, Codable, Sendable
             true
         case .vless(let configuration):
             configuration.isXHTTPOverHTTP3
-        case .sudoku, .trojan, .anytls, .shadowsocks, .socks5, .rfc, .direct:
+        case .trojan, .anytls, .shadowsocks, .socks5, .direct:
             false
         }
     }
 
     var dialsOwnChain: Bool {
         switch outbound {
-        case .anytls, .rfc, .sudoku, .hysteria, .direct:
+        case .anytls, .hysteria, .direct:
             true
         case .nowhere:
             isQUICTransport

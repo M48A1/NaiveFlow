@@ -323,13 +323,13 @@ nonisolated extension ConfigurationCompiler {
 
     static func clashType(for type: String) -> String? {
         switch type {
-        case "vless", "trojan", "anytls", "sudoku", "socks5", "direct":
+        case "vless", "trojan", "anytls", "socks5", "direct":
             return type
         case "hysteria", "hysteria2":
             return "hysteria2"
         case "ss", "shadowsocks":
             return "ss"
-        case "http", "rfc":
+        case "http":
             return "http"
         default:
             return nil

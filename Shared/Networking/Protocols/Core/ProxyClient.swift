@@ -385,16 +385,12 @@ nonisolated final class ProxyClient: Sendable {
             return try await connectWithVLESS(request)
         case .hysteria:
             return try await connectWithHysteria(request)
-        case .sudoku:
-            return try await connectWithSudoku(request)
         case .trojan:
             return try await connectWithTrojan(request)
         case .anytls:
             return try await connectWithAnyTLS(request)
         case .socks5:
             return try await connectWithSOCKS5(request)
-        case .rfc:
-            return try await connectWithRFC(request)
         case .shadowsocks:
             return try await connectWithShadowsocks(request)
         case .direct:
@@ -432,12 +428,10 @@ nonisolated extension OutboundProtocol {
         case .nowhere: .nowhere
         case .vless: .vless
         case .hysteria: .hysteria
-        case .sudoku: .sudoku
         case .trojan: .trojan
         case .anytls: .anyTLS
         case .shadowsocks: .shadowsocks
         case .socks5: .socks5
-        case .rfc: .rfc
         case .direct: .direct
         }
     }

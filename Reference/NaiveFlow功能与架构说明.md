@@ -16,6 +16,8 @@ NaiveFlow 是一个基于 Apple Network Extension 的 IPv4 网络代理和流量
 - watchOS：客户端已移除。
 - 首版为 IPv4-only，不承诺完整 IPv6、双栈或 NAT64 行为。
 
+tvOS 不提供长文本配置、节点 URL、DNS 或 MITM 规则编辑器，但保留 MITM 数据平面和模块/脚本运行能力。配置、MITM 规则和脚本由 iPhone、iPad 或 macOS 编辑并发布，tvOS 通过 iCloud 或已确认的运行包下载、校验后执行。
+
 ## 2. 总体架构
 
 ```text
@@ -75,13 +77,11 @@ Network Extension
 
 - Direct
 - SOCKS5
-- Shadowsocks
+- Shadowsocks 2022
 - Trojan
 - VLESS
 - Hysteria
 - AnyTLS
-- Sudoku
-- RFC
 - Nowhere
 
 节点页面支持新增、编辑、删除、排序、导入、订阅刷新、延迟测试和分组。协议实现位于 `Shared/Networking/Protocols`，由统一的 `ProxyClient` 负责拨号和连接生命周期。
@@ -298,7 +298,7 @@ Fake-IP 不会送入公网，也不会被当作真实 IP 参与 GeoIP 判断。�
 Shared/Networking/Protocols/
 ```
 
-包含 Core、Direct、SOCKS5、Shadowsocks、Trojan、VLESS、Hysteria、AnyTLS、Sudoku、RFC、Nowhere、TLS 和 QUIC 相关实现。
+包含 Core、Direct、SOCKS5、Shadowsocks 2022、Trojan、VLESS、Hysteria、AnyTLS、Nowhere、TLS 和 QUIC 相关实现。
 
 显式代理路由如果找不到可用节点，会报告代理不可用，不会偷偷走运营商直连。
 
@@ -365,6 +365,8 @@ MITM 子系统包括：
 
 流量统计按路由目标记录上传、下载、TCP/UDP 数量、活动连接、内存、唤醒/休眠和拨号/握手耗时。
 
+tvOS 上的请求查询以查看为主，保留状态、规则、出口、失败原因、流量和耗时；复杂筛选、文本编辑和规则修改放在 iOS/iPadOS/macOS。
+
 ## 11. 持久化、同步和外部资源
 
 项目存储包括：
@@ -387,6 +389,8 @@ CloudKit 当前用于配置文本的手动上传和下载。下载内容需要�
 外部资源支持规则集、GeoIP、GeoSite 和脚本下载，并在发布前执行大小、编码、格式、摘要和版本固定。下载或校验失败时保留旧版本。
 
 当前没有私有预设路由数据库；如需默认 `Rules.db`，需要由应用资源或明确的数据源提供。
+
+模块资源和脚本资源在发布时固定进运行包。tvOS 不编辑这些资源，但会执行已校验并确认的 MITM 规则、模块和脚本；下载失败、脚本语法错误、CA 状态不满足或运行包完整性失败时，沿用旧版本并报告错误。
 
 ## 12. IPC、并发和可靠性
 
