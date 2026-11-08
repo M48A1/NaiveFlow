@@ -244,7 +244,8 @@ actor UDPPlane {
         guard let defaultConfiguration = udpConfig.configuration else { return }
 
         let decision = stack.connectionRouter.decision(forIP: dstAddress.description, sourceIP: datagram.source.address.description,
-            sourcePort: datagram.source.port, destinationPort: dstPort, protocolName: "UDP", allowAddressResolution: !awaitedResolution)
+            sourcePort: datagram.source.port, destinationPort: dstPort, protocolName: "UDP", allowAddressResolution: !awaitedResolution,
+            consumingGroupSelection: false)
 
         let dstHost = decision.host
 
@@ -298,7 +299,8 @@ actor UDPPlane {
                 sourcePort: datagram.source.port,
                 destinationPort: dstPort,
                 protocolName: "UDP",
-                allowAddressResolution: !awaitedResolution
+                allowAddressResolution: !awaitedResolution,
+                consumingGroupSelection: false
             )
             if let sniffedDecision {
                 switch sniffedDecision.action {
@@ -332,7 +334,8 @@ actor UDPPlane {
                 destinationPort: dstPort,
                 protocolName: "UDP",
                 allowAddressResolution: !awaitedResolution,
-                deferOnHostUnknown: false
+                deferOnHostUnknown: false,
+                consumingGroupSelection: false
             )
             switch finalDecision.action {
             case .route(let target, let configuration, let matchedRuleSet):
@@ -375,6 +378,17 @@ actor UDPPlane {
         }
 
         guard makeRoomForNewFlow() else { return }
+
+        // All preceding decisions are previews: sniffing may buffer several
+        // Initial packets or DNS may defer this flow. Consume exactly one slot
+        // only after its final policy has survived all checks.
+        if case .proxy = routeTarget {
+            guard let selected = stack.domainRouter.resolveConfiguration(action: routeTarget) else {
+                stack.sendICMPPortUnreachable(rejecting: datagram)
+                return
+            }
+            flowConfiguration = selected
+        }
 
         stack.requestLog.record(protocol: .udp, host: policyHost, port: dstPort, routeTarget: routeTarget, ruleSetName: ruleSetName)
 

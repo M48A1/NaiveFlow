@@ -46,6 +46,23 @@ nonisolated struct RouteQuery: Sendable, Equatable {
     }
 }
 
+/// Builds a post-sniff query from the real destination or an existing rule DNS
+/// answer. The cache callback must never initiate resolution: no-resolve rules
+/// may use an address already known without causing a new lookup.
+nonisolated extension RouteQuery {
+    init(destinationHost: String, sniffedHost: String? = nil,
+         sourceIP: String? = nil, sourcePort: UInt16? = nil,
+         destinationPort: UInt16? = nil, protocolName: String? = nil,
+         cachedAddress: (String) -> String?) {
+        let host = sniffedHost ?? destinationHost
+        let hostIsIP = DNSName.isIPAddress(host)
+        let literal = hostIsIP ? host : (DNSName.isIPAddress(destinationHost) ? destinationHost : nil)
+        self.init(host: hostIsIP ? nil : host, ip: literal ?? cachedAddress(host),
+                  sourceIP: sourceIP, sourcePort: sourcePort,
+                  destinationPort: destinationPort, protocolName: protocolName)
+    }
+}
+
 /// Where a matched rule sends the connection.
 nonisolated enum RouteMatchAction: Hashable, Codable, Sendable {
     case direct

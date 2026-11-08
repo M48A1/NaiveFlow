@@ -324,10 +324,10 @@ actor TCPConnection: MITMSessionHost {
             // original destination IP so both domain rules and IP rules match in
             // one query (an earlier MITM-only lookup dropped the domain here).
             let host = sniffedSNI ?? mitmSNI ?? dstHost
-            let hostIsIP = DNSName.isIPAddress(host)
-            let ip = hostIsIP ? host : (DNSName.isIPAddress(dstHost) ? dstHost : nil)
-            var query = RouteQuery(host: hostIsIP ? nil : host, ip: ip, sourceIP: sourceIP,
-                sourcePort: sourcePort, destinationPort: dstPort, protocolName: "TCP")
+            var query = RouteQuery(destinationHost: dstHost, sniffedHost: sniffedSNI ?? mitmSNI,
+                sourceIP: sourceIP, sourcePort: sourcePort, destinationPort: dstPort, protocolName: "TCP") {
+                    DNSResolver.localRequests.cachedIPs(for: $0, family: .ipv4, purpose: .ruleEvaluation)?.first
+                }
             // Sniffing is over; finish the IP/FINAL match even when the host is
             // still unknown.
             var evaluation = router.nativeDecision(query, allowResolution: !AWCore.getPreventDNSLeak(), deferOnHostUnknown: false)
@@ -349,6 +349,9 @@ actor TCPConnection: MITMSessionHost {
             ruleMatched = true
             ruleSetName = match.ruleSetName
             routeTarget = match.action
+            if let defaultConfiguration = stack.udpConfig().configuration {
+                configuration = defaultConfiguration
+            }
         case .direct:
             ruleMatched = true
             ruleSetName = match.ruleSetName
@@ -1220,8 +1223,10 @@ actor TCPConnection: MITMSessionHost {
 
     private func resolveUpstreamRoute(forDialHost host: String, port: UInt16) async -> (route: UpstreamRoute, ruleSetName: String?) {
         if let router = stack?.domainRouter, router.usesNativeRules {
-            var query = RouteQuery(host: host, ip: DNSName.isIPAddress(host) ? host : nil, sourceIP: sourceIP,
-                                   sourcePort: sourcePort, destinationPort: port, protocolName: "TCP")
+            var query = RouteQuery(destinationHost: host, sourceIP: sourceIP,
+                sourcePort: sourcePort, destinationPort: port, protocolName: "TCP") {
+                    DNSResolver.localRequests.cachedIPs(for: $0, family: .ipv4, purpose: .ruleEvaluation)?.first
+                }
             var evaluation = router.nativeDecision(query, allowResolution: !AWCore.getPreventDNSLeak())
             if case .needsAddress = evaluation {
                 query.ip = await DNSResolver.localRequests.resolveHost(host, family: .ipv4, purpose: .ruleEvaluation)

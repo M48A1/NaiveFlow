@@ -60,6 +60,92 @@ struct ReviewRegressionTests {
         #expect(actual == [a, b, a, b, a, b])
     }
 
+    @Test func tcpFinalMatchUsesCachedAddressForNoResolveRule() throws {
+        let nodeID = UUID()
+        let matcher = OrderedRouteMatcher(rules: [OrderedRoutingRule(line: 1,
+            matcher: .ipCIDR(try #require(CIDRPrefix.parse("203.0.113.0/24"))),
+            action: .proxy(nodeID), noResolve: true)], finalAction: .direct)
+        var cacheReads: [String] = []
+        let query = RouteQuery(destinationHost: "example.com", sourceIP: "192.0.2.1",
+            sourcePort: 1234, destinationPort: 443, protocolName: "TCP") { host in
+                cacheReads.append(host)
+                return "203.0.113.7"
+            }
+        guard case .matched(let result) = matcher.evaluate(query, deferOnHostUnknown: false) else {
+            Issue.record("cached no-resolve rule must decide the route")
+            return
+        }
+        #expect(result.action == .proxy(nodeID))
+        #expect(result.ruleLine == 1)
+        #expect(cacheReads == ["example.com"])
+        #expect(query.sourceIP == "192.0.2.1")
+        #expect(query.sourcePort == 1234 && query.destinationPort == 443 && query.protocolName == "TCP")
+    }
+
+    @Test func tcpNoResolveWithoutCachedAddressReachesFinal() throws {
+        let matcher = OrderedRouteMatcher(rules: [OrderedRoutingRule(line: 1,
+            matcher: .ipCIDR(try #require(CIDRPrefix.parse("203.0.113.0/24"))),
+            action: .reject, noResolve: true)], finalAction: .direct)
+        let query = RouteQuery(destinationHost: "example.com") { _ in nil }
+        guard case .matched(let result) = matcher.evaluate(query, deferOnHostUnknown: false) else {
+            Issue.record("no-resolve must not request DNS when the cache is empty")
+            return
+        }
+        #expect(result.action == .direct && result.isFinal)
+    }
+
+    @Test func tcpSniffPreservesRealDestinationInsteadOfCachedAddress() {
+        let query = RouteQuery(destinationHost: "203.0.113.7", sniffedHost: "example.com") { _ in
+            Issue.record("a real destination must not need a cached DNS answer")
+            return "192.0.2.9"
+        }
+        #expect(query.host == "example.com")
+        #expect(query.ip == "203.0.113.7")
+        let literal = RouteQuery(destinationHost: "203.0.113.7") { _ in
+            Issue.record("literal IP must not read DNS cache")
+            return nil
+        }
+        #expect(literal.host == nil && literal.ip == "203.0.113.7")
+    }
+
+    @Test func tcpSniffUsesCacheForRecoveredHost() {
+        var cacheReads: [String] = []
+        let query = RouteQuery(destinationHost: "original.example", sniffedHost: "sniffed.example") { host in
+            cacheReads.append(host)
+            return host == "sniffed.example" ? "203.0.113.7" : "192.0.2.9"
+        }
+        #expect(query.host == "sniffed.example" && query.ip == "203.0.113.7")
+        #expect(cacheReads == ["sniffed.example"])
+    }
+
+    @Test func udpBufferedSniffAndDNSPreviewsConsumeOneSlotPerFlow() {
+        let a = UUID(), b = UUID()
+        let group = RuntimeProxyGroup(name: "UDP", kind: .loadBalance, memberIDs: [a, b])
+        var selection = ProxyGroupSelection()
+        var actual: [UUID] = []
+        for previews in [2, 5, 1, 4, 3, 2] {
+            // Buffered QUIC Initial packets and DNS retries must be previews;
+            // only the flow that is actually created commits a selection.
+            for _ in 0..<previews {
+                _ = selection.select(group: group, latencies: [:], consuming: false)
+            }
+            if let selected = selection.select(group: group, latencies: [:]) { actual.append(selected) }
+        }
+        #expect(actual == [a, b, a, b, a, b])
+    }
+
+    @Test func udpAbandonedPreviewDoesNotConsumeOldGroupsSlot() {
+        let a = UUID(), b = UUID(), c = UUID(), d = UUID()
+        let old = RuntimeProxyGroup(name: "Before sniff", kind: .loadBalance, memberIDs: [a, b])
+        let final = RuntimeProxyGroup(name: "After sniff", kind: .loadBalance, memberIDs: [c, d])
+        var before = ProxyGroupSelection(), after = ProxyGroupSelection()
+        _ = before.select(group: old, latencies: [:], consuming: false)
+        _ = after.select(group: final, latencies: [:], consuming: false)
+        #expect(after.select(group: final, latencies: [:]) == c)
+        #expect(before.select(group: old, latencies: [:]) == a)
+        #expect(after.select(group: final, latencies: [:]) == d)
+    }
+
     @Test func probeAcceptsEveryHeaderSplitBoundary() async throws {
         let response = Data("HTTP/1.1 204 No Content\r\nX-Probe: yes\r\n\r\n".utf8)
         for split in 1..<response.count {

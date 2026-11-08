@@ -218,7 +218,8 @@ nonisolated final class ConnectionRouter: Sendable {
         sourcePort: UInt16? = nil,
         destinationPort: UInt16? = nil,
         protocolName: String? = nil,
-        allowAddressResolution: Bool = true
+        allowAddressResolution: Bool = true,
+        consumingGroupSelection: Bool = true
     ) -> RouteDecision? {
         if domainRouter.usesNativeRules {
             let synthetic = SyntheticAddressPool.isSyntheticAddress(ip)
@@ -230,7 +231,7 @@ nonisolated final class ConnectionRouter: Sendable {
             switch domainRouter.nativeDecision(query, allowResolution: allowAddressResolution && !preventDNSLeak.load(ordering: .relaxed)) {
             case .matched(let result):
                 return RouteDecision(host: host, hostIsResolvedDomain: true,
-                                     action: action(for: DomainRouter.nativeMatch(result)),
+                                     action: action(for: DomainRouter.nativeMatch(result), consumingGroupSelection: consumingGroupSelection),
                                      isFinal: result.isFinal)
             case .needsAddress:
                 if allowAddressResolution {
@@ -245,7 +246,7 @@ nonisolated final class ConnectionRouter: Sendable {
             }
         }
         guard let match = domainRouter.matchDomain(host) else { return nil }
-        return RouteDecision(host: host, hostIsResolvedDomain: true, action: action(for: match))
+        return RouteDecision(host: host, hostIsResolvedDomain: true, action: action(for: match, consumingGroupSelection: consumingGroupSelection))
     }
 
     private func action(for match: DomainRouter.Match, consumingGroupSelection: Bool = true) -> RouteDecision.Action {
