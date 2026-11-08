@@ -39,6 +39,8 @@ actor TCPConnection: MITMSessionHost {
     private var routeTarget: RouteTarget
     private var ruleSetName: String?
     private var hasRequestRecord = false
+    private var diagnosticResolvedAddress: String?
+    private var diagnosticResolutionPurpose: String?
 
     private var ruleMatched: Bool
 
@@ -565,7 +567,9 @@ actor TCPConnection: MITMSessionHost {
             routeTarget: routeTarget,
             ruleSetName: ruleSetName,
             outbound: bypass ? .direct : TunnelRequestOutbound(configuration: configuration),
-            activityID: activityRecord.id
+            activityID: activityRecord.id,
+            resolvedAddress: diagnosticResolvedAddress,
+            resolutionPurpose: diagnosticResolutionPurpose
         )
         if bypass {
             return await connectDirect()
@@ -1267,6 +1271,8 @@ actor TCPConnection: MITMSessionHost {
             var evaluation = router.nativeDecision(query, allowResolution: !AWCore.getPreventDNSLeak())
             if case .needsAddress = evaluation {
                 query.ip = await DNSResolver.localRequests.resolveHost(host, family: .ipv4, purpose: .ruleEvaluation)
+                diagnosticResolvedAddress = query.ip
+                diagnosticResolutionPurpose = "ruleEvaluation"
                 evaluation = router.nativeDecision(query, allowResolution: false)
             }
             if case .matched(let result) = evaluation,

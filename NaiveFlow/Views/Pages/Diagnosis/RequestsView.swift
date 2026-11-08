@@ -237,6 +237,12 @@ private struct RequestDetailView: View {
                     LabeledContent("Protocol", value: protocolName(entry.protocol))
                     LabeledContent("Time") { Text(entry.timestamp, format: .dateTime) }
                     LabeledContent("Status", value: requestStateName(entry.state))
+                    if let address = entry.resolvedAddress {
+                        LabeledContent("Resolved IPv4", value: address)
+                    }
+                    if let purpose = entry.resolutionPurpose {
+                        LabeledContent("Resolution", value: purpose)
+                    }
                 }
                 Section("Routing") {
                     LabeledContent("Route", value: entry.displayRouteTarget.tagText)

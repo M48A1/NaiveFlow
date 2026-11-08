@@ -150,4 +150,22 @@ struct LiveRequestMonitorTests {
         let failure = await ProviderMessageConcurrencyBridge.send { _ in throw Failure() }
         #expect(failure == nil)
     }
+
+    @Test func routeDiagnosticsSurviveLegacyEncodingAndExport() async throws {
+        let id = UUID()
+        let entry = TunnelRequestEntry(timestamp: 1, protocol: .tcp, host: "example.test", port: 443,
+                                       routeTarget: .direct, activityID: id,
+                                       resolvedAddress: "203.0.113.8", resolutionPurpose: "ruleEvaluation")
+        let decoded = try JSONDecoder().decode(TunnelRequestEntry.self,
+            from: JSONEncoder().encode(entry))
+        #expect(decoded.resolvedAddress == "203.0.113.8")
+        #expect(decoded.resolutionPurpose == "ruleEvaluation")
+        let model = RequestsModel(now: { Date(timeIntervalSinceReferenceDate: 2) })
+        let provider = ScriptedTunnelProvider()
+        provider.onMessage = { _ in try? JSONEncoder().encode(RequestsResponse(requests: [entry])) }
+        await model.poll(using: TunnelController(provider: provider))
+        let json = model.export(model.requests)
+        #expect(json.contains("203.0.113.8"))
+        #expect(json.contains("ruleEvaluation"))
+    }
 }

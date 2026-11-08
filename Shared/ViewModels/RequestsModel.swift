@@ -29,6 +29,8 @@ class RequestsModel {
         let defaultRouteTarget: RouteTarget?
         let outbound: TunnelRequestOutbound?
         let blockReason: TunnelRequestBlockReason?
+        let resolvedAddress: String?
+        let resolutionPurpose: String?
         let activity: TunnelActivityEntry?
         let observedAt: Date
 
@@ -120,12 +122,17 @@ class RequestsModel {
             let outbound: TunnelRequestOutbound?
             let rule: String?
             let blockReason: TunnelRequestBlockReason?
+            let resolvedAddress: String?
+            let resolutionPurpose: String?
             let connection: TunnelActivityEntry?
         }
         let records = entries.map {
             Record(id: $0.id, timestamp: $0.timestamp, host: $0.host, port: $0.port,
                    transport: $0.protocol.rawValue, policy: $0.routeTarget, outbound: $0.outbound,
-                   rule: $0.ruleSetName, blockReason: $0.blockReason, connection: $0.activity)
+                   rule: $0.ruleSetName, blockReason: $0.blockReason,
+                   resolvedAddress: $0.resolvedAddress,
+                   resolutionPurpose: $0.resolutionPurpose,
+                   connection: $0.activity)
         }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -181,6 +188,8 @@ class RequestsModel {
                 defaultRouteTarget: entry.defaultRouteTarget,
                 outbound: entry.outbound,
                 blockReason: entry.blockReason,
+                resolvedAddress: entry.resolvedAddress,
+                resolutionPurpose: entry.resolutionPurpose,
                 activity: entry.activityID.flatMap { activityByID[$0] }
                     ?? previous[entry.id]?.activity.flatMap { $0.state == .closed ? $0 : nil },
                 observedAt: now()

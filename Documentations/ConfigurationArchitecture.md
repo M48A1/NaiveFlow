@@ -53,7 +53,7 @@ DNS 读取固定在一个设置视图，缓存有代际隔离；旧路由编译�
 | 路由 | 顺序首条命中、每条策略、FINAL；精确域名、后缀、关键字、通配符、正则；IPv4 CIDR、来源 IP/端口、目标端口、TCP/UDP；AND/OR/NOT |
 | 外部规则集 | RULE-SET 引用 HTTPS 或 App 可读的绝对 file:/// 文件；发布前展开、校验并固定到运行包，详见 [RuleSets.md](RuleSets.md) |
 | Geo | 配置内国家/ASN 前缀与域名后缀；外部 V2Ray geoip.dat/geosite.dat、CIDR/域名文本；手动应用时下载、校验、随版本固定；前缀/域名/关键字索引，见 [GeoDatabases.md](GeoDatabases.md) |
-| 分组 | select，支持嵌套、内置动作和 selected=成员；不支持自动延迟选择/负载均衡 |
+| 分组 | select、url-test、fallback、load-balance；自动组按独立探测结果选择成员，支持嵌套 select；自动组之间不允许直接嵌套 |
 | Host | 精确域名 → IPv4 字面量。没有把 server:、通配符或别名当作有效绑定 |
 | MITM | enable、hostname 后缀；URL、Header、Body、JSON 改写、Map Local；必须先安装并信任既有 CA |
 | 脚本 | http-request/http-response；普通或逐帧 process(ctx)，复用已有原生脚本 ABI；HTTPS 或 base64 源，固定字节；支持 $argument |

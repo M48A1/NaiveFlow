@@ -30,13 +30,16 @@ nonisolated final class RequestLog: Sendable {
         isQUIC: Bool? = nil,
         deduplicationKey: String? = nil,
         activityID: UUID? = nil,
+        resolvedAddress: String? = nil,
+        resolutionPurpose: String? = nil,
         now: TimeInterval = CFAbsoluteTimeGetCurrent()
     ) {
         let reason = blockReason ?? (routeTarget == .reject ? .rule : nil)
         let entry = Entry(timestamp: now, protocol: `protocol`, host: host, port: port,
             routeTarget: routeTarget, ruleSetName: ruleSetName,
             defaultRouteTarget: defaultRouteTarget.withLock { $0 },
-            outbound: outbound, blockReason: reason, isQUIC: isQUIC, activityID: activityID)
+            outbound: outbound, blockReason: reason, isQUIC: isQUIC, activityID: activityID,
+            resolvedAddress: resolvedAddress, resolutionPurpose: resolutionPurpose)
         entries.withLock { entries in
             Self.compact(&entries, now: now)
             // Only visible, recent entries suppress duplicates. Eviction or expiration

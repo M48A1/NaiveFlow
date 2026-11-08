@@ -415,10 +415,19 @@ nonisolated final class DomainRouter: Sendable {
                 // pick a member node, using the latest probe results (absent =
                 // unknown/unreachable).
                 guard let group = state.policyGroups[id] else { return nil }
-                guard let memberID = state.selections[id, default: ProxyGroupSelection()].select(
-                    group: group, latencies: state.latencies[group.id] ?? [:], consuming: consumingGroupSelection
-                ) else { return nil }
-                return state.configurationMap[memberID]
+                let latencies = state.latencies[group.id] ?? [:]
+                let first = state.selections[id, default: ProxyGroupSelection()].select(
+                    group: group, latencies: latencies, consuming: consumingGroupSelection
+                )
+                if let first, let configuration = state.configurationMap[first] { return configuration }
+                // A stale probe can point at a node removed by a newer runtime
+                // bundle. Try the remaining declaration-order members before
+                // reporting the group as unavailable; never fall through to
+                // DIRECT for an explicit proxy-group route.
+                for member in group.memberIDs where member != first {
+                    if let configuration = state.configurationMap[member] { return configuration }
+                }
+                return nil
             }
         }
     }

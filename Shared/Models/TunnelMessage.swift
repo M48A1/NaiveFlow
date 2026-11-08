@@ -171,6 +171,8 @@ nonisolated struct TunnelRequestEntry: Codable, Sendable, Hashable {
     /// nil means the producer did not identify the application protocol.
     var isQUIC: Bool? = nil
     var activityID: UUID? = nil
+    var resolvedAddress: String? = nil
+    var resolutionPurpose: String? = nil
 }
 
 /// Captured at route commit so later edits and group switches cannot rewrite history.
