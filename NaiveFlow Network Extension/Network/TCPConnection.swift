@@ -38,6 +38,7 @@ actor TCPConnection: MITMSessionHost {
 
     private var routeTarget: RouteTarget
     private var ruleSetName: String?
+    private var hasRequestRecord = false
 
     private var ruleMatched: Bool
 
@@ -305,6 +306,8 @@ actor TCPConnection: MITMSessionHost {
     private func handshakeTimedOutDuringEstablishment() {
         guard phase == .establishing else { return }
         let stage = isSniffing ? "protocol sniff" : (bypass ? "direct dial" : "proxy dial")
+        activityRecord.fail(String(localized: "Connection timed out"))
+        recordEarlyFailure()
         failureReporter.report(
             operation: "Handshake",
             endpoint: endpointDescription,
@@ -366,7 +369,9 @@ actor TCPConnection: MITMSessionHost {
             ruleMatched = true
             ruleSetName = match.ruleSetName
             routeTarget = .reject
-            stack.requestLog.record(protocol: .tcp, host: dstHost, port: dstPort, routeTarget: .reject, ruleSetName: match.ruleSetName, deduplicationKey: rejectionLogKey)
+            hasRequestRecord = true
+            stack.requestLog.record(protocol: .tcp, host: sniffedSNI ?? mitmSNI ?? dstHost, port: dstPort, routeTarget: .reject,
+                                    ruleSetName: match.ruleSetName, deduplicationKey: rejectionLogKey, activityID: activityRecord.id)
             publishRoute()
             rejectSilently()
         case .proxy(let id):
@@ -520,6 +525,7 @@ actor TCPConnection: MITMSessionHost {
             ruleMatched = true
             ruleSetName = match.ruleSetName
             routeTarget = .reject
+            hasRequestRecord = true
             stack.requestLog.record(protocol: .tcp, host: sni, port: dstPort, routeTarget: .reject, ruleSetName: match.ruleSetName, deduplicationKey: rejectionLogKey)
             publishRoute()
             rejectSilently()
@@ -549,13 +555,15 @@ actor TCPConnection: MITMSessionHost {
         if mitmEnabled {
             return startMITMSession()
         }
+        hasRequestRecord = true
         stack?.requestLog.record(
             protocol: .tcp,
             host: sniffedSNI ?? dstHost,
             port: dstPort,
             routeTarget: routeTarget,
             ruleSetName: ruleSetName,
-            outbound: bypass ? .direct : TunnelRequestOutbound(configuration: configuration)
+            outbound: bypass ? .direct : TunnelRequestOutbound(configuration: configuration),
+            activityID: activityRecord.id
         )
         if bypass {
             return await connectDirect()
@@ -665,6 +673,8 @@ actor TCPConnection: MITMSessionHost {
         _ error: Error,
         bufferedClientData: Data?
     ) -> Establishment {
+        activityRecord.fail(error.localizedDescription)
+        recordEarlyFailure()
         failureReporter.report(
             operation: "Connect",
             endpoint: endpointDescription,
@@ -952,7 +962,17 @@ actor TCPConnection: MITMSessionHost {
         )
     }
 
+    /// Sniffing/MITM setup can fail before any upstream route was committed.
+    private func recordEarlyFailure() {
+        guard !hasRequestRecord, let stack else { return }
+        hasRequestRecord = true
+        stack.requestLog.record(protocol: .tcp, host: sniffedSNI ?? mitmSNI ?? dstHost,
+                                port: dstPort, routeTarget: .default, activityID: activityRecord.id)
+    }
+
     private func reportFailure(_ operation: String, error: Error) {
+        activityRecord.fail(error.localizedDescription)
+        recordEarlyFailure()
         failureReporter.report(operation: operation, endpoint: endpointDescription, error: error)
     }
 
@@ -1222,8 +1242,9 @@ actor TCPConnection: MITMSessionHost {
         case .route(_, nil): outbound = .direct
         case .route(_, let configuration?): outbound = TunnelRequestOutbound(configuration: configuration)
         }
+        hasRequestRecord = true
         stack?.requestLog.record(protocol: .tcp, host: host, port: port, routeTarget: resolved.route.target,
-                                 ruleSetName: resolved.ruleSetName, outbound: outbound)
+                                 ruleSetName: resolved.ruleSetName, outbound: outbound, activityID: activityRecord.id)
         if host.caseInsensitiveCompare(mitmSNI ?? dstHost) == .orderedSame {
             routeTarget = resolved.route.target
             if case .route(_, let configuration?) = resolved.route {

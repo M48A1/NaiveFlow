@@ -394,7 +394,11 @@ actor UDPPlane {
             return
         }
 
-        guard makeRoomForNewFlow() else { return }
+        guard makeRoomForNewFlow() else {
+            recordBlockedDatagram(datagram, host: policyHost, reason: .resourceLimit,
+                                  identifiedQUIC: sniffedServerName != nil)
+            return
+        }
 
         // All preceding decisions are previews: sniffing may buffer several
         // Initial packets or DNS may defer this flow. Consume exactly one slot
@@ -410,9 +414,6 @@ actor UDPPlane {
         let resolvedTarget = routeTarget.resolved(against: udpConfig.defaultRouteTarget)
         let outbound: TunnelRequestOutbound = resolvedTarget == .direct
             ? .direct : TunnelRequestOutbound(configuration: flowConfiguration)
-        stack.requestLog.record(protocol: .udp, host: policyHost, port: dstPort,
-                                routeTarget: routeTarget, ruleSetName: ruleSetName, outbound: outbound,
-                                isQUIC: sniffedServerName != nil || QUICClientHelloSniffer.looksLikeClientInitial(payload))
 
         let flow = UDPFlow(
             stack: stack,
@@ -426,6 +427,11 @@ actor UDPPlane {
             routeTarget: routeTarget,
             ruleSetName: ruleSetName
         )
+        stack.requestLog.record(protocol: .udp, host: policyHost, port: dstPort,
+                                routeTarget: routeTarget, ruleSetName: ruleSetName, outbound: outbound,
+                                isQUIC: sniffedServerName != nil || QUICClientHelloSniffer.looksLikeClientInitial(payload),
+                                activityID: flow.activityRecord.id)
+
         insert(flow)
         await flow.handleReceivedData([payload])
     }

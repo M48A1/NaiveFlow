@@ -12,7 +12,7 @@ import Observation
 @Observable
 class RequestsModel {
     struct Entry: Identifiable, Equatable {
-        enum `Protocol`: String {
+        enum Transport: String {
             case tcp
             case udp
             case quic
@@ -21,7 +21,7 @@ class RequestsModel {
         
         let id: UUID
         let timestamp: Date
-        let `protocol`: `Protocol`
+        let `protocol`: Transport
         let host: String
         let port: UInt16
         let routeTarget: RouteTarget
@@ -29,11 +29,38 @@ class RequestsModel {
         let defaultRouteTarget: RouteTarget?
         let outbound: TunnelRequestOutbound?
         let blockReason: TunnelRequestBlockReason?
+        let activity: TunnelActivityEntry?
+        let observedAt: Date
+
+        enum State { case connecting, established, closed, failed, rejected, unknown }
+        var state: State {
+            if routeTarget == .reject || blockReason != nil { return .rejected }
+            if activity?.failure != nil { return .failed }
+            switch activity?.state {
+            case .connecting: return .connecting
+            case .established: return .established
+            case .closed: return .closed
+            case nil: return .unknown
+            }
+        }
+
+        func duration(at date: Date) -> TimeInterval? {
+            guard let activity else { return nil }
+            return max(0, (activity.endedAt ?? date.timeIntervalSinceReferenceDate) - activity.startedAt)
+        }
+        var connectDuration: TimeInterval? {
+            guard let activity, let establishedAt = activity.establishedAt else { return nil }
+            return max(0, establishedAt - activity.startedAt)
+        }
 
         var displayRouteTarget: RouteTarget {
             guard routeTarget != .reject, let outbound else { return routeTarget }
             return outbound.isDirect ? .direct : .defaultProxy
         }
+    }
+
+    enum Filter: String, CaseIterable {
+        case all, active, failed, rejected
     }
 
     enum RefreshState {
@@ -45,6 +72,7 @@ class RequestsModel {
     private(set) var requests: [Entry] = []
     private(set) var refreshState: RefreshState = .loading
     @ObservationIgnored private let now: () -> Date
+    @ObservationIgnored private var clearedThrough: Date?
 
     init(now: @escaping () -> Date = Date.init) {
         self.now = now
@@ -57,7 +85,53 @@ class RequestsModel {
     }
 
     func clear() {
+        clearedThrough = now()
         requests = []
+    }
+
+    func visibleRequests(query: String = "", filter: Filter = .all,
+                         protocol selectedProtocol: Entry.Transport? = nil) -> [Entry] {
+        let terms = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        return requests.reversed().filter { entry in
+            if let selectedProtocol, entry.protocol != selectedProtocol { return false }
+            switch filter {
+            case .all: break
+            case .active:
+                guard entry.state == .connecting || entry.state == .established else { return false }
+            case .failed: guard entry.state == .failed else { return false }
+            case .rejected: guard entry.state == .rejected else { return false }
+            }
+            let searchable = [entry.host, String(entry.port), entry.protocol.rawValue,
+                              entry.outbound?.name, entry.ruleSetName, entry.activity?.failure]
+                .compactMap { $0 }.joined(separator: " ")
+            return terms.allSatisfy { searchable.localizedStandardContains($0) }
+        }
+    }
+
+    /// Export only the rows the user is viewing, with connection-level metrics kept explicit.
+    func export(_ entries: [Entry]) -> String {
+        struct Record: Encodable {
+            let id: UUID
+            let timestamp: Date
+            let host: String
+            let port: UInt16
+            let transport: String
+            let policy: RouteTarget
+            let outbound: TunnelRequestOutbound?
+            let rule: String?
+            let blockReason: TunnelRequestBlockReason?
+            let connection: TunnelActivityEntry?
+        }
+        let records = entries.map {
+            Record(id: $0.id, timestamp: $0.timestamp, host: $0.host, port: $0.port,
+                   transport: $0.protocol.rawValue, policy: $0.routeTarget, outbound: $0.outbound,
+                   rule: $0.ruleSetName, blockReason: $0.blockReason, connection: $0.activity)
+        }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(records) else { return "[]" }
+        return String(decoding: data, as: UTF8.self)
     }
 
     func poll(using tunnel: TunnelController) async {
@@ -70,14 +144,20 @@ class RequestsModel {
             refreshState = .unavailable
             return
         }
-        apply(payload.requests)
+        apply(payload.requests, activities: payload.activities ?? [])
         pruneExpired()
         refreshState = .current
     }
 
-    private func apply(_ entries: [TunnelRequestEntry]) {
-        self.requests = entries.map { entry in
-            var `protocol`: Entry.`Protocol`
+    private func apply(_ entries: [TunnelRequestEntry], activities: [TunnelActivityEntry]) {
+        // Match by identity, never by host: concurrent connections can share a destination.
+        let activityByID = Dictionary(activities.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        let previous = Dictionary(requests.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        self.requests = entries.filter {
+            guard let clearedThrough else { return true }
+            return $0.timestamp > clearedThrough.timeIntervalSinceReferenceDate
+        }.map { entry in
+            var `protocol`: Entry.Transport
             switch entry.protocol {
             case .tcp:
                 `protocol` = .tcp
@@ -100,7 +180,10 @@ class RequestsModel {
                 ruleSetName: entry.ruleSetName,
                 defaultRouteTarget: entry.defaultRouteTarget,
                 outbound: entry.outbound,
-                blockReason: entry.blockReason
+                blockReason: entry.blockReason,
+                activity: entry.activityID.flatMap { activityByID[$0] }
+                    ?? previous[entry.id]?.activity.flatMap { $0.state == .closed ? $0 : nil },
+                observedAt: now()
             )
         }
     }

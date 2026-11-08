@@ -364,7 +364,11 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
             return encodeReply(LogsResponse(logs: tunnelStack.fetchLogs()))
 
         case .fetchRequests:
-            return encodeReply(RequestsResponse(requests: tunnelStack.requestLog.snapshot()))
+            let requests = tunnelStack.requestLog.snapshot()
+            let ids = Set(requests.compactMap(\.activityID))
+            let activities = (tunnelStack.tcpActivity.snapshot() + tunnelStack.udpActivity.snapshot())
+                .filter { ids.contains($0.id) }
+            return encodeReply(RequestsResponse(requests: requests, activities: activities))
 
         case .fetchActivity(let proto):
             let pool = switch proto {

@@ -103,7 +103,7 @@ actor UDPFlow {
 
     nonisolated let routeTarget: RouteTarget
 
-    private nonisolated let activityRecord: ActivityPool.Record
+    nonisolated let activityRecord: ActivityPool.Record
 
     private nonisolated let trafficMeter: TrafficMeter
 
@@ -160,6 +160,7 @@ actor UDPFlow {
     }
 
     private func reportFailure(_ operation: String, error: Error) {
+        activityRecord.fail(error.localizedDescription)
         failureReporter.report(operation: operation, endpoint: "\(flowKey)", error: error)
     }
 

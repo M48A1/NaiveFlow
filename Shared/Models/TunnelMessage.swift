@@ -107,6 +107,7 @@ nonisolated struct LogsResponse: Codable, Sendable {
 
 nonisolated struct RequestsResponse: Codable, Sendable {
     var requests: [TunnelRequestEntry]
+    var activities: [TunnelActivityEntry]? = nil
 }
 
 nonisolated struct ActivityResponse: Codable, Sendable {
@@ -169,6 +170,7 @@ nonisolated struct TunnelRequestEntry: Codable, Sendable, Hashable {
     var blockReason: TunnelRequestBlockReason? = nil
     /// nil means the producer did not identify the application protocol.
     var isQUIC: Bool? = nil
+    var activityID: UUID? = nil
 }
 
 /// Captured at route commit so later edits and group switches cannot rewrite history.
@@ -219,6 +221,8 @@ nonisolated struct TunnelActivityEntry: Codable, Sendable, Hashable {
     var endedAt: TimeInterval?
     var bytesIn: Int64
     var bytesOut: Int64
+    var establishedAt: TimeInterval? = nil
+    var failure: String? = nil
 }
 
 nonisolated enum TunnelActivityState: String, Codable, Sendable, Hashable {

@@ -5,7 +5,7 @@ import Synchronization
 nonisolated final class RequestLog: Sendable {
     typealias Entry = TunnelRequestEntry
     static let retentionInterval: TimeInterval = 300
-    static let maxEntries = 50
+    static let maxEntries = 500
     static let duplicateInterval: TimeInterval = 10
 
     private struct StoredEntry {
@@ -29,13 +29,14 @@ nonisolated final class RequestLog: Sendable {
         blockReason: TunnelRequestBlockReason? = nil,
         isQUIC: Bool? = nil,
         deduplicationKey: String? = nil,
+        activityID: UUID? = nil,
         now: TimeInterval = CFAbsoluteTimeGetCurrent()
     ) {
         let reason = blockReason ?? (routeTarget == .reject ? .rule : nil)
         let entry = Entry(timestamp: now, protocol: `protocol`, host: host, port: port,
             routeTarget: routeTarget, ruleSetName: ruleSetName,
             defaultRouteTarget: defaultRouteTarget.withLock { $0 },
-            outbound: outbound, blockReason: reason, isQUIC: isQUIC)
+            outbound: outbound, blockReason: reason, isQUIC: isQUIC, activityID: activityID)
         entries.withLock { entries in
             Self.compact(&entries, now: now)
             // Only visible, recent entries suppress duplicates. Eviction or expiration

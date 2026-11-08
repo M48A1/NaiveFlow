@@ -21,6 +21,8 @@ nonisolated final class ActivityPool: Sendable {
             var ruleSetName: String?
             var state: TunnelActivityState = .connecting
             var endedAt: CFAbsoluteTime?
+            var establishedAt: CFAbsoluteTime?
+            var failure: String?
         }
 
         private let detail: Mutex<Detail>
@@ -56,6 +58,13 @@ nonisolated final class ActivityPool: Sendable {
             detail.withLock { detail in
                 guard detail.state == .connecting else { return }
                 detail.state = .established
+                detail.establishedAt = CFAbsoluteTimeGetCurrent()
+            }
+        }
+
+        func fail(_ message: String) {
+            detail.withLock { detail in
+                if detail.failure == nil { detail.failure = String(message.prefix(512)) }
             }
         }
 
@@ -89,7 +98,9 @@ nonisolated final class ActivityPool: Sendable {
                 startedAt: startedAt,
                 endedAt: detail.endedAt,
                 bytesIn: bytesIn.load(ordering: .relaxed),
-                bytesOut: bytesOut.load(ordering: .relaxed)
+                bytesOut: bytesOut.load(ordering: .relaxed),
+                establishedAt: detail.establishedAt,
+                failure: detail.failure
             )
         }
     }
