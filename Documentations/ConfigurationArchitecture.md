@@ -71,7 +71,7 @@ PROCESS-NAME、USER-AGENT、URL 路由、定时/DNS 脚本、证书导入、其�
 
 新增测试覆盖顺序与 FINAL、DNS 等待、no-resolve、流元数据、逻辑短路、Geo、CIDR 边界、文本改写、脚本固定、作用域导出、离线发布、失败恢复、过期确认、内容损坏、并发发布和宿主中断恢复。
 
-当前编辑环境没有 Swift/Xcode：只执行 Swift 语法树回归检查、工程文件/目标引用检查和 git diff --check；没有声称构建、单元测试或真机通过。
+历史记录中的“没有 Swift/Xcode”仅适用于早期检查。2026-11-08 已在 Xcode 模拟器环境完成工程解析与 `NaiveFlow Tests` 全量回归；真机和受控网络验收仍未完成。
 
 在满足本工程 Swift tools 版本要求的 Mac 上执行（模拟器名按本机替换）：
 
