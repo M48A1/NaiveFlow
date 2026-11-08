@@ -188,6 +188,7 @@ nonisolated enum NaiveFlowError: Error {
     // MARK: Subscription
 
     enum Subscription: Sendable {
+        case invalidStatusCode(Int)
         case invalidURL
         case noConfigurations
         case fetchFailed(underlying: any Error)
@@ -601,6 +602,7 @@ nonisolated extension NaiveFlowError.Parse.ProxyURI {
 nonisolated extension NaiveFlowError.Subscription {
     var failureDescription: String {
         switch self {
+        case .invalidStatusCode(let status): "HTTP \(status)"
         case .invalidURL:
             String(localized: "Invalid subscription URL.")
         case .noConfigurations:

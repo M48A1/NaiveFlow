@@ -34,13 +34,17 @@ extension TunnelStack {
             datagrams: { [weak self] batch in
                 self?.admitDatagrams(batch)
             },
-            synFilter: { [weak self] _, destination in
+            synFilter: { [weak self] source, destination in
                 guard let self else { return .drop }
                 let isDNS = destination.port == 53 && Self.dnsDestination(
                     for: destination.address.description, exempting: self.udpConfig().interceptExemptDNSServers
                 ) != nil
-                guard (isDNS || !self.isRejectMarked(destination.address)), self.ipStackSynVerdict() else {
-                    self.recordRejectedSYN(to: destination)
+                if !isDNS && self.isRejectMarked(destination.address) {
+                    self.recordRejectedSYN(from: source, to: destination, reason: .rule)
+                    return .drop
+                }
+                guard self.ipStackSynVerdict() else {
+                    self.recordRejectedSYN(from: source, to: destination, reason: .resourceLimit)
                     return .drop
                 }
                 return .accept
@@ -58,13 +62,15 @@ extension TunnelStack {
         }
     }
 
-    nonisolated private func recordRejectedSYN(to destination: IPEndpoint) {
+    nonisolated private func recordRejectedSYN(from source: IPEndpoint, to destination: IPEndpoint, reason: TunnelRequestBlockReason) {
         let ip = destination.address.description
         requestLog.record(
             protocol: .tcp,
             host: connectionRouter.syntheticAddressPool.lookup(ip: ip)?.domain ?? ip,
             port: destination.port,
-            routeTarget: .reject
+            routeTarget: .reject,
+            blockReason: reason,
+            deduplicationKey: "tcp-reject:\(source.address):\(source.port)>\(ip):\(destination.port)"
         )
     }
 
@@ -137,7 +143,8 @@ extension TunnelStack {
                     host: decision.host,
                     port: dstPort,
                     routeTarget: .reject,
-                    ruleSetName: matchedRuleSet
+                    ruleSetName: matchedRuleSet,
+                    deduplicationKey: "tcp-reject:\(pending.source.address):\(pending.source.port)>\(dstIPString):\(dstPort)"
                 )
                 pending.reject(reset: false); return nil
             }

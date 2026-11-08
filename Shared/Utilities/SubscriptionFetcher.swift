@@ -52,7 +52,18 @@ nonisolated struct SubscriptionFetcher {
             throw NaiveFlowError.subscription(.fetchFailed(underlying: error))
         }
 
-        let httpResponse = response as? HTTPURLResponse
+        return try parse(data: data, response: response)
+    }
+
+    /// Both network paths must pass HTTP validation before interpreting any
+    /// bytes as nodes or subscription metadata.
+    static func parse(data: Data, response: URLResponse) throws -> Result {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NaiveFlowError.subscription(.fetchFailed(underlying: URLError(.badServerResponse)))
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw NaiveFlowError.subscription(.invalidStatusCode(httpResponse.statusCode))
+        }
 
         let profileTitle = parseProfileTitle(from: httpResponse)
         let userInfo = parseSubscriptionUserInfo(from: httpResponse)

@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct RequestsView: View {
+    @Environment(TunnelController.self) private var tunnel
     @State private var requestsModel = RequestsModel()
     @Environment(ConfigurationStore.self) private var configStore
     @Environment(ChainStore.self) private var chainStore
@@ -38,7 +39,7 @@ struct RequestsView: View {
                         if let protocolLabel = label(for: entry.protocol) {
                             TagBadge(text: protocolLabel, color: .green)
                         }
-                        TagBadge(text: entry.routeTarget.tagText, color: entry.routeTarget.tagColor)
+                        TagBadge(text: entry.displayRouteTarget.tagText, color: entry.displayRouteTarget.tagColor)
                     }
                     if let detail = detailLine(for: entry) {
                         Text(detail)
@@ -86,7 +87,7 @@ struct RequestsView: View {
             guard editMode == .inactive else { return }
             selection.removeAll()
             while !Task.isCancelled {
-                await requestsModel.poll()
+                await requestsModel.poll(using: tunnel)
                 try? await Task.sleep(for: .seconds(1))
             }
         }
@@ -103,7 +104,7 @@ struct RequestsView: View {
     // MARK: - Row formatting
 
     private func icon(for entry: RequestsModel.Entry) -> String {
-        switch entry.routeTarget {
+        switch entry.displayRouteTarget {
         case .default: "info.circle.fill"
         case .direct: "arrow.right.circle.fill"
         case .reject: "xmark.bin.circle.fill"
@@ -121,13 +122,24 @@ struct RequestsView: View {
     }
 
     private func detailLine(for entry: RequestsModel.Entry) -> String? {
-        let outboundName = entry.routeTarget.outboundName(
+        let outboundName = entry.outbound?.name ?? entry.routeTarget.outboundName(
             defaultRouteTarget: entry.defaultRouteTarget,
             configStore: configStore,
             chainStore: chainStore,
             selection: proxySelection
         )
-        let parts = [outboundName, entry.ruleSetName].compactMap(\.self)
+        let reason: String? = entry.blockReason.map {
+            switch $0 {
+            case .rule: String(localized: "Rejected by rule")
+            case .udpDisabled: String(localized: "UDP disabled")
+            case .quicPolicy: String(localized: "QUIC blocked by policy")
+            case .quicMITM: String(localized: "QUIC blocked for MITM")
+            case .quicProxyPolicy: String(localized: "Proxied QUIC blocked")
+            case .webRTC: String(localized: "WebRTC blocked")
+            case .resourceLimit: String(localized: "Connection limit reached")
+            }
+        }
+        let parts = [outboundName, entry.ruleSetName, reason].compactMap(\.self)
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }

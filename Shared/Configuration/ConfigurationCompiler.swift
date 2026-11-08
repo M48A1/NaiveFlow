@@ -819,7 +819,7 @@ nonisolated extension ConfigurationCompiler {
             do { try validateExpression(matcher)
             } catch {
                 diagnostics.append(.init(severity: .error, code: .invalidValue, line: rule.line,
-                    section: "Rule", message: "Invalid regular expression or protocol value."))
+                    section: "Rule", message: "Invalid rule expression: \(error.localizedDescription)"))
             }
             rules.append(
                 OrderedRoutingRule(
@@ -1085,7 +1085,9 @@ nonisolated extension ConfigurationCompiler {
     static func validateExpression(_ matcher: OrderedRoutingRule.Matcher, depth: Int = 0) throws {
         guard depth <= 16 else { throw NativeGeoFailure("Rule expression nesting exceeds 16 levels.") }
         switch matcher {
-        case .domainRegex(let pattern), .urlRegex(let pattern):
+        case .processName, .userAgent, .urlRegex:
+            throw NativeGeoFailure("This rule requires metadata unavailable to the tunnel.")
+        case .domainRegex(let pattern):
             _ = try NSRegularExpression(pattern: pattern)
         case .protocolName(let name):
             guard name == "TCP" || name == "UDP" else { throw NativeGeoFailure("Unsupported protocol.") }

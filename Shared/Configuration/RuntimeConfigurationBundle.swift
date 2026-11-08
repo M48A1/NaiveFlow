@@ -195,6 +195,8 @@ nonisolated struct RuntimeBundleStore: Sendable {
         let payload: Data
         let sha256: String
     }
+    static let retainedVersionCount = 20
+    static let maximumRetainedBytes = 256 * 1024 * 1024
     let directory: URL
 
     init(directory: URL? = nil) {
@@ -244,7 +246,7 @@ nonisolated struct RuntimeBundleStore: Sendable {
             return nil
         }
         let bundle = try load(previous)
-        let restored = Head(current: previous, previous: bundle.parentID)
+        let restored = Head(current: previous, previous: availableVersion(bundle.parentID))
         try writeHead(restored)
         return restored
     }
@@ -252,7 +254,7 @@ nonisolated struct RuntimeBundleStore: Sendable {
     func restoreHead(_ restored: Head, expected current: UUID) throws {
         guard try head()?.current == current else { throw RuntimeConfigurationFailure.superseded }
         _ = try load(restored.current)
-        try writeHead(Head(current: restored.current, previous: restored.previous))
+        try writeHead(Head(current: restored.current, previous: availableVersion(restored.previous)))
     }
 
     func record(_ input: RuntimeConfigurationReceipt) throws {
@@ -268,6 +270,65 @@ nonisolated struct RuntimeBundleStore: Sendable {
         let url = directory.appendingPathComponent("\(id.uuidString).receipt.json")
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         return try JSONDecoder().decode(RuntimeConfigurationReceipt.self, from: Data(contentsOf: url))
+    }
+
+    /// Run only under the publication lease, after a successful commit or
+    /// reconciliation. The active version and immediate rollback target are
+    /// always retained, even if they alone exceed the requested byte budget.
+    @discardableResult
+    func prune(maximumVersions: Int = Self.retainedVersionCount,
+               maximumBytes: Int = Self.maximumRetainedBytes) throws -> Int {
+        guard let head = try head() else { return 0 }
+        let protected = Set([head.current, head.previous].compactMap { $0 })
+        let files = try FileManager.default.contentsOfDirectory(at: directory,
+            includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey])
+        struct Version {
+            var files: [URL] = []
+            var bytes = 0
+            var stamp = Date.distantPast
+            var hasBundle = false
+        }
+        var versions: [UUID: Version] = [:]
+        for file in files {
+            let name = file.lastPathComponent
+            guard name.hasSuffix(".json"),
+                  let first = name.split(separator: ".").first,
+                  let id = UUID(uuidString: String(first)),
+                  ["\(id.uuidString).json", "\(id.uuidString).receipt.json",
+                   "\(id.uuidString).manifest-backup.json"].contains(name) else { continue }
+            let values = try file.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey])
+            guard values.isRegularFile == true else { continue }
+            versions[id, default: Version()].files.append(file)
+            versions[id, default: Version()].bytes += values.fileSize ?? 0
+            if name == "\(id.uuidString).json" {
+                versions[id, default: Version()].hasBundle = true
+                versions[id, default: Version()].stamp = values.contentModificationDate ?? .distantPast
+            }
+        }
+        var retained = protected
+        var retainedBytes = protected.reduce(0) { $0 + (versions[$1]?.bytes ?? 0) }
+        let candidates = versions.keys.filter { !protected.contains($0) && versions[$0]?.hasBundle == true }
+            .sorted { lhs, rhs in
+                let l = versions[lhs]!.stamp, r = versions[rhs]!.stamp
+                return l == r ? lhs.uuidString < rhs.uuidString : l > r
+            }
+        for id in candidates {
+            let bytes = versions[id]!.bytes
+            guard retained.count < max(2, maximumVersions),
+                  bytes <= max(0, maximumBytes - retainedBytes) else { continue }
+            retained.insert(id)
+            retainedBytes += bytes
+        }
+        var removed = 0
+        for (id, version) in versions where !retained.contains(id) {
+            for file in version.files { try FileManager.default.removeItem(at: file) }
+            removed += 1
+        }
+        return removed
+    }
+
+    private func availableVersion(_ id: UUID?) -> UUID? {
+        id.flatMap { FileManager.default.fileExists(atPath: directory.appendingPathComponent("\($0.uuidString).json").path) ? $0 : nil }
     }
 
     func lease() throws -> Lease {

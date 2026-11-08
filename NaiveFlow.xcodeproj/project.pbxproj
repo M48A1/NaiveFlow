@@ -108,6 +108,7 @@
 				Models/RouteTarget.swift,
 				Models/RoutingRule.swift,
 				Models/TunnelMessage.swift,
+				Services/RequestLog.swift,
 				Networking/ConnectionMetrics.swift,
 				Networking/DNS/DNSAddressFamily.swift,
 				Networking/DNS/DNSHosts.swift,

@@ -752,17 +752,16 @@ nonisolated extension ConfigurationValidator {
             )
         }
 
-        // These kinds compile into the ordered matcher, but the Network Extension
-        // entry points do not populate the matching field yet, so a rule of this
-        // kind can never actually match. Say so instead of implying it works.
+        // The kernel cannot supply these fields and rejects these matchers.
+        // Refuse activation here too, with the document's line number.
         if rule.kind == .processName || rule.kind == .userAgent || rule.kind == .urlRegex {
             diagnostics.append(
                 ConfigurationDiagnostic(
-                    severity: .warning,
+                    severity: .error,
                     code: .notApplied,
                     line: rule.line,
                     section: ConfigurationDocument.SectionKind.rule.displayName,
-                    message: "Rule type '\(rule.kind.token)' needs flow metadata the tunnel does not fill in yet; it will never match."
+                    message: "Rule type '\(rule.kind.token)' requires metadata unavailable to the tunnel and cannot be activated."
                 )
             )
         }

@@ -59,8 +59,8 @@ nonisolated enum TunnelConstants {
 
     // MARK: - Request Log
     
-    static let requestLogRetentionInterval: CFAbsoluteTime = 300
-    static let requestLogMaxEntries = 50
+    static let requestLogRetentionInterval: CFAbsoluteTime = RequestLog.retentionInterval
+    static let requestLogMaxEntries = RequestLog.maxEntries
 
     // MARK: - Activity Pool
 

@@ -165,6 +165,40 @@ nonisolated struct TunnelRequestEntry: Codable, Sendable, Hashable {
     var routeTarget: RouteTarget
     var ruleSetName: String? = nil
     var defaultRouteTarget: RouteTarget? = nil
+    var outbound: TunnelRequestOutbound? = nil
+    var blockReason: TunnelRequestBlockReason? = nil
+    /// nil means the producer did not identify the application protocol.
+    var isQUIC: Bool? = nil
+}
+
+/// Captured at route commit so later edits and group switches cannot rewrite history.
+nonisolated struct TunnelRequestOutbound: Codable, Sendable, Hashable {
+    var id: UUID?
+    var name: String
+    var isDirect: Bool
+
+    init(configuration: ProxyConfiguration) {
+        id = configuration.id
+        name = configuration.name
+        isDirect = configuration.isDirect
+    }
+
+    private init(name: String, isDirect: Bool) {
+        self.name = name
+        self.isDirect = isDirect
+    }
+
+    static let direct = Self(name: "DIRECT", isDirect: true)
+}
+
+nonisolated enum TunnelRequestBlockReason: String, Codable, Sendable, Hashable {
+    case rule
+    case udpDisabled
+    case quicPolicy
+    case quicMITM
+    case quicProxyPolicy
+    case webRTC
+    case resourceLimit
 }
 
 nonisolated enum TunnelRequestProtocol: String, Codable, Sendable, Hashable {

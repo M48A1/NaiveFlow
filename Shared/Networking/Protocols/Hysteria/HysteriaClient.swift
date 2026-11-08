@@ -14,6 +14,10 @@ nonisolated final class HysteriaClient: Sendable {
         let port: UInt16
         let sni: String
         let password: String
+        let obfuscation: HysteriaObfuscation?
+        let congestionControl: HysteriaCongestionControl
+        let uploadMbps: Int
+        let downloadMbps: Int
         let chain: [ProxyConfiguration]
     }
 
@@ -30,6 +34,10 @@ nonisolated final class HysteriaClient: Sendable {
             port: configuration.proxyPort,
             sni: configuration.sni,
             password: configuration.password,
+            obfuscation: configuration.obfuscation,
+            congestionControl: configuration.congestionControl,
+            uploadMbps: configuration.uploadMbps,
+            downloadMbps: configuration.downloadMbps,
             chain: []
         )
         return registry.withLock { state in
@@ -67,6 +75,10 @@ nonisolated final class HysteriaClient: Sendable {
             port: configuration.proxyPort,
             sni: configuration.sni,
             password: configuration.password,
+            obfuscation: configuration.obfuscation,
+            congestionControl: configuration.congestionControl,
+            uploadMbps: configuration.uploadMbps,
+            downloadMbps: configuration.downloadMbps,
             chain: chain
         )
 

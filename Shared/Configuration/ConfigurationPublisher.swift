@@ -150,6 +150,9 @@ struct ConfigurationPublisher {
                 addedProxies: compiled.proxies.map(\.name), updatedProxies: [], removedProxies: [],
                 addedGroups: compiled.proxyGroups.map(\.name), removedGroups: [],
                 ruleSets: compiled.ruleSets.map(\.name), removedRuleSets: [], notes: notes)
+            // Pruning is maintenance, never a reason to roll back a confirmed
+            // configuration. It runs while this transaction still owns the lease.
+            try? bundleStore.prune()
             return (.init(snapshot: snapshot, result: result), outcome)
         } catch {
             let original = error
@@ -193,6 +196,7 @@ struct ConfigurationPublisher {
                 try activation.store.activate(id, confirmed: receipt != nil)
                 if let snapshot = activation.store.snapshot(id) { try activation.saveDraft(snapshot.text) }
             } else { try activation.store.restoreManifest(.init()) }
+            try? bundleStore.prune()
             return ConfigurationRollbackOutcome(summary: "Restored the previous complete runtime version.",
                 notes: [receipt == nil ? "The tunnel will confirm the restored version at next start." : "All kernel modules confirmed the restored version."],
                 plan: ConfigurationReloadPlan(changes: [.init(field: "runtime-version", scope: .stackRestart,
@@ -252,6 +256,7 @@ struct ConfigurationPublisher {
             sinkPreferences(bundle)
             stateSink(bundle)
             if let id = bundle.snapshotID { try activation.store.activate(id, confirmed: true) }
+            try? bundleStore.prune()
         case .rejected:
             let backupURL = bundleStore.directory.appendingPathComponent("\(head.current.uuidString).manifest-backup.json")
             let backup = try JSONDecoder().decode(ConfigurationSnapshotStore.Manifest.self, from: Data(contentsOf: backupURL))

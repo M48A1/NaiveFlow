@@ -67,6 +67,9 @@ nonisolated struct NativeGeoDatabase: Codable, Equatable, Sendable, GeoIPLookup,
     func countryCode(for address: String) -> String? { (index ?? GeoLookupIndex(self)).lookup(address).country }
     func asn(for address: String) -> Int? { (index ?? GeoLookupIndex(self)).lookup(address).asn }
     func matches(host: String, tag: String) -> Bool { (index ?? GeoLookupIndex(self)).matches(host: host, tag: tag) }
+    func evaluate(host: String, tag: String, regexDeadline: ContinuousClock.Instant) -> RoutingRegex.Result {
+        (index ?? GeoLookupIndex(self)).evaluate(host: host, tag: tag, regexDeadline: regexDeadline)
+    }
     func contains(tag: String) -> Bool { sites[tag] != nil || domains[tag] != nil }
     func hasCountry(_ country: String) -> Bool { (index ?? GeoLookupIndex(self)).countries.contains(country) }
     func hasASN(_ asn: Int) -> Bool { (index ?? GeoLookupIndex(self)).asns.contains(asn) }
@@ -142,17 +145,23 @@ nonisolated private final class GeoLookupIndex: Sendable {
         return result
     }
     func matches(host: String, tag: String) -> Bool {
-        guard let entry = tags[tag], let name = OrderedRouteMatcher.normalizedHost(host) else { return false }
-        if entry.exact.contains(name) { return true }
+        evaluate(host: host, tag: tag, regexDeadline: ContinuousClock.now + RoutingRegex.matchBudget) == .matched
+    }
+    func evaluate(host: String, tag: String, regexDeadline: ContinuousClock.Instant) -> RoutingRegex.Result {
+        guard let entry = tags[tag], let name = OrderedRouteMatcher.normalizedHost(host) else { return .noMatch }
+        if entry.exact.contains(name) { return .matched }
         var suffix = name[...]
         while !suffix.isEmpty {
-            if entry.suffixes.contains(String(suffix)) { return true }
+            if entry.suffixes.contains(String(suffix)) { return .matched }
             guard let dot = suffix.firstIndex(of: ".") else { break }
             suffix = suffix[suffix.index(after: dot)...]
         }
-        if entry.keywords.matches(name) { return true }
-        let range = NSRange(name.startIndex..., in: name)
-        return entry.regexes.contains { $0.firstMatch(in: name, range: range) != nil }
+        if entry.keywords.matches(name) { return .matched }
+        for regex in entry.regexes {
+            let result = RoutingRegex.evaluate(regex, in: name, deadline: regexDeadline)
+            if result != .noMatch { return result }
+        }
+        return .noMatch
     }
 }
 

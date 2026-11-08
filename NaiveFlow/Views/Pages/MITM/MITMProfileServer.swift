@@ -1,288 +1,191 @@
-//
-//  MITMProfileServer.swift
-//  NaiveFlow
-//
-//  Created by NodePassProject on 5/3/26.
-//
-
 import Foundation
 import Network
 import Synchronization
 
-nonisolated private let logger = NaiveFlowLogger(category: "MITMProfileServer")
-
+/// A temporary, loopback-only endpoint for Settings/Safari to install the CA.
 actor MITMProfileServer {
     static let shared = MITMProfileServer()
-
-    private var payload: Data?
-    private var runTask: Task<Void, Never>?
+    private var listener: MITMProfileListener?
     private var shutdownTask: Task<Void, Never>?
-    private var legacyListener: LegacyMITMProfileListener?
-
-    private static let lifetime: TimeInterval = 120
-
     private init() {}
 
     func start(payload: Data) async throws -> URL {
         stop()
-
-        self.payload = payload
-
-        let boundPort: NWEndpoint.Port
-        if #available(iOS 26.0, macOS 26.0, tvOS 26.0, *) {
-            boundPort = try await startModern()
-        } else {
-            boundPort = try await startLegacy(payload: payload)
-        }
-
-        shutdownTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(Self.lifetime))
-            guard !Task.isCancelled else { return }
-            await self?.stop()
-        }
-
-        guard let url = URL(string: "http://127.0.0.1:\(boundPort.rawValue)/NaiveFlowMITMRoot.mobileconfig") else {
-            stop()
+        let created = try MITMProfileListener(payload: payload)
+        listener = created
+        do {
+            let port = try await created.start()
+            // start() suspends; another request or stop may have replaced us.
+            guard listener === created else {
+                created.cancel()
+                throw NaiveFlowError.mitm(.profileServerBindFailed)
+            }
+            shutdownTask = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(120)) } catch { return }
+                await self?.expire(created)
+            }
+            return URL(string: "http://127.0.0.1:\(port.rawValue)/NaiveFlowMITMRoot.mobileconfig")!
+        } catch {
+            created.cancel()
+            if listener === created { stop() }
             throw NaiveFlowError.mitm(.profileServerBindFailed)
         }
-        return url
     }
 
     func stop() {
-        runTask?.cancel()
-        runTask = nil
-        legacyListener?.cancel()
-        legacyListener = nil
         shutdownTask?.cancel()
         shutdownTask = nil
-        payload = nil
+        listener?.cancel()
+        listener = nil
     }
 
-    // MARK: - Modern listener
-
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, *)
-    private func startModern() async throws -> NWEndpoint.Port {
-        let listener = try NetworkListener(for: nil, using: { TCP() })
-
-        let (portStream, portSignal) = AsyncThrowingStream.makeStream(of: NWEndpoint.Port.self)
-        let configured = listener.onStateUpdate { listener, state in
-            switch state {
-            case .ready:
-                if let port = listener.port {
-                    portSignal.yield(port)
-                    portSignal.finish()
-                } else {
-                    portSignal.finish(throwing: NaiveFlowError.mitm(.profileServerBindFailed))
-                }
-            case .failed(let error):
-                portSignal.finish(throwing: error)
-            case .cancelled:
-                portSignal.finish(throwing: NaiveFlowError.mitm(.profileServerBindFailed))
-            default:
-                break
-            }
-        }
-
-        runTask = Task { [weak self] in
-            try? await configured.run { [weak self] connection in
-                await self?.handle(connection: connection)
-            }
-        }
-
-        var boundPort: NWEndpoint.Port?
-        do {
-            for try await port in portStream { boundPort = port }
-        } catch {
-            stop()
-            throw NaiveFlowError.mitm(.profileServerBindFailed)
-        }
-        guard let boundPort else {
-            stop()
-            throw NaiveFlowError.mitm(.profileServerBindFailed)
-        }
-        return boundPort
-    }
-
-    // MARK: - Legacy listener
-
-    private func startLegacy(payload: Data) async throws -> NWEndpoint.Port {
-        let listener: LegacyMITMProfileListener
-        do {
-            listener = try LegacyMITMProfileListener(payload: payload)
-        } catch {
-            stop()
-            throw NaiveFlowError.mitm(.profileServerBindFailed)
-        }
-        legacyListener = listener
-        do {
-            return try await listener.start()
-        } catch {
-            stop()
-            throw NaiveFlowError.mitm(.profileServerBindFailed)
-        }
-    }
-
-    // MARK: - Connection handling
-
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, *)
-    private func handle(connection: NetworkConnection<TCP>) async {
-        var buffer = Data()
-        do {
-            while true {
-                let message = try await connection.receive(atLeast: 1, atMost: 8192)
-                if !message.content.isEmpty { buffer.append(message.content) }
-                if buffer.range(of: Data([0x0D, 0x0A, 0x0D, 0x0A])) != nil {
-                    try await sendResponse(on: connection)
-                    return
-                }
-                if message.metadata.endOfStream { return }
-            }
-        } catch {
-            logger.report("[MITM] Profile server connection failed", error: error)
-        }
-    }
-
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, *)
-    private func sendResponse(on connection: NetworkConnection<TCP>) async throws {
-        guard let payload else { return }
-        try await connection.send(Self.httpResponse(payload: payload), endOfStream: true)
-    }
-
-    fileprivate static func httpResponse(payload: Data) -> Data {
-        let header = "HTTP/1.1 200 OK\r\n" +
-                     "Content-Type: application/x-apple-aspen-config\r\n" +
-                     "Content-Disposition: attachment; filename=\"NaiveFlowMITMRoot.mobileconfig\"\r\n" +
-                     "Content-Length: \(payload.count)\r\n" +
-                     "Connection: close\r\n" +
-                     "Cache-Control: no-store\r\n\r\n"
-        var response = Data(header.utf8)
-        response.append(payload)
-        return response
+    private func expire(_ expected: MITMProfileListener) {
+        guard listener === expected else { return }
+        stop()
     }
 }
 
-// MARK: - Legacy listener
+/// Incremental request parsing keeps the same bounds on all supported OSes.
+nonisolated struct MITMProfileRequest: Sendable {
+    static let maximumHeaderBytes = 16_384
+    enum Progress: Equatable { case incomplete, respond(headOnly: Bool), reject }
+    private var buffer = Data()
 
-nonisolated private final class LegacyMITMProfileListener: Sendable {
+    mutating func append(_ data: Data) -> Progress {
+        guard data.count <= Self.maximumHeaderBytes - buffer.count else { return .reject }
+        buffer.append(data)
+        guard let end = buffer.range(of: Data("\r\n\r\n".utf8)) else { return .incomplete }
+        guard let text = String(data: buffer[..<end.lowerBound], encoding: .ascii),
+              let first = text.components(separatedBy: "\r\n").first else { return .reject }
+        let fields = first.split(separator: " ", omittingEmptySubsequences: false)
+        guard fields.count == 3, fields[0] == "GET" || fields[0] == "HEAD",
+              fields[1] == "/NaiveFlowMITMRoot.mobileconfig",
+              fields[2] == "HTTP/1.0" || fields[2] == "HTTP/1.1" else { return .reject }
+        return .respond(headOnly: fields[0] == "HEAD")
+    }
+}
+
+nonisolated final class MITMProfileListener: Sendable {
+    static let maximumConnections = 4
     private let listener: NWListener
     private let payload: Data
+    private let requestTimeout: TimeInterval
     private let queue = DispatchQueue(label: "com.argsment.NaiveFlow.MITMProfileServer")
 
-    private struct State {
-        var connections: [ObjectIdentifier: NWConnection] = [:]
-        var isCancelled = false
+    private struct Client {
+        let connection: NWConnection
+        let timeout: Task<Void, Never>
     }
-
+    private struct State {
+        var clients: [ObjectIdentifier: Client] = [:]
+        var cancelled = false
+    }
     private let state = Mutex(State())
 
-    init(payload: Data) throws {
-        self.payload = payload
-        self.listener = try NWListener(using: .tcp)
+    static func parameters() -> NWParameters {
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        return parameters
     }
 
-    deinit {
-        cancel()
+    init(payload: Data, requestTimeout: TimeInterval = 5) throws {
+        self.payload = payload
+        self.requestTimeout = requestTimeout
+        listener = try NWListener(using: Self.parameters())
     }
+
+    deinit { cancel() }
+    var activeConnectionCount: Int { state.withLock { $0.clients.count } }
 
     func start() async throws -> NWEndpoint.Port {
-        let (portStream, portSignal) = AsyncThrowingStream.makeStream(of: NWEndpoint.Port.self)
+        let (ports, signal) = AsyncThrowingStream.makeStream(of: NWEndpoint.Port.self)
         listener.stateUpdateHandler = { [weak listener] state in
             switch state {
             case .ready:
-                if let port = listener?.port {
-                    portSignal.yield(port)
-                    portSignal.finish()
-                } else {
-                    portSignal.finish(throwing: NaiveFlowError.mitm(.profileServerBindFailed))
-                }
-            case .failed(let error):
-                portSignal.finish(throwing: error)
-            case .cancelled:
-                portSignal.finish(throwing: NaiveFlowError.mitm(.profileServerBindFailed))
-            default:
-                break
+                if let port = listener?.port { signal.yield(port); signal.finish() }
+                else { signal.finish(throwing: NaiveFlowError.mitm(.profileServerBindFailed)) }
+            case .failed(let error): signal.finish(throwing: error)
+            case .cancelled: signal.finish(throwing: NaiveFlowError.mitm(.profileServerBindFailed))
+            default: break
             }
         }
         listener.newConnectionHandler = { [weak self] connection in
-            self?.adopt(connection)
+            guard let self else { connection.cancel(); return }
+            self.adopt(connection)
         }
         listener.start(queue: queue)
-
-        var boundPort: NWEndpoint.Port?
-        for try await port in portStream { boundPort = port }
-        guard let boundPort else { throw NaiveFlowError.mitm(.profileServerBindFailed) }
-        return boundPort
+        return try await withTaskCancellationHandler {
+            for try await port in ports { return port }
+            throw NaiveFlowError.mitm(.profileServerBindFailed)
+        } onCancel: { self.cancel() }
     }
 
     func cancel() {
-        let connections: [NWConnection] = state.withLock { state in
-            state.isCancelled = true
-            let open = Array(state.connections.values)
-            state.connections.removeAll()
-            return open
+        let clients = state.withLock { state in
+            state.cancelled = true
+            let clients = Array(state.clients.values)
+            state.clients.removeAll()
+            return clients
         }
         listener.cancel()
-        for connection in connections { connection.cancel() }
+        for client in clients { client.timeout.cancel(); client.connection.cancel() }
     }
 
-    // MARK: Connections
-
     private func adopt(_ connection: NWConnection) {
-        let accepted: Bool = state.withLock { state in
-            guard !state.isCancelled else { return false }
-            state.connections[ObjectIdentifier(connection)] = connection
+        let id = ObjectIdentifier(connection)
+        let delay = requestTimeout
+        let accepted = state.withLock { state in
+            guard !state.cancelled, state.clients.count < Self.maximumConnections else { return false }
+            let timeout = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+                self?.close(id)
+            }
+            state.clients[id] = Client(connection: connection, timeout: timeout)
             return true
         }
-        guard accepted else {
-            connection.cancel()
-            return
-        }
-        let id = ObjectIdentifier(connection)
+        guard accepted else { connection.cancel(); return }
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
-            case .failed, .cancelled:
-                self?.forget(id)
-            default:
-                break
+            case .failed, .cancelled: self?.close(id)
+            default: break
             }
         }
         connection.start(queue: queue)
-        serve(connection, buffered: Data())
+        serve(connection, request: MITMProfileRequest())
     }
 
-    private func serve(_ connection: NWConnection, buffered: Data) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] content, _, isComplete, error in
-            guard let self else {
-                connection.cancel()
-                return
+    private func serve(_ connection: NWConnection, request: MITMProfileRequest) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] content, _, complete, error in
+            guard let self else { connection.cancel(); return }
+            let id = ObjectIdentifier(connection)
+            guard error == nil else { self.close(id); return }
+            var request = request
+            switch request.append(content ?? Data()) {
+            case .incomplete:
+                if complete { self.close(id) }
+                else { self.serve(connection, request: request) }
+            case .reject: self.close(id)
+            case .respond(let headOnly):
+                let response = self.httpResponse(headOnly: headOnly)
+                connection.send(content: response, contentContext: .finalMessage, completion: .contentProcessed { [weak self] _ in
+                    self?.close(id)
+                })
             }
-            if let error {
-                logger.report("[MITM] Profile server connection failed", error: error)
-                connection.cancel()
-                return
-            }
-            var buffer = buffered
-            if let content { buffer.append(content) }
-            if buffer.range(of: Data([0x0D, 0x0A, 0x0D, 0x0A])) != nil {
-                self.respond(on: connection)
-                return
-            }
-            if isComplete {
-                connection.cancel()
-                return
-            }
-            self.serve(connection, buffered: buffer)
         }
     }
 
-    private func respond(on connection: NWConnection) {
-        let response = MITMProfileServer.httpResponse(payload: payload)
-        connection.send(content: response, contentContext: .finalMessage, completion: .contentProcessed { _ in
-            connection.cancel()
-        })
+    private func httpResponse(headOnly: Bool) -> Data {
+        var response = Data(("HTTP/1.1 200 OK\r\n" +
+            "Content-Type: application/x-apple-aspen-config\r\n" +
+            "Content-Disposition: attachment; filename=\"NaiveFlowMITMRoot.mobileconfig\"\r\n" +
+            "Content-Length: \(payload.count)\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n").utf8)
+        if !headOnly { response.append(payload) }
+        return response
     }
 
-    private func forget(_ id: ObjectIdentifier) {
-        state.withLock { _ = $0.connections.removeValue(forKey: id) }
+    private func close(_ id: ObjectIdentifier) {
+        guard let client = state.withLock({ $0.clients.removeValue(forKey: id) }) else { return }
+        client.timeout.cancel()
+        client.connection.cancel()
     }
 }

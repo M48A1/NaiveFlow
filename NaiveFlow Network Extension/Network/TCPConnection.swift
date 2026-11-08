@@ -43,6 +43,12 @@ actor TCPConnection: MITMSessionHost {
 
     private nonisolated let activityRecord: ActivityPool.Record
 
+    private var rejectionLogKey: String {
+        let source = connection.source
+        let destination = connection.destination
+        return "tcp-reject:\(source.address):\(source.port)>\(destination.address):\(destination.port)"
+    }
+
     private var bypass: Bool {
         let resolved = routeTarget.resolved(against: stack?.udpConfig().defaultRouteTarget ?? .direct)
         if case .direct = resolved { return true }
@@ -360,7 +366,7 @@ actor TCPConnection: MITMSessionHost {
             ruleMatched = true
             ruleSetName = match.ruleSetName
             routeTarget = .reject
-            stack.requestLog.record(protocol: .tcp, host: dstHost, port: dstPort, routeTarget: .reject, ruleSetName: match.ruleSetName)
+            stack.requestLog.record(protocol: .tcp, host: dstHost, port: dstPort, routeTarget: .reject, ruleSetName: match.ruleSetName, deduplicationKey: rejectionLogKey)
             publishRoute()
             rejectSilently()
         case .proxy(let id):
@@ -514,7 +520,7 @@ actor TCPConnection: MITMSessionHost {
             ruleMatched = true
             ruleSetName = match.ruleSetName
             routeTarget = .reject
-            stack.requestLog.record(protocol: .tcp, host: sni, port: dstPort, routeTarget: .reject, ruleSetName: match.ruleSetName)
+            stack.requestLog.record(protocol: .tcp, host: sni, port: dstPort, routeTarget: .reject, ruleSetName: match.ruleSetName, deduplicationKey: rejectionLogKey)
             publishRoute()
             rejectSilently()
         case .proxy(let id):
@@ -548,7 +554,8 @@ actor TCPConnection: MITMSessionHost {
             host: sniffedSNI ?? dstHost,
             port: dstPort,
             routeTarget: routeTarget,
-            ruleSetName: ruleSetName
+            ruleSetName: ruleSetName,
+            outbound: bypass ? .direct : TunnelRequestOutbound(configuration: configuration)
         )
         if bypass {
             return await connectDirect()
@@ -1208,8 +1215,15 @@ actor TCPConnection: MITMSessionHost {
 
     private func commitUpstreamRoute(forDialHost host: String, port: UInt16) async -> UpstreamRoute {
         let resolved = await resolveUpstreamRoute(forDialHost: host, port: port)
-        stack?.requestLog.record(protocol: .tcp, host: host, port: port, routeTarget: resolved.route.target, ruleSetName: resolved.ruleSetName)
         guard phase != .closed else { return resolved.route }
+        let outbound: TunnelRequestOutbound?
+        switch resolved.route {
+        case .reject: outbound = nil
+        case .route(_, nil): outbound = .direct
+        case .route(_, let configuration?): outbound = TunnelRequestOutbound(configuration: configuration)
+        }
+        stack?.requestLog.record(protocol: .tcp, host: host, port: port, routeTarget: resolved.route.target,
+                                 ruleSetName: resolved.ruleSetName, outbound: outbound)
         if host.caseInsensitiveCompare(mitmSNI ?? dstHost) == .orderedSame {
             routeTarget = resolved.route.target
             if case .route(_, let configuration?) = resolved.route {

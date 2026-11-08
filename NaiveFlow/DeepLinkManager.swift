@@ -51,6 +51,11 @@ final class DeepLinkManager {
         guard let range = string.range(of: "?link=") else { return nil }
         let rawLink = String(string[range.upperBound...])
         guard !rawLink.isEmpty else { return nil }
-        return rawLink.removingPercentEncoding ?? rawLink
+        // A raw inner URL owns its own escapes. Decode only when the entire
+        // URL was encoded as an outer query value (e.g. https%3A%2F%2F...).
+        if URL(string: rawLink)?.scheme != nil { return rawLink }
+        guard let decoded = rawLink.removingPercentEncoding,
+              URL(string: decoded)?.scheme != nil else { return nil }
+        return decoded
     }
 }

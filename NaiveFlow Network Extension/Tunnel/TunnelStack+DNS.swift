@@ -65,10 +65,9 @@ extension TunnelStack {
             if domain == "_dns.resolver.arpa" || type == 28 || type == 65 { return answer() }
             let (match, version) = connectionRouter.dnsVerdict(forDomain: domain)
             if let match, case .reject = match.action {
-                if connectionRouter.shouldLogDNSReject(domain: domain) {
-                    requestLog.record(protocol: .unknown, host: domain, port: 53,
-                                      routeTarget: .reject, ruleSetName: match.ruleSetName)
-                }
+                requestLog.record(protocol: .unknown, host: domain, port: 53,
+                                  routeTarget: .reject, ruleSetName: match.ruleSetName,
+                                  deduplicationKey: "dns-reject:\(domain)")
                 return answer(type == 1 ? [0, 0, 0, 0] : nil, ttl: TunnelConstants.dnsBlockedAnswerTTL)
             }
             guard type == 1, !udpConfig().syntheticAddressExcludedDomains.contains(domain) else { return nil }

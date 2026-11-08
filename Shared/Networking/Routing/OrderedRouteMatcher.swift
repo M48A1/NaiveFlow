@@ -151,6 +151,13 @@ nonisolated protocol GeoIPLookup: Sendable {
 nonisolated protocol GeoSiteLookup: Sendable {
     func matches(host: String, tag: String) -> Bool
     func contains(tag: String) -> Bool
+    func evaluate(host: String, tag: String, regexDeadline: ContinuousClock.Instant) -> RoutingRegex.Result
+}
+
+nonisolated extension GeoSiteLookup {
+    func evaluate(host: String, tag: String, regexDeadline: ContinuousClock.Instant) -> RoutingRegex.Result {
+        matches(host: host, tag: tag) ? .matched : .noMatch
+    }
 }
 
 /// Stand-in used until the geo databases are bundled: matches nothing, so
@@ -264,6 +271,7 @@ nonisolated struct OrderedRouteMatcher: Sendable {
 
     private let geoIP: any GeoIPLookup
     private let geoSite: any GeoSiteLookup
+    private let regexes: [String: NSRegularExpression]
 
     init(
         rules: [OrderedRoutingRule],
@@ -275,6 +283,18 @@ nonisolated struct OrderedRouteMatcher: Sendable {
         self.finalAction = finalAction
         self.geoIP = geoIP
         self.geoSite = geoSite
+        var compiled: [String: NSRegularExpression] = [:]
+        func collect(_ matcher: OrderedRoutingRule.Matcher) {
+            switch matcher {
+            case .domainRegex(let pattern), .urlRegex(let pattern):
+                if compiled[pattern] == nil { compiled[pattern] = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) }
+            case .allOf(let children), .anyOf(let children): children.forEach(collect)
+            case .negated(let child): collect(child)
+            default: break
+            }
+        }
+        rules.forEach { collect($0.matcher) }
+        regexes = compiled
     }
 
     enum Evaluation: Sendable {
@@ -301,8 +321,14 @@ nonisolated struct OrderedRouteMatcher: Sendable {
         // is known. When the host can never be known (post-sniff), the caller
         // passes deferOnHostUnknown: false to finish the IP/FINAL match.
         var sawHostUnknown = false
+        let regexDeadline = ContinuousClock.now + RoutingRegex.matchBudget
         for rule in rules {
-            switch Self.predicate(rule.matcher, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite) {
+            switch Self.predicate(rule.matcher, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite,
+                                  regexDeadline: regexDeadline, regexes: regexes) {
+            case .regexTimeout:
+                // The rule's answer is unknown. Do not let a later DIRECT/FINAL
+                // route or a negation turn a timed-out condition into an allow.
+                return .matched(Result(action: .reject, ruleLine: rule.line))
             case .yes:
                 if sawHostUnknown, deferOnHostUnknown { return .deferred }
                 return .matched(Result(action: rule.action, ruleLine: rule.line))
@@ -344,39 +370,62 @@ nonisolated struct OrderedRouteMatcher: Sendable {
 
 nonisolated extension OrderedRouteMatcher {
 
-    private enum Predicate { case yes, no, address, metadata, hostUnknown }
+    private enum Predicate { case yes, no, address, metadata, hostUnknown, regexTimeout }
 
     private static func predicate(_ matcher: OrderedRoutingRule.Matcher, rule: OrderedRoutingRule,
-                                  query: RouteQuery, geoIP: any GeoIPLookup, geoSite: any GeoSiteLookup) -> Predicate {
+                                  query: RouteQuery, geoIP: any GeoIPLookup, geoSite: any GeoSiteLookup,
+                                  regexDeadline: ContinuousClock.Instant, regexes: [String: NSRegularExpression]) -> Predicate {
         switch matcher {
         case .allOf(let children):
-            let results = children.map { predicate($0, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite) }
+            let results = children.map { predicate($0, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite, regexDeadline: regexDeadline, regexes: regexes) }
             if results.contains(where: { if case .no = $0 { true } else { false } }) { return .no }
+            if results.contains(where: { if case .regexTimeout = $0 { true } else { false } }) { return .regexTimeout }
             if results.contains(where: { if case .address = $0 { true } else { false } }) { return .address }
             if results.contains(where: { if case .metadata = $0 { true } else { false } }) { return .metadata }
             if results.contains(where: { if case .hostUnknown = $0 { true } else { false } }) { return .hostUnknown }
             return .yes
         case .anyOf(let children):
-            let results = children.map { predicate($0, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite) }
+            let results = children.map { predicate($0, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite, regexDeadline: regexDeadline, regexes: regexes) }
             if results.contains(where: { if case .yes = $0 { true } else { false } }) { return .yes }
+            if results.contains(where: { if case .regexTimeout = $0 { true } else { false } }) { return .regexTimeout }
             if results.contains(where: { if case .address = $0 { true } else { false } }) { return .address }
             if results.contains(where: { if case .metadata = $0 { true } else { false } }) { return .metadata }
             if results.contains(where: { if case .hostUnknown = $0 { true } else { false } }) { return .hostUnknown }
             return .no
         case .negated(let child):
-            switch predicate(child, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite) {
+            switch predicate(child, rule: rule, query: query, geoIP: geoIP, geoSite: geoSite, regexDeadline: regexDeadline, regexes: regexes) {
             case .yes: return .no
             case .no: return .yes
             case .address: return .address
             case .metadata: return .metadata
             case .hostUnknown: return .hostUnknown
+            case .regexTimeout: return .regexTimeout
             }
+        case .domainRegex(let pattern):
+            guard let host = normalizedHost(query.host) else { return .hostUnknown }
+            guard let regex = regexes[pattern] else { return .no }
+            return predicate(RoutingRegex.evaluate(regex, in: host, deadline: regexDeadline))
+        case .urlRegex(let pattern):
+            guard let url = query.url else { return .no }
+            guard let regex = regexes[pattern] else { return .no }
+            return predicate(RoutingRegex.evaluate(regex, in: url, deadline: regexDeadline))
+        case .geoSite(let tag):
+            guard let host = normalizedHost(query.host) else { return .hostUnknown }
+            return predicate(geoSite.evaluate(host: host, tag: tag, regexDeadline: regexDeadline))
         default:
             if matcher.requiresResolvedAddress && query.ip == nil { return .address }
             if matcher.lacksMetadata(query) { return .metadata }
             if matcher.requiresHost && query.host == nil { return .hostUnknown }
             let leaf = OrderedRoutingRule(line: rule.line, matcher: matcher, action: rule.action, noResolve: rule.noResolve)
             return matches(leaf, query: query, geoIP: geoIP, geoSite: geoSite) ? .yes : .no
+        }
+    }
+
+    private static func predicate(_ result: RoutingRegex.Result) -> Predicate {
+        switch result {
+        case .matched: .yes
+        case .noMatch: .no
+        case .timedOut: .regexTimeout
         }
     }
 
@@ -476,10 +525,7 @@ nonisolated extension OrderedRouteMatcher {
     }
 
     static func regexMatches(_ pattern: String, _ subject: String) -> Bool {
-        guard (try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])) != nil else {
-            return false
-        }
-        return subject.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+        RoutingRegex.evaluate(pattern, in: subject) == .matched
     }
 
     /// Shell-style glob: `*` matches any run of characters (dots included),
@@ -517,3 +563,35 @@ nonisolated extension OrderedRouteMatcher {
     }
 }
 
+
+/// ICU reports progress during backtracking, allowing the matching thread to
+/// abort without leaving a runaway background worker. A single deadline is
+/// shared by all regex conditions in one routing evaluation.
+nonisolated enum RoutingRegex {
+    enum Result: Sendable, Equatable { case matched, noMatch, timedOut }
+    static let matchBudget: Duration = .milliseconds(20)
+
+    static func evaluate(_ pattern: String, in subject: String,
+                         deadline: ContinuousClock.Instant? = nil) -> Result {
+        let end = deadline ?? ContinuousClock.now + matchBudget
+        guard ContinuousClock.now < end else { return .timedOut }
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return .noMatch }
+        return evaluate(regex, in: subject, deadline: end)
+    }
+
+    static func evaluate(_ regex: NSRegularExpression, in subject: String,
+                         deadline: ContinuousClock.Instant) -> Result {
+        guard ContinuousClock.now < deadline else { return .timedOut }
+        var outcome = Result.noMatch
+        regex.enumerateMatches(in: subject, options: [.reportProgress], range: NSRange(subject.startIndex..., in: subject)) { result, _, stop in
+            if ContinuousClock.now >= deadline {
+                outcome = .timedOut
+                stop.pointee = true
+            } else if result != nil {
+                outcome = .matched
+                stop.pointee = true
+            }
+        }
+        return outcome
+    }
+}

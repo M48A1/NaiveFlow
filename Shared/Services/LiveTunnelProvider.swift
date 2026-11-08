@@ -24,14 +24,25 @@ final class LiveTunnelProvider: TunnelProviding {
     func prepare() async {
         guard manager == nil else { return }
         let managers = try? await NETunnelProviderManager.loadAllFromPreferences()
-        if let existing = managers?.first(where: {
-            ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == Self.providerBundleIdentifier
-        }) ?? managers?.first {
+        if let existing = Self.preferredManager(in: managers ?? []) {
             manager = existing
             loadedFromPreferences = true
         } else {
             manager = NETunnelProviderManager()
         }
+    }
+
+    /// Ignore other providers and prefer our live session over stale saved profiles.
+    static func preferredManager(
+        in managers: [NETunnelProviderManager],
+        status: (NETunnelProviderManager) -> NEVPNStatus = { $0.connection.status }
+    ) -> NETunnelProviderManager? {
+        let matching = managers.filter {
+            ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == providerBundleIdentifier
+        }
+        return matching.first { status($0) == .connected }
+            ?? matching.first { status($0) == .reasserting || status($0) == .connecting }
+            ?? matching.first
     }
 
     func statusUpdates() -> AsyncStream<NEVPNStatus> {

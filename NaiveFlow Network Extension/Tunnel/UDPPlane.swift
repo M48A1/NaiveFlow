@@ -57,6 +57,9 @@ actor UDPPlane {
             case rejected
         }
         let cause: Cause
+        let host: String?
+        let ruleSetName: String?
+        let identifiedQUIC: Bool
         var deadline: TimeInterval
     }
     private var quicBlocks: [TunnelStack.UDPFlowKey: QUICBlock] = [:]
@@ -208,6 +211,7 @@ actor UDPPlane {
         }
 
         if udpConfig.blockUDP && dstPort != 53 {
+            recordBlockedDatagram(datagram, reason: .udpDisabled)
             stack.sendICMPPortUnreachable(rejecting: datagram)
             return
         }
@@ -221,6 +225,7 @@ actor UDPPlane {
         }
 
         if udpConfig.blockWebRTC && TunnelStack.isSTUNMessage(payload) {
+            recordBlockedDatagram(datagram, reason: .webRTC)
             stack.sendICMPPortUnreachable(rejecting: datagram)
             return
         }
@@ -238,6 +243,7 @@ actor UDPPlane {
         }
 
         if stack.isRejectMarked(dstAddress) {
+            recordBlockedDatagram(datagram, reason: .rule)
             return
         }
 
@@ -268,7 +274,7 @@ actor UDPPlane {
                 routeTarget = .reject
                 ruleSetName = matchedRuleSet
             } else {
-                stack.requestLog.record(protocol: .udp, host: dstHost, port: dstPort, routeTarget: .reject, ruleSetName: matchedRuleSet)
+                recordBlockedDatagram(datagram, host: dstHost, reason: .rule, ruleSetName: matchedRuleSet)
                 return
             }
         case .unreachable:
@@ -309,8 +315,10 @@ actor UDPPlane {
                     ruleSetName = matchedRuleSet
                     flowConfiguration = configuration ?? defaultConfiguration
                 case .reject(let matchedRuleSet):
-                    recordQUICBlock(flowKey, cause: .rejected)
-                    stack.requestLog.record(protocol: .udp, host: sniffedServerName, port: dstPort, routeTarget: .reject, ruleSetName: matchedRuleSet)
+                    recordQUICBlock(flowKey, cause: .rejected, host: sniffedServerName,
+                                    ruleSetName: matchedRuleSet, identifiedQUIC: true)
+                    recordBlockedDatagram(datagram, host: sniffedServerName, reason: .rule,
+                                          ruleSetName: matchedRuleSet, identifiedQUIC: true)
                     return
                 case .unreachable:
                     stack.sendICMPPortUnreachable(rejecting: datagram)
@@ -343,8 +351,12 @@ actor UDPPlane {
                 ruleSetName = matchedRuleSet
                 if let configuration { flowConfiguration = configuration }
             case .reject(let matchedRuleSet):
-                if isQUIC { recordQUICBlock(flowKey, cause: .rejected) }
-                stack.requestLog.record(protocol: .udp, host: dstHost, port: dstPort, routeTarget: .reject, ruleSetName: matchedRuleSet)
+                if isQUIC {
+                    recordQUICBlock(flowKey, cause: .rejected, host: dstHost,
+                                    ruleSetName: matchedRuleSet,
+                                    identifiedQUIC: QUICClientHelloSniffer.looksLikeClientInitial(payload))
+                }
+                recordBlockedDatagram(datagram, host: dstHost, reason: .rule, ruleSetName: matchedRuleSet)
                 return
             case .unreachable:
                 stack.sendICMPPortUnreachable(rejecting: datagram)
@@ -365,15 +377,20 @@ actor UDPPlane {
         }
 
         if isQUIC, blocksQUIC(routedTo: routeTarget, udpConfig: udpConfig) {
-            blockQUIC(datagram, flowKey: flowKey, cause: .proxied(routeTarget))
+            blockQUIC(datagram, flowKey: flowKey, cause: .proxied(routeTarget), host: policyHost,
+                      identifiedQUIC: sniffedServerName != nil)
             return
         }
 
         // FINAL REJECT fallback: no domain was sniffed, so the deferred verdict
         // stands and the datagram must not be routed anywhere.
         if case .reject = routeTarget {
-            if isQUIC { recordQUICBlock(flowKey, cause: .rejected) }
-            stack.requestLog.record(protocol: .udp, host: policyHost, port: dstPort, routeTarget: .reject, ruleSetName: ruleSetName)
+            if isQUIC {
+                recordQUICBlock(flowKey, cause: .rejected, host: policyHost, ruleSetName: ruleSetName,
+                                identifiedQUIC: sniffedServerName != nil || QUICClientHelloSniffer.looksLikeClientInitial(payload))
+            }
+            recordBlockedDatagram(datagram, host: policyHost, reason: .rule, ruleSetName: ruleSetName,
+                                  identifiedQUIC: sniffedServerName != nil)
             return
         }
 
@@ -390,7 +407,12 @@ actor UDPPlane {
             flowConfiguration = selected
         }
 
-        stack.requestLog.record(protocol: .udp, host: policyHost, port: dstPort, routeTarget: routeTarget, ruleSetName: ruleSetName)
+        let resolvedTarget = routeTarget.resolved(against: udpConfig.defaultRouteTarget)
+        let outbound: TunnelRequestOutbound = resolvedTarget == .direct
+            ? .direct : TunnelRequestOutbound(configuration: flowConfiguration)
+        stack.requestLog.record(protocol: .udp, host: policyHost, port: dstPort,
+                                routeTarget: routeTarget, ruleSetName: ruleSetName, outbound: outbound,
+                                isQUIC: sniffedServerName != nil || QUICClientHelloSniffer.looksLikeClientInitial(payload))
 
         let flow = UDPFlow(
             stack: stack,
@@ -440,7 +462,8 @@ actor UDPPlane {
                 continue
             }
             flows.removeValue(forKey: key)
-            recordQUICBlock(key, cause: cause)
+            recordQUICBlock(key, cause: cause, host: host,
+                            identifiedQUIC: flow.sniffedHost != nil)
             Task { await flow.close() }
         }
     }
@@ -458,18 +481,51 @@ actor UDPPlane {
         port == 443 || QUICClientHelloSniffer.looksLikeClientInitial(payload)
     }
 
-    private func blockQUIC(_ datagram: InboundDatagram, flowKey: TunnelStack.UDPFlowKey, cause: QUICBlock.Cause) {
-        recordQUICBlock(flowKey, cause: cause)
+    private func blockQUIC(_ datagram: InboundDatagram, flowKey: TunnelStack.UDPFlowKey,
+                           cause: QUICBlock.Cause, host: String? = nil, identifiedQUIC: Bool = false) {
+        let identified = identifiedQUIC || quicBlocks[flowKey]?.identifiedQUIC == true
+            || QUICClientHelloSniffer.looksLikeClientInitial(datagram.payload)
+        recordQUICBlock(flowKey, cause: cause, host: host, identifiedQUIC: identified)
+        recordBlockedQUIC(datagram, cause: cause, host: host, identifiedQUIC: identified)
         stack.sendICMPPortUnreachable(rejecting: datagram)
     }
 
-    private func recordQUICBlock(_ flowKey: TunnelStack.UDPFlowKey, cause: QUICBlock.Cause) {
+    private func recordBlockedQUIC(_ datagram: InboundDatagram, cause: QUICBlock.Cause,
+                                   host: String?, ruleSetName: String? = nil, identifiedQUIC: Bool) {
+        let reason: TunnelRequestBlockReason
+        var host = host
+        switch cause {
+        case .policy: reason = .quicPolicy
+        case .mitm(let name): reason = .quicMITM; host = name
+        case .proxied: reason = .quicProxyPolicy
+        case .rejected: reason = .rule
+        }
+        recordBlockedDatagram(datagram, host: host, reason: reason,
+                              ruleSetName: ruleSetName, identifiedQUIC: identifiedQUIC)
+    }
+
+    private func recordBlockedDatagram(_ datagram: InboundDatagram, host: String? = nil,
+                                       reason: TunnelRequestBlockReason, ruleSetName: String? = nil,
+                                       identifiedQUIC: Bool = false) {
+        let destination = datagram.destination
+        let ip = destination.address.description
+        let name = host ?? stack.connectionRouter.syntheticAddressPool.lookup(ip: ip)?.domain ?? ip
+        stack.requestLog.record(protocol: .udp, host: name, port: destination.port,
+            routeTarget: .reject, ruleSetName: ruleSetName, blockReason: reason,
+            isQUIC: identifiedQUIC || QUICClientHelloSniffer.looksLikeClientInitial(datagram.payload),
+            deduplicationKey: "udp-reject:\(datagram.source.address):\(datagram.source.port)>\(ip):\(destination.port)")
+    }
+
+    private func recordQUICBlock(_ flowKey: TunnelStack.UDPFlowKey, cause: QUICBlock.Cause,
+                                 host: String? = nil, ruleSetName: String? = nil,
+                                 identifiedQUIC: Bool = false) {
         if quicBlocks[flowKey] == nil, quicBlocks.count >= TunnelLimits.udpMaxQUICBlocks,
            let oldest = quicBlocks.min(by: { $0.value.deadline < $1.value.deadline })?.key {
             quicBlocks.removeValue(forKey: oldest)
         }
         let deadline = MonotonicClock.now + TunnelConstants.udpQUICBlockIdleTimeout
-        quicBlocks[flowKey] = QUICBlock(cause: cause, deadline: deadline)
+        quicBlocks[flowKey] = QUICBlock(cause: cause, host: host, ruleSetName: ruleSetName,
+                                      identifiedQUIC: identifiedQUIC, deadline: deadline)
         if cleanupDeadline.map({ deadline < $0 }) ?? true {
             stack.scheduleUDPCleanup(at: deadline)
         }
@@ -484,6 +540,8 @@ actor UDPPlane {
         }
         block.deadline = now + TunnelConstants.udpQUICBlockIdleTimeout
         quicBlocks[flowKey] = block
+        recordBlockedQUIC(datagram, cause: block.cause, host: block.host,
+                          ruleSetName: block.ruleSetName, identifiedQUIC: block.identifiedQUIC)
         if case .rejected = block.cause { return true }
         stack.sendICMPPortUnreachable(rejecting: datagram)
         return true

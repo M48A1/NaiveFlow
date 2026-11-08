@@ -1046,3 +1046,10 @@ function process(ctx) {
 - **Scripts never change the head.** In both `script` and `stream-script`, only
   `ctx.body` is adopted — header/method/URL/status edits come from rules, not
   scripts. On the HTTP/2 legs even a response-phase `NaiveFlow.respond` is ignored.
+
+
+The temporary certificate profile server binds only to `127.0.0.1`. It accepts
+at most four concurrent clients, limits request headers to 16 KiB, and closes
+each client after five seconds. Only GET/HEAD requests for
+`/NaiveFlowMITMRoot.mobileconfig` are served. Stopping the server closes all
+clients; the endpoint expires after 120 seconds.

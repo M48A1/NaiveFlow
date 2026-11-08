@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import NetworkExtension
 import Observation
 
 @MainActor
@@ -28,6 +27,13 @@ class RequestsModel {
         let routeTarget: RouteTarget
         let ruleSetName: String?
         let defaultRouteTarget: RouteTarget?
+        let outbound: TunnelRequestOutbound?
+        let blockReason: TunnelRequestBlockReason?
+
+        var displayRouteTarget: RouteTarget {
+            guard routeTarget != .reject, let outbound else { return routeTarget }
+            return outbound.isDirect ? .direct : .defaultProxy
+        }
     }
 
     private(set) var requests: [Entry] = []
@@ -36,31 +42,21 @@ class RequestsModel {
         requests = []
     }
 
-    private func resolveSession() async -> NETunnelProviderSession? {
-        let managers = try? await NETunnelProviderManager.loadAllFromPreferences()
-        guard let connection = managers?.first?.connection as? NETunnelProviderSession,
-              connection.status == .connected else { return nil }
-        return connection
-    }
-    
-    func poll() async {
-        guard let session = await resolveSession() else { return }
-        guard let data = try? JSONEncoder().encode(TunnelMessage.fetchRequests) else { return }
-
-        let response = await ProviderMessageConcurrencyBridge.send(data, over: session)
-
-        guard !Task.isCancelled else { return }
-
-        guard let response,
+    func poll(using tunnel: TunnelController) async {
+        guard let response = await tunnel.send(.fetchRequests),
+              !Task.isCancelled,
               let payload = try? JSONDecoder().decode(RequestsResponse.self, from: response) else { return }
+        apply(payload.requests)
+    }
 
-        self.requests = payload.requests.map { entry in
+    private func apply(_ entries: [TunnelRequestEntry]) {
+        self.requests = entries.map { entry in
             var `protocol`: Entry.`Protocol`
             switch entry.protocol {
             case .tcp:
                 `protocol` = .tcp
             case .udp:
-                if entry.port == 443 {
+                if entry.isQUIC == true {
                     `protocol` = .quic
                 } else {
                     `protocol` = .udp
@@ -76,7 +72,9 @@ class RequestsModel {
                 port: entry.port,
                 routeTarget: entry.routeTarget,
                 ruleSetName: entry.ruleSetName,
-                defaultRouteTarget: entry.defaultRouteTarget
+                defaultRouteTarget: entry.defaultRouteTarget,
+                outbound: entry.outbound,
+                blockReason: entry.blockReason
             )
         }
     }

@@ -1,6 +1,118 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+      "Rejected by rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rejected by rule"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被规则拒绝"
+          }
+        }
+      }
+    },
+      "UDP disabled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP disabled"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已禁用 UDP"
+          }
+        }
+      }
+    },
+      "QUIC blocked by policy": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QUIC blocked by policy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QUIC 被策略拦截"
+          }
+        }
+      }
+    },
+      "QUIC blocked for MITM": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QUIC blocked for MITM"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为 MITM 拦截 QUIC"
+          }
+        }
+      }
+    },
+      "Proxied QUIC blocked": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Proxied QUIC blocked"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已拦截代理 QUIC"
+          }
+        }
+      }
+    },
+      "WebRTC blocked": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WebRTC blocked"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WebRTC 已拦截"
+          }
+        }
+      }
+    },
+      "Connection limit reached": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection limit reached"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已达到连接数上限"
+          }
+        }
+      }
+    },
     "" : {
       "shouldTranslate" : false
     },

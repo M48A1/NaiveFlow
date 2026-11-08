@@ -42,9 +42,6 @@ nonisolated final class ConnectionRouter: Sendable {
     private let rejectedIPs = Mutex(RejectedIPs())
     private static let rejectedIPCap = 4096
 
-    private let dnsRejectLogged = Mutex(Set<String>())
-    private static let dnsRejectLoggedCap = 4096
-
     init(syntheticAddressPool: SyntheticAddressPool, domainRouter: DomainRouter) {
         self.syntheticAddressPool = syntheticAddressPool
         self.domainRouter = domainRouter
@@ -178,13 +175,6 @@ nonisolated final class ConnectionRouter: Sendable {
         return (versioned.match, versioned.version)
     }
 
-    func shouldLogDNSReject(domain: String) -> Bool {
-        dnsRejectLogged.withLock { set in
-            if set.count >= Self.dnsRejectLoggedCap { set.removeAll(keepingCapacity: true) }
-            return set.insert(domain).inserted
-        }
-    }
-
     // MARK: - Reject-mark intake checks
 
     func isRejectMarkedDestination(rawIP: UnsafeRawPointer) -> Bool {
@@ -202,7 +192,6 @@ nonisolated final class ConnectionRouter: Sendable {
     func clearRejectMarks() {
         syntheticAddressPool.clearRejectMarks()
         rejectedIPs.withLock { $0 = RejectedIPs() }
-        dnsRejectLogged.withLock { $0.removeAll(keepingCapacity: true) }
     }
 
     // MARK: - Sniffed host
