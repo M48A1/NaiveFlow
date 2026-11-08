@@ -60,8 +60,29 @@ struct RequestsView: View {
         .animation(.default, value: requests)
         .overlay {
             if requests.isEmpty {
-                ContentUnavailableView("No Recent Requests", systemImage: "network")
+                switch requestsModel.refreshState {
+                case .loading:
+                    ProgressView()
+                case .current:
+                    ContentUnavailableView("No Recent Requests", systemImage: "network")
+                case .unavailable:
+                    ContentUnavailableView("Unable to Refresh Requests", systemImage: "wifi.exclamationmark",
+                                           description: Text("Check the VPN connection and try again."))
+                }
             }
+        }
+        .safeAreaInset(edge: .top) {
+            if !requests.isEmpty, requestsModel.refreshState == .unavailable {
+                Label("Unable to refresh. Showing recent cached records.", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(.bar)
+            }
+        }
+        .onChange(of: requests.map(\.id)) { _, ids in
+            selection.formIntersection(ids)
         }
         .navigationTitle("Requests")
         .toolbar {
@@ -81,6 +102,12 @@ struct RequestsView: View {
                         editMode = .active
                     }
                 }
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                requestsModel.pruneExpired()
+                try? await Task.sleep(for: .seconds(1))
             }
         }
         .task(id: editMode) {

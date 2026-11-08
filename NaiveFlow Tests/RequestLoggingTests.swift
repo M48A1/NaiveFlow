@@ -121,7 +121,7 @@ struct RequestLoggingTests {
             }
             return nil
         }
-        let model = RequestsModel()
+        let model = RequestsModel(now: { Date(timeIntervalSinceReferenceDate: 2) })
         await model.poll(using: controller)
         #expect(fetchCount == 1)
         #expect(model.requests.map(\.protocol) == [.udp, .quic, .udp])
@@ -129,6 +129,66 @@ struct RequestLoggingTests {
         #expect(model.requests[1].displayRouteTarget == .direct)
         #expect(model.requests[1].routeTarget == .proxy(groupID))
         #expect(model.requests[1].outbound?.name == "DIRECT")
+    }
+
+    @Test func failedPollExpiresOldRowsButRetainsRecentRowsAndReportsFailure() async throws {
+        var now = Date(timeIntervalSinceReferenceDate: 300)
+        let model = RequestsModel(now: { now })
+        let provider = ScriptedTunnelProvider()
+        let tunnel = TunnelController(provider: provider)
+        let entries = [
+            TunnelRequestEntry(timestamp: 0, protocol: .tcp, host: "old", port: 80, routeTarget: .direct),
+            TunnelRequestEntry(timestamp: 200, protocol: .tcp, host: "recent", port: 80, routeTarget: .direct)
+        ]
+        let payload = try JSONEncoder().encode(RequestsResponse(requests: entries))
+        provider.onMessage = { _ in payload }
+        await model.poll(using: tunnel)
+        #expect(model.requests.count == 2)
+        #expect(model.refreshState == .current)
+        now = Date(timeIntervalSinceReferenceDate: 301)
+        provider.onMessage = { _ in nil }
+        await model.poll(using: tunnel)
+        #expect(model.requests.map(\.host) == ["recent"])
+        #expect(model.refreshState == .unavailable)
+        now = Date(timeIntervalSinceReferenceDate: 501)
+        model.pruneExpired() // No IPC reply or additional poll is required.
+        #expect(model.requests.isEmpty)
+    }
+
+    @Test func cachedRowsExpireWhilePollingIsPausedAndRecoveryClearsFailure() async throws {
+        var now = Date(timeIntervalSinceReferenceDate: 0)
+        let model = RequestsModel(now: { now })
+        let provider = ScriptedTunnelProvider()
+        let tunnel = TunnelController(provider: provider)
+        let payload = try JSONEncoder().encode(RequestsResponse(requests: [
+            TunnelRequestEntry(timestamp: 0, protocol: .udp, host: "test", port: 53, routeTarget: .direct)
+        ]))
+        provider.onMessage = { _ in payload }
+        await model.poll(using: tunnel)
+        now = Date(timeIntervalSinceReferenceDate: 301)
+        model.pruneExpired()
+        #expect(model.requests.isEmpty)
+        provider.onMessage = { _ in Data("invalid reply".utf8) }
+        await model.poll(using: tunnel)
+        #expect(model.refreshState == .unavailable)
+        // An empty, valid response is a successful refresh, not an error.
+        let empty = try JSONEncoder().encode(RequestsResponse(requests: []))
+        provider.onMessage = { _ in empty }
+        await model.poll(using: tunnel)
+        #expect(model.refreshState == .current)
+        #expect(model.requests.isEmpty)
+    }
+
+    @Test func successfulButStaleReplyCannotReintroduceExpiredRows() async throws {
+        let model = RequestsModel(now: { Date(timeIntervalSinceReferenceDate: 301) })
+        let provider = ScriptedTunnelProvider()
+        let payload = try JSONEncoder().encode(RequestsResponse(requests: [
+            TunnelRequestEntry(timestamp: 0, protocol: .tcp, host: "expired", port: 80, routeTarget: .direct)
+        ]))
+        provider.onMessage = { _ in payload }
+        await model.poll(using: TunnelController(provider: provider))
+        #expect(model.requests.isEmpty)
+        #expect(model.refreshState == .current)
     }
 
     @Test func sessionSelectionIgnoresOtherProvidersAndPrefersTheLiveProfile() {

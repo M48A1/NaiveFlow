@@ -1,6 +1,54 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+      "Unable to Refresh Requests": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to Refresh Requests"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法刷新请求记录"
+          }
+        }
+      }
+    },
+      "Check the VPN connection and try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check the VPN connection and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请检查 VPN 连接后重试。"
+          }
+        }
+      }
+    },
+      "Unable to refresh. Showing recent cached records.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to refresh. Showing recent cached records."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新失败，当前显示最近的缓存记录。"
+          }
+        }
+      }
+    },
       "Rejected by rule": {
       "localizations": {
         "en": {

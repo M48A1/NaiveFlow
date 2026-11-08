@@ -36,17 +36,43 @@ class RequestsModel {
         }
     }
 
+    enum RefreshState {
+        case loading
+        case current
+        case unavailable
+    }
+
     private(set) var requests: [Entry] = []
+    private(set) var refreshState: RefreshState = .loading
+    @ObservationIgnored private let now: () -> Date
+
+    init(now: @escaping () -> Date = Date.init) {
+        self.now = now
+    }
+
+    /// Runs independently of IPC, including while polling is paused or awaiting a reply.
+    func pruneExpired() {
+        let cutoff = now().addingTimeInterval(-RequestLog.retentionInterval)
+        requests.removeAll { $0.timestamp < cutoff }
+    }
 
     func clear() {
         requests = []
     }
 
     func poll(using tunnel: TunnelController) async {
-        guard let response = await tunnel.send(.fetchRequests),
-              !Task.isCancelled,
-              let payload = try? JSONDecoder().decode(RequestsResponse.self, from: response) else { return }
+        pruneExpired()
+        let response = await tunnel.send(.fetchRequests)
+        guard !Task.isCancelled else { return }
+        pruneExpired()
+        guard let response,
+              let payload = try? JSONDecoder().decode(RequestsResponse.self, from: response) else {
+            refreshState = .unavailable
+            return
+        }
         apply(payload.requests)
+        pruneExpired()
+        refreshState = .current
     }
 
     private func apply(_ entries: [TunnelRequestEntry]) {
