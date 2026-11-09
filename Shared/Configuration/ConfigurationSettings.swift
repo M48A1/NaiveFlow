@@ -145,6 +145,14 @@ nonisolated enum ConfigurationSettings {
 
     static let catalog: [ConfigurationSettingKey] = [
 
+        ConfigurationSettingKey(
+            name: "lan-proxy-enabled",
+            kind: .flag,
+            scope: .live,
+            applies: true,
+            summary: "false disables LAN SOCKS5 sharing even when enabled locally; true permits the local switch."
+        ),
+
         // MARK: Routing mode
 
         ConfigurationSettingKey(
@@ -588,6 +596,10 @@ nonisolated enum ConfigurationSettingsBindings {
     static let all: [ConfigurationSettingBinding] = [
 
         // MARK: Routing mode
+
+        bind("lan-proxy-enabled", read: { .flag(AWCore.getLANProxyAllowed()) }, write: { value in
+            if let flag = bool(value) { AWCore.setLANProxyAllowed(flag) }
+        }),
 
         bind("proxy-mode", read: {
             .text(AWCore.getProxyMode().rawValue)

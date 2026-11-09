@@ -111,14 +111,19 @@ nonisolated final class MultiplexerPool<S: Multiplexer & Sendable, Extra: Sendab
         armIdleCheck()
     }
 
-    private func runIdleEviction() {
-        let now = MonotonicClock.now
+    func runIdleEviction(now: TimeInterval = MonotonicClock.now) {
         
         let toClose: [S] = state.withLock { state -> [S] in
             guard let policy = state.policy else { return [] }
             var toClose: [S] = []
             for key in Array(state.multiplexers.keys) {
                 guard let multiplexers = state.multiplexers[key] else { continue }
+                // A closed session may miss its removal callback. Release its
+                // retained transport and bookkeeping instead of rearming forever.
+                for multiplexer in multiplexers where multiplexer.isClosed {
+                    state.multiplexers[key]?.removeAll { $0 === multiplexer }
+                    state.lastActivity.removeValue(forKey: ObjectIdentifier(multiplexer))
+                }
                 var idle = multiplexers.filter { $0.activeStreamCount == 0 && !$0.isClosed }
                 if policy.minIdleKeep > 0 || policy.softCapPerKey > 0 {
                     idle.sort { (state.lastActivity[ObjectIdentifier($0)] ?? 0) > (state.lastActivity[ObjectIdentifier($1)] ?? 0) }
@@ -158,8 +163,8 @@ nonisolated final class MultiplexerPool<S: Multiplexer & Sendable, Extra: Sendab
 
     private func takeAll(_ state: inout PoolState) -> [S] {
         let all = state.multiplexers.values.flatMap { $0 }
-        state.multiplexers.removeAll()
-        state.lastActivity.removeAll()
+        state.multiplexers.removeAll(keepingCapacity: false)
+        state.lastActivity.removeAll(keepingCapacity: false)
         return all
     }
 

@@ -3,16 +3,11 @@ import SwiftUI
 struct LANProxySettingsView: View {
     @State private var enabled = false
     @State private var port = "8080"
-    @State private var clients = ""
     @State private var message: String?
 
-    private var entries: [String] {
-        clients.split(whereSeparator: { $0 == "\n" || $0 == "," })
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-    }
     private var valid: Bool {
         guard let value = UInt16(port), value >= 1024 else { return false }
-        return entries.allSatisfy { IPRoute($0) != nil }
+        return true
     }
 
     var body: some View {
@@ -24,34 +19,35 @@ struct LANProxySettingsView: View {
                         .multilineTextAlignment(.trailing)
                 }
             } footer: {
-                Text("HTTP CONNECT and SOCKS5 CONNECT share this port. Requires the VPN to be running. Reconnect the VPN after saving changes.")
-            }
-            Section {
-                TextEditor(text: $clients).frame(minHeight: 120)
-                    .font(.system(.body, design: .monospaced))
-                    .autocorrectionDisabled().textInputAutocapitalization(.never)
-            } header: {
-                Text("Allowed Client Addresses")
-            } footer: {
-                Text("One IPv4 address or CIDR per line, for example 192.168.1.20 or 192.168.1.0/24. Only private Wi-Fi clients are accepted. An empty list denies everyone.")
+                Text("SOCKS5 TCP only. Requires the VPN to be running. Reconnect the VPN after saving changes.")
             }
             Section("Connection") {
-                if let address = LANProxyACL.wifiAddress() {
+                if !AWCore.getLANProxyAllowed() {
+                    Text("LAN proxy is disabled by the active profile.")
+                        .foregroundStyle(.secondary)
+                }
+                Text("Up to 3 devices by IPv4 address, 4 connections each and 4 simultaneous handshakes.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Text("The first 3 private Wi-Fi client addresses can connect. A device slot is freed when its last connection closes.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Text("Idle connections close after 2 minutes.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                if let address = LANProxyNetwork.wifiAddress() {
                     LabeledContent("Wi-Fi Address", value: address)
                 } else {
                     Text("No private Wi-Fi IPv4 address available.")
                 }
-                Text("Uses the VPN’s current node or proxy chain for new connections. HTTP CONNECT and SOCKS5 TCP only; UDP relay is unavailable. Connections close after one hour.")
+                Text("Uses the VPN’s current node or proxy chain for new connections. UDP relay is unavailable. Connections close after one hour.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section {
                 Button("Save") {
                     do {
-                        try LANProxySettings(enabled: enabled, port: UInt16(port)!, allowedClients: entries).save()
+                        try LANProxySettings(enabled: enabled, port: UInt16(port)!).save()
                         message = String(localized: "Saved. Reconnect the VPN to apply.")
                     } catch { message = error.localizedDescription }
                 }.disabled(!valid)
-                if !valid { Text("Enter a port from 1024 to 65535 and valid IPv4 addresses or CIDRs.").foregroundStyle(.red) }
+                if !valid { Text("Enter a port from 1024 to 65535.").foregroundStyle(.red) }
                 if let message { Text(message).foregroundStyle(.secondary) }
             }
         }
@@ -60,7 +56,6 @@ struct LANProxySettingsView: View {
             let settings = LANProxySettings.load()
             enabled = settings.enabled
             port = String(settings.port)
-            clients = settings.allowedClients.joined(separator: "\n")
         }
     }
 }

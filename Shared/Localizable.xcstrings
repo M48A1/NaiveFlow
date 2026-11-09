@@ -1,12 +1,40 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-  "Enter a port from 1024 to 65535 and valid IPv4 addresses or CIDRs.": {
+    "The first 3 private Wi-Fi client addresses can connect. A device slot is freed when its last connection closes." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "允许先连接的 3 个 Wi-Fi 私有客户端地址使用。某台设备最后一条连接关闭后，会释放其设备名额。" }
+        }
+      }
+    },
+    "LAN proxy is disabled by the active profile." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "当前配置文件已禁止局域网代理。" }
+        }
+      }
+    },
+    "Up to 3 devices by IPv4 address, 4 connections each and 4 simultaneous handshakes." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "按 IPv4 地址区分，最多 3 台设备，每台最多 4 条连接，同时最多 4 条连接进行握手。" }
+        }
+      }
+    },
+    "Idle connections close after 2 minutes." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : { "state" : "translated", "value" : "空闲连接将在 2 分钟后关闭。" }
+        }
+      }
+    },
+  "Enter a port from 1024 to 65535.": {
     "localizations": {
       "zh-Hans": {
         "stringUnit": {
           "state": "translated",
-          "value": "请输入 1024 至 65535 的端口和有效的 IPv4 地址或 CIDR。"
+          "value": "请输入 1024 至 65535 的端口。"
         }
       }
     }
@@ -21,32 +49,22 @@
       }
     }
   },
-  "Uses the VPN’s current node or proxy chain for new connections. HTTP CONNECT and SOCKS5 TCP only; UDP relay is unavailable. Connections close after one hour.": {
+  "Uses the VPN’s current node or proxy chain for new connections. UDP relay is unavailable. Connections close after one hour.": {
     "localizations": {
       "zh-Hans": {
         "stringUnit": {
           "state": "translated",
-          "value": "新连接使用 VPN 当前节点或代理链。仅支持 HTTP CONNECT 和 SOCKS5 TCP，暂不支持 UDP 中继。连接最长持续一小时。"
+          "value": "新连接使用 VPN 当前节点或代理链，暂不支持 UDP 中继。连接最长持续一小时。"
         }
       }
     }
   },
-  "One IPv4 address or CIDR per line, for example 192.168.1.20 or 192.168.1.0/24. Only private Wi-Fi clients are accepted. An empty list denies everyone.": {
+  "SOCKS5 TCP only. Requires the VPN to be running. Reconnect the VPN after saving changes.": {
     "localizations": {
       "zh-Hans": {
         "stringUnit": {
           "state": "translated",
-          "value": "每行填写一个 IPv4 地址或 CIDR，例如 192.168.1.20 或 192.168.1.0/24。仅允许 Wi-Fi 私有地址客户端；列表为空时拒绝所有设备。"
-        }
-      }
-    }
-  },
-  "HTTP CONNECT and SOCKS5 CONNECT share this port. Requires the VPN to be running. Reconnect the VPN after saving changes.": {
-    "localizations": {
-      "zh-Hans": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "HTTP CONNECT 和 SOCKS5 CONNECT 共用此端口。需要 VPN 正在运行，保存修改后请重新连接 VPN。"
+          "value": "仅支持 SOCKS5 TCP。需要 VPN 正在运行，保存修改后请重新连接 VPN。"
         }
       }
     }
@@ -77,16 +95,6 @@
         "stringUnit": {
           "state": "translated",
           "value": "Wi-Fi 地址"
-        }
-      }
-    }
-  },
-  "Allowed Client Addresses": {
-    "localizations": {
-      "zh-Hans": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "允许的客户端地址"
         }
       }
     }

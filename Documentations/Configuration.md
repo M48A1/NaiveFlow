@@ -105,6 +105,7 @@ apart.
 
 | Key | Values | Reload scope | Status |
 | --- | --- | --- | --- |
+| `lan-proxy-enabled` | boolean | live | false vetoes local LAN SOCKS5 sharing; true permits the local switch |
 | `proxy-mode` | `rule`, `global`, `direct` | data-plane restart | applied |
 | `quic-policy` | `automatic`, `blocked`, `unblocked` | live | applied |
 | `block-udp` | boolean | live | applied |

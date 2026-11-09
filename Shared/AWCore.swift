@@ -56,7 +56,7 @@ nonisolated final class AWCore {
         "alwaysUntrustCellular", "blockUDP", "blockWebRTC", "bypassCountryCode",
         "echDNSDoHURL", "echDNSMode", "echDNSPlainServer", "experimentalEnabled",
         "fallbackDNSMode", "fallbackDNSServer", "hideVPNIcon", "hostMappings",
-        "localRequestDNSDoHURL", "localRequestDNSMode", "localRequestDNSPlainServer",
+        "localRequestDNSDoHURL", "localRequestDNSMode", "localRequestDNSPlainServer", "lanProxyAllowed",
         "mitmEnabled", "preventDNSLeak", "proxyDNSDoHURL", "proxyDNSMode",
         "proxyDNSPlainServer", "proxyMode", "quicPolicy", "reflectionEnabled",
         "selectedChainId", "selectedConfigurationId", "subscriptionDNSDoHURL",
@@ -73,6 +73,7 @@ nonisolated final class AWCore {
     static func installRuntimePreferences(_ values: [String: RuntimePreferenceValue]?) {
         var pinned = values
         if pinned != nil, pinned?["bootstrapDNS"] == nil { pinned?["bootstrapDNS"] = .absent }
+        if pinned != nil, pinned?["lanProxyAllowed"] == nil { pinned?["lanProxyAllowed"] = .absent }
         userDefaults.install(pinned)
     }
 
@@ -81,6 +82,7 @@ nonisolated final class AWCore {
     ) rethrows -> [String: RuntimePreferenceValue] {
         var values = base ?? runtimePreferences()
         if values["bootstrapDNS"] == nil { values["bootstrapDNS"] = .absent }
+        if values["lanProxyAllowed"] == nil { values["lanProxyAllowed"] = .absent }
         let capture = RuntimePreferenceCapture(values)
         try RuntimePreferenceContext.$capture.withValue(capture, operation: write)
         return capture.values.withLock { $0 }
@@ -144,6 +146,15 @@ nonisolated final class AWCore {
         static let tunnelExcludeLocalNetworks = "tunnelExcludeLocalNetworks"
         static let tunnelIncludeAllNetworks = "tunnelIncludeAllNetworks"
         static let tunnelIncludedRoutes = "tunnelIncludedRoutes"
+    }
+
+    // Profiles can veto device-local LAN sharing; absence permits the local switch.
+    static func getLANProxyAllowed() -> Bool {
+        (userDefaults.object(forKey: "lanProxyAllowed") as? Bool) ?? true
+    }
+
+    static func setLANProxyAllowed(_ value: Bool) {
+        userDefaults.set(value, forKey: "lanProxyAllowed")
     }
 
     // LAN sharing is device-local and intentionally outside runtime profile pins.

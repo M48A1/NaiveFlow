@@ -163,13 +163,18 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
             }
             throw NaiveFlowError.tunnel(.sessionUnavailable)
         }
-        let lan = LANProxyServer(settings: LANProxySettings.load()) { [tunnelStack] in
-            tunnelStack.udpConfig().configuration
-        }
+        refreshLANProxy(claim: myClaim)
+    }
+
+    private func refreshLANProxy(claim: UInt64? = nil) {
         providerState.withLock { state in
-            guard state.phase == .running, state.claimGeneration == myClaim else { return }
-            state.lanProxy = lan
-            lan.start()
+            guard state.phase == .running, claim == nil || state.claimGeneration == claim else { return }
+            let old = state.lanProxy
+            state.lanProxy = LANProxyServer.makeIfEnabled(
+                settings: LANProxySettings.load(), profileAllowed: AWCore.getLANProxyAllowed()
+            ) { [tunnelStack] in tunnelStack.udpConfig().configuration }
+            old?.cancel()
+            state.lanProxy?.start()
         }
     }
 
@@ -402,6 +407,7 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
                     try await self.applyTunnelSettings()
                 }
             }
+            if receipt.status == .applied { refreshLANProxy() }
             return encodeReply(receipt)
         } catch RuntimeConfigurationFailure.rollbackFailed {
             cancelTunnelWithError(RuntimeConfigurationFailure.rollbackFailed)

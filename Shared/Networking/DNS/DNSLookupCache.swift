@@ -144,8 +144,8 @@ nonisolated final class DNSLookupCache<Key: Hashable & Sendable, Value: Sendable
 
     private static func reset(_ state: inout State) {
         state.generation &+= 1
-        state.entries.removeAll(keepingCapacity: true)
-        state.inFlight.removeAll(keepingCapacity: true)
+        state.entries.removeAll(keepingCapacity: false)
+        state.inFlight.removeAll(keepingCapacity: false)
     }
 
     private static func compact(_ entries: inout [Key: Entry], now: TimeInterval, capacity: Int) {
