@@ -568,14 +568,27 @@ nonisolated extension ConfigurationValidator {
                     message: "Duplicate chain name '\(chain.name)'."))
             }
             if Set(chain.members).count != chain.members.count {
-                diagnostics.append(.init(severity: .info, code: .duplicateName, line: chain.line,
+                diagnostics.append(.init(severity: .error, code: .duplicateName, line: chain.line,
                     section: ConfigurationDocument.SectionKind.chain.displayName,
-                    message: "Chain '\(chain.name)' lists the same node more than once."))
+                    message: "Chain '\(chain.name)' lists the same node more than once; each hop must be unique."))
             }
-            for member in chain.members where configuration.proxy(named: member) == nil {
-                diagnostics.append(.init(severity: .error, code: .unresolvedPolicy, line: chain.line,
-                    section: ConfigurationDocument.SectionKind.chain.displayName,
-                    message: "Chain '\(chain.name)' references unknown node '\(member)'."))
+            for (index, member) in chain.members.enumerated() {
+                guard let proxy = configuration.proxy(named: member) else {
+                    diagnostics.append(.init(severity: .error, code: .unresolvedPolicy, line: chain.line,
+                        section: ConfigurationDocument.SectionKind.chain.displayName,
+                        message: "Chain '\(chain.name)' references unknown node '\(member)'."))
+                    continue
+                }
+
+                // DIRECT can be the local entry or the terminal direct exit,
+                // but it cannot sit between two remote hops: once a tunnel is
+                // installed, ProxyClient+Direct has no server endpoint to
+                // reach through that tunnel.
+                if proxy.typeToken == "direct", index > 0, index < chain.members.count - 1 {
+                    diagnostics.append(.init(severity: .error, code: .invalidValue, line: chain.line,
+                        section: ConfigurationDocument.SectionKind.chain.displayName,
+                        message: "Chain '\(chain.name)' cannot contain DIRECT (at position \(index + 1))."))
+                }
             }
         }
     }

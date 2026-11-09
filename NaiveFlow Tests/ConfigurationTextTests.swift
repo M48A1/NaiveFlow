@@ -168,6 +168,36 @@ extension ConfigurationTextTests {
         #expect(result.diagnostics.contains { $0.code == .groupCycle })
     }
 
+    @Test func rejectsDuplicateChainMembers() {
+        let result = TextConfigurationPipeline.process(text: """
+            [Proxy]
+            A = socks5, 192.0.2.1, 1080
+            [Chain]
+            Relay = A, A
+            """)
+
+        #expect(result.diagnostics.contains {
+            $0.code == .duplicateName && $0.severity == .error && $0.section == "Chain"
+        })
+        #expect(!result.isActivatable)
+    }
+
+    @Test func rejectsDirectInsideChain() {
+        let result = TextConfigurationPipeline.process(text: """
+            [Proxy]
+            A = socks5, 192.0.2.1, 1080
+            B = direct
+            C = socks5, 192.0.2.2, 1080
+            [Chain]
+            Relay = A, B, C
+            """)
+
+        #expect(result.diagnostics.contains {
+            $0.code == .invalidValue && $0.severity == .error && $0.message.contains("DIRECT")
+        })
+        #expect(!result.isActivatable)
+    }
+
     @Test func requiresFinalToBeLast() {
         let result = TextConfigurationPipeline.process(text: """
             [Proxy]
