@@ -13,5 +13,7 @@
 		<key>NSExtensionPrincipalClass</key>
 		<string>$(PRODUCT_MODULE_NAME).PacketTunnelProvider</string>
 	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Share the configured proxy with allowed devices on your Wi-Fi network.</string>
 </dict>
 </plist>

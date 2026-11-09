@@ -707,6 +707,8 @@ struct ProxyEditorView: View {
                 }
             }
         }
+    }
+
     @ViewBuilder
     private var moreSettings: some View {
         if isVLESS && vlessTransport == "xhttp" {

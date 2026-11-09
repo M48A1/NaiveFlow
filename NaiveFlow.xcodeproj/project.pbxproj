@@ -140,6 +140,8 @@
                 Networking/DNS/BootstrapDoHClient.swift,
 				Networking/DNS/ECHResolver.swift,
 				Networking/IPRoute.swift,
+				Networking/LAN/LANProxySettings.swift,
+				Networking/LAN/LANProxyServer.swift,
 				Networking/LatencyTester.swift,
 				Networking/Protocols/AnyTLS/AnyTLSConfiguration.swift,
 				Networking/Protocols/AnyTLS/AnyTLSMultiplexer.swift,

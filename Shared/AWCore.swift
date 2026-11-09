@@ -146,6 +146,15 @@ nonisolated final class AWCore {
         static let tunnelIncludedRoutes = "tunnelIncludedRoutes"
     }
 
+    // LAN sharing is device-local and intentionally outside runtime profile pins.
+    static func getLANProxySettingsData() -> Data? {
+        rawUserDefaults.data(forKey: "lanProxySettings")
+    }
+
+    static func setLANProxySettingsData(_ data: Data) {
+        rawUserDefaults.set(data, forKey: "lanProxySettings")
+    }
+
     // MARK: - Typed UserDefaults Accessors
     
     // App

@@ -39,6 +39,12 @@ struct AdvancedSettingsView: View {
             }
 
             Section {
+                NavigationLink("LAN Proxy") {
+                    LANProxySettingsView()
+                }
+            }
+
+            Section {
                 NavigationLink("DNS") {
                     DNSSettingsView()
                 }

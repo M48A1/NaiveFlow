@@ -147,5 +147,7 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Share the configured proxy with allowed devices on your Wi-Fi network.</string>
 </dict>
 </plist>

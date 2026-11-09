@@ -1,6 +1,116 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+  "Enter a port from 1024 to 65535 and valid IPv4 addresses or CIDRs.": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "请输入 1024 至 65535 的端口和有效的 IPv4 地址或 CIDR。"
+        }
+      }
+    }
+  },
+  "Saved. Reconnect the VPN to apply.": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "已保存，重新连接 VPN 后生效。"
+        }
+      }
+    }
+  },
+  "Uses the VPN’s current node or proxy chain for new connections. HTTP CONNECT and SOCKS5 TCP only; UDP relay is unavailable. Connections close after one hour.": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "新连接使用 VPN 当前节点或代理链。仅支持 HTTP CONNECT 和 SOCKS5 TCP，暂不支持 UDP 中继。连接最长持续一小时。"
+        }
+      }
+    }
+  },
+  "One IPv4 address or CIDR per line, for example 192.168.1.20 or 192.168.1.0/24. Only private Wi-Fi clients are accepted. An empty list denies everyone.": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "每行填写一个 IPv4 地址或 CIDR，例如 192.168.1.20 或 192.168.1.0/24。仅允许 Wi-Fi 私有地址客户端；列表为空时拒绝所有设备。"
+        }
+      }
+    }
+  },
+  "HTTP CONNECT and SOCKS5 CONNECT share this port. Requires the VPN to be running. Reconnect the VPN after saving changes.": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "HTTP CONNECT 和 SOCKS5 CONNECT 共用此端口。需要 VPN 正在运行，保存修改后请重新连接 VPN。"
+        }
+      }
+    }
+  },
+  "No private Wi-Fi IPv4 address available.": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "当前没有可用的 Wi-Fi 私有 IPv4 地址。"
+        }
+      }
+    }
+  },
+  "Connection": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "连接信息"
+        }
+      }
+    }
+  },
+  "Wi-Fi Address": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Wi-Fi 地址"
+        }
+      }
+    }
+  },
+  "Allowed Client Addresses": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "允许的客户端地址"
+        }
+      }
+    }
+  },
+  "Enable LAN Proxy": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "启用局域网代理"
+        }
+      }
+    }
+  },
+  "LAN Proxy": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "局域网代理"
+        }
+      }
+    }
+  },
       "Search host, rule or outbound": {
       "localizations": {
         "en": {

@@ -48,6 +48,7 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
         var phase: Phase = .idle
         var rootTask: Task<Void, Never>?
         var claimGeneration: UInt64 = 0
+        var lanProxy: LANProxyServer?
     }
     private let providerState = Mutex(ProviderState())
 
@@ -161,6 +162,14 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
                 await tunnelStack.stop()
             }
             throw NaiveFlowError.tunnel(.sessionUnavailable)
+        }
+        let lan = LANProxyServer(settings: LANProxySettings.load()) { [tunnelStack] in
+            tunnelStack.udpConfig().configuration
+        }
+        providerState.withLock { state in
+            guard state.phase == .running, state.claimGeneration == myClaim else { return }
+            state.lanProxy = lan
+            lan.start()
         }
     }
 
@@ -317,6 +326,11 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
             return state.rootTask
         }
 
+        let lan = providerState.withLock { state in
+            defer { state.lanProxy = nil }
+            return state.lanProxy
+        }
+        lan?.cancel()
         statsRecorder.stop()
         MITMScriptDiskStore.shared.flush()
         task?.cancel()
