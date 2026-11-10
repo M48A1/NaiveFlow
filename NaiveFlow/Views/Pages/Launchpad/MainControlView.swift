@@ -20,7 +20,6 @@ struct MainControlView: View {
 
     let connectionEffectsEnabled: Bool
     
-    @State private var centerOffset: CGFloat = 0
     @State private var showingProxiesView = false
     @State private var showingAddSheet = false
     @State private var showingManualAddSheet = false
@@ -45,11 +44,43 @@ struct MainControlView: View {
     }
 
     var body: some View {
+        GeometryReader { viewport in
+            ScrollView {
+                controls
+                    .frame(minHeight: viewport.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+        .padding(.horizontal)
+        .animation(connectionEffectsEnabled ? Animation.bouncy : nil, value: isConnected)
+        .sheet(isPresented: $showingProxiesView) {
+            ProxiesView()
+                .environment(operations)
+                .environment(proxySelection)
+                .environment(latencyCenter)
+                .environment(configurationStore)
+                .environment(chainStore)
+                .environment(groupStore)
+                .environment(subscriptionStore)
+        }
+        .sheet(isPresented: $showingAddSheet) {
+            DynamicSheet(animation: .snappy(duration: 0.3, extraBounce: 0)) {
+                AddProxyView(showingManualAddSheet: $showingManualAddSheet)
+                    .environment(operations)
+            }
+        }
+        .sheet(isPresented: $showingManualAddSheet) {
+            ProxyEditorView { configuration in
+                operations.configurations.add(configuration); operations.selection.selectIfNone(configuration)
+            }
+        }
+    }
+
+    private var controls: some View {
         MainControlLayout(
             idealSpacingRatio: 0.12,
             maxSpacing: 100,
-            minSpacing: 20,
-            centerOffset: centerOffset
+            minSpacing: 20
         ) {
             VStack(spacing: 20) {
                 PowerButton(
@@ -88,34 +119,6 @@ struct MainControlView: View {
             )
             .frame(maxWidth: 500)
         }
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            (proxy.safeAreaInsets.bottom - proxy.safeAreaInsets.top) / 2
-        } action: { offset in
-            centerOffset = offset
-        }
-        .padding(.horizontal)
-        .animation(connectionEffectsEnabled ? Animation.bouncy : nil, value: isConnected)
-        .sheet(isPresented: $showingProxiesView) {
-            ProxiesView()
-                .environment(operations)
-                .environment(proxySelection)
-                .environment(latencyCenter)
-                .environment(configurationStore)
-                .environment(chainStore)
-                .environment(groupStore)
-                .environment(subscriptionStore)
-        }
-        .sheet(isPresented: $showingAddSheet) {
-            DynamicSheet(animation: .snappy(duration: 0.3, extraBounce: 0)) {
-                AddProxyView(showingManualAddSheet: $showingManualAddSheet)
-                    .environment(operations)
-            }
-        }
-        .sheet(isPresented: $showingManualAddSheet) {
-            ProxyEditorView { configuration in
-                operations.configurations.add(configuration); operations.selection.selectIfNone(configuration)
-            }
-        }
     }
 }
 
@@ -125,7 +128,6 @@ private struct MainControlLayout: Layout {
     let idealSpacingRatio: CGFloat
     let maxSpacing: CGFloat
     let minSpacing: CGFloat
-    let centerOffset: CGFloat
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard let sizes = measure(subviews, width: proposal.width) else { return .zero }
@@ -144,7 +146,7 @@ private struct MainControlLayout: Layout {
         let idealSpacing = min(max(bounds.height * idealSpacingRatio, minSpacing), maxSpacing)
         let spacing = max(min(idealSpacing, room), minSpacing)
         let contentHeight = group.height + spacing + capsule.height
-        let centeredTop = bounds.midY + centerOffset - contentHeight / 2
+        let centeredTop = bounds.midY - contentHeight / 2
         let top = max(bounds.minY, min(centeredTop, bounds.maxY - contentHeight))
 
         subviews[0].place(at: CGPoint(x: bounds.midX, y: top), anchor: .top, proposal: ProposedViewSize(group))

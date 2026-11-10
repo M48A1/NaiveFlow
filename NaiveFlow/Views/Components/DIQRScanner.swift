@@ -87,76 +87,61 @@ fileprivate struct DIQRScannerView: View {
     @State private var camera: CameraProperties = .init()
     @Environment(\.openURL) private var openURL
     var body: some View {
-        GeometryReader {
-            let size = $0.size
-            let safeArea = $0.safeAreaInsets
+        GeometryReader { geometry in
+            // GeometryReader describes the safe content area. Keep controls in
+            // that area even when system bars move to either side of the screen.
+            let side = max(1, min(geometry.size.width - 32, geometry.size.height - 32, 400))
 
-            let haveDynamicIsland: Bool = safeArea.top >= 59
-            let dynamicIslandWidth: CGFloat = 120
-            let dynamicIslandHeight: CGFloat = 36
-            let topOffset: CGFloat = haveDynamicIsland ? (11 + max((safeArea.top - 59), 0)) : (isExpanding ? safeArea.top : -50)
-            
-            let expandedWidth: CGFloat = min(size.width - 30, size.height - 30, 400)
-            /// For making it square
-            let expandedHeight: CGFloat = min(size.width - 30, size.height - 30, 400)
-            
-            ZStack(alignment: .top) {
+            ZStack {
                 Rectangle()
                     .fill(.ultraThinMaterial)
+                    .ignoresSafeArea()
                     .contentShape(.rect)
                     .opacity(isExpanding ? 1 : 0)
-                    .onTapGesture {
-                        toggle(false)
-                    }
+                    .onTapGesture { toggle(false) }
 
                 if showContent {
                     RoundedRectangle(cornerRadius: 40)
                         .fill(.black)
                         .overlay {
-                            GeometryReader {
-                                let cameraSize = $0.size
-                                
-                                ScannerView(cameraSize)
-                            }
-                            .overlay(alignment: .bottom) {
+                            VStack(spacing: 12) {
+                                GeometryReader { preview in
+                                    ScannerView(preview.size)
+                                }
                                 Text("Scan your QR code")
                                     .font(.caption2)
                                     .foregroundStyle(.white.secondary)
-                                    .lineLimit(1)
-                                    .fixedSize()
-                                    .offset(y: 25)
+                                    .multilineTextAlignment(.center)
                             }
-                            .padding(80)
+                            .padding(min(60, side * 0.15))
                             .compositingGroup()
-                            .blur(radius: isExpanding ? 0 : 15)
                             .opacity(isExpanding ? 1 : 0)
-                            .geometryGroup()
                         }
-                        .overlay {
-                            PermissionDeniedView()
-                        }
-                        .frame(
-                            width: isExpanding ? expandedWidth : dynamicIslandWidth,
-                            height: isExpanding ? expandedHeight : dynamicIslandHeight
-                        )
-                        .offset(y: topOffset)
+                        .overlay { PermissionDeniedView() }
+                        .frame(width: side, height: side)
+                        .scaleEffect(isExpanding ? 1 : 0.8)
+                        .opacity(isExpanding ? 1 : 0)
                         .background {
                             if isExpanding {
-                                Rectangle()
-                                    .fill(.clear)
-                                    .onDisappear {
-                                        showContent = false
-                                    }
+                                Color.clear.onDisappear { showContent = false }
                             }
                         }
                         .transition(.identity)
-                        .onDisappear {
-                            onClose()
-                        }
+                        .onDisappear { onClose() }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .ignoresSafeArea()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    toggle(false)
+                } label: {
+                    Label("Cancel", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
+                        .frame(width: 44, height: 44)
+                        .background(.regularMaterial, in: Circle())
+                }
+                .padding(8)
+            }
             .task {
                 guard !isInitialized else { return }
                 isInitialized = true

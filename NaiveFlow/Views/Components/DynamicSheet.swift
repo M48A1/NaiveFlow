@@ -12,26 +12,21 @@ struct DynamicSheet<Content: View>: View {
     @ViewBuilder var content: Content
     @State private var sheetHeight: CGFloat = 320
     var body: some View {
-        ZStack {
+        ScrollView {
             content
                 .fixedSize(horizontal: false, vertical: true)
                 .onGeometryChange(for: CGSize.self) {
                     $0.size
                 } action: { newValue in
                     withAnimation(animation) {
-                        sheetHeight = min(newValue.height, windowSize.height - 110)
+                        sheetHeight = max(1, newValue.height)
                     }
                 }
         }
+        .scrollBounceBehavior(.basedOnSize)
+        // The presentation system limits the detent to the current container.
+        // Measure the intrinsic content, not the sheet's constrained viewport.
         .modifier(SheetHeightModifier(height: sheetHeight))
-    }
-
-    var windowSize: CGSize {
-        if let size = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.size {
-            return size
-        }
-        
-        return .zero
     }
 }
 

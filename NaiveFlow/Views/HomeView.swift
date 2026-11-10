@@ -11,180 +11,83 @@ import NetworkExtension
 struct HomeView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    @State private var selectedPage: Page? = .launchpad
+    @State private var selectedTab: Page = .launchpad
+    @State private var toolboxPath: [Page] = []
     @State private var preferredColumn = NavigationSplitViewColumn.detail
 
-    var body: some View {
-        if horizontalSizeClass != .compact, UIDevice.current.userInterfaceIdiom == .phone {
-            // Workaround for buggy .sidebarAdaptable
-            // See https://developer.apple.com/forums/thread/848401
-            NavigationSplitView(preferredCompactColumn: $preferredColumn) {
-                List(selection: $selectedPage) {
-                    Section {
-                        Label(Page.launchpad.name, image: Page.launchpad.symbol)
-                            .tag(Page.launchpad)
-                        Label(Page.dashboard.name, systemImage: Page.dashboard.symbol)
-                            .tag(Page.dashboard)
-                        Label(Page.toolbox.name, systemImage: Page.toolbox.symbol)
-                            .tag(Page.toolbox)
-                    }
-
-                    Section("App") {
-                        Label(Page.data.name, systemImage: Page.data.symbol)
-                            .tag(Page.data)
-                        Label(Page.personalization.name, systemImage: Page.personalization.symbol)
-                            .tag(Page.personalization)
-                    }
-
-                    Section("VPN") {
-                        Label(Page.tunnel.name, systemImage: Page.tunnel.symbol)
-                            .tag(Page.tunnel)
-                        Label(Page.purify.name, systemImage: Page.purify.symbol)
-                            .tag(Page.purify)
-                        Label(Page.routing.name, systemImage: Page.routing.symbol)
-                            .tag(Page.routing)
-                        Label(Page.mitm.name, systemImage: Page.mitm.symbol)
-                            .tag(Page.mitm)
-                        Label(Page.modules.name, systemImage: Page.modules.symbol)
-                            .tag(Page.modules)
-                        Label(Page.configuration.name, systemImage: Page.configuration.symbol)
-                            .tag(Page.configuration)
-                    }
-
-                    Section("Security") {
-                        Label(Page.trustedCertificates.name, systemImage: Page.trustedCertificates.symbol)
-                            .tag(Page.trustedCertificates)
-                        Label(Page.trustedNetwork.name, systemImage: Page.trustedNetwork.symbol)
-                            .tag(Page.trustedNetwork)
-                    }
-
-                    Section("More") {
-                        Label(Page.diagnosis.name, systemImage: Page.diagnosis.symbol)
-                            .tag(Page.diagnosis)
-                        Label(Page.about.name, systemImage: Page.about.symbol)
-                            .tag(Page.about)
-                    }
+    // Keep the same view hierarchy across folds. Sidebar destinations share the
+    // Toolbox navigation stack, so they remain reachable when the sidebar collapses.
+    private var sidebarSelection: Binding<Page?> {
+        Binding {
+            selectedTab == .toolbox ? (toolboxPath.first ?? .toolbox) : selectedTab
+        } set: { page in
+            guard let page else { return }
+            switch page {
+            case .launchpad, .dashboard:
+                selectedTab = page
+            case .toolbox:
+                toolboxPath = []
+                selectedTab = .toolbox
+            default:
+                if toolboxPath.first != page {
+                    toolboxPath = [page]
                 }
-            } detail: {
-                switch selectedPage {
-                case .launchpad, nil:
-                    LaunchpadView()
-                case .dashboard:
-                    DashboardView()
-                case .toolbox:
-                    ToolboxView()
-                case .data:
-                    DataView()
-                case .personalization:
-                    PersonalizationView()
-                case .tunnel:
-                    TunnelView()
-                case .purify:
-                    PurifyView()
-                case .routing:
-                    RoutingView()
-                case .mitm:
-                    MITMView()
-                case .modules:
-                    ModulesView()
-                case .configuration:
-                    ProfileView()
-                case .trustedCertificates:
-                    TrustedCertificatesView()
-                case .trustedNetwork:
-                    TrustedNetworkView()
-                case .diagnosis:
-                    DiagnosisView()
-                case .about:
-                    AboutView()
+                selectedTab = .toolbox
+            }
+            preferredColumn = .detail
+        }
+    }
+
+    var body: some View {
+        NavigationSplitView(preferredCompactColumn: $preferredColumn) {
+            List(selection: sidebarSelection) {
+                Section {
+                    Label(Page.launchpad.name, image: Page.launchpad.symbol)
+                        .tag(Page.launchpad)
+                    sidebarRow(.dashboard)
+                    sidebarRow(.toolbox)
+                }
+                Section("App") {
+                    sidebarRow(.data)
+                    sidebarRow(.personalization)
+                }
+                Section("VPN") {
+                    sidebarRow(.tunnel)
+                    sidebarRow(.purify)
+                    sidebarRow(.routing)
+                    sidebarRow(.mitm)
+                    sidebarRow(.modules)
+                    sidebarRow(.configuration)
+                }
+                Section("Security") {
+                    sidebarRow(.trustedCertificates)
+                    sidebarRow(.trustedNetwork)
+                }
+                Section("More") {
+                    sidebarRow(.diagnosis)
+                    sidebarRow(.about)
                 }
             }
-        } else {
-            TabView(selection: $selectedPage) {
+        } detail: {
+            TabView(selection: $selectedTab) {
                 Tab(Page.launchpad.name, image: Page.launchpad.symbol, value: Page.launchpad) {
                     LaunchpadView()
                 }
-                
                 Tab(Page.dashboard.name, systemImage: Page.dashboard.symbol, value: Page.dashboard) {
                     DashboardView()
                 }
-                
                 Tab(Page.toolbox.name, systemImage: Page.toolbox.symbol, value: Page.toolbox) {
-                    ToolboxView()
-                }
-                
-                if horizontalSizeClass != .compact {
-                    TabSection {
-                        Tab(Page.data.name, systemImage: Page.data.symbol, value: Page.data) {
-                            DataView()
-                        }
-                        
-                        Tab(Page.personalization.name, systemImage: Page.personalization.symbol, value: Page.personalization) {
-                            PersonalizationView()
-                        }
-                    } header: {
-                        Text("App")
-                    }
-                    .tabPlacement(.sidebarOnly)
-                    
-                    TabSection {
-                        Tab(Page.tunnel.name, systemImage: Page.tunnel.symbol, value: Page.tunnel) {
-                            TunnelView()
-                        }
-                        
-                        Tab(Page.purify.name, systemImage: Page.purify.symbol, value: Page.purify) {
-                            PurifyView()
-                        }
-                        
-                        Tab(Page.routing.name, systemImage: Page.routing.symbol, value: Page.routing) {
-                            RoutingView()
-                        }
-                        
-                        Tab(Page.mitm.name, systemImage: Page.mitm.symbol, value: Page.mitm) {
-                            MITMView()
-                        }
-                        
-                        Tab(Page.modules.name, systemImage: Page.modules.symbol, value: Page.modules) {
-                            ModulesView()
-                        }
-
-                        Tab(Page.configuration.name, systemImage: Page.configuration.symbol, value: Page.configuration) {
-                            ProfileView()
-                        }
-                    } header: {
-                        Text("VPN")
-                    }
-                    .tabPlacement(.sidebarOnly)
-                    
-                    TabSection {
-                        Tab(Page.trustedCertificates.name, systemImage: Page.trustedCertificates.symbol, value: Page.trustedCertificates) {
-                            TrustedCertificatesView()
-                        }
-                        
-                        Tab(Page.trustedNetwork.name, systemImage: Page.trustedNetwork.symbol, value: Page.trustedNetwork) {
-                            TrustedNetworkView()
-                        }
-                    } header: {
-                        Text("Security")
-                    }
-                    .tabPlacement(.sidebarOnly)
-                    
-                    TabSection {
-                        Tab(Page.diagnosis.name, systemImage: Page.diagnosis.symbol, value: Page.diagnosis) {
-                            DiagnosisView()
-                        }
-                        
-                        Tab(Page.about.name, systemImage: Page.about.symbol, value: Page.about) {
-                            AboutView()
-                        }
-                    } header: {
-                        Text("More")
-                    }
-                    .tabPlacement(.sidebarOnly)
+                    ToolboxView(path: $toolboxPath)
                 }
             }
-            .tabViewStyle(.sidebarAdaptable)
+            .toolbar(horizontalSizeClass == .regular ? .hidden : .visible, for: .tabBar)
         }
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    private func sidebarRow(_ page: Page) -> some View {
+        Label(page.name, systemImage: page.symbol)
+            .tag(page)
     }
 }
 
