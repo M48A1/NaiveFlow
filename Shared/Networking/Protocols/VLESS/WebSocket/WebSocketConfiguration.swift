@@ -40,7 +40,7 @@ nonisolated struct WebSocketConfiguration: Codable, Equatable, Hashable {
 
     static func parse(from params: [String: String], serverAddress: String) -> WebSocketConfiguration? {
         let host = params["host"] ?? serverAddress
-        let path = (params["path"] ?? "/").removingPercentEncoding ?? "/"
+        let path = params["path"] ?? "/"
         let maxEarlyData = Int(params["ed"] ?? "0") ?? 0
 
         return WebSocketConfiguration(

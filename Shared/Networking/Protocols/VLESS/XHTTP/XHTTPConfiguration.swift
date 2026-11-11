@@ -361,14 +361,13 @@ nonisolated struct XHTTPConfiguration: Codable, Equatable, Hashable {
     
     static func parse(from params: [String: String], serverAddress: String, tlsServerName: String? = nil, realityServerName: String? = nil) -> XHTTPConfiguration? {
         let host = params["host"] ?? tlsServerName ?? realityServerName ?? serverAddress
-        let path = (params["path"] ?? "/").removingPercentEncoding ?? "/"
+        let path = params["path"] ?? "/"
         let modeStr = params["mode"] ?? "auto"
         let mode = XHTTPMode(rawValue: modeStr) ?? .auto
 
         var extra: [String: Any] = [:]
         if let extraStr = params["extra"],
-           let decoded = extraStr.removingPercentEncoding,
-           let data = decoded.data(using: .utf8),
+           let data = extraStr.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             extra = json
         }

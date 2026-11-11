@@ -12,6 +12,7 @@ import Observation
 @Observable
 final class ProxySelection {
     private(set) var selectedConfiguration: ProxyConfiguration?
+    private(set) var runtimeGroups: [RuntimeGroupDisplay] = []
     private(set) var runtimeConfiguration: ProxyConfiguration?
     var usesRuntimeVersion: Bool { runtimeConfiguration != nil }
     var effectiveConfiguration: ProxyConfiguration? { runtimeConfiguration ?? selectedConfiguration }
@@ -35,6 +36,9 @@ final class ProxySelection {
         }
         guard let node = bundle.selectedNode else { return }
         runtimeConfiguration = node
+        runtimeGroups = bundle.displayGroups.isEmpty ? bundle.policyGroups.map {
+            RuntimeGroupDisplay(id: $0.id, name: $0.name, memberCount: $0.memberIDs.count, iconURL: $0.iconURL)
+        } : bundle.displayGroups
     }
 
     /// Leaves text mode without clobbering the saved manual selection. The
@@ -42,6 +46,7 @@ final class ProxySelection {
     /// nor a persisted selection exists to restore.
     private func adoptManualBaseline(_ baselineNode: ProxyConfiguration?) {
         runtimeConfiguration = nil
+        runtimeGroups = []
         guard selectedConfiguration == nil, selectedChainId == nil else { return }
         guard AWCore.getSelectedChainId() == nil, AWCore.getSelectedConfigurationId() == nil else { return }
         guard let baselineNode else { return }

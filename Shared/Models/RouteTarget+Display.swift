@@ -13,7 +13,7 @@ extension RouteTarget {
         case .default:
             return String(localized: "Default")
         case .defaultProxy:
-            return selection?.selectedConfiguration?.name ?? String(localized: "Proxy")
+            return selection?.effectiveConfiguration?.name ?? String(localized: "Proxy")
         case .direct:
             return String(localized: "DIRECT")
         case .reject:

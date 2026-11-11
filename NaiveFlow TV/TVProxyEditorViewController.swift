@@ -99,15 +99,6 @@ class TVProxyEditorViewController: UITableViewController {
     private var socks5Username = ""
     private var socks5Password = ""
 
-    private var rfcUsername = ""
-    private var rfcPassword = ""
-    private var rfcSecurity = "tls"
-    private var rfcSNI = ""
-    private var rfcALPN = ""
-    private var rfcECHEnabled = false
-    private var rfcECH = ""
-    private var rfcFingerprint: TLSFingerprint = .default
-
     private var isNowhere: Bool { selectedProtocol == .nowhere }
     private var isVLESS: Bool { selectedProtocol == .vless }
     private var isVLESSReality: Bool { vlessSecurity == "reality" }
@@ -117,8 +108,6 @@ class TVProxyEditorViewController: UITableViewController {
     private var isAnyTLS: Bool { selectedProtocol == .anytls }
     private var isShadowsocks: Bool { selectedProtocol == .shadowsocks }
     private var isSOCKS5: Bool { selectedProtocol == .socks5 }
-    private var isRFC: Bool { selectedProtocol == .rfc }
-    private var isRFCTLS: Bool { rfcSecurity == "tls" }
     private var isDirect: Bool { selectedProtocol == .direct }
 
     // MARK: - Form Structure
@@ -158,7 +147,6 @@ class TVProxyEditorViewController: UITableViewController {
         case anytlsPassword, anytlsSNI, anytlsALPN, anytlsECHEnabled, anytlsECH, anytlsFingerprint
         case ssPassword, ssMethod
         case socks5Username, socks5Password
-        case rfcUsername, rfcPassword, rfcSecurity, rfcSNI, rfcALPN, rfcECHEnabled, rfcECH, rfcFingerprint
     }
 
     private var formSections: [(title: String?, rows: [RowType])] {
@@ -176,7 +164,6 @@ class TVProxyEditorViewController: UITableViewController {
             ("AnyTLS", "anytls"),
             ("Shadowsocks", "shadowsocks"),
             ("SOCKS5", "socks5"),
-            ("RFC", "rfc"),
             ("Direct", "direct"),
         ]
         sections.append((String(localized: "Protocol"), [
@@ -226,9 +213,6 @@ class TVProxyEditorViewController: UITableViewController {
         } else if isSOCKS5 {
             serverRows.append(.text(label: String(localized: "Username"), value: socks5Username, placeholder: String(localized: "Username"), key: .socks5Username))
             serverRows.append(.text(label: String(localized: "Password"), value: socks5Password, placeholder: String(localized: "Password"), key: .socks5Password))
-        } else if isRFC {
-            serverRows.append(.text(label: String(localized: "Username"), value: rfcUsername, placeholder: String(localized: "Username"), key: .rfcUsername))
-            serverRows.append(.text(label: String(localized: "Password"), value: rfcPassword, placeholder: String(localized: "Password"), key: .rfcPassword))
         }
         if !isDirect {
             sections.append((String(localized: "Server"), serverRows))
@@ -324,25 +308,6 @@ class TVProxyEditorViewController: UITableViewController {
             }
             anytlsRows.append(.selection(label: String(localized: "Fingerprint"), value: anytlsFingerprint.displayName, options: TLSFingerprint.allCases.map { ($0.displayName, $0.rawValue) }, key: .anytlsFingerprint))
             sections.append((String(localized: "TLS"), anytlsRows))
-        } else if isRFC {
-            var rfcRows: [RowType] = [
-                .selection(
-                    label: String(localized: "Security", comment: "Security for RFC protocol"),
-                    value: isRFCTLS ? String(localized: "TLS") : String(localized: "None"),
-                    options: [(String(localized: "None"), "none"), (String(localized: "TLS"), "tls")],
-                    key: .rfcSecurity
-                ),
-            ]
-            if isRFCTLS {
-                rfcRows.append(.text(label: String(localized: "SNI"), value: rfcSNI, placeholder: String(localized: "SNI"), key: .rfcSNI))
-                rfcRows.append(.text(label: String(localized: "ALPN"), value: rfcALPN, placeholder: String(localized: "h2,http/1.1"), key: .rfcALPN))
-                rfcRows.append(.toggle(label: String(localized: "Enable ECH"), isOn: rfcECHEnabled, key: .rfcECHEnabled))
-                if rfcECHEnabled {
-                    rfcRows.append(.text(label: String(localized: "ECH Config"), value: rfcECH, placeholder: String(localized: "Base64"), key: .rfcECH))
-                }
-                rfcRows.append(.selection(label: String(localized: "Fingerprint"), value: rfcFingerprint.displayName, options: TLSFingerprint.allCases.map { ($0.displayName, $0.rawValue) }, key: .rfcFingerprint))
-            }
-            sections.append((String(localized: "TLS"), rfcRows))
         }
 
         if isVLESS && vlessTransport == "xhttp" {
@@ -497,7 +462,6 @@ class TVProxyEditorViewController: UITableViewController {
         if isAnyTLS { return !anytlsPassword.isEmpty }
         if isShadowsocks { return !ssPassword.isEmpty }
         if isSOCKS5 { return true }
-        if isRFC { return !rfcUsername.contains(":") }
         return false
     }
 
@@ -734,15 +698,6 @@ class TVProxyEditorViewController: UITableViewController {
         case .ssMethod: ssMethod = value
         case .socks5Username: socks5Username = value
         case .socks5Password: socks5Password = value
-        case .rfcUsername: rfcUsername = value
-        case .rfcPassword: rfcPassword = value
-        case .rfcSecurity: rfcSecurity = value
-        case .rfcSNI: rfcSNI = value
-        case .rfcALPN: rfcALPN = value
-        case .rfcECHEnabled: rfcECHEnabled = value == "true"
-        case .rfcECH: rfcECH = value
-        case .rfcFingerprint:
-            if let fingerprint = TLSFingerprint(rawValue: value) { rfcFingerprint = fingerprint }
         }
     }
 
@@ -867,17 +822,6 @@ class TVProxyEditorViewController: UITableViewController {
         case .socks5(let socks5):
             socks5Username = socks5.username ?? ""
             socks5Password = socks5.password ?? ""
-        case .rfc(let rfc):
-            rfcUsername = rfc.username ?? ""
-            rfcPassword = rfc.password ?? ""
-            rfcSecurity = rfc.securityLayer.tag
-            if let tls = rfc.tlsConfiguration {
-                rfcSNI = tls.serverName
-                rfcALPN = tls.alpn?.joined(separator: ",") ?? ""
-                rfcECHEnabled = tls.echEnabled
-                rfcECH = tls.echConfig ?? ""
-                rfcFingerprint = tls.fingerprint
-            }
         case .direct:
             break
         }
@@ -942,7 +886,7 @@ class TVProxyEditorViewController: UITableViewController {
             port = parsedPort
         }
         let parsedUUID: UUID
-        if isNowhere || isHysteria || isTrojan || isAnyTLS || isShadowsocks || isSOCKS5 || isRFC || isDirect {
+        if isNowhere || isHysteria || isTrojan || isAnyTLS || isShadowsocks || isSOCKS5 || isDirect {
             parsedUUID = existingConfiguration?.id ?? UUID()
         } else {
             guard let parsed = UUID(uuidString: vlessUUID) else { return }
@@ -1096,31 +1040,6 @@ class TVProxyEditorViewController: UITableViewController {
             )
         case .direct:
             outbound = .direct(DirectConfiguration())
-        case .rfc:
-            let securityLayer: GenericSecurityLayer
-            if isRFCTLS {
-                let sni = rfcSNI.isEmpty ? bareAddress : rfcSNI
-                let alpn: [String]? = rfcALPN.isEmpty ? nil : rfcALPN.split(separator: ",").map { String($0) }
-                let ech = rfcECH.trimmingCharacters(in: .whitespacesAndNewlines)
-                securityLayer = .tls(
-                    TLSConfiguration(
-                        serverName: sni,
-                        alpn: alpn,
-                        echEnabled: rfcECHEnabled,
-                        echConfig: rfcECHEnabled && !ech.isEmpty ? ech : nil,
-                        fingerprint: rfcFingerprint
-                    )
-                )
-            } else {
-                securityLayer = .none
-            }
-            outbound = .rfc(
-                RFCConfiguration(
-                    username: rfcUsername.isEmpty ? nil : rfcUsername,
-                    password: rfcPassword.isEmpty ? nil : rfcPassword,
-                    securityLayer: securityLayer
-                )
-            )
         }
 
         let configuration = ProxyConfiguration(

@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import NetworkExtension
 import Observation
 
 @MainActor
@@ -31,18 +30,8 @@ class LogsModel {
         logs = []
     }
 
-    private func resolveSession() async -> NETunnelProviderSession? {
-        let managers = try? await NETunnelProviderManager.loadAllFromPreferences()
-        guard let connection = managers?.first?.connection as? NETunnelProviderSession,
-              connection.status == .connected else { return nil }
-        return connection
-    }
-    
-    func poll() async {
-        guard let session = await resolveSession() else { return }
-        guard let data = try? JSONEncoder().encode(TunnelMessage.fetchLogs) else { return }
-
-        let response = await ProviderMessageConcurrencyBridge.send(data, over: session)
+    func poll(using tunnel: TunnelController) async {
+        let response = await tunnel.send(.fetchLogs)
 
         guard !Task.isCancelled else { return }
 

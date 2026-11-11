@@ -27,7 +27,7 @@ struct MacHomeView: View {
     @State private var page: MacPage? = .overview
     @State private var query = ""
     @State private var showingImport = false
-    @State private var runtimeGroups: [RuntimeGroupDisplay] = []
+    private var runtimeGroups: [RuntimeGroupDisplay] { selection.runtimeGroups }
     @State private var editingGroup: ProxyGroup?
     @State private var sharingNode: ProxyConfiguration?
     @State private var copiedLink = false
@@ -115,7 +115,6 @@ struct MacHomeView: View {
             MacGroupIconEditor(group: group) { groupStore.update($0) }
         }
         .task {
-            loadRuntimeGroups()
             while !Task.isCancelled {
                 requests.pruneExpired()
                 if connected {
@@ -125,7 +124,7 @@ struct MacHomeView: View {
                     }
                     if !paused {
                         if currentPage == .requests { await requests.poll(using: tunnel) }
-                        if currentPage == .logs { await logs.poll() }
+                        if currentPage == .logs { await logs.poll(using: tunnel) }
                     }
                 }
                 do { try await Task.sleep(for: .seconds(1)) }
@@ -133,8 +132,7 @@ struct MacHomeView: View {
             }
         }
         .onChange(of: connected) { _, _ in samples = [] }
-        .onChange(of: page) { _, _ in query = ""; paused = false; loadRuntimeGroups() }
-        .onChange(of: selection.runtimeConfiguration) { _, _ in loadRuntimeGroups() }
+        .onChange(of: page) { _, _ in query = ""; paused = false }
     }
 
     private var overview: some View {
@@ -295,18 +293,6 @@ struct MacHomeView: View {
         }
         .padding(12)
         .background(.background, in: RoundedRectangle(cornerRadius: 10))
-    }
-
-    private func loadRuntimeGroups() {
-        guard selection.usesRuntimeVersion,
-              let head = try? RuntimeBundleStore().head(),
-              let bundle = try? RuntimeBundleStore().load(head.current) else {
-            runtimeGroups = []
-            return
-        }
-        runtimeGroups = bundle.displayGroups.isEmpty ? bundle.policyGroups.map {
-            RuntimeGroupDisplay(id: $0.id, name: $0.name, memberCount: $0.memberIDs.count, iconURL: $0.iconURL)
-        } : bundle.displayGroups
     }
 
     private var requestList: some View {

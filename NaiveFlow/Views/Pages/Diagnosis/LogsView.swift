@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct LogsView: View {
+    @Environment(TunnelController.self) private var tunnel
     @State private var logsModel = LogsModel()
     @State private var selection = Set<UUID>()
     @State private var editMode: EditMode = .inactive
@@ -65,7 +66,7 @@ struct LogsView: View {
             guard editMode == .inactive else { return }
             selection.removeAll()
             while !Task.isCancelled {
-                await logsModel.poll()
+                await logsModel.poll(using: tunnel)
                 try? await Task.sleep(for: .seconds(1))
             }
         }

@@ -38,7 +38,7 @@ struct ProxiesView: View {
         }
     }
     
-    @State private var runtimeGroups: [RuntimeGroupDisplay] = []
+    private var runtimeGroups: [RuntimeGroupDisplay] { proxySelection.runtimeGroups }
     @State private var showingAddSheet = false
     @State private var showingManualAddSheet = false
     @State private var showingChainAddSheet = false
@@ -230,21 +230,7 @@ struct ProxiesView: View {
         }
         .onAppear {
             unfoldSelectedProxyContainer()
-            loadRuntimeGroups()
         }
-        .onChange(of: proxySelection.runtimeConfiguration) { _, _ in loadRuntimeGroups() }
-    }
-    
-    private func loadRuntimeGroups() {
-        guard proxySelection.usesRuntimeVersion,
-              let head = try? RuntimeBundleStore().head(),
-              let bundle = try? RuntimeBundleStore().load(head.current) else {
-            runtimeGroups = []
-            return
-        }
-        runtimeGroups = bundle.displayGroups.isEmpty ? bundle.policyGroups.map {
-            RuntimeGroupDisplay(id: $0.id, name: $0.name, memberCount: $0.memberIDs.count, iconURL: $0.iconURL)
-        } : bundle.displayGroups
     }
 
     // MARK: - Title

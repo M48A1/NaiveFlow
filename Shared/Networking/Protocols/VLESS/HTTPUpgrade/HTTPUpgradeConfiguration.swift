@@ -30,7 +30,7 @@ nonisolated struct HTTPUpgradeConfiguration: Codable, Equatable, Hashable {
 
     static func parse(from params: [String: String], serverAddress: String) -> HTTPUpgradeConfiguration? {
         let host = params["host"] ?? serverAddress
-        var path = (params["path"] ?? "/").removingPercentEncoding ?? "/"
+        var path = params["path"] ?? "/"
         if !path.hasPrefix("/") {
             path = "/" + path
         }
