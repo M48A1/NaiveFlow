@@ -34,6 +34,7 @@ class ConnectionStats {
     private(set) var uploadBytesPerSecond: Int64?
     private(set) var downloadBytesPerSecond: Int64?
 
+    @ObservationIgnored private var presentationActive = true
     @ObservationIgnored private var statsTask: Task<Void, Never>?
     @ObservationIgnored private var send: (@Sendable (Data) async -> Data?)?
     @ObservationIgnored private var lastRateSample: (bytesIn: Int64, bytesOut: Int64, at: ContinuousClock.Instant)?
@@ -41,7 +42,24 @@ class ConnectionStats {
     
     func startPolling(send: @escaping @Sendable (Data) async -> Data?) {
         self.send = send
-        guard statsTask == nil else { return }
+        beginPolling()
+    }
+
+    /// Pause UI sampling while the app is inactive; the VPN continues independently.
+    func setPresentationActive(_ active: Bool) {
+        guard active != presentationActive else { return }
+        presentationActive = active
+        generation &+= 1
+        statsTask?.cancel()
+        statsTask = nil
+        lastRateSample = nil
+        uploadBytesPerSecond = nil
+        downloadBytesPerSecond = nil
+        if active { beginPolling() }
+    }
+
+    private func beginPolling() {
+        guard presentationActive, send != nil, statsTask == nil else { return }
         statsTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1), precision: .relaxed)

@@ -9,6 +9,7 @@ import SwiftUI
 
 @main
 struct NaiveFlowApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var container: AppContainer
     @State private var operations: Operations
     @State private var settings: AppSettings
@@ -53,6 +54,9 @@ struct NaiveFlowApp: App {
                 .environment(settings)
                 .environment(mitmCertificateController)
                 .environment(deepLinkManager)
+        }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            container.stats.setPresentationActive(phase == .active)
         }
     }
 }

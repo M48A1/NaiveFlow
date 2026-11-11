@@ -8,11 +8,14 @@
 import SwiftUI
 
 struct LogsView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(TunnelController.self) private var tunnel
     @State private var logsModel = LogsModel()
     @State private var selection = Set<UUID>()
     @State private var editMode: EditMode = .inactive
     
+    private var pollingEnabled: Bool { scenePhase == .active && tunnel.isTunnelActive && editMode == .inactive }
+
     var body: some View {
         let logs = logsModel.logs
         List(logs.reversed(), selection: $selection) { entry in
@@ -62,8 +65,19 @@ struct LogsView: View {
                 }
             }
         }
-        .task(id: editMode) {
-            guard editMode == .inactive else { return }
+        .onDisappear {
+            logsModel.clear()
+            selection.removeAll()
+            editMode = .inactive
+        }
+        .onChange(of: tunnel.isTunnelActive) { _, connected in
+            if !connected { logsModel.clear() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active && editMode == .inactive { logsModel.clear() }
+        }
+        .task(id: pollingEnabled) {
+            guard pollingEnabled else { return }
             selection.removeAll()
             while !Task.isCancelled {
                 await logsModel.poll(using: tunnel)

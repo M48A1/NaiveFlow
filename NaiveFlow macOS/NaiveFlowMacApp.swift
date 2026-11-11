@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct NaiveFlowMacApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var container: AppContainer
 
     init() {
@@ -25,6 +26,9 @@ struct NaiveFlowMacApp: App {
                 .environment(container.mitmRuleSetStore)
                 .environment(container.moduleStore)
                 .environment(container.certificateStore)
+        }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            container.stats.setPresentationActive(phase == .active)
         }
         .defaultSize(width: 1120, height: 760)
         .windowResizability(.contentMinSize)

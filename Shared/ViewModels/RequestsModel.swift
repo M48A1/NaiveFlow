@@ -74,6 +74,7 @@ class RequestsModel {
     private(set) var requests: [Entry] = []
     private(set) var refreshState: RefreshState = .loading
     @ObservationIgnored private let now: () -> Date
+    @ObservationIgnored private var snapshotGeneration: UInt64 = 0
     @ObservationIgnored private var clearedThrough: Date?
 
     init(now: @escaping () -> Date = Date.init) {
@@ -86,7 +87,15 @@ class RequestsModel {
         requests.removeAll { $0.timestamp < cutoff }
     }
 
+    /// Drop view-owned copies without changing the user's clear-history boundary.
+    func releaseSnapshot() {
+        snapshotGeneration &+= 1
+        requests = []
+        refreshState = .loading
+    }
+
     func clear() {
+        snapshotGeneration &+= 1
         clearedThrough = now()
         requests = []
     }
@@ -103,6 +112,7 @@ class RequestsModel {
             case .failed: guard entry.state == .failed else { return false }
             case .rejected: guard entry.state == .rejected else { return false }
             }
+            guard !terms.isEmpty else { return true }
             let searchable = [entry.host, String(entry.port), entry.protocol.rawValue,
                               entry.outbound?.name, entry.ruleSetName, entry.activity?.failure]
                 .compactMap { $0 }.joined(separator: " ")
@@ -143,8 +153,9 @@ class RequestsModel {
 
     func poll(using tunnel: TunnelController) async {
         pruneExpired()
+        let generation = snapshotGeneration
         let response = await tunnel.send(.fetchRequests)
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, generation == snapshotGeneration else { return }
         pruneExpired()
         guard let response,
               let payload = try? JSONDecoder().decode(RequestsResponse.self, from: response) else {

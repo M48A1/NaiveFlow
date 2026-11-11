@@ -24,16 +24,19 @@ class LogsModel {
         let message: String
     }
 
+    @ObservationIgnored private var generation: UInt64 = 0
     private(set) var logs: [LogEntry] = []
 
     func clear() {
+        generation &+= 1
         logs = []
     }
 
     func poll(using tunnel: TunnelController) async {
+        let generation = self.generation
         let response = await tunnel.send(.fetchLogs)
 
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, generation == self.generation else { return }
 
         guard let response,
               let payload = try? JSONDecoder().decode(LogsResponse.self, from: response) else { return }

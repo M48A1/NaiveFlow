@@ -17,6 +17,7 @@ private enum MacPage: String, CaseIterable, Identifiable {
 }
 
 struct MacHomeView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(TunnelController.self) private var tunnel
     @Environment(ConfigurationStore.self) private var configurationStore
     @Environment(ProxySelection.self) private var selection
@@ -47,6 +48,13 @@ struct MacHomeView: View {
 
     private var connected: Bool { tunnel.rawStatus == .connected }
     private var currentPage: MacPage { page ?? .overview }
+    private var monitoring: MacPage? {
+        guard scenePhase == .active, connected else { return nil }
+        if currentPage == .overview || currentPage == .requests { return currentPage }
+        return currentPage == .logs && !paused ? .logs : nil
+    }
+    private var sortedRoutes: [RouteTrafficEntry] { stats.routes.sorted { $0.totalBytes > $1.totalBytes } }
+
 
     var body: some View {
         NavigationSplitView {
@@ -114,29 +122,44 @@ struct MacHomeView: View {
         .sheet(item: $editingGroup) { group in
             MacGroupIconEditor(group: group) { groupStore.update($0) }
         }
-        .task {
+        .task(id: monitoring) {
+            guard let monitoring else { return }
             while !Task.isCancelled {
-                requests.pruneExpired()
-                if connected {
+                switch monitoring {
+                case .overview:
                     if let download = stats.downloadBytesPerSecond, let upload = stats.uploadBytesPerSecond {
+                        if samples.count == 60 { samples.removeFirst() }
                         samples.append(TrafficSample(date: .now, download: download, upload: upload))
-                        samples = Array(samples.suffix(60))
                     }
-                    if !paused {
-                        if currentPage == .requests { await requests.poll(using: tunnel) }
-                        if currentPage == .logs { await logs.poll(using: tunnel) }
-                    }
+                case .requests:
+                    if paused { requests.pruneExpired() }
+                    else { await requests.poll(using: tunnel) }
+                case .logs: await logs.poll(using: tunnel)
+                case .policies: break
                 }
                 do { try await Task.sleep(for: .seconds(1)) }
                 catch { break }
             }
         }
-        .onChange(of: connected) { _, _ in samples = [] }
-        .onChange(of: page) { _, _ in query = ""; paused = false }
+        .onChange(of: connected) { _, connected in
+            samples = []
+            if !connected { requests.releaseSnapshot(); logs.clear() }
+        }
+        .onChange(of: page) { _, _ in
+            query = ""; paused = false
+            if currentPage != .requests { requests.releaseSnapshot() }
+            if currentPage != .logs { logs.clear() }
+            if currentPage != .overview { samples = [] }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { requests.releaseSnapshot(); logs.clear(); samples = [] }
+        }
+
     }
 
     private var overview: some View {
-        ScrollView {
+        let routes = sortedRoutes
+        return ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack {
                     VStack(alignment: .leading, spacing: 6) {
@@ -145,7 +168,12 @@ struct MacHomeView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("管理策略", systemImage: "arrow.triangle.branch") { page = .policies }
+                    if selection.effectiveConfiguration == nil {
+                        Button("导入节点", systemImage: "plus") { showingImport = true }
+                            .buttonStyle(.borderedProminent)
+                    } else {
+                        Button("管理策略", systemImage: "arrow.triangle.branch") { page = .policies }
+                    }
                 }
                 HStack(spacing: 12) {
                     metric("下载速度", value: rate(stats.downloadBytesPerSecond), symbol: "arrow.down", color: .blue)
@@ -197,14 +225,14 @@ struct MacHomeView: View {
                     if stats.routes.isEmpty {
                         Text("暂无流量记录").foregroundStyle(.secondary).padding(.vertical, 12)
                     } else {
-                        ForEach(stats.routes.sorted { $0.totalBytes > $1.totalBytes }) { entry in
+                        ForEach(routes) { entry in
                             HStack {
                                 Text(routeName(entry.target))
                                 Spacer()
                                 Text("↓ \(formatBytes(entry.bytesIn))   ↑ \(formatBytes(entry.bytesOut))")
                                     .foregroundStyle(.secondary).monospacedDigit()
                             }
-                            if entry.id != stats.routes.sorted(by: { $0.totalBytes > $1.totalBytes }).last?.id { Divider() }
+                            if entry.id != routes.last?.id { Divider() }
                         }
                     }
                 }
@@ -296,9 +324,10 @@ struct MacHomeView: View {
     }
 
     private var requestList: some View {
-        VStack(spacing: 12) {
+        let entries = requests.visibleRequests(query: query)
+        return VStack(spacing: 12) {
             recordControls
-            Table(requests.visibleRequests(query: query)) {
+            Table(entries) {
                 TableColumn("时间") { Text($0.timestamp, style: .time).monospacedDigit() }.width(85)
                 TableColumn("主机") { Text($0.host).textSelection(.enabled) }
                 TableColumn("协议") { Text($0.protocol.rawValue.uppercased()) }.width(55)
@@ -307,7 +336,7 @@ struct MacHomeView: View {
                 TableColumn("策略") { Text(routeName($0.displayRouteTarget)) }
             }
             .overlay {
-                if requests.visibleRequests(query: query).isEmpty {
+                if entries.isEmpty {
                     ContentUnavailableView(connected ? "暂无匹配请求" : "尚未连接", systemImage: "list.bullet.rectangle",
                                            description: Text(connected ? "新请求会自动显示，可按主机、规则或出站搜索。" : "启动隧道后查看请求记录。"))
                 }
@@ -320,9 +349,10 @@ struct MacHomeView: View {
     }
 
     private var logList: some View {
-        VStack(spacing: 12) {
+        let entries = filteredLogs
+        return VStack(spacing: 12) {
             recordControls
-            Table(filteredLogs) {
+            Table(entries) {
                 TableColumn("时间") { Text($0.timestamp, style: .time).monospacedDigit() }.width(85)
                 TableColumn("级别") { entry in
                     Text(entry.level.rawValue.uppercased())
@@ -331,7 +361,7 @@ struct MacHomeView: View {
                 TableColumn("消息") { Text($0.message).textSelection(.enabled) }
             }
             .overlay {
-                if filteredLogs.isEmpty {
+                if entries.isEmpty {
                     ContentUnavailableView(query.isEmpty ? "暂无日志" : "没有匹配的日志", systemImage: "text.alignleft",
                                            description: Text(query.isEmpty ? "连接后自动读取隧道日志。" : "尝试其他关键词。"))
                 }

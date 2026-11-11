@@ -1,6 +1,8 @@
 import SwiftUI
+import UIKit
 
 struct RequestsView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(TunnelController.self) private var tunnel
     @State private var model = RequestsModel()
     @Environment(ConfigurationStore.self) private var configStore
@@ -13,12 +15,14 @@ struct RequestsView: View {
     @State private var query = ""
     @State private var filter: RequestsModel.Filter = .all
     @State private var selectedProtocol: RequestsModel.Entry.Transport?
+    @State private var showingExport = false
+    @State private var exportText = ""
     @State private var selectedRequest: RequestsModel.Entry?
 
     private var visible: [RequestsModel.Entry] {
         model.visibleRequests(query: query, filter: filter, protocol: selectedProtocol)
     }
-    private var pollingEnabled: Bool { !paused && editMode == .inactive }
+    private var pollingEnabled: Bool { scenePhase == .active && tunnel.isTunnelActive && !paused && editMode == .inactive }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -77,7 +81,10 @@ struct RequestsView: View {
                     Menu {
                         Button("Select", systemImage: "checkmark.circle") { editMode = .active }
                         Toggle("Follow Latest", isOn: $followLatest)
-                        ShareLink(item: model.export(visible)) {
+                        Button {
+                            exportText = model.export(visible)
+                            showingExport = true
+                        } label: {
                             Label("Export Visible Records", systemImage: "square.and.arrow.up")
                         }
                         .disabled(visible.isEmpty)
@@ -101,22 +108,33 @@ struct RequestsView: View {
             }
         }
         .onChange(of: visible.map(\.id)) { _, ids in selection.formIntersection(ids) }
-        .task {
-            while !Task.isCancelled {
-                model.pruneExpired()
-                try? await Task.sleep(for: .seconds(1))
-            }
+        .sheet(isPresented: $showingExport, onDismiss: { exportText = "" }) {
+            RequestExportSheet(text: exportText)
         }
-        .task(id: pollingEnabled) {
-            guard pollingEnabled else { return }
+        .onDisappear {
+            model.releaseSnapshot()
+            selection.removeAll()
+            editMode = .inactive
+            paused = false
+        }
+        .onChange(of: tunnel.isTunnelActive) { _, connected in
+            if !connected { model.releaseSnapshot() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active && editMode == .inactive && selectedRequest == nil { model.releaseSnapshot() }
+        }
+        .task(id: [scenePhase == .active, pollingEnabled]) {
+            guard scenePhase == .active else { return }
             while !Task.isCancelled {
-                await model.poll(using: tunnel)
+                if pollingEnabled { await model.poll(using: tunnel) }
+                else { model.pruneExpired() }
                 try? await Task.sleep(for: .seconds(1))
             }
         }
     }
 
     private var monitoringStatus: String {
+        guard tunnel.isTunnelActive else { return String(localized: "Not Connected") }
         guard pollingEnabled else { return String(localized: "Updates Paused") }
         switch model.refreshState {
         case .loading: return String(localized: "Connecting")
@@ -333,4 +351,12 @@ private func formatBytes(_ bytes: Int64) -> String {
 
 private func formatDuration(_ duration: TimeInterval) -> String {
     duration < 1 ? String(format: "%.0f ms", duration * 1000) : String(format: "%.1f s", duration)
+}
+
+private struct RequestExportSheet: UIViewControllerRepresentable {
+    let text: String
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: [text], applicationActivities: nil)
+    }
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }

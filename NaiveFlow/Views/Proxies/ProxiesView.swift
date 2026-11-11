@@ -129,7 +129,7 @@ struct ProxiesView: View {
                     ContentUnavailableView("No Chains", systemImage: "point.bottomleft.forward.to.point.topright.scurvepath.fill")
                 } else {
                     ScrollView {
-                        VStack(spacing: 10) {
+                        LazyVStack(spacing: 10) {
                             if proxyType == .servers {
                                 ForEach(standaloneItems) { item in
                                     proxyRow(item)
