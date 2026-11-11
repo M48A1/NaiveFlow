@@ -1,6 +1,96 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+  "Overview": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "概览"
+        }
+      }
+    }
+  },
+  "Policy": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "策略"
+        }
+      }
+    }
+  },
+  "Rule": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "规则模式"
+        }
+      }
+    }
+  },
+  "Global": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "全局代理"
+        }
+      }
+    }
+  },
+  "Outbound Mode": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "出站模式"
+        }
+      }
+    }
+  },
+  "Routing Rules": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "分流规则"
+        }
+      }
+    }
+  },
+  "Activity": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "网络活动"
+        }
+      }
+    }
+  },
+  "Active Connections": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "活跃连接"
+        }
+      }
+    }
+  },
+  "Tools": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "工具"
+        }
+      }
+    }
+  },
     "The first 3 private Wi-Fi client addresses can connect. A device slot is freed when its last connection closes." : {
       "localizations" : {
         "zh-Hans" : {

@@ -76,7 +76,7 @@ struct ToolboxView: View {
                 case .trustedNetwork: TrustedNetworkView()
                 case .diagnosis: DiagnosisView()
                 case .about: AboutView()
-                case .launchpad, .dashboard, .toolbox: EmptyView()
+                case .launchpad, .dashboard, .proxies, .requests, .toolbox: EmptyView()
                 }
             }
         }

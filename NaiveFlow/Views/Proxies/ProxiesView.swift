@@ -13,6 +13,8 @@ private enum ProxyType: String {
 }
 
 struct ProxiesView: View {
+    var isPresentedAsSheet = true
+
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     @Environment(Operations.self) private var operations
@@ -36,6 +38,7 @@ struct ProxiesView: View {
         }
     }
     
+    @State private var runtimeGroups: [RuntimeGroupDisplay] = []
     @State private var showingAddSheet = false
     @State private var showingManualAddSheet = false
     @State private var showingChainAddSheet = false
@@ -101,6 +104,21 @@ struct ProxiesView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 if proxySelection.usesRuntimeVersion {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 12) {
+                            ForEach(runtimeGroups, id: \.id) { group in
+                                HStack(spacing: 10) {
+                                    ProxyGroupIconView(iconURL: group.iconURL)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(group.name).font(.headline)
+                                        Text("\(group.memberCount) 个成员").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(12)
+                                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                            }
+                        }.padding(.horizontal)
+                    }
                     Text("The active configuration controls routing. Edit Configuration to change it; these lists remain your manual library.")
                         .font(.footnote).foregroundStyle(.secondary).padding()
                 }
@@ -149,7 +167,7 @@ struct ProxiesView: View {
                 }
             }
             }
-            .navigationTitle(title)
+            .navigationTitle(isPresentedAsSheet ? title : Text("Policy"))
             .toolbar { toolbar }
             .containerBackground(Color(.systemGroupedBackground), for: .navigation)
         }
@@ -212,9 +230,23 @@ struct ProxiesView: View {
         }
         .onAppear {
             unfoldSelectedProxyContainer()
+            loadRuntimeGroups()
         }
+        .onChange(of: proxySelection.runtimeConfiguration) { _, _ in loadRuntimeGroups() }
     }
     
+    private func loadRuntimeGroups() {
+        guard proxySelection.usesRuntimeVersion,
+              let head = try? RuntimeBundleStore().head(),
+              let bundle = try? RuntimeBundleStore().load(head.current) else {
+            runtimeGroups = []
+            return
+        }
+        runtimeGroups = bundle.displayGroups.isEmpty ? bundle.policyGroups.map {
+            RuntimeGroupDisplay(id: $0.id, name: $0.name, memberCount: $0.memberIDs.count, iconURL: $0.iconURL)
+        } : bundle.displayGroups
+    }
+
     // MARK: - Title
     private var title: Text {
         switch proxyType {
@@ -229,11 +261,11 @@ struct ProxiesView: View {
     
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .cancellationAction) {
-            Button {
-                dismiss()
-            } label: {
-                Label("Close", systemImage: "xmark")
+        if isPresentedAsSheet {
+            ToolbarItem(placement: .cancellationAction) {
+                Button { dismiss() } label: {
+                    Label("Close", systemImage: "xmark")
+                }
             }
         }
         
@@ -381,11 +413,7 @@ struct ProxiesView: View {
                 }
             } label: {
                 HStack(spacing: isExpanded ? 20 : 10) {
-                    Image(systemName: "folder")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: iconSize, height: iconSize)
-                        .foregroundStyle(.secondary)
+                    ProxyGroupIconView(iconURL: group.iconURL, size: iconSize)
                     Text(group.name)
                         .font(.body.weight(.medium))
                     Spacer()
@@ -671,6 +699,7 @@ struct ProxiesView: View {
                     }
             }
             .padding()
+            .padding(.trailing, 44)
             .background {
                 RoundedRectangle(cornerRadius: 24)
                     .fill(Color(.secondarySystemGroupedBackground))
@@ -679,6 +708,19 @@ struct ProxiesView: View {
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 24))
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .trailing) {
+            if let configuration = config(item.id), !configuration.toURLString().isEmpty {
+                ShareLink(item: configuration.toURLString(), preview: SharePreview(item.name)) {
+                    Image(systemName: "square.and.arrow.up")
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tint)
+                .accessibilityLabel(Text("Share"))
+                .padding(.trailing, 8)
+            }
+        }
         .contextMenu {
             Section {
                 if group == nil, item.subscriptionId == nil, !serverGroups.isEmpty {
@@ -711,8 +753,8 @@ struct ProxiesView: View {
                 } label: {
                     Label("Copy Link", systemImage: "doc.on.doc")
                 }
-                if let urlString = config(item.id)?.toURLString(), let url = URL(string: urlString) {
-                    ShareLink(item: url, preview: SharePreview(item.name)) {
+                if let urlString = config(item.id)?.toURLString(), !urlString.isEmpty {
+                    ShareLink(item: urlString, preview: SharePreview(item.name)) {
                         Label("Share", systemImage: "square.and.arrow.up")
                     }
                 }

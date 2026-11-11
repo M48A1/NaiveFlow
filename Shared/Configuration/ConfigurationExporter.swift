@@ -25,6 +25,7 @@ nonisolated struct ConfigurationExportSource: Sendable, Equatable {
         var name: String
         /// Members by name, resolved against the exported proxies and groups.
         var members: [String]
+        var iconURL: String? = nil
     }
 
     struct RuleSet: Sendable, Equatable {
@@ -298,7 +299,12 @@ nonisolated extension State {
                 notes.append("Skipped group '\(name)': none of its members could be exported.")
                 continue
             }
-            groupLines.append("\(name) = select, \(members.joined(separator: ", "))")
+            var line = "\(name) = select, \(members.joined(separator: ", "))"
+            if let url = ProxyGroupIconURL.parse(group.iconURL) {
+                // Quote URLs so commas and comment markers remain part of the value.
+                line += ", icon-url=\"\(url.absoluteString.replacingOccurrences(of: "\"", with: "%22"))\""
+            }
+            groupLines.append(line)
         }
         counts.groups = groupLines.count
     }

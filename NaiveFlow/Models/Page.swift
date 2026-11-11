@@ -10,6 +10,8 @@ import Foundation
 enum Page: Equatable, Hashable, Identifiable, CaseIterable {
     case launchpad
     case dashboard
+    case proxies
+    case requests
     case toolbox
     case data
     case personalization
@@ -26,6 +28,8 @@ enum Page: Equatable, Hashable, Identifiable, CaseIterable {
     
     var id: Int {
         switch self {
+        case .proxies: 15
+        case .requests: 16
         case .launchpad: 0
         case .dashboard: 1
         case .toolbox: 2
@@ -46,7 +50,9 @@ enum Page: Equatable, Hashable, Identifiable, CaseIterable {
     
     var name: String {
         switch self {
-        case .launchpad: String(localized: "Launchpad")
+        case .proxies: String(localized: "Policy")
+        case .requests: String(localized: "Requests")
+        case .launchpad: String(localized: "Overview")
         case .dashboard: String(localized: "Dashboard")
         case .toolbox: String(localized: "Toolbox")
         case .data: String(localized: "Data")
@@ -66,7 +72,9 @@ enum Page: Equatable, Hashable, Identifiable, CaseIterable {
     
     var symbol: String {
         switch self {
-        case .launchpad: "naiveflow"
+        case .proxies: "arrow.triangle.branch"
+        case .requests: "list.bullet.rectangle.portrait"
+        case .launchpad: "switch.2"
         case .dashboard: "rectangle.3.group"
         case .toolbox: "latch.2.case"
         case .data: "cylinder.split.1x2"

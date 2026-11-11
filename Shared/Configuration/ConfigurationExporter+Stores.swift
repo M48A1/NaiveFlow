@@ -58,7 +58,7 @@ extension ConfigurationExportSource {
         var groups: [Group] = []
         for group in groupStore.groups(of: .servers) {
             groups.append(
-                Group(name: group.name, members: group.memberIds.compactMap { nodeNames[$0] })
+                Group(name: group.name, members: group.memberIds.compactMap { nodeNames[$0] }, iconURL: group.iconURL)
             )
         }
         let chainGroups = groupStore.groups(of: .chains)

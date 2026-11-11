@@ -19,11 +19,7 @@ struct LaunchpadView: View {
     }
 
     var body: some View {
-        MainControlView(connectionEffectsEnabled: connectionEffectsEnabled)
-            .background(
-                BackgroundGradient()
-                    .ignoresSafeArea()
-            )
+        MainControlView()
             .sensoryFeedback(trigger: isConnected) { _, _ in
                 guard connectionEffectsEnabled else { return nil }
                 return .impact

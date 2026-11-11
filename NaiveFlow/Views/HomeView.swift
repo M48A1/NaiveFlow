@@ -23,7 +23,7 @@ struct HomeView: View {
         } set: { page in
             guard let page else { return }
             switch page {
-            case .launchpad, .dashboard:
+            case .launchpad, .proxies, .requests:
                 selectedTab = page
             case .toolbox:
                 toolboxPath = []
@@ -42,9 +42,9 @@ struct HomeView: View {
         NavigationSplitView(preferredCompactColumn: $preferredColumn) {
             List(selection: sidebarSelection) {
                 Section {
-                    Label(Page.launchpad.name, image: Page.launchpad.symbol)
-                        .tag(Page.launchpad)
-                    sidebarRow(.dashboard)
+                    sidebarRow(.launchpad)
+                    sidebarRow(.proxies)
+                    sidebarRow(.requests)
                     sidebarRow(.toolbox)
                 }
                 Section("App") {
@@ -70,11 +70,14 @@ struct HomeView: View {
             }
         } detail: {
             TabView(selection: $selectedTab) {
-                Tab(Page.launchpad.name, image: Page.launchpad.symbol, value: Page.launchpad) {
+                Tab(Page.launchpad.name, systemImage: Page.launchpad.symbol, value: Page.launchpad) {
                     LaunchpadView()
                 }
-                Tab(Page.dashboard.name, systemImage: Page.dashboard.symbol, value: Page.dashboard) {
-                    DashboardView()
+                Tab(Page.proxies.name, systemImage: Page.proxies.symbol, value: Page.proxies) {
+                    ProxiesView(isPresentedAsSheet: false)
+                }
+                Tab(Page.requests.name, systemImage: Page.requests.symbol, value: Page.requests) {
+                    NavigationStack { RequestsView() }
                 }
                 Tab(Page.toolbox.name, systemImage: Page.toolbox.symbol, value: Page.toolbox) {
                     ToolboxView(path: $toolboxPath)

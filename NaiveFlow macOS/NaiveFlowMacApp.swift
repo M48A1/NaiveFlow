@@ -16,6 +16,7 @@ struct NaiveFlowMacApp: App {
                 .environment(container.appState)
                 .environment(container.tunnel)
                 .environment(container.selection)
+                .environment(container.chainStore)
                 .environment(container.stats)
                 .environment(container.configurationStore)
                 .environment(container.groupStore)
@@ -25,6 +26,7 @@ struct NaiveFlowMacApp: App {
                 .environment(container.moduleStore)
                 .environment(container.certificateStore)
         }
-        .windowResizability(.contentSize)
+        .defaultSize(width: 1120, height: 760)
+        .windowResizability(.contentMinSize)
     }
 }

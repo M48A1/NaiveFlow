@@ -6,6 +6,14 @@ import Darwin
 import Glibc
 #endif
 
+/// Presentation-only group metadata, independent of the app's mutable stores.
+nonisolated struct RuntimeGroupDisplay: Codable, Sendable, Identifiable {
+    let id: UUID
+    let name: String
+    let memberCount: Int
+    let iconURL: String?
+}
+
 /// A complete immutable input to DNS, Rule, MITM and Outbound. Scripts are
 /// embedded after fetching; the extension never downloads mutable dependencies.
 nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
@@ -23,6 +31,8 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
     /// Text-configured groups with their automatic-selection strategy. Defaults
     /// to empty so bundles published before this field existed still decode.
     var policyGroups: [RuntimeProxyGroup] = []
+    /// UI metadata for every group, including select groups flattened by the engine.
+    var displayGroups: [RuntimeGroupDisplay] = []
     /// Used only by the preserved manual/app configuration baseline.
     let legacyRouting: Data?
     let legacyMITM: Data?
@@ -30,7 +40,7 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, id, snapshotID, parentID, preferences, nodes, selectedNodeID
-        case rules, finalAction, mitmRuleSets, policyGroups, legacyRouting, legacyMITM, geo
+        case rules, finalAction, mitmRuleSets, policyGroups, displayGroups, legacyRouting, legacyMITM, geo
     }
 
     var selectedNode: ProxyConfiguration? { nodes.first { $0.id == selectedNodeID } }
@@ -149,6 +159,7 @@ nonisolated extension RuntimeConfigurationBundle {
         finalAction = try values.decode(RouteMatchAction.self, forKey: .finalAction)
         mitmRuleSets = try values.decode([MITMRuleSet].self, forKey: .mitmRuleSets)
         policyGroups = try values.decodeIfPresent([RuntimeProxyGroup].self, forKey: .policyGroups) ?? []
+        displayGroups = try values.decodeIfPresent([RuntimeGroupDisplay].self, forKey: .displayGroups) ?? []
         legacyRouting = try values.decodeIfPresent(Data.self, forKey: .legacyRouting)
         legacyMITM = try values.decodeIfPresent(Data.self, forKey: .legacyMITM)
         geo = try values.decodeIfPresent(NativeGeoDatabase.self, forKey: .geo) ?? NativeGeoDatabase()

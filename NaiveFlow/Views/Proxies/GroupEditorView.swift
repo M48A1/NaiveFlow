@@ -18,6 +18,7 @@ struct GroupEditorView: View {
     var onSave: (ProxyGroup) -> Void
 
     @State private var name: String = ""
+    @State private var iconURL = ""
     @State private var memberIds: [UUID] = []
     @State private var showingMemberPicker = false
 
@@ -47,6 +48,8 @@ struct GroupEditorView: View {
 
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty
+            && (iconURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || ProxyGroupIconURL.parse(iconURL.trimmingCharacters(in: .whitespacesAndNewlines)) != nil)
     }
 
     var body: some View {
@@ -61,6 +64,20 @@ struct GroupEditorView: View {
                     } label: {
                         TextWithColorfulIcon(title: "Name", systemName: "tag.fill", foregroundStyle: .white, backgroundStyle: .gray.gradient)
                     }
+                }
+
+                Section {
+                    HStack {
+                        ProxyGroupIconView(iconURL: iconURL)
+                        TextField("https://example.com/icon.png", text: $iconURL)
+                            .keyboardType(.URL)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                    }
+                } header: {
+                    Text("第三方图标")
+                } footer: {
+                    Text("填写 HTTPS 图片直链，留空使用默认图标。支持 PNG、JPEG 等系统可读取的图片格式。")
                 }
 
                 Section {
@@ -129,6 +146,7 @@ struct GroupEditorView: View {
             .onAppear {
                 if let group {
                     name = group.name
+                    iconURL = group.iconURL ?? ""
                     memberIds = group.memberIds.filter { memberRow(for: $0) != nil }
                 }
             }
@@ -156,6 +174,8 @@ struct GroupEditorView: View {
         var result = group ?? ProxyGroup(name: name, kind: kind)
         result.name = name.trimmingCharacters(in: .whitespaces)
         result.memberIds = memberIds
+        let trimmedIcon = iconURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        result.iconURL = trimmedIcon.isEmpty ? nil : trimmedIcon
         onSave(result)
         dismiss()
     }

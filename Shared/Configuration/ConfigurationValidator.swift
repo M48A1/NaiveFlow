@@ -365,11 +365,15 @@ nonisolated extension ConfigurationValidator {
             }
 
             let supportedParameters: Set<String> = kind == .select
-                ? ["selected"]
-                : ["selected", "interval", "tolerance", "url"]
+                ? ["selected", "icon-url"]
+                : ["selected", "interval", "tolerance", "url", "icon-url"]
             for (key, _) in group.parameters.pairs where !supportedParameters.contains(key) {
                 diagnostics.append(.init(severity: .error, code: .notApplied, line: group.line,
                     section: "Proxy Group", message: "Unsupported native group option '\(key)'."))
+            }
+            if let icon = group.parameters["icon-url"], ProxyGroupIconURL.parse(icon) == nil {
+                diagnostics.append(.init(severity: .warning, code: .invalidValue, line: group.line,
+                    section: "Proxy Group", message: "icon-url must be an HTTPS image URL; the default icon will be used."))
             }
             if let selected = group.parameters["selected"], !group.members.contains(selected) {
                 diagnostics.append(.init(severity: .error, code: .invalidValue, line: group.line,

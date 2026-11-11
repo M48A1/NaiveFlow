@@ -590,3 +590,15 @@ These are deliberate, documented gaps, not silent failures:
 - **macOS.** No macOS target exists yet; this document covers iOS, iPadOS and
   tvOS builds.
 
+
+
+### 代理组第三方图标
+
+`[Proxy Group]` 支持 `icon-url`，用于 iPhone 与 macOS 策略页的组图标。例如：
+
+```ini
+[Proxy Group]
+Streaming = select, Relay, DIRECT, icon-url=https://example.com/icons/streaming.png
+```
+
+填写 HTTPS 图片直链，支持 PNG、JPEG 等系统可解码的图片；不支持 SVG。URL 中包含逗号或 `#` 时加双引号。图标随组保存、同步与导出；手动组可在编辑器中修改地址，文本配置组通过编辑配置修改。图片由应用界面按需加载，失败时使用默认文件夹图标，不参与分流和节点测速。新字段兼容无图标的旧配置；旧运行版本需重新应用配置后显示手动选择组的图标。

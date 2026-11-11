@@ -111,6 +111,9 @@ struct ConfigurationPublisher {
             preferences: preferences, nodes: nodes, selectedNodeID: selected.id,
             rules: compiled.orderedRules, finalAction: compiled.finalAction, mitmRuleSets: mitm,
             policyGroups: compiled.policyGroups,
+            displayGroups: compiled.proxyGroups.map {
+                RuntimeGroupDisplay(id: $0.id, name: $0.name, memberCount: $0.memberIds.count, iconURL: $0.iconURL)
+            },
             legacyRouting: nil, legacyMITM: nil, geo: compiled.geo)
         let previousCompiled = activation.active?.compiled
         let plan = ConfigurationCoordinator().plan(from: previousCompiled, to: compiled)

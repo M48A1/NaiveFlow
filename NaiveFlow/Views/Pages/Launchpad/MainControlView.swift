@@ -1,412 +1,191 @@
-//
-//  MainControlView.swift
-//  NaiveFlow
-//
-//  Created by NodePassProject on 9/22/26.
-//
-
 import SwiftUI
 import NetworkExtension
 
 struct MainControlView: View {
     @Environment(Operations.self) private var operations
-    @Environment(TunnelController.self) private var tunnelController
-    @Environment(ProxySelection.self) private var proxySelection
-    @Environment(LatencyCenter.self) private var latencyCenter
-    @Environment(ConfigurationStore.self) private var configurationStore
-    @Environment(ChainStore.self) private var chainStore
-    @Environment(GroupStore.self) private var groupStore
-    @Environment(SubscriptionStore.self) private var subscriptionStore
+    @Environment(TunnelController.self) private var tunnel
+    @Environment(ProxySelection.self) private var selection
+    @Environment(ConfigurationStore.self) private var configurations
+    @Environment(ConnectionStats.self) private var stats
+    @Environment(AppSettings.self) private var settings
 
-    let connectionEffectsEnabled: Bool
-    
-    @State private var showingProxiesView = false
-    @State private var showingAddSheet = false
-    @State private var showingManualAddSheet = false
+    @State private var showingProxies = false
+    @State private var showingAdd = false
+    @State private var showingManualAdd = false
 
-    private var isLoading: Bool { !configurationStore.isLoaded }
-
-    private var isConnected: Bool {
-        tunnelController.rawStatus == .connected
-    }
-
-    private var isTransitioning: Bool { tunnelController.rawStatus.isTransitioning }
-
-    private var isPowerButtonDisabled: Bool {
-        if configurationStore.hasConfigurations {
-            if !isTransitioning {
-                if tunnelController.isManagerReady {
-                    return false
-                }
-            }
-        }
-        return true
+    private var isConnected: Bool { tunnel.rawStatus == .connected }
+    private var canToggle: Bool {
+        tunnel.isManagerReady && !tunnel.rawStatus.isTransitioning
+            && (isConnected || selection.effectiveConfiguration != nil)
     }
 
     var body: some View {
-        GeometryReader { viewport in
-            ScrollView {
-                controls
-                    .frame(minHeight: viewport.size.height)
+        NavigationStack {
+            List {
+                Section {
+                    Toggle(isOn: Binding(
+                        get: { isConnected },
+                        set: { _ in operations.tunnel.toggle() }
+                    )) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "power")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(isConnected ? Color.green : Color.secondary)
+                                .frame(width: 28)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("NaiveFlow").font(.headline)
+                                Text(tunnel.status.localizedText)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if tunnel.rawStatus.isTransitioning {
+                                ProgressView().controlSize(.small)
+                            }
+                        }
+                        .padding(.vertical, 5)
+                    }
+                    .tint(.green)
+                    .disabled(!canToggle)
+
+                    NavigationLink {
+                        ProfileView()
+                    } label: {
+                        Label("Configuration", systemImage: "doc.text")
+                    }
+                } footer: {
+                    if !configurations.isLoaded {
+                        Text("Loading…")
+                    } else if selection.effectiveConfiguration == nil {
+                        Text("Add a Configuration")
+                    }
+                }
+
+                Section {
+                    Picker(selection: Binding(
+                        get: { settings.proxyMode },
+                        set: { settings.proxyMode = $0 }
+                    )) {
+                        Text("Rule").tag(ProxyMode.rule)
+                        Text("Global").tag(ProxyMode.global)
+                        Text("Direct").tag(ProxyMode.direct)
+                    } label: {
+                        Label("Outbound Mode", systemImage: "arrow.triangle.branch")
+                    }
+                    .disabled(selection.usesRuntimeVersion)
+
+                    Button {
+                        if selection.effectiveConfiguration == nil {
+                            showingAdd = true
+                        } else {
+                            showingProxies = true
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Label("Proxy", systemImage: "network")
+                            Spacer(minLength: 8)
+                            Text(selection.effectiveConfiguration?.name ?? String(localized: "Add a Configuration"))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .foregroundStyle(.primary)
+
+                    NavigationLink {
+                        RoutingView()
+                    } label: {
+                        Label("Routing Rules", systemImage: "list.bullet.rectangle")
+                    }
+                } header: {
+                    Text("Routing")
+                } footer: {
+                    if selection.usesRuntimeVersion {
+                        Text("The active configuration controls routing. Edit Configuration to change it; these lists remain your manual library.")
+                    }
+                }
+
+                Section("Activity") {
+                    HStack(spacing: 0) {
+                        trafficMetric("Download", symbol: "arrow.down", rate: stats.downloadBytesPerSecond, total: stats.bytesIn, color: .blue)
+                        Divider().padding(.horizontal, 16)
+                        trafficMetric("Upload", symbol: "arrow.up", rate: stats.uploadBytesPerSecond, total: stats.bytesOut, color: .orange)
+                    }
+                    .padding(.vertical, 8)
+
+                    NavigationLink {
+                        ScrollView {
+                            ConnectionStatsView()
+                                .padding()
+                        }
+                        .navigationTitle("Dashboard")
+                    } label: {
+                        HStack {
+                            Label("Active Connections", systemImage: "waveform.path")
+                            Spacer()
+                            Text(isConnected ? "\(stats.tcpConnectionCount + stats.udpConnectionCount)" : "—")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Section("Tools") {
+                    NavigationLink { RequestsView() } label: {
+                        Label("Requests", systemImage: "list.bullet.rectangle.portrait")
+                    }
+                    NavigationLink { MITMView() } label: {
+                        Label("MITM", systemImage: "lock.open")
+                    }
+                    NavigationLink { ModulesView() } label: {
+                        Label("Modules", systemImage: "shippingbox")
+                    }
+                    NavigationLink { DiagnosisView() } label: {
+                        Label("Diagnosis", systemImage: "stethoscope")
+                    }
+                }
             }
-            .scrollBounceBehavior(.basedOnSize)
+            .listStyle(.insetGrouped)
+            .navigationTitle("Overview")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Add a Configuration", systemImage: "plus") { showingAdd = true }
+                }
+            }
         }
-        .padding(.horizontal)
-        .animation(connectionEffectsEnabled ? Animation.bouncy : nil, value: isConnected)
-        .sheet(isPresented: $showingProxiesView) {
-            ProxiesView()
-                .environment(operations)
-                .environment(proxySelection)
-                .environment(latencyCenter)
-                .environment(configurationStore)
-                .environment(chainStore)
-                .environment(groupStore)
-                .environment(subscriptionStore)
-        }
-        .sheet(isPresented: $showingAddSheet) {
+        .sheet(isPresented: $showingProxies) { ProxiesView() }
+        .sheet(isPresented: $showingAdd) {
             DynamicSheet(animation: .snappy(duration: 0.3, extraBounce: 0)) {
-                AddProxyView(showingManualAddSheet: $showingManualAddSheet)
+                AddProxyView(showingManualAddSheet: $showingManualAdd)
                     .environment(operations)
             }
         }
-        .sheet(isPresented: $showingManualAddSheet) {
+        .sheet(isPresented: $showingManualAdd) {
             ProxyEditorView { configuration in
-                operations.configurations.add(configuration); operations.selection.selectIfNone(configuration)
+                operations.configurations.add(configuration)
+                operations.selection.selectIfNone(configuration)
             }
         }
     }
 
-    private var controls: some View {
-        MainControlLayout(
-            idealSpacingRatio: 0.12,
-            maxSpacing: 100,
-            minSpacing: 20
-        ) {
-            VStack(spacing: 20) {
-                PowerButton(
-                    isConnected: isConnected,
-                    isTransitioning: isTransitioning,
-                    isLoading: isLoading,
-                    isDisabled: isPowerButtonDisabled,
-                    animatesChanges: connectionEffectsEnabled
-                ) {
-                    guard !isLoading else { return }
-                    if configurationStore.hasConfigurations {
-                        withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
-                            operations.tunnel.toggle()
-                        }
-                    } else {
-                        showingAddSheet = true
-                    }
-                }
-
-                let status = tunnelController.status
-                HStack {
-                    if [.connecting, .disconnecting, .reasserting].contains(status) {
-                        ProgressView()
-                            .controlSize(.mini)
-                    }
-                    Text(status.localizedText)
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            ConfigurationCapsule(
-                isConnected: isConnected,
-                showingProxiesPage: $showingProxiesView,
-                showingAddSheet: $showingAddSheet
-            )
-            .frame(maxWidth: 500)
+    private func trafficMetric(_ title: LocalizedStringKey, symbol: String, rate: Int64?, total: Int64, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: symbol)
+                .font(.subheadline)
+                .foregroundStyle(color)
+            Text(isConnected ? rate.map { "\(bytes($0))/s" } ?? "—" : "—")
+                .font(.title3.weight(.semibold))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            Text(bytes(total))
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func bytes(_ value: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: value, countStyle: .binary)
     }
 }
-
-// MARK: - Layout
-
-private struct MainControlLayout: Layout {
-    let idealSpacingRatio: CGFloat
-    let maxSpacing: CGFloat
-    let minSpacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        guard let sizes = measure(subviews, width: proposal.width) else { return .zero }
-        let idealSize = CGSize(
-            width: max(sizes.group.width, sizes.capsule.width),
-            height: sizes.group.height + maxSpacing + sizes.capsule.height
-        )
-        return proposal.replacingUnspecifiedDimensions(by: idealSize)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        guard let sizes = measure(subviews, width: bounds.width) else { return }
-        let group = sizes.group, capsule = sizes.capsule
-
-        let room = bounds.height - group.height - capsule.height
-        let idealSpacing = min(max(bounds.height * idealSpacingRatio, minSpacing), maxSpacing)
-        let spacing = max(min(idealSpacing, room), minSpacing)
-        let contentHeight = group.height + spacing + capsule.height
-        let centeredTop = bounds.midY - contentHeight / 2
-        let top = max(bounds.minY, min(centeredTop, bounds.maxY - contentHeight))
-
-        subviews[0].place(at: CGPoint(x: bounds.midX, y: top), anchor: .top, proposal: ProposedViewSize(group))
-        subviews[1].place(at: CGPoint(x: bounds.midX, y: top + group.height + spacing), anchor: .top, proposal: ProposedViewSize(capsule))
-    }
-
-    private func measure(_ subviews: Subviews, width: CGFloat?) -> (group: CGSize, capsule: CGSize)? {
-        guard subviews.count == 2 else { return nil }
-        let proposal = ProposedViewSize(width: width, height: nil)
-        return (subviews[0].sizeThatFits(proposal), subviews[1].sizeThatFits(proposal))
-    }
-}
-
-// MARK: - Power Button
-
-private struct PowerButton: View {
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(AppSettings.self) private var settings
-    
-    private static let circleDiameter: CGFloat = 140
-
-    let isConnected: Bool
-    let isTransitioning: Bool
-    let isLoading: Bool
-    let isDisabled: Bool
-    let animatesChanges: Bool
-    let action: () -> Void
-
-    private var indicatorColor: Color {
-        if isConnected { return .green }
-        if isTransitioning { return .orange }
-        return .gray.opacity(0.8)
-    }
-
-    var body: some View {
-        Button(action: action) {
-            ZStack {
-                if #available(iOS 27.0, *) {
-                    Circle()
-                        .fill(.clear)
-                        .frame(width: Self.circleDiameter, height: Self.circleDiameter)
-                        .glassEffect(.regular, in: .circle)
-                } else if #available(iOS 26.0, *) {
-                    Circle()
-                        .fill(.clear)
-                        .frame(width: Self.circleDiameter, height: Self.circleDiameter)
-                        .glassEffect(.clear, in: .circle)
-                } else {
-                    Circle()
-                        .fill(background)
-                        .frame(width: Self.circleDiameter, height: Self.circleDiameter)
-                }
-                ZStack {
-                    Image(systemName: "power")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 40)
-                    Image(systemName: "circle.fill")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 5)
-                        .foregroundStyle(indicatorColor)
-                        .offset(y: 45)
-                }
-            }
-            .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .disabled(isDisabled)
-        .animation(animatesChanges ? Animation.easeInOut(duration: 0.6) : nil, value: isConnected)
-    }
-    
-    private var background: Color {
-        let data = colorScheme == .light
-            ? settings.statCardBackgroundLightData
-            : settings.statCardBackgroundDarkData
-        return data.flatMap(Color.init(archivedData:)) ?? .statCardBackground
-    }
-}
-
-// MARK: - Configuration Capsule
-
-private struct ConfigurationCapsule: View {
-    @Environment(ProxySelection.self) private var selection
-    @Environment(ConfigurationStore.self) private var configurationStore
-
-    let isConnected: Bool
-    @Binding var showingProxiesPage: Bool
-    @Binding var showingAddSheet: Bool
-
-    var body: some View {
-        if let configuration = selection.effectiveConfiguration {
-            selectedCapsule(configuration)
-        } else if configurationStore.isLoaded {
-            emptyCapsule
-        } else {
-            loadingCapsule
-        }
-    }
-
-    private func selectedCapsule(_ configuration: ProxyConfiguration) -> some View {
-        Button {
-            showingProxiesPage = true
-        } label: {
-            ProminentCapsule {
-                HStack {
-                    HStack {
-                        Image("naiveflow.fill")
-                            .font(.body.weight(.medium))
-                        Text(configuration.name)
-                            .font(.body.weight(.medium))
-                            .lineLimit(1)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.primary.opacity(0.7))
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var emptyCapsule: some View {
-        Button {
-            showingAddSheet = true
-        } label: {
-            ProminentCapsule {
-                HStack(spacing: 12) {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.tint)
-                    Text("Add a Configuration")
-                        .font(.body.weight(.medium))
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var loadingCapsule: some View {
-        ProminentCapsule {
-            HStack(spacing: 12) {
-                ProgressView()
-                Text("Loading…")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-        }
-    }
-}
-
-private struct ProminentCapsule<Content: View>: View {
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(AppSettings.self) private var settings
-    
-    private let content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    var body: some View {
-        if #available(iOS 27.0, *) {
-            content
-                .padding(16)
-                .contentShape(Capsule())
-                .glassEffect(.regular.interactive(), in: .capsule)
-        } else if #available(iOS 26.0, *) {
-            content
-                .padding(16)
-                .contentShape(Capsule())
-                .glassEffect(.clear.interactive(), in: .capsule)
-        } else {
-            content
-                .padding(16)
-                .contentShape(Capsule())
-                .background(
-                    Capsule()
-                        .fill(background)
-                )
-        }
-    }
-    
-    private var background: Color {
-        let data = colorScheme == .light
-            ? settings.statCardBackgroundLightData
-            : settings.statCardBackgroundDarkData
-        return data.flatMap(Color.init(archivedData:)) ?? .statCardBackground
-    }
-}
-
-private struct ProminentCircle<Content: View>: View {
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(AppSettings.self) private var settings
-    
-    private let content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    var body: some View {
-        if #available(iOS 27.0, *) {
-            content
-                .padding(16)
-                .contentShape(Circle())
-                .glassEffect(.regular.interactive(), in: .circle)
-        } else if #available(iOS 26.0, *) {
-            content
-                .padding(16)
-                .contentShape(Circle())
-                .glassEffect(.clear.interactive(), in: .circle)
-        } else {
-            content
-                .padding(16)
-                .contentShape(Circle())
-                .background(
-                    Circle()
-                        .fill(.white.opacity(0.2))
-                )
-        }
-    }
-    
-    private var background: Color {
-        let data = colorScheme == .light
-            ? settings.statCardBackgroundLightData
-            : settings.statCardBackgroundDarkData
-        return data.flatMap(Color.init(archivedData:)) ?? .statCardBackground
-    }
-}
-
-// MARK: - Previews
-
-#if DEBUG
-#Preview("Connected") {
-    let container = AppContainer.preview()
-    container.selection.select(ProxyConfiguration(
-        name: "🇺🇸 Los Angeles",
-        serverAddress: "203.0.113.10",
-        serverPort: 443,
-        outbound: .socks5(SOCKS5Configuration())
-    ))
-    container.tunnel.setStatusForPreview(.connected)
-
-    return MainControlView(connectionEffectsEnabled: true)
-        .environment(AppSettings())
-        .environment(Operations(container: container))
-        .environment(container.tunnel)
-        .environment(container.selection)
-        .environment(container.latency)
-        .environment(container.configurationStore)
-        .environment(container.chainStore)
-        .environment(container.groupStore)
-        .environment(container.subscriptionStore)
-        .environment(ConnectionStats.previewSeeded())
-}
-#endif

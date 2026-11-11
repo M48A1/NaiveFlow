@@ -431,7 +431,8 @@ nonisolated extension ConfigurationCompiler {
         }
 
         return configuration.proxyGroups.map { group in
-            ProxyGroup(name: group.name, kind: .servers, memberIds: expanded[group.name] ?? [])
+            ProxyGroup(name: group.name, kind: .servers, memberIds: expanded[group.name] ?? [],
+                       iconURL: ProxyGroupIconURL.parse(group.parameters["icon-url"])?.absoluteString)
         }
     }
 
@@ -493,7 +494,8 @@ nonisolated extension ConfigurationCompiler {
                 memberIDs: memberIDs,
                 selectedID: selectedID,
                 interval: interval,
-                url: url
+                url: url,
+                iconURL: ProxyGroupIconURL.parse(group.parameters["icon-url"])?.absoluteString
             )
         }
     }
