@@ -158,7 +158,7 @@ nonisolated enum MITMOperation: Equatable, Sendable {
     case headerAdd(name: String, value: String)
     case headerDelete(name: String)
     case headerReplace(name: String, value: String)
-    case script(scriptBase64: String)
+    case script(scriptBase64: String, dialect: MITMScriptDialect = .surge)
     case streamScript(scriptBase64: String)
     case bodyReplace(search: String, replacement: String)
     case bodyJSON(MITMJSONOperation)
@@ -207,6 +207,7 @@ extension MITMOperation: Codable {
         case search
         case script
         case json
+        case dialect
         case rewrite
     }
 
@@ -229,7 +230,8 @@ extension MITMOperation: Codable {
                 value: try container.decode(String.self, forKey: .value)
             )
         case .script:
-            self = .script(scriptBase64: try container.decode(String.self, forKey: .script))
+            self = .script(scriptBase64: try container.decode(String.self, forKey: .script),
+                           dialect: try container.decodeIfPresent(MITMScriptDialect.self, forKey: .dialect) ?? .surge)
         case .streamScript:
             self = .streamScript(scriptBase64: try container.decode(String.self, forKey: .script))
         case .bodyReplace:
@@ -259,9 +261,10 @@ extension MITMOperation: Codable {
             try container.encode(Kind.headerReplace, forKey: .kind)
             try container.encode(name, forKey: .name)
             try container.encode(value, forKey: .value)
-        case .script(let scriptBase64):
+        case .script(let scriptBase64, let dialect):
             try container.encode(Kind.script, forKey: .kind)
             try container.encode(scriptBase64, forKey: .script)
+            try container.encode(dialect, forKey: .dialect)
         case .streamScript(let scriptBase64):
             try container.encode(Kind.streamScript, forKey: .kind)
             try container.encode(scriptBase64, forKey: .script)
@@ -340,7 +343,7 @@ extension MITMRule {
             return name
         case .headerReplace(let name, _):
             return name
-        case .script(let scriptBase64),
+        case .script(let scriptBase64, _),
              .streamScript(let scriptBase64):
             let bytes = Data(base64Encoded: scriptBase64)?.count ?? 0
             return String(localized: "\(bytes) byte(s)")
@@ -612,7 +615,7 @@ nonisolated struct MITMSnapshot: Codable, Equatable {
 /// UInt16 length + bytes, `str32` = UInt32 length + bytes). Layout:
 /// ```
 /// magic     "AMR1"        4 bytes
-/// version   UInt8         format version (= 2)
+/// version   UInt8         format version (= 3)
 /// enabled   UInt8         master MITM toggle (0/1)
 /// setCount  UInt32        number of (live) rule sets
 /// sets      setCount × Set
@@ -633,6 +636,8 @@ nonisolated struct MITMSnapshot: Codable, Equatable {
 ///   urlPattern str32
 ///   opKind     UInt8      operation discriminator (OperationKind)
 ///   …operation-specific fields…
+///   script (v3): dialect UInt8 (0 Surge / 1 Quantumult X), source str32
+///   script (v1/v2): source str32, implicit Surge
 /// ```
 /// Only the *resolved* `name → value` map ships — the parameter definitions
 /// (type/options/default) stay app-side. `subscriptionURL`/`deletedAt` are
@@ -640,7 +645,7 @@ nonisolated struct MITMSnapshot: Codable, Equatable {
 /// The reader accepts v1 (no parameter section) so an old payload still decodes.
 nonisolated enum MITMBinaryFormat {
     static let magic: [UInt8] = [0x41, 0x4D, 0x52, 0x31]  // "AMR1"
-    static let version: UInt8 = 2
+    static let version: UInt8 = 3
 
     enum Phase: UInt8 { case httpRequest = 0, httpResponse = 1 }
 
@@ -719,8 +724,9 @@ nonisolated struct MITMBinaryWriter {
             bytes.append(MITMBinaryFormat.OperationKind.headerReplace.rawValue)
             appendString16(name)
             appendString32(value)
-        case .script(let scriptBase64):
+        case .script(let scriptBase64, let dialect):
             bytes.append(MITMBinaryFormat.OperationKind.script.rawValue)
+            bytes.append(dialect.binaryValue)
             appendString32(scriptBase64)
         case .streamScript(let scriptBase64):
             bytes.append(MITMBinaryFormat.OperationKind.streamScript.rawValue)

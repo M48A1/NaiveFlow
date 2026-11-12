@@ -89,6 +89,7 @@ nonisolated extension ConfigurationModule {
         "bypass-country": .rule,
 
         // Outbound: nodes, groups, mode, and everything shaping the interface.
+        "lan-proxy-enabled": .outbound,
         "proxy-mode": .outbound,
         "quic-policy": .outbound,
         "block-udp": .outbound,

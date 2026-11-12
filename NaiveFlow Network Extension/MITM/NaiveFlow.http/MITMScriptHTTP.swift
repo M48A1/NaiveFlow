@@ -20,6 +20,7 @@ nonisolated final class MITMScriptHTTPClient: Sendable {
     private static let inFlightBytes = Atomic<Int>(0)
 
     static func reserveInFlight(_ count: Int) -> Bool {
+        guard count >= 0, TransientMemoryBudget.mitm.reserve(count) else { return false }
         var current = inFlightBytes.load(ordering: .relaxed)
         while current + count <= maxGlobalInFlightBytes {
             let (exchanged, original) = inFlightBytes.weakCompareExchange(
@@ -28,6 +29,7 @@ nonisolated final class MITMScriptHTTPClient: Sendable {
             if exchanged { return true }
             current = original
         }
+        TransientMemoryBudget.mitm.release(count)
         return false
     }
 
@@ -39,7 +41,10 @@ nonisolated final class MITMScriptHTTPClient: Sendable {
             let (exchanged, original) = inFlightBytes.weakCompareExchange(
                 expected: current, desired: max(0, current - count), ordering: .relaxed
             )
-            if exchanged { return }
+            if exchanged {
+                TransientMemoryBudget.mitm.release(min(count, current))
+                return
+            }
             current = original
         }
     }
@@ -49,6 +54,17 @@ nonisolated final class MITMScriptHTTPClient: Sendable {
         let headers: [(name: String, value: String)]
         let body: Data
         let finalURL: String?
+        private let memory = TransientMemoryReservation()
+
+        init(status: Int, headers: [(name: String, value: String)], body: Data, finalURL: String?) throws {
+            self.status = status
+            self.headers = headers
+            self.body = body
+            self.finalURL = finalURL
+            guard memory.resize(body.count) else {
+                throw NaiveFlowError.mitm(.scriptBudgetExceeded(limit: TransientMemoryBudget.mitm.limit))
+            }
+        }
     }
 
     /// Runs the request through the tunnel; response-size caps are enforced as the body streams.

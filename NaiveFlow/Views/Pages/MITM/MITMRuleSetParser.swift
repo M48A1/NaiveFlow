@@ -199,7 +199,9 @@ enum MITMRuleSetParser {
             return MITMRule(phase: phase, urlPattern: urlPattern, operation: .bodyJSON(operation))
 
         case 100:
-            guard arguments.count == 2 else { return nil }
+            guard (2...3).contains(arguments.count) else { return nil }
+            let dialectToken = arguments.count == 3 ? arguments[2].trimmingCharacters(in: .whitespacesAndNewlines).lowercased() : "surge"
+            guard let dialect = MITMScriptDialect(rawValue: dialectToken) else { return nil }
             let urlPattern = arguments[0]
             guard !urlPattern.isEmpty, isValidRegex(urlPattern) else { return nil }
             let scriptBase64 = arguments[1]
@@ -207,20 +209,12 @@ enum MITMRuleSetParser {
             return MITMRule(
                 phase: phase,
                 urlPattern: urlPattern,
-                operation: .script(scriptBase64: scriptBase64)
+                operation: .script(scriptBase64: scriptBase64, dialect: dialect)
             )
 
         case 101:
-            guard arguments.count == 2 else { return nil }
-            let urlPattern = arguments[0]
-            guard !urlPattern.isEmpty, isValidRegex(urlPattern) else { return nil }
-            let scriptBase64 = arguments[1]
-            guard !scriptBase64.isEmpty, isValidScriptBase64(scriptBase64) else { return nil }
-            return MITMRule(
-                phase: phase,
-                urlPattern: urlPattern,
-                operation: .streamScript(scriptBase64: scriptBase64)
-            )
+            // Anywhere's streaming script ABI was removed.
+            return nil
 
         default:
             return nil
@@ -380,20 +374,6 @@ enum MITMRuleSetParser {
         guard let raw = Data(base64Encoded: base64),
               let source = String(data: raw, encoding: .utf8)
         else { return false }
-        let wrapped = "(function(){\n\(source)\nreturn process;\n})()"
-        guard let context = JSContext() else { return false }
-        return wrapped.withCString { cString in
-            guard let scriptRef = JSStringCreateWithUTF8CString(cString) else {
-                return false
-            }
-            defer { JSStringRelease(scriptRef) }
-            return JSCheckScriptSyntax(
-                context.jsGlobalContextRef,
-                scriptRef,
-                nil,
-                0,
-                nil
-            )
-        }
+        return (try? RuntimeJavaScript.validate(source)) != nil
     }
 }

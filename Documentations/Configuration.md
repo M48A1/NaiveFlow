@@ -318,18 +318,20 @@ enable = true
 hostname = example.com, *.example.org
 
 [Script]
-http-request = script-path=https://example.com/a.js, requires-body=true
+rewrite = type=http-response, pattern=^https://example.com/, script-path=https://example.com/a.js, dialect=surge
+qx-rewrite = type=http-response, pattern=^https://example.org/, script-path=https://example.org/qx.js, dialect=quantumult-x
 ```
 
-`[MITM] enable` is applied. `hostname`, `tcp-connection`, `skip-server-cert-verify`,
-`ca-passphrase`, `auto-quic-block`, `use-default-ca` and `client-source-address` are
-parsed and validated but not consumed yet, so each one produces a `notApplied`
-warning — the document says what it wants, and the app says what it does.
+Request/response scripts are validated and resolved before publishing. The runtime
+version fixes the source bytes, argument and dialect. `dialect` accepts `surge`
+(default when omitted) or `quantumult-x`; invalid values block activation.
+Both dialects share the same runtime services and memory limits. Dialect is never
+inferred from source. Existing QX scripts must specify it explicitly.
 
-`[Script]` declarations are parsed and validated (a script without `script-path` is
-an error, request/response phases require a pattern) but scripts are not installed
-by this build; every script produces a `notApplied` warning. The script runtime
-work is tracked separately from the text configuration milestone.
+Anywhere's `process(ctx)` / `NaiveFlow.*` script ABI and `stream=true` are no
+longer supported. Exported `[MITM Set]` JSON retains each script's dialect;
+older stored records without the field default to Surge. See [MITM](MITM.md)
+for supported operations, migration and the partial-compatibility boundary.
 
 ## Diagnostics
 
@@ -583,7 +585,7 @@ These are deliberate, documented gaps, not silent failures:
   sources are downloaded and validated on apply, pinned into runtime versions,
   and indexed at compilation/decode. Refresh is manual; performance and runtime
   acceptance are unverified. See [Geo databases](GeoDatabases.md).
-- **Scripts.** `[Script]` is parsed and validated only.
+- **Scripts.** Only buffered HTTP request/response scripts are supported, with explicit Surge/QX dialect metadata. Full external-client compatibility remains unverified.
 - **MITM host list.** Only `[MITM] enable` is applied; the certificate and host
   fields are stored and reported.
 - **`loglevel`.** Recorded, not applied.

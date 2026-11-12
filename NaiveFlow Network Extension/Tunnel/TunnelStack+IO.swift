@@ -47,7 +47,7 @@ extension TunnelStack {
         guard !configurationTransition.load(ordering: .acquiring) else { return }
         let drains = outputBuffer.withLock { buffer in
             guard buffer.writer != nil else { return false }
-            buffer.packets.append(packet)
+            buffer.append(packet)
             return buffer.claimDrain()
         }
         if drains { drainOutput() }
@@ -57,7 +57,7 @@ extension TunnelStack {
         guard !configurationTransition.load(ordering: .acquiring) else { return }
         let drains = outputBuffer.withLock { buffer in
             guard buffer.generation == generation, buffer.writer != nil, !packets.isEmpty else { return false }
-            buffer.packets.append(contentsOf: packets)
+            for packet in packets { buffer.append(packet) }
             return buffer.claimDrain()
         }
         if drains { drainOutput() }

@@ -156,8 +156,8 @@ struct NativeConfigurationTests {
         #expect(!TextConfigurationPipeline.process(text: "[Host]\nexample.com = server:1.1.1.1").isActivatable)
     }
 
-    @Test func scriptsUseNativeABIAndEmbedArgumentsWithoutExecuting() async throws {
-        let source = Data("function process(ctx) { throw new Error($argument); }".utf8).base64EncodedString()
+    @Test func scriptsUseSurgeABIAndEmbedArgumentsWithoutExecuting() async throws {
+        let source = Data("throw new Error($argument);".utf8).base64EncodedString()
         let result = TextConfigurationPipeline.process(text: """
             [MITM]
             enable = false
@@ -168,15 +168,15 @@ struct NativeConfigurationTests {
         #expect(result.isActivatable)
         let sets = try await result.compiled.textMITM.resolveScripts()
         let rule = try #require(sets.first?.rules.first)
-        if case .script(let encoded) = rule.operation {
+        if case .script(let encoded, _) = rule.operation {
             let decoded = try #require(Data(base64Encoded: encoded))
             let text = try #require(String(data: decoded, encoding: .utf8))
             #expect(text.contains("const $argument = \"hello\";"))
-        } else { Issue.record("Expected the native script operation") }
+        } else { Issue.record("Expected the buffered script operation") }
     }
 
     @Test func exportedMITMSetPreservesScopesParametersAndScriptBytes() async throws {
-        let source = Data("function process(ctx) { return ctx; }".utf8).base64EncodedString()
+        let source = Data("$done({});".utf8).base64EncodedString()
         let set = MITMRuleSet(name: "Scope", domainSuffixes: ["example.com"],
             rules: [MITMRule(phase: .httpResponse, urlPattern: ".", operation: .script(scriptBase64: source))],
             parameterValues: ["value": "a,b"])

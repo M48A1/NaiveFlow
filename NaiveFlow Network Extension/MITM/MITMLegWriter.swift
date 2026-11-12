@@ -37,6 +37,8 @@ actor MITMLegWriter {
     private var phase: Phase = .open
     private var failure: Error?
     private var queue = MITMByteQueue()
+    private let memory = TransientMemoryReservation()
+    private var sendingByteCount = 0
     private var queuedBytes: UInt64 = 0
     private var sentBytes: UInt64 = 0
     private var isSending = false
@@ -61,7 +63,7 @@ actor MITMLegWriter {
             queuedReplies += 1
         }
         enqueue(data, mark: isReply ? .reply : nil)
-        return true
+        return phase == .open
     }
 
     func write(_ data: Data, then completion: @escaping @Sendable (Error?) -> Void) {
@@ -84,6 +86,7 @@ actor MITMLegWriter {
         guard phase == .open else { throw failure ?? NaiveFlowError.transport(.terminated) }
         guard !data.isEmpty else { return }
         enqueue(data, mark: nil)
+        guard phase == .open else { throw failure ?? NaiveFlowError.transport(.terminated) }
         guard queuedBytes - sentBytes > Self.maxUnsentBytes else { return }
         let through = max(queuedBytes - Self.maxUnsentBytes, marks.last?.through ?? 0)
         try await withCheckedThrowingContinuation { marks.append((through: through, mark: .resume($0))) }
@@ -120,11 +123,19 @@ actor MITMLegWriter {
         loop?.cancel()
         loop = nil
         queue = MITMByteQueue()
+        memory.resize(sendingByteCount)
         settle(through: .max, error: NaiveFlowError.transport(.terminated))
         finishClose()
     }
 
     private func enqueue(_ data: Data, mark: Mark?) {
+        guard memory.resize(queue.count + sendingByteCount + data.count) else {
+            let error = NaiveFlowError.mitm(.scriptBudgetExceeded(limit: TransientMemoryBudget.mitm.limit))
+            // The new completion is not in marks yet.
+            fail(error)
+            if case .call(let completion) = mark { completion(error) }
+            return
+        }
         queue.append(data)
         queuedBytes += UInt64(data.count)
         if let mark { marks.append((through: queuedBytes, mark: mark)) }
@@ -135,13 +146,18 @@ actor MITMLegWriter {
     private func run() async {
         while let batch = await nextBatch() {
             isSending = true
+            sendingByteCount = batch.reduce(0) { $0 + $1.count }
             do {
                 try await leg.send(contentsOf: batch)
             } catch {
+                sendingByteCount = 0
+                memory.resize(queue.count)
                 isSending = false
                 fail(error)
                 return
             }
+            sendingByteCount = 0
+            memory.resize(queue.count)
             isSending = false
             sentBytes += UInt64(batch.reduce(0) { $0 + $1.count })
             settle(through: sentBytes, error: nil)
@@ -167,6 +183,7 @@ actor MITMLegWriter {
         guard phase != .closed else { return }
         failure = error
         queue = MITMByteQueue()
+        memory.resize(sendingByteCount)
         settle(through: .max, error: error)
         finishClose()
         onFailure?(error)

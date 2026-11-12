@@ -1,16 +1,16 @@
 # NaiveFlow 开发排期
 
-更新日期：2026-11-07
+更新日期：2026-11-12
 
 本文件按当前源码跟踪实现和待验收事项，详细规范见 [配置说明](Documentations/Configuration.md)与[配置架构](Documentations/ConfigurationArchitecture.md)。下方历史记录仅反映当时状态；当前进度以本文前半部分为准。[DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) 中的早期估算和架构描述需要结合当前实现阅读。
 
-> 勾选表示代码或文档已存在，不代表真机验收完成。最新模拟器构建与测试结果以本文末尾的 2026-11-08 记录为准；历史记录保留当时状态。
+> 勾选表示代码或文档已存在，不代表真机验收完成。最新构建与测试结果见 BASELINE_CHECK.md 的 2026-11-12 记录；历史记录保留当时状态。
 
 > 2026-11-08 后端回归：当前模拟器全量 `NaiveFlow Tests` 已通过；真实设备、真实代理节点、DNS 抓包和网络切换仍需设备验收。实时请求记录现在额外保留规则解析出的 IPv4 与解析用途。
 
 ## 当前范围与架构
 
-- 当前优先完成 iOS/iPadOS；保留 tvOS target，涉及共享代码时需要回归。macOS 尚无 target，待 iOS/iPadOS 完成后另行实施。
+- 当前优先完成 iOS/iPadOS；保留 tvOS target，涉及共享代码时需要回归。macOS target 已存在，已纳入本次构建检查；签名、安装及网络行为仍需独立验收。
 - 首版为 IPv4-only，IPv6、完整双栈与 NAT64 支持不列为待交付功能。Watch 客户端已移除。
 - 配置为 NaiveFlow 原生分节文本，参考其他客户端的组织形式；不承诺完整配置或脚本兼容。
 - `RuleManager` 负责文档、草稿及历史；`ConfigurationCoordinator` 负责校验、编译和模块变更；`ConfigurationPublisher` 发布不可变运行包，扩展通过 `RuntimeCoordinator` 与版本安装流程加载、确认和恢复。
@@ -23,8 +23,8 @@
 - [x] 移除继承的 StoreKit 付费、会员门禁与 Telegram 群组入口。
 - [x] 依赖收敛为仓库内 `NaiveFlowIP`、`NaiveFlowQUIC`、`BLAKE`、`YAML` 四个组件包。
 - [x] 保留历史 iOS/tvOS 无签名构建与模拟器测试记录，见 [BASELINE_CHECK.md](BASELINE_CHECK.md)。
-- [ ] 对当前代码重新构建 iOS 主应用、Network Extension、Widget 与 tvOS target。
-- [ ] 运行当前自动化测试，单独记录通过、失败与因缺少受控服务而跳过的用例。
+- [x] 2026-11-12 对当前代码重新构建 iOS 主应用、Network Extension、Widget、tvOS 及 macOS target；首次与修复后无签名构建均通过。
+- [x] 2026-11-12 运行当前自动化测试；修复 LAN 配置模块归属遗漏后，357 项通过、0 失败、7 项因缺少测试代理跳过；IPv4 内核包另有 3 项通过。详情见 BASELINE_CHECK.md。
 - [ ] 核对开发者账号、Bundle ID、App Group、CloudKit、Network Extension 能力与签名。
 - [ ] 真机验证导入节点、VPN 启停、访问和断开。
 - [ ] 确认真实图标和品牌资源，完成发布资源检查。
@@ -122,7 +122,7 @@ Geo 更新由用户重新应用触发，不含后台定时刷新。可选 `Rules
 2. 优先核实能力声明、编译产物与运行路径的一致性，处理规则元数据和策略组语义的差异。
 3. 使用最小原生配置验证「导入 → 预览 → 发布 → 扩展确认 → DNS/Fake-IP → 有序路由 → 出站」。
 4. 以受控服务验证发布失败、回滚、进程退出恢复和 DNS 无循环，再进行签名真机回归。
-5. 核心闭环通过后完善 UI 与脚本兼容；macOS 保持后续独立阶段。
+5. 核心闭环通过后完善 UI 与脚本兼容；已有 macOS target 的运行行为另行独立验收。
 
 ## 2026-11-08 最终静态与模拟器检查
 
@@ -132,6 +132,38 @@ Geo 更新由用户重新应用触发，不含后台定时刷新。可选 `Rules
 - 请求记录现在保留规则解析得到的 IPv4 与解析用途，并在详情/导出中显示；旧请求载荷字段仍可解码。
 - 策略组运行时支持 `select`、`url-test`、`fallback`、`load-balance`；运行版本切换导致成员失效时会在组内尝试剩余成员，不会静默直连。
 - 仍待外部环境：开发者签名、真机 VPN/防绕行、受控代理与 DNS 抓包、Wi‑Fi/蜂窝切换、长期运行和性能基准；macOS target 仍属后续阶段。
+
+## 2026-11-12 构建与测试更新
+
+- 基线提交 `b7d9139`，Xcode 27.2（27B52）；工程现有 6 个 target，包含 macOS。
+- iOS（含扩展、Widget）、tvOS（含扩展）、macOS（含扩展依赖）Debug 无签名构建全部通过，修复后再次构建亦通过。
+- 首次全量测试失败 1 项：`lan-proxy-enabled` 缺少配置模块归属；已补为 `.outbound`。
+- 修复后全量模拟器测试：357 项通过、0 失败、7 项跳过；参数化展开后通过次数为 361。`NaiveFlowIP` 独立测试 3 项通过。
+- 跳过项均为 `ConfigurationConnectivityTests`：缺少 `NAIVEFLOW_TEST_PROXY_URL`，未验证受控代理 HTTP/HTTPS/HTTP2/HTTP3 回显和大载荷往返。
+- 签名、真机 VPN、DNS 抓包、网络切换和长期运行仍待验收。完整记录、警告及原始日志位置见 [BASELINE_CHECK.md](BASELINE_CHECK.md)。
+
+## 2026-11-12 内存积压限制回归
+
+- DNS 未完成任务和等待者增加上限；系统 DNS 全部默认实例共用 16 个阻塞调用额度，过载不排队。刷新不提前释放仍在执行的任务额度。
+- 发包队列限制为 2 MiB / 1,024 个包，超额丢弃新包。
+- MITM 正文、脚本、主动 HTTP 响应、HTTP/2 下行、拨号前缓冲和写队列接入 24 MiB 共享计账预算；这不是整个扩展的物理内存上限。详见 MITM / DNS 文档。
+- 最终 iOS（含扩展和 Widget）、tvOS、macOS 无签名构建均通过；全量模拟器测试 362 项通过、0 失败、7 项因缺少受控代理跳过；新增内存限额测试 5 项全部通过。
+- 真机内存峰值、压力流量及吞吐尚待实测。原始日志和结果包见 BASELINE_CHECK.md 文末。
+
+## 2026-11-12 移除 Anywhere 原生脚本 ABI
+
+- 仅保留 Surge、Quantumult X 脚本方言；删除 `process(ctx)` 原生执行分支与 `NaiveFlow.*` 全局 API 注入及实现。静态 MITM/JSON/regex 改写继续保留。
+- 旧原生脚本、`stream-script` / operation 101 的导入或激活会报错；旧数据仍可解码用于诊断，不自动转换。
+- Surge/QX 顶层脚本语法校验与运行入口保持一致，QX 特有全局变量进入 QX 适配器；`$done` 首次完成生效，异步运行保留取消/超时/内存预算约束。仍属部分兼容，真实脚本矩阵待验收。
+- iOS（含扩展和 Widget）、tvOS、macOS 无签名构建通过；全量测试 **368 项通过、0 失败、7 项环境跳过**。新增 6 个测试定义，含旧 ABI 的 5 组参数化输入，全部通过。
+- 完整记录见 BASELINE_CHECK.md 文末；MITM 文档已移除旧脚本 API 和示例。
+
+## 2026-11-12 Surge 默认格式与显式脚本方言
+
+- `[Script]` 接受 `dialect=surge|quantumult-x`，默认 Surge；空值/未知值拒绝。移除源码猜测，QX 脚本须显式选择。
+- 方言随脚本保存、导出、发布及版本读取；旧 JSON/二进制无该信息时默认 Surge。MITM 二进制 v3 写入显式方言，读取器兼容 v1/v2。
+- 两种适配器共用 VM、网络与存储服务、内存预算；源码校验在加载期执行，请求路径直接读取编译后的方言。完整脚本兼容与性能基准仍待验收。
+- iOS（含扩展/Widget）、tvOS、macOS 无签名构建通过；全量测试 **376 项通过、0 失败、7 项环境跳过**。新增 8 个方言测试定义全部通过；记录见 BASELINE_CHECK.md 文末。
 
 ## 历史进度记录
 

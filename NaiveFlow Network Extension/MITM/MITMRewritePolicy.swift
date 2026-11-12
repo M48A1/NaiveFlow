@@ -172,7 +172,7 @@ nonisolated enum CompiledMITMOperation {
     case headerReplace(name: String, value: String)
     case bodyReplace(MITMBodyReplace.CompiledOperation)
     case bodyJSON(MITMJSONPatch.CompiledOperation)
-    case script(source: String)
+    case script(source: String, dialect: MITMScriptDialect)
     case streamScript(source: String)
 }
 
@@ -344,16 +344,14 @@ nonisolated final class MITMRewritePolicy: Sendable {
                 return nil
             }
             return .headerReplace(name: name, value: value)
-        case .script(let scriptBase64):
+        case .script(let scriptBase64, let dialect):
             guard let source = decodeScript(scriptBase64, ruleSet: ruleSet, kind: "script") else {
                 return nil
             }
-            return .script(source: source)
-        case .streamScript(let scriptBase64):
-            guard let source = decodeScript(scriptBase64, ruleSet: ruleSet, kind: "streamScript") else {
-                return nil
-            }
-            return .streamScript(source: source)
+            return .script(source: source, dialect: dialect)
+        case .streamScript:
+            logger.warning("[MITM] Anywhere stream-script is no longer supported")
+            return nil
         case .bodyReplace(let search, let replacement):
             guard let compiled = MITMBodyReplace.compile(search: search, replacement: replacement) else {
                 logger.warning("[MITM] \(ruleSet): bodyReplace: Invalid regex: \(search)")
@@ -376,6 +374,11 @@ nonisolated final class MITMRewritePolicy: Sendable {
         }
         guard let source = String(data: raw, encoding: .utf8) else {
             logger.warning("[MITM] \(ruleSet): \(kind): Invalid UTF-8")
+            return nil
+        }
+        do { try RuntimeJavaScript.validate(source) }
+        catch {
+            logger.warning("[MITM] \(ruleSet): \(kind): Unsupported or invalid script")
             return nil
         }
         return source
@@ -583,7 +586,15 @@ nonisolated enum MITMBinaryReader {
             case .headerAdd:     return .headerAdd(name: try readString16(), value: try readString32())
             case .headerDelete:  return .headerDelete(name: try readString16())
             case .headerReplace: return .headerReplace(name: try readString16(), value: try readString32())
-            case .script:        return .script(scriptBase64: try readString32())
+            case .script:
+                let dialect: MITMScriptDialect
+                if version >= 3 {
+                    guard let decoded = MITMScriptDialect(binaryValue: try readUInt8()) else {
+                        throw NaiveFlowError.mitm(.rewriteRulesCorrupted(.malformed))
+                    }
+                    dialect = decoded
+                } else { dialect = .surge }
+                return .script(scriptBase64: try readString32(), dialect: dialect)
             case .streamScript:  return .streamScript(scriptBase64: try readString32())
             case .bodyReplace:   return .bodyReplace(search: try readString32(), replacement: try readString32())
             case .bodyJSON:      return .bodyJSON(try readJSON())

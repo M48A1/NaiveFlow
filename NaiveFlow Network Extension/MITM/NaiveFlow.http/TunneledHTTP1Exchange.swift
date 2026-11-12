@@ -307,7 +307,7 @@ actor TunneledHTTP1Exchange {
 
         let responseHeaders = headers.filter { !dropHeaders.contains($0.name.lowercased()) }
 
-        return MITMScriptHTTPClient.Response(
+        return try MITMScriptHTTPClient.Response(
             status: status,
             headers: responseHeaders,
             body: responseBody,

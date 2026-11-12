@@ -9,6 +9,7 @@ nonisolated struct CompiledTextMITM: Sendable {
         let source: String
         let argument: String?
         let stream: Bool
+        let dialect: MITMScriptDialect
     }
     var embeddedSets: [MITMRuleSet] = []
     var embeddedSignature: Data? {
@@ -26,6 +27,9 @@ nonisolated struct CompiledTextMITM: Sendable {
     func resolveScripts() async throws -> [MITMRuleSet] {
         var resolved = rules
         for script in scripts {
+            guard !script.stream else {
+                throw RuntimeConfigurationFailure.rejected("Anywhere stream-script is no longer supported.")
+            }
             let data: Data
             if script.source.hasPrefix("base64:") {
                 guard let decoded = Data(base64Encoded: String(script.source.dropFirst(7))) else {
@@ -63,7 +67,7 @@ nonisolated struct CompiledTextMITM: Sendable {
             let encoded = Data(source.utf8).base64EncodedString()
             resolved.append(MITMRule(
                 phase: script.phase, urlPattern: script.pattern,
-                operation: script.stream ? .streamScript(scriptBase64: encoded) : .script(scriptBase64: encoded)
+                operation: .script(scriptBase64: encoded, dialect: script.dialect)
             ))
         }
         guard !suffixes.isEmpty else { return embeddedSets }
@@ -109,19 +113,30 @@ nonisolated enum TextMITMCompiler {
                     line: script.line, section: "Script", message: "Invalid script URL pattern."))
                 continue
             }
-            let supported = Set(["type", "pattern", "script-path", "source", "argument", "stream"])
+            let supported = Set(["type", "pattern", "script-path", "source", "argument", "stream", "dialect"])
             for (key, _) in script.parameters.pairs where !supported.contains(key) {
                 diagnostics.append(ConfigurationDiagnostic(severity: .error, code: .notApplied,
-                    line: script.line, section: "Script", message: "Unsupported native script parameter '\(key)'."))
+                    line: script.line, section: "Script", message: "Unsupported script parameter '\(key)'."))
             }
             if script.parameters.contains("stream"), script.parameters.bool("stream") == nil {
                 diagnostics.append(.init(severity: .error, code: .invalidValue, line: script.line,
                     section: "Script", message: "stream expects a boolean value."))
             }
+            if script.parameters.bool("stream") == true {
+                diagnostics.append(.init(severity: .error, code: .invalidValue, line: script.line,
+                    section: "Script", message: "Anywhere stream-script has been removed; use a buffered Surge or Quantumult X script."))
+                continue
+            }
+            let dialectName = script.parameters["dialect"]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "surge"
+            guard let dialect = MITMScriptDialect(rawValue: dialectName) else {
+                diagnostics.append(.init(severity: .error, code: .invalidValue, line: script.line,
+                    section: "Script", message: "dialect must be surge or quantumult-x."))
+                continue
+            }
             result.scripts.append(.init(name: script.name,
                 phase: script.phase == .httpRequest ? .httpRequest : .httpResponse,
                 pattern: pattern, source: source, argument: script.argument,
-                stream: script.parameters.bool("stream") ?? false))
+                stream: script.parameters.bool("stream") ?? false, dialect: dialect))
         }
         if (!result.rules.isEmpty || !result.scripts.isEmpty), result.suffixes.isEmpty {
             diagnostics.append(ConfigurationDiagnostic(severity: .error, code: .missingValue,

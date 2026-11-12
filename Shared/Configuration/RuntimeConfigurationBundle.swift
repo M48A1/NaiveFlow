@@ -107,7 +107,9 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
             for rule in set.rules {
                 _ = try NSRegularExpression(pattern: rule.urlPattern)
                 switch rule.operation {
-                case .script(let encoded), .streamScript(let encoded):
+                case .streamScript:
+                    throw RuntimeConfigurationFailure.rejected("Anywhere stream-script is no longer supported. Use a buffered Surge or Quantumult X script.")
+                case .script(let encoded, _):
                     guard let data = Data(base64Encoded: encoded), data.count <= 1_000_000,
                           let source = String(data: data, encoding: .utf8) else { throw RuntimeConfigurationFailure.invalidBundle }
                     try RuntimeJavaScript.validate(source)

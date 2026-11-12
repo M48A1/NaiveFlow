@@ -79,7 +79,7 @@ struct VersionedConfigurationTests {
     @Test func explicitRollbackReusesPinnedScriptBytes() async throws {
         let (directory, activation) = workspace()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let source = Data("function process(ctx) { return ctx; }".utf8).base64EncodedString()
+        let source = Data("$done({});".utf8).base64EncodedString()
         let text = first + "\n[MITM]\nenable = false\nhostname = example.com\n[Script]\nrewrite = type=http-response, pattern=^https://example.com/, source=base64:\(source)\n"
         let publisher = publisher(activation)
         _ = try await publisher.publish(text: text)

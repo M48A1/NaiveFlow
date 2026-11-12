@@ -179,8 +179,17 @@ actor TunnelStack {
     struct OutputBufferState {
         var generation: UInt64 = 0
         var writer: PacketFlowWriter?
-        var packets: [OutboundPacket] = []
+        private var packets = BoundedPacketQueue<OutboundPacket>(
+            byteLimit: TunnelConstants.outputQueueByteLimit,
+            packetLimit: TunnelConstants.outputQueuePacketLimit)
         var draining = false
+
+        // Drop newest on overload. TCP retransmits; UDP retains packet semantics.
+        mutating func append(_ packet: OutboundPacket) {
+            packets.append(packet, byteCount: packet.data.length)
+        }
+
+        mutating func clear() { packets.clear() }
 
         mutating func claimDrain() -> Bool {
             guard !draining, writer != nil else { return false }
@@ -193,7 +202,7 @@ actor TunnelStack {
                 draining = false
                 return nil
             }
-            swap(&packets, &self.packets)
+            self.packets.drain(into: &packets)
             return writer
         }
     }
@@ -202,7 +211,7 @@ actor TunnelStack {
     func purgeOutputBuffer() {
         outputBuffer.withLock { buffer in
             buffer.generation = dataPlaneGeneration.load(ordering: .acquiring)
-            buffer.packets.removeAll(keepingCapacity: true)
+            buffer.clear()
         }
     }
 

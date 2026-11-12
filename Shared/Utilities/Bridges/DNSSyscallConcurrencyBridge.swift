@@ -11,7 +11,12 @@ import dnssd
 
 nonisolated final class DNSSyscallConcurrencyBridge: Sendable {
     static let shared = DNSSyscallConcurrencyBridge()
-    private static let maxConcurrentCalls = 16
+    private static let sharedSlots = TransientMemoryBudget(limit: 16)
+    private let slots: TransientMemoryBudget
+
+    init(maxConcurrentCalls: Int? = nil) {
+        slots = maxConcurrentCalls.map { TransientMemoryBudget(limit: $0) } ?? Self.sharedSlots
+    }
 
     private let queue: DispatchQueue = DispatchQueue(
         label: "com.argsment.NaiveFlow.DNSSyscallConcurrencyBridge",
@@ -19,50 +24,26 @@ nonisolated final class DNSSyscallConcurrencyBridge: Sendable {
         attributes: .concurrent
     )
 
-    private struct Gate {
-        var running = 0
-        var waiters: [CheckedContinuation<Void, Never>] = []
-    }
+    // Shared by every resolver instance. No waiting queue: overload fails fast.
 
-    private let gate = Mutex(Gate())
-
-    func run<T: Sendable>(_ body: @escaping @Sendable () -> T) async -> T {
-        await acquireSlot()
-        defer { releaseSlot() }
+    func run<T: Sendable>(_ body: @escaping @Sendable () -> T) async -> T? {
+        guard !Task.isCancelled else { return nil }
+        guard slots.reserve(1) else { return nil }
+        // A blocking libc call cannot be cancelled safely. Its slot remains held
+        // until it really returns, even if the async caller has timed out.
         return await withCheckedContinuation { continuation in
-            queue.async { continuation.resume(returning: body()) }
-        }
-    }
-    
-    private func acquireSlot() async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            let admitted: Bool = gate.withLock { gate in
-                guard gate.running < Self.maxConcurrentCalls else {
-                    gate.waiters.append(continuation)
-                    return false
-                }
-                gate.running += 1
-                return true
+            queue.async {
+                let result = body()
+                self.slots.release(1)
+                continuation.resume(returning: result)
             }
-            if admitted { continuation.resume() }
         }
-    }
-
-    private func releaseSlot() {
-        let next: CheckedContinuation<Void, Never>? = gate.withLock { gate in
-            guard !gate.waiters.isEmpty else {
-                gate.running -= 1
-                return nil
-            }
-            return gate.waiters.removeFirst()
-        }
-        next?.resume()
     }
 
     // MARK: - Address lookup
 
     func resolveAddresses(_ host: String, family: DNSAddressFamily) async -> [String] {
-        await run { Self.resolveAddressesBlocking(host, family: family) }
+        await run { Self.resolveAddressesBlocking(host, family: family) } ?? []
     }
 
     private static func resolveAddressesBlocking(_ host: String, family: DNSAddressFamily) -> [String] {
@@ -100,7 +81,7 @@ nonisolated final class DNSSyscallConcurrencyBridge: Sendable {
         timeout: TimeInterval,
         accept: @escaping @Sendable (Data) -> Data?
     ) async -> (payload: Data, ttl: UInt32)? {
-        await run { Self.queryFirstRecordBlocking(host: host, rrtype: rrtype, timeout: timeout, accept: accept) }
+        await run { Self.queryFirstRecordBlocking(host: host, rrtype: rrtype, timeout: timeout, accept: accept) } ?? nil
     }
     
     private final class QueryResult {

@@ -28,18 +28,8 @@ see [DNS configuration](DNSConfiguration.md).
 - [Rule sets](#rule-sets)
 - [The import format](#the-import-format)
 - [Rule operations](#rule-operations)
-- [Scripting: `script`](#scripting-script)
-- [Scripting: `stream-script`](#scripting-stream-script)
-- [Execution model](#execution-model)
-- [The `ctx` object](#the-ctx-object)
-- [The `NaiveFlow` API](#the-naiveflow-api)
 - [Subscriptions](#subscriptions)
-- [Single-rule semantics](#single-rule-semantics)
-- [Limits and safety](#limits-and-safety)
-- [Worked examples](#worked-examples)
 - [Behavior reference](#behavior-reference)
-
----
 
 ## How it works
 
@@ -69,7 +59,7 @@ An intercepted **HTTPS** connection is handled in four steps:
    opposite leg.
 
 **Plain HTTP** follows the same pipeline without certificates or handshakes: the
-upstream is dialed in cleartext, and `ctx.url` carries an `http://` scheme.
+upstream is dialed in cleartext, and the script request URL carries an `http://` scheme.
 Cleartext is always treated as HTTP/1.1 — h2c is not intercepted (prior-knowledge
 h2c is forwarded untouched; an `Upgrade`-based `101` becomes an opaque tunnel,
 see [Behavior reference](#behavior-reference)).
@@ -99,7 +89,7 @@ tightly as you can.
 > just its own connection: CPU-bound execution can't be preempted. A watchdog
 > crashes and relaunches the extension after a ~30 s synchronous span, so a
 > runaway self-recovers rather than wedging for the process's life, but keep
-> scripts bounded. Awaiting an [`NaiveFlow.http`](#naiveflowhttp) fetch is the
+> scripts bounded. Asynchronous HTTP callbacks are the
 > exception — the connection parks while the shared runtime stays **free** for
 > other scripts; only CPU-bound work monopolizes it.
 
@@ -115,7 +105,7 @@ A rule set is the unit of configuration:
 | `domainSuffixes` | Hosts to intercept, matched by **suffix**. `example.com` covers `www.example.com`. No wildcards. |
 | `enabled`        | Per-set toggle; a disabled set is skipped but keeps its data. |
 | `rules`          | Ordered list of rewrite rules. Redirect / reject / host-rewrite are per-rule via the [`rewrite` operation](#rewrite-0--request-only). |
-| `parameters`     | Optional user-editable values, exposed read-only to scripts via [`NaiveFlow.params`](#naiveflowparams). See [Parameter lines](#parameter-lines). |
+| `parameters` | Legacy metadata retained for round trips; the former script API is removed. See [Parameter lines](#parameter-lines). |
 
 Suffix matching is **most-specific-wins**: with both `example.com` and
 `api.example.com` configured, a request to `api.example.com` uses only the
@@ -192,8 +182,8 @@ Shape:
 | `3`   | `header-replace` | both         | `url-pattern`, `name`, `value` |
 | `4`   | `body-replace`   | both         | `url-pattern`, `search`, `replacement` |
 | `5`   | `body-json`      | both         | `url-pattern`, `action`, `<action args>` |
-| `100` | `script`         | both         | `url-pattern`, `base64` |
-| `101` | `stream-script`  | both         | `url-pattern`, `base64` |
+| `100` | `script`         | both         | `url-pattern`, `base64`, optional `surge` / `quantumult-x` |
+| `101` | removed Anywhere streaming ABI | unsupported | rejected |
 
 Scripting uses a separate `100`+ id range. `rewrite` (op `0`) is always
 request-phase regardless of the phase column; its second field is a numeric
@@ -201,7 +191,7 @@ request-phase regardless of the phase column; its second field is a numeric
 [`rewrite` (0)](#rewrite-0--request-only). A rule whose field count does not
 match, or whose `url-pattern` is empty or won't compile as a regex, is dropped.
 `body-replace`'s `search` must also compile as a regex; `body-json`'s trailing
-fields depend on `action`; `script` / `stream-script` base64 must decode to
+fields depend on `action`; `script` base64 must decode to
 syntactically valid UTF-8 JavaScript (checked at import).
 
 ### Fields and quoting
@@ -235,47 +225,9 @@ URL — so a request and its response can share a pattern.
 
 ### Parameter lines
 
-Parameters expose a few user-editable values that scripts read at runtime via
-[`NaiveFlow.params`](#naiveflowparams) — a country code, a feature flag, a token.
-Declare them under `[Parameter]`; the app renders an editor for each, and the
-chosen values are surfaced **read-only** to the set's scripts.
-
-Shape:
-
-```
-<type>, <data-type>, <name>, <label>, <description>, <default> [, "[<option>, …]"]
-```
-
-| Field           | Meaning |
-| --------------- | ------- |
-| `type`          | `0` = free-text input, `1` = picker. |
-| `data-type`     | `0` = string. The only type today. |
-| `name`          | Lookup key for `NaiveFlow.params.get("<name>")`. ASCII letters/digits/`_`, ≤128 bytes, unique within the set. |
-| `label`         | Label shown in the editor. Optional — falls back to `name`. |
-| `description`   | Help text rendered as the editor's footer. Optional. |
-| `default`       | Value used until the user changes it. |
-| `"[option, …]"` | A picker's allowed values, as a bracketed list. Ignored for an input. |
-
-A picker's options are the seventh field. Because the list contains commas,
-**CSV-quote the whole field**: `"[US, JP, DE]"`. A picker needs at least one
-option; a `default` not among them is added at the front, and an empty `default`
-falls back to the first option. Duplicate names and malformed lines are dropped.
-
-```
-[Parameter]
-# free-text input — empty label/description, empty default
-0, 0, token, , ,
-# input with a label and a footer description
-0, 0, apiKey, API Key, Paste the key from your dashboard., 
-# picker: US / JP / DE, default US (note the quotes around the options list)
-1, 0, country, Country, Used for region-specific rewrites., US, "[US, JP, DE]"
-```
-
-User values **survive a subscription refresh**: an override is kept while its
-parameter still exists (and, for a picker, is still one of the options);
-otherwise it falls back to the new default.
-
----
+Legacy `[Parameter]` metadata remains readable and round-trippable, but its
+removed `NaiveFlow.params` script API is unavailable. For retained text scripts,
+use the `[Script]` `argument` option, exposed as `$argument`.
 
 ## Rule operations
 
@@ -288,7 +240,7 @@ still win).
 
 | Sub-mode | Name             | Args          | Effect |
 | -------- | ---------------- | ------------- | ------ |
-| `0`      | transparent      | `<full-url>`  | Replace the whole request URL. The request-target becomes the replacement's path+query (empty path → `/`, fragment dropped); the outer leg dials the replacement **host** and `Host` / `:authority` is rewritten to match. The client still sees the **original** host on the leaf certificate. A script reads the rewritten URL as `ctx.url`, the original as `ctx.originalUrl`. |
+| `0`      | transparent      | `<full-url>`  | Replace the whole request URL. The request-target becomes the replacement's path+query (empty path → `/`, fragment dropped); the outer leg dials the replacement **host** and `Host` / `:authority` is rewritten to match. The client still sees the **original** host on the leaf certificate. Scripts receive the request URL through `$request.url`. |
 | `1`      | 302 redirect     | `<full-url>`  | Synthesize `302 Found` with `Location: <full-url>` (verbatim). No upstream dial. |
 | `2`      | reject 200 text  | `[<content>]` | Synthesize `200 OK`, `text/plain; charset=utf-8`. Empty → a short default line. No upstream dial. |
 | `3`      | reject 200 gif   | *(none)*      | Synthesize `200 OK` with a canned 1×1 `image/gif`. No upstream dial. |
@@ -392,7 +344,7 @@ fully-edited body).
 ### `body-json` (5)
 
 Declarative JSON body editing in **native code** — the same edits as the
-[`NaiveFlow.json`](#naiveflowjson) script API, without JavaScript. One rule, one
+former native JSON script helpers, without JavaScript. One rule, one
 edit; fields are `url-pattern`, an `action` token, and the action's fields:
 
 | `action`                  | Trailing fields           | Effect |
@@ -435,416 +387,51 @@ quotes doubled:
 1, 5, .*, replace-recursive, access_token, "***"
 ```
 
-### `script` (100) / `stream-script` (101)
+### `script` (100): Surge / Quantumult X
 
-JavaScript transforms. The field is base64-encoded UTF-8 source defining
-`function process(ctx)`. See the next sections.
+Only buffered Surge and Quantumult X scripts are supported. Scripts execute at
+ top level and complete with `$done(...)`, including asynchronous HTTP callbacks.
+Use `$request` / `$response` for context. Surge provides `$httpClient`,
+`$persistentStore`, `$notification`; Quantumult X provides `$task.fetch`,
+`$prefs`, `$notify`. The supported subsets still require real-script acceptance
+checks; this does not promise full compatibility with either client.
 
----
-
-## Scripting: `script`
-
-Use `script` when the rewrite needs the **whole message at once**: rewriting a
-body as a unit (JSON, protobuf, JWT, a regex over the full text) or
-short-circuiting a request with `NaiveFlow.respond(...)`. The head is read-only —
-URL and header edits have dedicated rules, and `ctx.method` / `ctx.status` aren't
-script-writable — so a `script` rule's job is the body plus the control
-directives.
-
-The rewriter buffers the body (auto-decoding `gzip` / `deflate` / `br`), runs
-`process(ctx)` once, and re-emits with a fresh `Content-Length`. Because nothing
-reaches the client until the body is complete, a `script` **de-streams** the
-response; it is right for ordinary request/response APIs and wrong for live
-streams (pointing one at a streaming media type still runs, but logs a warning
-recommending `stream-script`).
-
-`process` may be **`async`** and `await` an [`NaiveFlow.http`](#naiveflowhttp)
-request mid-rewrite; the rewriter waits for the Promise to settle before reading
-`ctx.body` back. The connection parks while the fetch is in flight, and the
-shared runtime stays free for other connections. `stream-script` has no such
-facility — `NaiveFlow.http` is unavailable there.
-
-The body is held up to a **4 MiB** cap: a larger `Content-Length` body falls back
-to passthrough (the script is skipped), and a chunked body that reaches the cap
-**fails closed** — the connection is torn down (request) or answered `502`
-(response) rather than silently truncated.
-
-```
-1, 100, ^/api/user, <base64 of the JS source>
+```javascript
+const data = JSON.parse($response.body);
+data.example = true;
+$done({body: JSON.stringify(data)});
 ```
 
-To produce the base64:
+Anywhere's `process(ctx)`, `Anywhere.*`, `NaiveFlow.*` helpers and operation
+`101` (`stream-script`) have been removed. Import/activation rejects legacy
+scripts and streaming operations. Stored legacy records remain decodable for
+clear diagnostics; they are not automatically converted. Replace their source
+with a Surge or Quantumult X script. Runtime loading also refuses unsupported
+legacy scripts.
 
-```bash
-printf '%s' "$(cat process.js)" | base64
+Script dialect is explicit metadata, fixed into the published runtime version.
+The default is **Surge**. Choose Quantumult X with `dialect=quantumult-x`:
+
+```ini
+[MITM]
+hostname = example.com
+
+[Script]
+rewrite = type=http-response, pattern=^https://example.com/, script-path=https://example.com/surge.js, dialect=surge
+qx-rewrite = type=http-response, pattern=^https://example.com/qx/, script-path=https://example.com/qx.js, dialect=quantumult-x
 ```
 
-Base64 that doesn't decode to valid UTF-8 JavaScript is dropped at import;
-whether `process` is defined and callable is checked at runtime (a
-missing/non-function `process` logs a warning and passes the message through).
-
----
-
-## Scripting: `stream-script`
-
-Use `stream-script` when the response must keep flowing: Server-Sent Events, NDJSON
-or chunked event feeds, gRPC / HTTP/2 DATA streams, or any long-lived or very
-large body. `process(ctx)` runs **once per frame** (HTTP/2 DATA frame or HTTP/1
-chunk) and the body is **never buffered**, so bytes reach the client as they
-arrive.
-
-The trade-off is a narrower contract:
-
-- The head is **immutable** — `ctx.url` / `ctx.originalUrl` / `ctx.method` /
-  `ctx.status` / `ctx.headers` are read-only.
-- **No HTTP-level decompression.** `ctx.body` is the raw frame payload.
-- **No HTTP/1 `Content-Length` bodies** — the byte count is already committed, so
-  length-framed HTTP/1 bodies are skipped (chunked is required); HTTP/2 has no
-  such restriction.
-- **Not applied on the HTTP/2→HTTP/1.1 bridge.** When a bridged HTTP/2 client
-  maps to an HTTP/1.1 upstream, a matching `stream-script` is **skipped** (body
-  forwarded unscripted, with a warning) in both directions. On the bridge's
-  **response** path this early exit also skips any buffered `script` /
-  `body-replace` / `body-json` for that message; buffered rules still apply on
-  the bridge when the response is `Content-Length`-framed.
-
-Per-frame context adds:
-
-- `ctx.frame` — `{ index, end }`: the 0-based frame index and an `end` flag on
-  the final frame.
-- `ctx.state` — a JS object shared by **every frame of the same stream**, and
-  nothing else. It starts `{}` and is carried forward verbatim between frames, so
-  it is where a stream-script accumulates: a partial line, a running count, a
-  parser position.
-
-```
-1, 101, ^/events, <base64>
-```
-
----
-
-## Execution model
-
-Every invocation runs in its **own JavaScript context**, created when the
-invocation starts and destroyed when it ends. An invocation is:
-
-| Rule                  | One invocation spans |
-| --------------------- | -------------------- |
-| `script`              | one message — a request, or a response |
-| `script` with `await` | that same message, extended until the Promise settles |
-| `stream-script`       | one **stream** — every frame of that body |
-
-What it gives a script:
-
-- **Fresh intrinsics.** `Object.prototype`, `JSON`, `Promise`, `RegExp`, and the
-  whole `NaiveFlow` API are rebuilt per invocation. A script cannot patch a
-  built-in to watch another's traffic.
-- **A private global.** Top-level `var` / `let` / `function` belong to that
-  script alone.
-- **No crosstalk.** Two rule sets matching one flow share no objects, prototypes,
-  or globals. (The single process-wide VM is shared, but each context is
-  isolated; the one deliberate channel is [`NaiveFlow.store`](#naiveflowstore).)
-
-What it costs:
-
-- **No state outlives an invocation.** A top-level `let cache = {}` is empty again
-  on the next message. State that must outlive one message belongs in
-  [`NaiveFlow.store`](#naiveflowstore); state scoped to the message belongs on
-  `ctx`; state scoped to a stream belongs on `ctx.state`.
-- **Top-level code runs every time.** The source is compiled per invocation, so
-  module scope is not a free place to precompute — build lookup tables and regexes
-  inside the branch that needs them.
-
-The one resource genuinely shared between invocations is the runtime's thread: a
-CPU-bound loop blocks every other script (see
-[Limits and safety](#limits-and-safety)).
-
----
-
-## The `ctx` object
-
-`process(ctx)` receives a context object. Scripts read its fields freely, but the
-only field read back is `ctx.body`.
-
-| Field         | Type                       | Phase    | Mutable | Notes |
-| ------------- | -------------------------- | -------- | ------- | ----- |
-| `ctx.phase`   | `"request"` / `"response"` | both     | no      | |
-| `ctx.method`  | string or `null`           | both     | no      | On response, the originating request's method. |
-| `ctx.url`     | string or `null`           | both     | no      | Absolute URL; reflects a transparent `rewrite`. On response, the originating request's URL. |
-| `ctx.originalUrl` | string or `null`       | both     | no      | The request URL **before** a transparent rewrite; equal to `ctx.url` when none matched. |
-| `ctx.status`  | number or `null`           | response | no      | `null` on request. |
-| `ctx.headers` | array of `[name, value]`   | both     | no      | Preserves duplicates and order. |
-| `ctx.body`    | `Uint8Array`               | both     | yes     | A copy of the body bytes; reassign it (to a typed array, `ArrayBuffer`, or string) or mutate it in place. |
-
-Only `ctx.body` is mutable, in both `script` and `stream-script` (the latter also
-reads back `ctx.state`). Every head field is **read-only** — assigning it is
-ignored on readback. URL and header edits have dedicated rule operations
-(`rewrite`, `header-*`); `method` and `status` have no script-side write at all.
-
-**Readback** keeps the wire well-formed by construction:
-
-- Only `ctx.body` is adopted; head-field assignments are ignored, so a script
-  can't inject a malformed request line, status, or header.
-- An **uncaught exception** discards mutations and emits the original message
-  unchanged — **unless** a directive was already signalled (see below), in which
-  case the directive wins. Use `try/catch`, or signal `NaiveFlow.done()` before
-  throwing, to keep partial work.
-
----
-
-## The `NaiveFlow` API
-
-A global `NaiveFlow` object exposes helpers. **Byte convention:** functions that
-take "bytes" accept a `Uint8Array`, `ArrayBuffer`, or string (UTF-8 encoded);
-functions that return bytes return a `Uint8Array`.
-
-### `NaiveFlow.codec`
-
-Encoder/decoder pairs.
-
-| Member                     | encode                        | decode |
-| -------------------------- | ----------------------------- | ------ |
-| `NaiveFlow.codec.utf8`      | `encode(string) → Uint8Array` | `decode(bytes) → string` |
-| `NaiveFlow.codec.base64`    | `encode(bytes) → string`      | `decode(string) → Uint8Array` |
-| `NaiveFlow.codec.base64url` | `encode(bytes) → string`      | `decode(string) → Uint8Array` |
-| `NaiveFlow.codec.hex`       | `encode(bytes) → string`      | `decode(string) → Uint8Array` |
-| `NaiveFlow.codec.gzip`      | `encode(bytes) → Uint8Array`  | `decode(bytes) → Uint8Array` |
-| `NaiveFlow.codec.deflate`   | `encode(bytes) → Uint8Array`  | `decode(bytes) → Uint8Array` |
-| `NaiveFlow.codec.brotli`    | `encode(bytes) → Uint8Array`  | `decode(bytes) → Uint8Array` |
-
-`base64url` emits unpadded RFC 4648 §5; decode accepts either alphabet, padded or
-not, ignoring whitespace. The compression codecs are for payloads the pipeline
-doesn't already handle (a gzipped blob nested in a JSON field, re-compressing a
-body for `NaiveFlow.respond`); the outer `Content-Encoding` is already
-auto-decoded for `script` rules. Compression `decode` / `encode` **throw** on
-malformed input or output past the 4 MiB cap; the text codecs (`utf8`, `base64`,
-`base64url`, `hex`) never throw — a bad input yields empty or replacement output.
-
-#### `NaiveFlow.codec.protobuf`
-
-Schema-free protobuf wire-format codec.
-
-- `decode(bytes) → [{ field, wire, value }]` — flat list in on-wire order
-  (repeated fields appear multiple times); **throws** on malformed input.
-- `encode(entries) → Uint8Array` — takes the same shape back.
-- `encodeVarint(n) → Uint8Array`, `decodeVarint(bytes, offset?) → { value, consumed } | null`.
-
-Value types by wire type: wire 0 (varint) is a **BigInt**; wire 1 / 5 (fixed64 /
-fixed32) are `Uint8Array` of length 8 / 4 (interpret with a `DataView`); wire 2
-(length-delimited) is a `Uint8Array` — recurse with `decode` for nested messages.
-Group wire types (3, 4) are rejected.
-
-### `NaiveFlow.crypto`
-
-Hashes and HMAC return raw digest bytes; compose with `NaiveFlow.codec.hex.encode`
-/ `base64.encode` to format.
-
-- `md5`, `sha1`, `sha256`, `sha384`, `sha512` — `(bytes) → Uint8Array`.
-- `hmacSHA1`, `hmacSHA256`, `hmacSHA384`, `hmacSHA512` — `(key, data) → Uint8Array`.
-- `randomBytes(n) → Uint8Array` — `n` in `[0, 65536]`; out-of-range throws.
-- `uuid() → string` — lowercased.
-- `aesGCM.encrypt(spec) → { nonce, ciphertext, tag }` and
-  `aesGCM.decrypt(spec) → Uint8Array`. The spec:
-  - `key`: `Uint8Array` of 16 / 24 / 32 bytes (AES-128/192/256).
-  - `nonce`: exactly 12 bytes; any other length throws. On encrypt, omit it to
-    have a fresh random nonce generated and returned.
-  - `plaintext` / `ciphertext`: bytes.
-  - `tag`: 16-byte `Uint8Array` (decrypt only).
-  - `aad`: optional additional authenticated data.
-  - decrypt throws a catchable error on auth failure.
-
-### `NaiveFlow.jwt`
-
-JWT compact serialization (RFC 7519 / 7515). **Pure codec — no signature
-verification or `alg` enforcement;** do that yourself with the crypto helpers.
-
-- `decode(token) → { header, payload, signature, signingInput }`. `header` is
-  parsed JSON; `payload` is parsed JSON or a `Uint8Array` for binary payloads;
-  `signature` is bytes; `signingInput` is the `header.payload` octet string to
-  recompute the signature over.
-- `encode({ header, payload, signature? }) → string`. Object header/payload are
-  `JSON.stringify`'d; bytes/string are used verbatim.
-
-### `NaiveFlow.json`
-
-Byte-oriented JSON editing: **bytes-in / bytes-out** (first arg is the body;
-returns a fresh `Uint8Array` of compact JSON). The contract is **total** — a body
-that isn't JSON, an unresolved path, a type mismatch, or an unserializable value
-all yield the body **unchanged** rather than throwing. A *successful* edit
-re-serializes the whole document, so member order is not preserved and a document
-nested deeper than ~600 levels (or containing non-finite numbers) is left
-unchanged.
-
-- `add(body, path, value)` — upsert at a JSONPath.
-- `replace(body, path, value)` — modify only if the member/index already exists.
-- `replaceRecursive(body, key, value)` — replace every property named `key` at
-  any depth (bare key, not a path).
-- `delete(body, path)` — remove the addressed member/element.
-- `deleteRecursive(body, key)` — remove every property named `key` at any depth.
-- `removeWhereKeyExists(body, path, key)` — at the array at `path`, drop objects
-  containing `key`.
-- `removeWhereFieldIn(body, path, field, values)` — at the array at `path`, drop
-  objects whose `field` equals one of `values` (array or scalar).
-
-> For these same edits **without** a script — declared as a rule, run in native
-> code — use [`body-json` (5)](#body-json-5). A `script` is only needed when the
-> edit must be conditional, computed, or combined with `NaiveFlow.respond` /
-> directives.
-
-### `NaiveFlow.store`
-
-Per-rule-set key/value state, scoped by rule-set id — and, because every
-invocation gets a fresh context, the **only** place script state outlives a
-single message.
-
-- `get(key[, onDisk]) → Uint8Array | undefined`
-- `getString(key[, onDisk]) → string | undefined`
-- `set(key, value[, onDisk])` — value is bytes. **Throws** when the write would
-  exceed the scope's 1 MiB cap or the 16 MiB process-wide cap (catch it and shed
-  entries with `delete`).
-- `delete(key[, onDisk])`
-- `keys([onDisk]) → [string]`
-
-Every method is **shared across every connection to the same rule set** — and
-across its `script` and `stream-script` rules — and survives a rule-set edit.
-Because concurrent invocations share it, treat read-modify-write as racy: another
-connection can write between your `get` and `set`. State is cleared when the rule
-set is **removed** (a disabled set keeps its data).
-
-The **`onDisk`** flag (default `false`) selects the backing:
-
-- **`onDisk: false`** — in-memory. Fast, **cleared when the extension restarts**
-  (tunnel stop, reboot, NE relaunch). For per-session caches.
-- **`onDisk: true`** — persisted to a file in the App Group container, so it
-  **survives extension restarts**. For tokens, cookies, check-in state.
-
-The two backings are **separate keyspaces** with **independent caps**; `keys()`
-lists only the backing you ask for. Tolerate a missing key in either.
-
-```js
-// Persist a refreshed token across tunnel restarts; fall back to a fetch.
-async function process(ctx) {
-  let token = NaiveFlow.store.getString("token", true);
-  if (!token) {
-    const r = await NaiveFlow.http.get("https://api.example.com/token");
-    if (r.status === 200) {
-      token = NaiveFlow.codec.utf8.decode(r.body).trim();
-      try { NaiveFlow.store.set("token", token, true); }
-      catch (e) { NaiveFlow.log.warning("store full: " + e); }
-    }
-  }
-  if (token) ctx.headers.push(["Authorization", "Bearer " + token]);
-}
-```
-
-### `NaiveFlow.params`
-
-Read-only access to the rule set's [parameters](#parameter-lines), scoped to the
-running set. Each value is the user's choice, or the declared default.
-
-- `get(name) → string | undefined` — the value, or `undefined` if undeclared.
-- `keys() → [string]` — the declared parameter names.
-- `all() → { [name]: string }` — every `name → value`.
-
-Unlike [`NaiveFlow.store`](#naiveflowstore), parameters have **no setter** — they
-are configured by the user. An undeclared name reads back `undefined`, so pair it
-with a fallback:
-
-```js
-function process(ctx) {
-  const country = NaiveFlow.params.get("country") || "US";
-  NaiveFlow.log.info("country = " + country);
-  return ctx;
-}
-```
-
-### `NaiveFlow.log`
-
-`info(msg)`, `warning(msg)`, `error(msg)`, `debug(msg)` — written through the
-shared logger, prefixed `[MITM][JS]`. `debug` is **compiled out of release
-builds**; the other three reach both os.log and the user-facing log.
-
-### `NaiveFlow.http`
-
-Make an outbound HTTP(S) request from a script and `await` the response — to
-fetch a token, look up data to splice into the body, or call a sidecar API.
-Available in **`script` rules only** (not `stream-script`); the result must be
-`await`ed, so declare `process` as `async`:
-
-```js
-async function process(ctx) {
-  const r = await NaiveFlow.http.get("https://api.example.com/token");
-  if (r.status === 200) {
-    const token = NaiveFlow.codec.utf8.decode(r.body).trim();
-    ctx.body = NaiveFlow.codec.utf8.encode(JSON.stringify({ token }));
-  }
-}
-```
-
-- `get(url[, options]) → Promise<Response>`
-- `post(url[, options]) → Promise<Response>`
-- `request(options) → Promise<Response>` — the all-options form; `url` is a field
-  of `options`.
-
-**Response**: `{ status, headers, body, url }`. `headers` is `[[name, value], …]`,
-preserving the origin's order and repeated names; `body` is a fully-buffered
-`Uint8Array`, **best-effort** decoded for a `gzip` / `deflate` / `br` response
-(with the stale `Content-Encoding` / `Content-Length` dropped, `Transfer-Encoding`
-always dropped) — an unsupported or failed coding is handed back still compressed
-with its headers intact; `url` is the final URL after any followed redirects. The
-Promise **rejects** with an `Error` on a transport failure, timeout, cap breach,
-or non-HTTP response; an *uncaught* rejection reverts the message unchanged.
-
-**`options`**:
-
-| Field      | Default                 | Meaning |
-| ---------- | ----------------------- | ------- |
-| `method`   | `"GET"` / `"POST"`      | HTTP method. |
-| `headers`  | none                    | `[[name, value], …]` or `{ name: value }`. Entries with an invalid name, a CR/LF/NUL value, or a forbidden name (`Host`, `Content-Length`, `Connection`, `Transfer-Encoding`, and other framing / hop-by-hop headers) are dropped. `Accept-Encoding` is not settable — the client forces `gzip, deflate, br`. |
-| `body`     | empty                   | `Uint8Array`, `ArrayBuffer`, or string. |
-| `timeout`  | 10 000 ms               | **Inactivity** timeout (refreshed on each received chunk), clamped to 30 000 ms. An overall ~60 s idle cap and a 180 s absolute budget also apply. |
-| `redirect` | `"follow"`              | `"follow"` chases up to 10 hops (301/302/303/307/308; cross-origin hops strip `Authorization` / `Cookie`); `"manual"` returns the 3xx as-is. |
-| `insecure` | global *Allow Insecure* | A genuine `true` accepts self-signed server certificates. |
-
-**Execution model.** A script that `await`s a fetch is *parked* — its connection
-waits — but the shared runtime is **not** blocked: other scripts keep running.
-The request is dialed through the tunnel's routing rules (direct / reject / proxy,
-like any other connection) as the extension's own outbound traffic, and is **not**
-re-intercepted by the MITM, so a script may call a host the set also intercepts
-without looping. It is logged in the request log as a `protocol: unknown` entry.
-Because other invocations run while you `await` but each has its own context,
-nothing your script holds across the suspension can change underneath it — except
-[`NaiveFlow.store`](#naiveflowstore), which is deliberately shared, so re-read a
-store value after a fetch rather than caching it across one.
-
-> **Security.** `NaiveFlow.http` follows the tunnel's routing rules — a `reject`
-> rule blocks the fetch, a `proxy` rule routes it — but there is **no SSRF
-> filtering** beyond those rules: any host not rejected is reachable, including
-> `localhost`, `*.local`, and loopback / link-local (incl. the cloud-metadata
-> address) / private / ULA ranges, which are dialed directly. It is both an
-> exfiltration surface and a pivot into on-device and on-network services. Import
-> rule sets only from sources you trust.
-
-### Control directives
-
-- `NaiveFlow.done()` — commit the current `ctx` as this script's result. Because
-  at most one `script` runs per message it does not "skip" other scripts; its use
-  is to lock in mutations before a possible throw, or in `stream-script` to emit
-  this frame and pass every later frame through unchanged.
-- `NaiveFlow.exit()` — discard this script's own changes: revert to the message as
-  it entered the script (after native body edits), or in `stream-script` emit the
-  original frame and stop scripting the stream.
-- `NaiveFlow.respond({ status, headers, body })` — **request-phase only**. Drop the
-  request before it reaches upstream and synthesize a response to the client. All
-  fields optional: `status` defaults to 200 (a value outside 100–599, or a
-  non-integer, is replaced with 200), `headers` to `[]`, `body` to empty. NaiveFlow
-  owns framing, so `Content-Length` and hop-by-hop headers you set are dropped and
-  a `Date` is stamped when absent. Ignored (with a warning) on the response phase
-  and in `stream-script`.
-
-Signal a directive and `return` immediately after.
-
----
+Only `surge` and `quantumult-x` are accepted. Omission defaults to Surge, even if
+the source contains QX identifiers. Source contents no longer select a runtime.
+For `.amrs` operation 100, an optional final field selects the dialect:
+`1, 100, <pattern>, <base64>, quantumult-x`; omission also defaults to Surge.
+Stored JSON script operations carry a `dialect` field; older records without it
+load as Surge. Exports and immutable runtime versions preserve this choice.
+
+Both adapters use the same JavaScriptCore VM, network routing, DNS, storage and
+memory budget. Source syntax/legacy-ABI checks happen when the policy loads;
+request execution reads the compiled dialect directly. There is no performance
+claim without measurements, and neither adapter implies full client compatibility.
 
 ## Subscriptions
 
@@ -863,16 +450,9 @@ the app rule-by-rule.
 
 ## Single-rule semantics
 
-**At most one `script` and one `stream-script` fire per message**, by design.
-When several rules of the same kind match a URL, the **last in rule order wins**.
-When both a `script` and a `stream-script` match, **`stream-script` wins**.
-
-Consolidate composed behavior into one `process(ctx)` rather than splitting it
-across rules. Static operations (`rewrite`, `header-*`) and buffered body rules
-(`body-replace`, `body-json`) are **not** capped — all matching ones apply, in
-order.
-
----
+At most one buffered script fires per message; the last matching script wins.
+All matching static header/rewrite and body JSON/regex operations retain their
+existing ordered behavior. The removed Anywhere streaming ABI does not run.
 
 ## Worked examples
 
@@ -900,156 +480,44 @@ hostname = tracker.example.com
 0, 0, .*, 3
 ```
 
-### Edit a JSON response body (`script`)
-
-```js
-function process(ctx) {
-  try {
-    const obj = JSON.parse(NaiveFlow.codec.utf8.decode(ctx.body));
-    obj.vip = true;
-    ctx.body = NaiveFlow.codec.utf8.encode(JSON.stringify(obj));
-  } catch (e) {
-    NaiveFlow.log.warning("not JSON: " + e);
-  }
-}
-```
-
-```bash
-printf '%s' "$(cat flag.js)" | base64
-```
-
-```
-name     = VIP Flag
-hostname = api.example.com
-1, 100, ^/v1/profile, <base64>
-```
-
-### Mock an endpoint without hitting upstream (`NaiveFlow.respond`)
-
-```js
-function process(ctx) {
-  NaiveFlow.respond({
-    status: 200,
-    headers: [["Content-Type", "application/json"]],
-    body: '{"enabled":true}'
-  });
-}
-```
-
-```
-0, 100, ^/api/feature-flags, <base64>
-```
-
-### Enrich a response with a second request (`NaiveFlow.http`)
-
-```js
-async function process(ctx) {
-  try {
-    const obj = JSON.parse(NaiveFlow.codec.utf8.decode(ctx.body));
-    const r = await NaiveFlow.http.get("https://sidecar.example.com/profile/" + obj.id, {
-      headers: [["accept", "application/json"]],
-      timeout: 3000
-    });
-    if (r.status === 200) {
-      obj.profile = JSON.parse(NaiveFlow.codec.utf8.decode(r.body));
-      ctx.body = NaiveFlow.codec.utf8.encode(JSON.stringify(obj));
-    }
-  } catch (e) {
-    NaiveFlow.log.warning("enrich failed: " + e); // body left unchanged
-  }
-}
-```
-
-```
-1, 100, ^/api/user, <base64>
-```
-
-### Redact tokens in a live SSE stream (`stream-script`)
-
-```js
-function process(ctx) {
-  let text = NaiveFlow.codec.utf8.decode(ctx.body);
-  text = text.replace(/Bearer [A-Za-z0-9._-]+/g, "Bearer ***");
-  ctx.body = NaiveFlow.codec.utf8.encode(text);
-}
-```
-
-```
-name     = Redact SSE
-hostname = api.example.com
-1, 101, ^/events, <base64>
-```
-
-### Count requests across connections (`NaiveFlow.store`)
-
-```js
-function process(ctx) {
-  const prev = NaiveFlow.store.getString("count");
-  const next = (prev ? parseInt(prev, 10) : 0) + 1;
-  try { NaiveFlow.store.set("count", next.toString()); }
-  catch (e) { NaiveFlow.log.warning("store full: " + e); }
-  NaiveFlow.log.info("request #" + next + " to " + ctx.url);
-}
-```
-
-```
-0, 100, .*, <base64>
-```
-
-> A script can't add the count as a request header (`ctx.headers` is read-only);
-> use a `header-add` rule for a fixed header.
-
----
-
 ## Behavior reference
 
-- **Content-Encoding.** For `script` rules the body is decompressed before the
-  script runs and re-emitted as identity with `Content-Encoding` dropped and a
-  fresh `Content-Length`. If the body rules leave the decompressed body
-  byte-for-byte unchanged, the original compressed bytes and `Content-Encoding`
-  are forwarded instead. `stream-script` rules see raw, still-compressed frames.
-  A concatenated multi-member `gzip` body — or one truncated or corrupt past its
-  first member — is left compressed and forwarded unrewritten.
-- **Transfer-Encoding content-codings.** A body whose `Transfer-Encoding` carries
-  a content-coding (`gzip, chunked`, or a bare `gzip` framed by connection close)
-  is forwarded verbatim: the buffered path decodes only `Content-Encoding` and
-  the `chunked` framing. A framing header injected by a header rule is rejected at
-  load, and any that slips through is dropped at emission, so a rule can't create
-  the `Transfer-Encoding` + `Content-Length` pair that inbound messages are
-  rejected for (RFC 9112 §6.3.3) — except via `header-delete`, which is unguarded.
-- **Accept-Encoding.** NaiveFlow clamps the client's `Accept-Encoding` to the
-  codings it can decode (`gzip`, `deflate`, `br`, `identity`) *only* when a
-  response-phase body rule matches the request; a passthrough request forwards it
-  untouched. A body that still arrives in an unsupported `Content-Encoding` is
-  forwarded unrewritten.
-- **HEAD responses.** A response to `HEAD` never carries a body; a script's
-  `ctx.body` write is dropped on the wire.
-- **Interim 1xx responses.** `100 Continue`, `103 Early Hints`, etc. are
-  forwarded as-is; scripts run only on the final response.
-- **Protocol upgrades & tunnels.** On **HTTP/1.1** a `101 Switching Protocols`, or
-  a `2xx` to `CONNECT`, turns the connection into an opaque tunnel: both
-  directions drop to verbatim passthrough and no rule sees the tunneled bytes. An
-  **HTTP/2** `CONNECT` can't cross the bridge — a classic CONNECT is refused with
-  `HTTP_1_1_REQUIRED` (the client retries over HTTP/1.1, where the tunnel path
-  applies) and the RFC 8441 extended form is refused with `PROTOCOL_ERROR`.
-- **Pipelining order.** A request-phase `NaiveFlow.respond` on a pipelined
-  connection is held until the in-flight response ahead of it finishes, so the
-  client's ordering is preserved.
-- **Streaming media + `script`.** A buffered body rule on `text/event-stream` and
-  similar de-streams the response; the rule still runs but logs a warning
-  recommending `stream-script` (HTTP/1 response path only).
-- **Fail-closed URL gate.** If the request URL can't be determined, every rule's
-  URL gate is skipped rather than firing blind.
-- **Regex scope.** URL patterns match the whole request URL, so they scope by
-  scheme and host as well as path; they never see the method or HTTP version, and
-  the set's `hostname` suffixes gate the host first.
-- **Scripts never change the head.** In both `script` and `stream-script`, only
-  `ctx.body` is adopted — header/method/URL/status edits come from rules, not
-  scripts. On the HTTP/2 legs even a response-phase `NaiveFlow.respond` is ignored.
-
+MITM still requires a matching hostname scope and trusted CA for TLS. Static
+rewrites and native JSON/regex body rules remain available. Script support is a
+subset of Surge / Quantumult X; unsupported source is rejected before activation.
+Body and concurrency limits apply to both dialects. See the shared memory budget
+below for overload behavior.
 
 The temporary certificate profile server binds only to `127.0.0.1`. It accepts
 at most four concurrent clients, limits request headers to 16 KiB, and closes
 each client after five seconds. Only GET/HEAD requests for
 `/NaiveFlowMITMRoot.mobileconfig` are served. Stopping the server closes all
 clients; the endpoint expires after 120 seconds.
+
+
+## Shared transient memory budget (2026-11-12)
+
+MITM body buffering, native body edits, buffered script invocations, script HTTP
+responses, HTTP/2 downstream pacing, pre-dial buffers and leg write queues now
+compete for one process-local **24 MiB accounting budget**. Existing per-body,
+per-stream, concurrency and fetch-byte limits continue to apply.
+
+Body rewrite admission reserves room for the body and one decoded/transformed
+copy. Unknown-length bodies reserve their allowed maximum before buffering.
+Native JSON/regex work retains its existing workspace estimates. Buffered JS
+invocations reserve estimated body-copy space plus context overhead; fetched
+response copies retained by JS are charged to that invocation until its actual
+lifetime ends. Native fetched responses carry their own lifetime reservation.
+HTTP/2 flow-control backlogs and in-flight writer batches stay charged until
+consumed, sent, failed or released.
+
+If admission fails, body rewriting is skipped and existing framing forwards the
+body. Script/native edit budget failures retain the unmodified message; script
+HTTP failures reject the request. Writer or pre-dial overflow closes the affected
+connection, and HTTP/2 downstream overflow resets the affected stream. These
+paths log their reason. They do not silently change the selected network route.
+
+This is payload/workspace accounting, **not a 24 MiB process footprint cap**.
+JavaScript allocations unrelated to the accounted bodies, TLS/system buffers,
+headers, allocator overhead and other tunnel modules remain outside this ledger.
+Actual peak memory and throughput still require device measurements.

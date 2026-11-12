@@ -135,7 +135,12 @@ actor MITMSession: MITMHTTP1StreamDelegate {
 
     private var outerConnection: ProxyConnection?
 
-    private var pendingUpstreamBytes = Data()
+    private let upstreamMemory = TransientMemoryReservation()
+    private var pendingUpstreamBytes = Data() {
+        didSet {
+            if pendingUpstreamBytes.count < oldValue.count { upstreamMemory.resize(pendingUpstreamBytes.count) }
+        }
+    }
 
     private var isDialing = false
 
@@ -875,6 +880,12 @@ actor MITMSession: MITMHTTP1StreamDelegate {
     }
 
     private func bufferUpstreamAndDial(_ transformed: Data, inner: any MITMByteLeg) {
+        guard transformed.count <= Self.maxPendingUpstreamBytes - pendingUpstreamBytes.count,
+              upstreamMemory.resize(pendingUpstreamBytes.count + transformed.count) else {
+            logger.warning("[MITM] Shared pre-dial memory budget exceeded")
+            cancel(error: nil)
+            return
+        }
         pendingUpstreamBytes.append(transformed)
         if pendingUpstreamBytes.count > Self.maxPendingUpstreamBytes {
             logger.warning("[MITM] \(dstHost): Pre-dial buffer full")

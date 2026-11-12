@@ -1,5 +1,7 @@
 # 第一步：工程基线检查
 
+最新构建与测试记录见文末「2026-11-12 构建与测试回归」。以下早期记录保留当时状态。
+
 检查日期：2026-11-03（静态检查）、2026-11-04（依赖收敛与构建）。状态：iOS 与 tvOS 无签名构建通过；签名、真机与单元测试验收未完成。
 
 ## 已完成
@@ -171,3 +173,116 @@ manifest 内无远程依赖，**没有任何需要联网拉取的东西**。第 
 - 最新全量模拟器测试 **318 项通过**，不再适用“单元测试未执行”的旧记录；历史段落保留作当时快照。
 - 当前仍未完成的是签名、开发者账号能力、真机 VPN/网络路径和受控服务验收。根目录未新增 README 文件。
 
+
+### 2026-11-12 构建与测试回归
+
+- 基线提交：`b7d9139209d76c6e6e7bde67a1c547bbf6d6f863`；检查开始时工作区干净。本次另补齐 `ConfigurationModule.settingOwners` 中 `lan-proxy-enabled` 的 `.outbound` 归属，并更新检查记录。
+- 环境：Xcode 27.2（27B52），iPhone 17 / iOS 27.2 模拟器（`DE25C87A-6656-4AEF-93E0-12FE8D85407F`）。工程识别 6 个 target、4 个本地 SwiftPM 包，无远程包依赖。
+- 使用独立 DerivedData 目录执行 Debug 无签名构建（`CODE_SIGNING_ALLOWED=NO`）；首次构建及修复后复构建均成功。
+
+| 检查 | 目标 / destination | 最终结果 | 日志（本机临时目录） |
+| --- | --- | --- | --- |
+| iOS 构建 | `NaiveFlow` / `generic/platform=iOS`，含 Network Extension、Widget | BUILD SUCCEEDED | `/tmp/naiveflow-20261112/ios-fixed.log` |
+| tvOS 构建 | `NaiveFlow TV` / `generic/platform=tvOS`，含 Network Extension | BUILD SUCCEEDED | `/tmp/naiveflow-20261112/tvos-fixed.log` |
+| macOS 构建 | `NaiveFlow macOS` / `platform=macOS`，依赖 Network Extension | BUILD SUCCEEDED | `/tmp/naiveflow-20261112/macos-fixed.log` |
+| IPv4 内核包测试 | `swift test --package-path Packages/NaiveFlowIP --scratch-path /tmp/naiveflow-20261112/ip-package` | 3 项通过，0 失败 | `/tmp/naiveflow-20261112/ip-package.log` |
+
+#### 最终模拟器全量结果
+
+修复后返回 **TEST SUCCEEDED**。xcresult summary：**357 项通过、0 失败、7 项跳过，总计 364 项**；参数化用例展开后的设备执行统计为 **361 次通过、0 失败、7 次跳过**。两种统计口径分别保留，避免与历史测试数量直接混比。
+
+结果包：`/tmp/naiveflow-20261112/Tests-fixed.xcresult`；日志：`/tmp/naiveflow-20261112/tests-fixed.log`；摘要：`/tmp/naiveflow-20261112/test-summary-fixed.json`。
+
+复现全量测试（结果包路径须尚不存在）：
+
+```sh
+xcodebuild -project NaiveFlow.xcodeproj -scheme NaiveFlow -configuration Debug \
+  -destination 'platform=iOS Simulator,id=DE25C87A-6656-4AEF-93E0-12FE8D85407F' \
+  -derivedDataPath /tmp/naiveflow-20261112/simulator \
+  -resultBundlePath /tmp/naiveflow-20261112/Tests-fixed.xcresult \
+  CODE_SIGNING_ALLOWED=NO test
+```
+
+各平台构建使用同一工程的相应 scheme、上表 destination 和独立 DerivedData 目录，执行 `CODE_SIGNING_ALLOWED=NO build`。最终 `git diff --check` 通过。
+
+#### 首次失败及修复
+
+首次全量模拟器测试返回 TEST FAILED：按 xcresult summary 的测试定义口径，356 项通过、1 项失败、7 项跳过，总计 364 项。失败用例为 `ConfigurationCoordinatorTests/everyAppliedKeyHasAnOwner()`，断言指出 `lan-proxy-enabled` 已列为可应用配置，却未登记模块归属。已将该键归属至 `.outbound`，保留现有一致性测试，并在修改后重新执行全量测试与各平台构建。
+
+首次结果包：`/tmp/naiveflow-20261112/Tests.xcresult`；日志：`/tmp/naiveflow-20261112/tests.log`；摘要：`/tmp/naiveflow-20261112/test-summary.json`。参数化用例按执行实例统计时通过数量为 360，与测试定义口径不同。
+
+#### 跳过与未执行的环境验收
+
+`ConfigurationConnectivityTests` 的 7 项测试由 `TestEnvironment.isConfigured` 控制，本次未提供 `NAIVEFLOW_TEST_PROXY_URL`，因此跳过，不计作通过：
+
+- `http11PlaintextRoundTrips`
+- `http11OverTLSRoundTrips`
+- `http2RoundTrips`
+- `http11PlaintextLargePayloadIsByteExact`
+- `http2LargePayloadIsByteExact`
+- `http3RoundTrips`
+- `http3LargePayloadIsByteExact`
+
+执行这些用例还需可达的受控代理和符合测试约定的 HTTP/HTTPS 回显服务；目标可通过 `NAIVEFLOW_TEST_TARGET_HOST`、`NAIVEFLOW_TEST_HTTP_PORT`、`NAIVEFLOW_TEST_HTTPS_PORT` 指定。不得把上述跳过当作协议连通性已通过。
+
+macOS、tvOS、Widget 和 Network Extension 没有各自独立的已配置测试 action；本次对它们执行构建检查，应用测试在 iOS 模拟器运行，内核包测试在 macOS 运行。签名、provisioning profile、真机安装、VPN/防绕行、受控 DNS 抓包、网络切换和长期运行均未执行。
+
+#### 构建警告
+
+存在非阻塞源码警告：AnyTLS / Shadowsocks 的 `CC_MD5` 弃用、LAN 地址处理的 `String(cString:)` 弃用、MITM 脚本 `JSValue?` 到 `Any` 的转换、未修改的局部变量、未使用的 `try?` 结果及多余 `try`。首次各平台日志按源文件位置去重均为 12 条；模拟器测试另有 `TunnelStartSequencerTests` 的 4 处多余 `try` 警告。本次没有改变协议算法或批量清理这些警告。
+
+首次沙箱执行无法访问 CoreSimulator 服务和 Xcode 缓存；获准使用所需本机服务后已正常完成构建与测试执行，该环境问题与源码失败分别记录。原始日志、构建产物和 xcresult 位于 `/tmp/naiveflow-20261112`，属于临时文件，后续可能被系统清理。
+
+
+### 2026-11-12 内存积压限制改动
+
+- DNS：每缓存最多 64 个未完成解析任务、每任务最多 64 个等待者；刷新/切换上游取消旧任务且拒绝过时代次结果，但直到工作真正完成才释放额度。系统 DNS 默认实例共用 16 个执行额度，取消无限等待队列，过载立即失败。
+- 发包：队列最多 2 MiB 且最多 1,024 个包，超额丢弃新包；单个已取出的写出批次仍在队列外，所以该限额不是整个发包路径的总内存上限。TCP 保留重传语义；UDP 不保证送达。
+- MITM：已接入的正文缓冲、原生编辑估算工作区、脚本与其 HTTP 响应、HTTP/2 下行积压、拨号前缓冲和写队列共用 24 MiB 计账预算；额度不足时沿用透传/不改写、HTTP 请求失败、stream reset 或关闭连接的相应路径，并记录原因。
+- 预算通过生命周期 reservation 释放，覆盖错误、对象销毁和异步发送批次；不把计账容量声称为实际进程物理内存上限。Geo、请求日志和既有 TCP/UDP 缓冲额度未调整。
+- 新增 `MemoryAdmissionTests` 5 项，验证 DNS 超时与刷新不绕过上限、取消请求不启动工作、系统 DNS 满载立即拒绝、包队列字节/数量限制与复用、共享 reservation 争用与销毁释放。
+- 初次编译发现新共享工具尚未纳入扩展 target，已补齐工程 membership；首轮全量测试随后通过。最终代码包含额外的 HTTP/2 pacing 和脚本响应生命周期计账，最终结果另记于下方。
+
+
+最终验证（内存限制改动后）：
+
+| 检查 | 结果 | 本机日志 / 结果包 |
+| --- | --- | --- |
+| iOS 主应用、Network Extension、Widget 无签名构建 | BUILD SUCCEEDED | `/tmp/naiveflow-20261112/memory-ios.log` |
+| tvOS 主应用及扩展无签名构建 | BUILD SUCCEEDED | `/tmp/naiveflow-20261112/memory-tvos.log` |
+| macOS 主应用及扩展依赖无签名构建 | BUILD SUCCEEDED | `/tmp/naiveflow-20261112/memory-macos.log` |
+| iPhone 17 / iOS 27.2 全量测试 | TEST SUCCEEDED；362 项通过、0 失败、7 项跳过（共 369 项；参数化展开后 366 次通过） | `/tmp/naiveflow-20261112/MemoryTests-final.xcresult`；`memory-tests-final.log`；`memory-test-summary-final.json` |
+| 工程格式与差异检查 | `plutil -lint`、`git diff --check` 通过 | — |
+
+7 项跳过仍为缺少受控代理配置的 `ConfigurationConnectivityTests`，与本次新增测试无关。新增 5 项全部通过。尚未执行真机内存采样、压力流量、MITM 并发流量与吞吐基准；不能把这些静态预算换算成已实测节省的 MiB。
+
+
+### 2026-11-12 移除 Anywhere 原生脚本兼容
+
+- 删除脚本方言 `.native`、`process(ctx)` 编译/执行分支、原生 `NaiveFlow.*` 全局注入及其 codec/crypto/JWT/JSON/store/params/log/http API 实现；保留 Surge 与 Quantumult X 适配器使用的底层 HTTP、存储和字节转换工具。
+- 配置校验不再要求声明 `process(context)`；有效的 Surge/QX 顶层脚本可通过语法校验，常见的原生入口/命名空间用法会给出明确的已移除错误。注释和字符串中的旧名称不作为可执行 API 判断。
+- `stream-script` / operation 101 不再导入或激活，扩展编译旧记录时拒绝执行。旧序列化枚举仅保留用于读取与诊断，不自动转换或删除用户保存的数据。
+- QX 的 `$task` / `$prefs` / `$notify` 用法进入 Quantumult X 分支；其余接受的脚本进入 Surge。尚未增加显式方言配置，不声称完整 Surge/QX 兼容。
+- 外部脚本使用 `$done` 完成：同步调用首个结果生效，异步回调期间保留运行上下文，并沿用取消、超时和共享内存预算。通用 MITM、静态改写和原生 JSON/regex 正文规则保留。
+- 原生脚本说明与示例从 MITM 文档移除。旧 Parameter 元数据仍可读取/导出，其 `NaiveFlow.params` 脚本 API 不再可用。
+- 新增 `ForeignScriptValidationTests`，覆盖 Surge/QX 源码、5 种旧 ABI 写法拒绝、注释/字符串误判、stream=true 的预下载诊断和非法语法；更新原有成功脚本样例为 `$done` 形式。
+
+
+最终验证（移除 Anywhere ABI 后）：iOS 主应用、扩展、Widget、tvOS、macOS 的无签名构建全部 BUILD SUCCEEDED；最终全量模拟器测试 TEST SUCCEEDED，**368 项通过、0 失败、7 项跳过，总计 375 项**，参数化展开后 **376 次通过**。新增验证全部通过。7 项跳过仍为未配置受控代理的连通性测试。
+
+日志：`/tmp/naiveflow-20261112/foreign-ios.log`、`foreign-tvos.log`、`foreign-macos.log`、`foreign-scripts-final.log`；结果包：`/tmp/naiveflow-20261112/ForeignScripts-final.xcresult`；摘要：`/tmp/naiveflow-20261112/foreign-script-summary.json`。工程格式与 `git diff --check` 检查通过。真机 MITM、第三方实际脚本和异步 HTTP 兼容行为仍需单独验收，不能把本次源码/配置校验测试称为 Surge/QX 全量兼容验收。
+
+
+### 2026-11-12 Surge 默认方言与显式 QX 选择
+
+- `[Script]` 新增 `dialect=surge|quantumult-x`，省略时固定为 Surge；空值和未知值在预览/激活前报错。QX 脚本需显式选择，不再依赖源码中的 `$task` / `$prefs` / `$notify` 猜测。
+- 方言进入 `MITMOperation.script`、Codable、文本编译、不可变运行版本与扩展编译后的脚本操作；导出 `[MITM Set]` 保留该字段。旧 JSON 无字段时默认 Surge；未知 JSON 值拒绝解码。`.amrs` operation 100 可追加 `surge` 或 `quantumult-x` 字段。
+- MITM 二进制载荷升级为 v3，script 操作增加方言字节（0 Surge、1 Quantumult X），读取 v1/v2 时使用 Surge，未知方言字节拒绝。旧内核不应读取新载荷；应用与扩展需使用同次构建。
+- 执行路径直接使用编译后的方言，移除每次请求时的源码类型猜测和重复语法检查；语法/旧 ABI 校验仍在发布与策略加载时进行。Surge/QX 继续共用 VM、路由/DNS、HTTP、存储和共享内存预算，不引入第二套网络实现。
+- 新增 `ScriptDialectTests` 8 个测试定义，覆盖默认值、显式两种方言、4 组非法值、旧 JSON、导出回读、`.amrs` 导入、方言编辑触发 MITM 重载以及不可变版本保存读取。
+- 首次新测试编译时使用了错误的导出器测试 API，已改用现有 `ConfigurationExporter.export`；随后一项版本保存测试因缺少必需偏好键而得到 `.invalidBundle`，已补齐测试数据。生产代码未因该测试数据问题放宽运行版本校验。
+
+
+最终结果（显式方言改动后）：iOS（含 Network Extension / Widget）、tvOS、macOS 无签名构建全部 BUILD SUCCEEDED；全量模拟器测试 TEST SUCCEEDED，**376 项通过、0 失败、7 项跳过，共 383 项**；参数化展开后 **388 次通过**。新增 8 个测试定义全部通过。7 项跳过仍因未配置受控代理。
+
+构建日志：`/tmp/naiveflow-20261112/dialect-ios.log`、`dialect-tvos.log`、`dialect-macos.log`；最终测试日志：`/tmp/naiveflow-20261112/script-dialects-verified.log`；结果包：`/tmp/naiveflow-20261112/ScriptDialects-verified.xcresult`；统计：`/tmp/naiveflow-20261112/script-dialect-summary.json`。`plutil -lint` 和 `git diff --check` 通过。尚未做真机脚本兼容矩阵或性能基准，不声明性能提升数值。

@@ -137,7 +137,22 @@ actor MITMHTTP1Stream {
         case awaitingGates
     }
 
-    private var mode: Mode = .awaitingHead
+    private let bodyMemory = TransientMemoryReservation()
+    private func reserveBodyMemory(_ bytes: Int) -> Bool {
+        // Reserve room for the wire body plus a decoded/transformed copy.
+        let admitted = bodyMemory.resize(bytes * 2)
+        if !admitted { logger.warning("[MITM] Shared body memory budget exceeded; forwarding body") }
+        return admitted
+    }
+
+    private var mode: Mode = .awaitingHead {
+        didSet {
+            switch mode {
+            case .rewritingLength, .rewritingChunked, .rewritingUntilClose, .awaitingScript: break
+            default: bodyMemory.resize(0)
+            }
+        }
+    }
 
     private enum ResumeMode: Sendable {
         case awaitingHead
@@ -570,7 +585,8 @@ actor MITMHTTP1Stream {
                !MITMScriptTransform.hasStreamScriptRule(in: rules, verdicts: gates.ruleTable) {
                 let codec = MITMBodyCodec.plan(for: combinedHeaderValue(rewrittenHeaders, name: "content-encoding"))
                 let hasContentCodedTransferEncoding = Self.transferEncodingHasContentCoding(combinedHeaderValue(rewrittenHeaders, name: "transfer-encoding"))
-                if codec.isSupported, !codec.requiresDecompression, !hasContentCodedTransferEncoding {
+                if codec.isSupported, !codec.requiresDecompression, !hasContentCodedTransferEncoding,
+                   reserveBodyMemory(MITMBodyCodec.maxBufferedBodyBytes) {
                     warnIfBufferedScriptDeStreams(rewrittenHeaders)
                     var headers = rewrittenHeaders.filter {
                         !ASCII.equalsIgnoringCase($0.name, "connection")
@@ -788,6 +804,7 @@ actor MITMHTTP1Stream {
 
         let codec = MITMBodyCodec.plan(for: combinedHeaderValue(rewrittenHeaders, name: "content-encoding"))
         let canRewrite = buffersBody && codec.isSupported && length <= MITMBodyCodec.maxBufferedBodyBytes
+            && reserveBodyMemory(codec.requiresDecompression ? MITMBodyCodec.maxBufferedBodyBytes : length)
 
         if canRewrite {
             let headers = handleExpectContinue(startLine: rewrittenStartLine, headers: rewrittenHeaders)
@@ -849,7 +866,8 @@ actor MITMHTTP1Stream {
 
         let codec = MITMBodyCodec.plan(for: combinedHeaderValue(rewrittenHeaders, name: "content-encoding"))
         let hasContentCodedTransferEncoding = Self.transferEncodingHasContentCoding(combinedHeaderValue(rewrittenHeaders, name: "transfer-encoding"))
-        if buffersBody, codec.isSupported, !hasContentCodedTransferEncoding {
+        if buffersBody, codec.isSupported, !hasContentCodedTransferEncoding,
+           reserveBodyMemory(MITMBodyCodec.maxBufferedBodyBytes) {
             warnIfBufferedScriptDeStreams(rewrittenHeaders)
             let headers = handleExpectContinue(startLine: rewrittenStartLine, headers: rewrittenHeaders)
             bodyAccumulator = Data()
@@ -1032,6 +1050,17 @@ actor MITMHTTP1Stream {
         into output: inout Data
     ) -> Bool {
         guard !receiveBuffer.isEmpty else { return false }
+        if receiveBuffer.count > MITMBodyCodec.maxBufferedBodyBytes - bodyAccumulator.count {
+            logger.warning("[MITM] \(host): Body too large for rewrite")
+            if bridgeResetIfNeeded() { return false }
+            output.append(serializeHead(startLine: pending.startLine, headers: pending.headers))
+            output.append(takeBodyAccumulator())
+            receiveBuffer.appendPrefix(receiveBuffer.count, to: &output)
+            receiveBuffer.removeAll(keepingCapacity: false)
+            flushSynthesizedAfterResponse(into: &output)
+            mode = .passthrough
+            return true
+        }
         receiveBuffer.appendPrefix(receiveBuffer.count, to: &bodyAccumulator)
         receiveBuffer.removeAll(keepingCapacity: false)
         if bodyAccumulator.count > MITMBodyCodec.maxBufferedBodyBytes {
@@ -2360,6 +2389,7 @@ nonisolated private final class ChunkedReader {
                 }
             case .chunkData(let remaining, let originalSize):
                 let take = min(remaining, buffer.count)
+                guard take <= MITMBodyCodec.maxBufferedBodyBytes - output.count else { return .malformed }
                 buffer.appendPrefix(take, to: &output)
                 buffer.removeFirst(take)
                 let left = remaining - take

@@ -28,6 +28,8 @@ nonisolated enum TunnelConstants {
 
     // MARK: - Output Writes
 
+    static let outputQueueByteLimit = 2 * 1024 * 1024
+    static let outputQueuePacketLimit = 1024
     static let outputWriteLimit = 64
     static let outputRetryLimit = 8
     static let outputRetryDelayMicroseconds = 50

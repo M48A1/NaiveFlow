@@ -342,12 +342,14 @@ nonisolated final class MITMScriptHTTP2Stream: Sendable {
 
         let responseHeaders = snapshot.headers.filter { !dropHeaders.contains($0.name.lowercased()) }
 
-        finish(.success(MITMScriptHTTPClient.Response(
-            status: snapshot.status,
-            headers: responseHeaders,
-            body: responseBody,
-            finalURL: request.url?.absoluteString
-        )), removeFromConnection: true, sendRST: false)
+        do {
+            let response = try MITMScriptHTTPClient.Response(
+                status: snapshot.status, headers: responseHeaders,
+                body: responseBody, finalURL: request.url?.absoluteString)
+            finish(.success(response), removeFromConnection: true, sendRST: false)
+        } catch {
+            fail(error)
+        }
     }
 
     private func finish(

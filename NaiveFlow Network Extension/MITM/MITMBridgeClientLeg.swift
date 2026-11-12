@@ -98,6 +98,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
         var rewrittenHeaders: [(name: String, value: String)]
         let codec: MITMBodyCodec.Plan
         var data: Data
+        var memory: TransientMemoryReservation? = nil
         let indexing: HPACKIndexingHints
         let isScripted: Bool
         let resolvedUpstream: (host: String, port: UInt16?)?
@@ -115,6 +116,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
     // MARK: Client-bound (response) state
 
     private struct PaceState {
+        let memory = TransientMemoryReservation()
         var pending = MITMByteQueue()
         var streamWindow: Int
         var sawEnd = false
@@ -566,13 +568,19 @@ actor MITMBridgeClientLeg: MITMResponseSink {
             rewritten = rewritten.filter { !ASCII.equalsIgnoringCase($0.name, "expect") }
         }
 
-        if willBufferBody {
+        let bodyMemory = TransientMemoryReservation()
+        let admittedBody = willBufferBody && bodyMemory.resize(MITMBodyCodec.maxBufferedBodyBytes * 2)
+        if willBufferBody, !admittedBody {
+            logger.warning("[MITM] Shared body memory budget exceeded; forwarding HTTP/2 body")
+        }
+        if admittedBody {
             let codec = MITMBodyCodec.plan(for: HTTPHeader.firstValue(in: rewritten, named: "content-encoding"))
             requestStreams[streamID] = .buffering(
                 BufferedRequest(
                     rewrittenHeaders: rewritten,
                     codec: codec,
                     data: Data(),
+                    memory: bodyMemory,
                     indexing: indexing,
                     isScripted: true,
                     resolvedUpstream: resolvedUpstream,
@@ -590,13 +598,14 @@ actor MITMBridgeClientLeg: MITMResponseSink {
         } else if let raw = HTTPHeader.firstValue(in: rewritten, named: "content-length"),
                   let length = Int(raw.trimmingCharacters(in: .whitespaces)), length >= 0 {
             framing = length == 0 ? .none : .contentLength(length)
-        } else if isBodylessMethod {
+        } else if isBodylessMethod, bodyMemory.resize(MITMBodyCodec.maxBufferedBodyBytes * 2) {
             let codec = MITMBodyCodec.plan(for: HTTPHeader.firstValue(in: rewritten, named: "content-encoding"))
             requestStreams[streamID] = .buffering(
                 BufferedRequest(
                     rewrittenHeaders: rewritten,
                     codec: codec,
                     data: Data(),
+                    memory: bodyMemory,
                     indexing: indexing,
                     isScripted: false,
                     resolvedUpstream: resolvedUpstream,
@@ -759,6 +768,13 @@ actor MITMBridgeClientLeg: MITMResponseSink {
 
     private func appendBufferedRequest(streamID: UInt32, body: Data, endStream: Bool) -> Bool {
         guard case .buffering(var buffer)? = requestStreams.removeValue(forKey: streamID) else { return false }
+        guard body.count <= MITMBodyCodec.maxBufferedBodyBytes - buffer.data.count else {
+            // Keep the incoming DATA frame out of the rewrite buffer.
+            _ = abandonBufferedToChunked(streamID: streamID, buffer: buffer)
+            delegate?.clientLegSendRequestData(streamID: streamID, body, endStream: endStream)
+            if endStream { finishRequestUpload(streamID) }
+            return false
+        }
         buffer.data.append(body)
         if !endStream, buffer.data.count > MITMBodyCodec.maxBufferedBodyBytes {
             return abandonBufferedToChunked(streamID: streamID, buffer: buffer)
@@ -1056,6 +1072,11 @@ actor MITMBridgeClientLeg: MITMResponseSink {
 
     private func appendClientBody(streamID: UInt32, data: Data, endStream: Bool) {
         if paceStates[streamID] == nil { paceStates[streamID] = makePaceState(streamID) }
+        guard let pace = paceStates[streamID], pace.memory.resize(pace.pending.count + data.count) else {
+            logger.warning("[MITM] Shared downstream memory budget exceeded")
+            rstToClient(streamID, errorCode: Codec.ErrorCode.internalError, abortUpstream: true)
+            return
+        }
         paceStates[streamID]?.pending.append(data)
         if endStream { paceStates[streamID]?.sawEnd = true }
         flushResponse(streamID)
@@ -1087,6 +1108,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
             for part in Codec.dataFrames(streamID: streamID, payload: chunks, endStream: endOnData) {
                 delegate?.clientLegWriteToClient(part)
             }
+            paceState.memory.resize(paceState.pending.count)
             paceState.streamWindow -= available
             if endOnData { paceState.isFinished = true }
             delegate?.clientLegResponseDrained(streamID: streamID, byteCount: available)
