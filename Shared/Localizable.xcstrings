@@ -1,6 +1,76 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Import Module File" : {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入模块文件"
+          }
+        }
+      }
+    },
+    "The module and its scripts are downloaded together. HTTPS scripts require MITM to be enabled and its certificate trusted." : {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将一并下载模块及其引用的脚本。HTTPS 脚本需要启用 MITM 并信任其证书。"
+          }
+        }
+      }
+    },
+    "Downloading module and scripts\u2026" : {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在下载模块和脚本…"
+          }
+        }
+      }
+    },
+    "Module Type" : {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模块类型"
+          }
+        }
+      }
+    },
+    "Module URL" : {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模块链接"
+          }
+        }
+      }
+    },
+    "Import Notes" : {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入提示"
+          }
+        }
+      }
+    },
+    "Choose a .%@ file." : {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择 .%@ 文件。"
+          }
+        }
+      }
+    },
   "Overview": {
     "localizations": {
       "zh-Hans": {
@@ -3707,58 +3777,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "NaiveFlow MITM 规则列表 URL"
-          }
-        }
-      }
-    },
-    "NaiveFlow Module URL" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "رابط وحدة NaiveFlow"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "NaiveFlow Module URL"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "URL del módulo NaiveFlow"
-          }
-        },
-        "fa" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "نشانی ماژول NaiveFlow"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "URL модуля NaiveFlow"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "NaiveFlow Modül URL'si"
-          }
-        },
-        "vi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "URL mô-đun NaiveFlow"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "NaiveFlow 模块 URL"
           }
         }
       }
@@ -10104,110 +10122,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无效 NaiveFlow MITM 规则列表 URL。"
-          }
-        }
-      }
-    },
-    "Invalid NaiveFlow Module File." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ملف وحدة NaiveFlow غير صالح."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Invalid NaiveFlow Module File."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Archivo de módulo NaiveFlow no válido."
-          }
-        },
-        "fa" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "فایل ماژول NaiveFlow نامعتبر است."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Недействительный файл модуля NaiveFlow."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Geçersiz NaiveFlow Modül Dosyası."
-          }
-        },
-        "vi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tệp mô-đun NaiveFlow không hợp lệ."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无效 NaiveFlow 模块文件。"
-          }
-        }
-      }
-    },
-    "Invalid NaiveFlow Module URL." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "رابط وحدة NaiveFlow غير صالح."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Invalid NaiveFlow Module URL."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "URL del módulo NaiveFlow no válida."
-          }
-        },
-        "fa" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "نشانی ماژول NaiveFlow نامعتبر است."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Недействительный URL модуля NaiveFlow."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Geçersiz NaiveFlow Modül URL'si."
-          }
-        },
-        "vi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "URL mô-đun NaiveFlow không hợp lệ."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无效 NaiveFlow 模块 URL。"
           }
         }
       }

@@ -77,18 +77,41 @@ struct ResourceRefreshRaceTests {
 
     // MARK: - Module refresh ordering
 
+    @Test func foreignModuleRefreshUsesSavedFormat() async throws {
+        let sync = SyncStore.ephemeral()
+        let (store, routingScheduler, mitmScheduler) = moduleStore(sync: sync)
+        let url = URL(string: "https://example.com/feed.snippet")!
+        let made = try await ModuleOperations.makeModule(
+            from: "^https://example.com/old url reject\nhostname = example.com",
+            fallbackName: "Feed", subscriptionURL: url, format: .quantumultX
+        )
+        store.add(made.module)
+        var operations = ModuleOperations(
+            moduleStore: store,
+            routingExportScheduler: routingScheduler,
+            mitmExportScheduler: mitmScheduler
+        )
+        operations.fetchBodyOverride = { _ in
+            "^https://example.com/new url reject\nhostname = example.com"
+        }
+        let refreshed = try await operations.refresh(id: made.module.id)
+        #expect(refreshed.sourceFormat == .quantumultX)
+        #expect(refreshed.mitmRuleSets.first?.rules.first?.urlPattern == "^https://example.com/new")
+        #expect(refreshed.mitmRuleSets.first?.id == made.module.mitmRuleSets.first?.id)
+    }
+
     /// A slow, older module refresh must not overwrite content a newer refresh
     /// already committed (e.g. "Update All" racing a detail-page refresh).
     @Test func moduleRefreshKeepsNewestContent() async throws {
         let sync = SyncStore.ephemeral()
         let (store, routingScheduler, mitmScheduler) = moduleStore(sync: sync)
         let url = URL(string: "https://example.com/feed")!
-        let seed = ModuleParser.parse("[Module]\nname=Feed\n").makeModule(name: "Feed", subscriptionURL: url)
+        let seed = Module(name: "Feed", subscriptionURL: url, sourceFormat: .surge)
         store.add(seed)
         let id = seed.id
 
-        let fresh = "[Module]\nname=Feed\n[Routing]\nname=SetBeta\n"
-        let stale = "[Module]\nname=Feed\n[Routing]\nname=SetAlpha\n"
+        let fresh = "[MITM]\nhostname = beta.example.com\n"
+        let stale = "[MITM]\nhostname = alpha.example.com\n"
         let gates = [Gate(), Gate()]
         var callIndex = 0
 
@@ -113,11 +136,11 @@ struct ResourceRefreshRaceTests {
         // The newer response returns first and commits its content.
         gates[1].open()
         _ = try await newer.value
-        #expect(store.module(id: id)?.routingRuleSets.map(\.name) == ["SetBeta"])
+        #expect(store.module(id: id)?.mitmRuleSets.first?.domainSuffixes == ["beta.example.com"])
 
         // The stale response finally lands; it must be discarded, not committed.
         gates[0].open()
         _ = try await older.value
-        #expect(store.module(id: id)?.routingRuleSets.map(\.name) == ["SetBeta"])
+        #expect(store.module(id: id)?.mitmRuleSets.first?.domainSuffixes == ["beta.example.com"])
     }
 }

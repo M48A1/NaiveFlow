@@ -393,7 +393,12 @@ Only buffered Surge and Quantumult X scripts are supported. Scripts execute at
  top level and complete with `$done(...)`, including asynchronous HTTP callbacks.
 Use `$request` / `$response` for context. Surge provides `$httpClient`,
 `$persistentStore`, `$notification`; Quantumult X provides `$task.fetch`,
-`$prefs`, `$notify`. The supported subsets still require real-script acceptance
+`$prefs`, `$notify`. Common adapters include console logging, timers, UTF-8
+encoding/decoding, URL query handling, base64, gzip decoding and binary bodies.
+Quantumult X `$done({bodyBytes: ...})` accepts ArrayBuffer or typed-array binary
+edits, including gRPC responses. Module URL imports download script dependencies
+and preserve the chosen dialect.
+The supported subsets still require real-script acceptance
 checks; this does not promise full compatibility with either client.
 
 ```javascript

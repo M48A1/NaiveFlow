@@ -110,7 +110,7 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
                 case .streamScript:
                     throw RuntimeConfigurationFailure.rejected("Anywhere stream-script is no longer supported. Use a buffered Surge or Quantumult X script.")
                 case .script(let encoded, _):
-                    guard let data = Data(base64Encoded: encoded), data.count <= 1_000_000,
+                    guard let data = Data(base64Encoded: encoded), data.count <= RuntimeJavaScript.maximumScriptBytes,
                           let source = String(data: data, encoding: .utf8) else { throw RuntimeConfigurationFailure.invalidBundle }
                     try RuntimeJavaScript.validate(source)
                 default: break

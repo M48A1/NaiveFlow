@@ -172,7 +172,7 @@ nonisolated enum CompiledMITMOperation {
     case headerReplace(name: String, value: String)
     case bodyReplace(MITMBodyReplace.CompiledOperation)
     case bodyJSON(MITMJSONPatch.CompiledOperation)
-    case script(source: String, dialect: MITMScriptDialect)
+    case script(source: String, preamble: String, dialect: MITMScriptDialect)
     case streamScript(source: String)
 }
 
@@ -200,10 +200,11 @@ nonisolated final class MITMRewritePolicy: Sendable {
 
     static func validate(ruleSets: [MITMRuleSet]) throws {
         let compiler = MITMRewritePolicy()
+        var scriptSources: [String: String] = [:]
         for set in ruleSets {
             for rule in set.rules {
                 guard MITMGateRegex(pattern: rule.urlPattern) != nil,
-                      compiler.compile(rule.operation, ruleSet: set.name) != nil else {
+                      compiler.compile(rule.operation, ruleSet: set.name, scriptSources: &scriptSources) != nil else {
                     throw RuntimeConfigurationFailure.rejected("An MITM operation cannot be compiled.")
                 }
             }
@@ -245,6 +246,7 @@ nonisolated final class MITMRewritePolicy: Sendable {
             .filter { !$0.isEmpty }
         guard !suffixes.isEmpty else { return nil }
 
+        var scriptSources: [String: String] = [:]
         let compiledRules = set.rules.compactMap { rule -> CompiledMITMRule? in
             let gate: MITMGateRegex
             if let cached = newGates[rule.urlPattern] ?? previousGates[rule.urlPattern] {
@@ -257,7 +259,7 @@ nonisolated final class MITMRewritePolicy: Sendable {
                 gate = compiled
             }
             newGates[rule.urlPattern] = gate
-            guard let operation = compile(rule.operation, ruleSet: set.name) else { return nil }
+            guard let operation = compile(rule.operation, ruleSet: set.name, scriptSources: &scriptSources) else { return nil }
             return CompiledMITMRule(phase: rule.phase, gate: gate, operation: operation)
         }
 
@@ -305,7 +307,7 @@ nonisolated final class MITMRewritePolicy: Sendable {
 
     // MARK: - Compilation
 
-    private func compile(_ operation: MITMOperation, ruleSet: String) -> CompiledMITMOperation? {
+    private func compile(_ operation: MITMOperation, ruleSet: String, scriptSources: inout [String: String]) -> CompiledMITMOperation? {
         switch operation {
         case .rewrite(let action):
             guard let compiled = Self.compileRewrite(action, ruleSet: ruleSet) else { return nil }
@@ -348,7 +350,15 @@ nonisolated final class MITMRewritePolicy: Sendable {
             guard let source = decodeScript(scriptBase64, ruleSet: ruleSet, kind: "script") else {
                 return nil
             }
-            return .script(source: source, dialect: dialect)
+            let preamble: String
+            let body: String
+            if let marker = source.range(of: ForeignScriptContext.sourceMarker) {
+                preamble = String(source[..<marker.lowerBound])
+                body = String(source[marker.upperBound...])
+            } else { preamble = ""; body = source }
+            let sharedBody = scriptSources[body] ?? body
+            scriptSources[body] = sharedBody
+            return .script(source: sharedBody, preamble: preamble, dialect: dialect)
         case .streamScript:
             logger.warning("[MITM] Anywhere stream-script is no longer supported")
             return nil

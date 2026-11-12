@@ -8,8 +8,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-nonisolated private let importAllowedContentTypes: [UTType] = [UTType(filenameExtension: "amod") ?? .data]
-
 struct ModulesView: View {
     @Environment(Operations.self) private var operations
     @Environment(ModuleStore.self) private var moduleStore
@@ -17,12 +15,12 @@ struct ModulesView: View {
     @State private var showAddAlert = false
     @State private var newModuleName = ""
 
+    @State private var importFormat: ModuleFormat = .surge
+    @State private var importWarnings: String?
     @State private var showFileImporter = false
     @State private var importError: String?
 
-    @State private var showSubscribeAlert = false
-    @State private var subscribeURL = ""
-    @State private var subscribeError: String?
+    @State private var showLinkImporter = false
 
     var body: some View {
         NavigationStack {
@@ -86,7 +84,7 @@ struct ModulesView: View {
             }
             .fileImporter(
                 isPresented: $showFileImporter,
-                allowedContentTypes: importAllowedContentTypes
+                allowedContentTypes: [UTType(filenameExtension: importFormat.fileExtension) ?? .data]
             ) { result in
                 handleFileImport(result)
             }
@@ -98,24 +96,18 @@ struct ModulesView: View {
             } message: {
                 Text(importError ?? "")
             }
-            .alert("Subscribe Module", isPresented: $showSubscribeAlert) {
-                TextField("NaiveFlow Module URL", text: $subscribeURL)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.URL)
-                Button("Subscribe") {
-                    subscribe(to: subscribeURL)
-                }
-                Button("Cancel", role: .cancel) {}
+            .sheet(isPresented: $showLinkImporter) {
+                ImportModuleLinkView()
             }
-            .alert("Subscription Failed", isPresented: Binding(
-                get: { subscribeError != nil },
-                set: { if !$0 { subscribeError = nil } }
+            .alert("Import Notes", isPresented: Binding(
+                get: { importWarnings != nil },
+                set: { if !$0 { importWarnings = nil } }
             )) {
-                Button("OK") { subscribeError = nil }
+                Button("OK") { importWarnings = nil }
             } message: {
-                Text(subscribeError ?? "")
+                Text(importWarnings ?? "")
             }
+
         }
     }
 
@@ -127,16 +119,20 @@ struct ModulesView: View {
             Label("Add Module", systemImage: "plus")
         }
         Button {
-            importError = nil
-            showFileImporter = true
+            showLinkImporter = true
         } label: {
-            Label("Import Module", systemImage: "square.and.arrow.down")
+            Label("Import Module", systemImage: "link")
         }
-        Button {
-            subscribeURL = ""
-            showSubscribeAlert = true
+        Menu {
+            ForEach(ModuleFormat.allCases) { format in
+                Button(format.displayName) {
+                    importFormat = format
+                    importError = nil
+                    showFileImporter = true
+                }
+            }
         } label: {
-            Label("Subscribe Module", systemImage: "link")
+            Label("Import Module File", systemImage: "square.and.arrow.down")
         }
     }
 
@@ -156,44 +152,27 @@ struct ModulesView: View {
     }
 
     private func handleFileImport(_ result: Result<URL, Error>) {
-        do {
-            let url = try result.get()
-            guard url.pathExtension.lowercased() == "amod" else {
-                importError = String(localized: "Invalid NaiveFlow Module File.")
-                return
+        let format = importFormat
+        Task {
+            do {
+                let url = try result.get()
+                guard format.acceptsFile(url) else {
+                    importError = String(localized: "Choose a .\(format.fileExtension) file.")
+                    return
+                }
+                let body = try ConfigurationImport.read(from: url)
+                let base = url.deletingPathExtension().lastPathComponent
+                let made = try await ModuleOperations.makeModule(from: body, fallbackName: base.isEmpty ? "Imported" : base, format: format)
+                operations.modules.add(made.module, routingSeeds: made.routingSeeds)
+                showNotes(made.warnings)
+            } catch {
+                importError = error.localizedDescription
             }
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            let data = try Data(contentsOf: url)
-            guard let body = String(data: data, encoding: .utf8) else {
-                importError = String(localized: "Unknown content.")
-                return
-            }
-            let base = url.deletingPathExtension().lastPathComponent
-            let made = try ModuleOperations.makeModule(from: body, fallbackName: base.isEmpty ? "Imported" : base)
-            operations.modules.add(made.module, routingSeeds: made.routingSeeds)
-        } catch {
-            importError = error.localizedDescription
         }
     }
 
-    private func subscribe(to rawValue: String) {
-        guard let url = Module.validSubscriptionURL(from: rawValue) else {
-            subscribeError = String(localized: "Invalid NaiveFlow Module URL.")
-            return
-        }
-        Task {
-            do {
-                let body = try await ModuleOperations.fetchBody(from: url)
-                let made = try ModuleOperations.makeModule(
-                    from: body,
-                    fallbackName: ModuleOperations.fallbackName(for: url),
-                    subscriptionURL: url
-                )
-                operations.modules.add(made.module, routingSeeds: made.routingSeeds)
-            } catch {
-                subscribeError = error.localizedDescription
-            }
-        }
+    private func showNotes(_ warnings: [String]) {
+        importWarnings = warnings.isEmpty ? nil : warnings.joined(separator: "\n")
     }
+
 }

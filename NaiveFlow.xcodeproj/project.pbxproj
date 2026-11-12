@@ -109,6 +109,7 @@
 				Configuration/RuntimePreferences.swift,
 				Configuration/RuntimeConfigurationBundle.swift,
 				Configuration/RuntimeJavaScript.swift,
+				MITM/ForeignScriptContext.swift,
 				Networking/Routing/OrderedRouteMatcher.swift,
 				Networking/Routing/NativeGeoDatabase.swift,
 				Networking/Routing/RuntimeProxyGroup.swift,

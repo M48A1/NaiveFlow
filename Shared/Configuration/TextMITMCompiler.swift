@@ -49,15 +49,15 @@ nonisolated struct CompiledTextMITM: Sendable {
                 }
                 var bounded = Data()
                 for try await byte in download {
-                    guard bounded.count < 1_000_000 else {
-                        throw RuntimeConfigurationFailure.rejected("A script exceeds 1 MB.")
+                    guard bounded.count < RuntimeJavaScript.maximumScriptBytes else {
+                        throw RuntimeConfigurationFailure.rejected("A script exceeds 4 MB.")
                     }
                     bounded.append(byte)
                 }
                 data = bounded
             }
-            guard data.count <= 1_000_000, var source = String(data: data, encoding: .utf8) else {
-                throw RuntimeConfigurationFailure.rejected("Script exceeds 1 MB or is not UTF-8: \(script.name)")
+            guard data.count <= RuntimeJavaScript.maximumScriptBytes, var source = String(data: data, encoding: .utf8) else {
+                throw RuntimeConfigurationFailure.rejected("Script exceeds 4 MB or is not UTF-8: \(script.name)")
             }
             if let argument = script.argument {
                 let json = String(decoding: try JSONEncoder().encode(argument), as: UTF8.self)

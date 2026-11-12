@@ -1,11 +1,11 @@
 # Modules — Developer Guide
 
 A module bundles several **routing rule sets** and **MITM rule sets** into one
-unit that is created in the app, **imported** from a `.amod` file, or
-**subscribed** to a `.amod` URL. It lets an author ship a complete behavior
+unit that is created in the app, **imported** from a Surge `.sgmodule` or
+Quantumult X `.snippet` file, or **subscribed** to an HTTP(S) URL. It lets an author ship a complete behavior
 for a service (what to proxy, what to block, what to rewrite) as a single
 file, and lets a user switch all of it on or off, update it, or delete it in
-one place. This guide covers the module model, the `.amod` format, and how a
+one place. This guide covers the module model, supported import formats, and how a
 module's rule sets take part in routing and MITM. It assumes familiarity with
 the [Routing](Routing.md) and [MITM](MITM.md) guides, whose rule formats a
 module reuses unchanged.
@@ -60,6 +60,7 @@ listed first.
 | `name`            | Display name. Kept locally; a subscription refresh never renames the module. |
 | `description`     | Optional one-line summary from the file, shown above the module's switch. |
 | `enabled`         | Master switch. Off, the module's rule sets leave both payloads but keep their data. |
+| `sourceFormat`    | Surge or Quantumult X; determines the parser used on refresh. |
 | `subscriptionURL` | Set when the module was subscribed; its rule sets are then read-only. |
 | `iconLight` / `iconDark` | Optional icons from the file, at most **64 KB** each. |
 | `routingRuleSets` | Ordered list of `{ id, name, rules }`. |
@@ -75,56 +76,38 @@ with standalone sets.
 
 ## The import format
 
-A module file (`.amod`) is a sequence of **sections**, each introduced by a
-bracketed marker on its own line. Three markers are recognized, case-
-insensitively:
+Import Module opens a URL form with a Surge / Quantumult X picker. Importing
+fetches the module and every referenced script/resource before committing it;
+the URL and format are saved for refresh. Import Module File accepts `.sgmodule`
+and `.snippet` files. File imports can reference absolute HTTP(S) script URLs.
 
-| Marker      | Body |
-| ----------- | ---- |
-| `[Module]`  | Module header lines (below). Lines before the first marker also belong here. |
-| `[Routing]` | One routing rule set, in the `.arrs` format of the [Routing guide](Routing.md#the-import-format). |
-| `[MITM]`    | One MITM rule set, in the `.amrs` format of the [MITM guide](MITM.md#the-import-format). |
+Surge HTTP request/response scripts and Quantumult X `script-request-*`,
+`script-response-*` and echo-response rewrites retain their explicit dialect. Quantumult X remote
+`echo-response` resources preserve content types, extra headers and binary data;
+`reject-dict` and `reject-array` produce empty JSON objects and arrays.
+Surge `#!arguments` defaults fill template placeholders before `$argument` is
+passed to the script. Binary body mode supplies `Uint8Array` data. Surge Map Local
+responses (text, base64 and remote files) and simple `http-response-jq del(.path)`
+rewrites are converted as well. Unsupported directives, download failures or
+invalid JavaScript reject the whole import instead of saving partial content.
 
-Each section body is handed **verbatim** to the corresponding rule set parser,
-so everything those formats allow applies unchanged. In particular a MITM
-body may contain its own `[Parameter]` sub-section: any bracketed line that is
-not one of the three markers above stays inside the current body. A section
-may appear any number of times, in any order.
+Shared downloads are fetched once per import/refresh. Module storage keeps a
+compressed table of unique script sources; exported rules retain ordinary script
+operations. Each downloaded source is limited to 4 MiB, and the final compressed
+module still has to fit the sync limit. Refresh resolves the whole dependency
+set again and commits only a complete, validated result.
 
-### Module header lines
-
-Shape: `<key> = <value>`, case-insensitive key, trimmed value.
-
-| Key           | Meaning |
-| ------------- | ------- |
-| `name`        | Display name for the module. Falls back to the file or URL basename. |
-| `description` | One-line summary shown above the module's switch. Omitted or empty, no description is shown. |
-| `icon-light`  | Base64-encoded image for light appearance, at most **64 KB** decoded. |
-| `icon-dark`   | Base64-encoded image for dark appearance, same cap. |
-
-Unrecognized keys are dropped. An icon that is not valid base64 or exceeds the
-cap is dropped; when the current appearance has no icon the other is used.
-
-### Rule set sections
-
-Inside a `[Routing]` or `[MITM]` section the rule set's own headers apply:
-`name`, `routing` (routing sets), `hostname` (MITM sets). A set's own
-`icon-light` / `icon-dark` are ignored: rule sets inside a module carry no
-icon. A section without a `name` is named by position, `Routing 1`, `MITM 2`,
-and so on. A section with no rule, header, or parameter line at all is
-skipped.
-
-The `routing` header of a routing section seeds that set's assignment the
-first time the set appears, exactly as for a standalone `.arrs` import; a
-refresh never changes an assignment made in the app.
+HTTPS traffic requires MITM to be enabled and the CA certificate to be trusted.
+These are buffered HTTP scripts; cron, DNS hooks and client-specific control APIs
+are not implemented. Compatibility should be checked with real script samples.
 
 ---
 
 ## Subscriptions
 
-A subscription is a `.amod` file served over **http(s)** from a URL whose path
-ends in `.amod`. NaiveFlow fetches it (HTTP 2xx, UTF-8 body required), parses
-it, validates the [limits](#limits), and stores the result as one module.
+A subscription serves Surge or Quantumult X content over **http(s)**.
+NaiveFlow fetches it (HTTP 2xx, UTF-8 body required), parses it using the selected
+format, validates the [limits](#limits), and stores the result as one module.
 
 On **refresh** the file is fetched once and the module's content is replaced
 as a whole, in one write:
@@ -147,8 +130,9 @@ parameter values, and routing assignments can be changed, their rules and
 names cannot.
 
 A module can also be offered through the `naiveflow://add-module?link=…` deep
-link, where `link` is the `.amod` URL. The app previews the module's rule
-sets and, on confirmation, subscribes to it.
+link, where `link` is the subscription URL. The app offers Surge and Quantumult X
+format selection, previews the module's rule sets and, on confirmation, subscribes
+to it.
 
 ---
 
@@ -173,40 +157,29 @@ domain-suffix rule costs roughly 35 bytes.
 
 ## Worked example
 
-```
-# My Service module
-name = My Service
-description = Direct CDN, blocked telemetry, and API rewrites for My Service.
-icon-light = iVBORw0KGgo…
+A Surge `.sgmodule` file:
 
-[Routing]
-name = My Service Direct
-# 1 = DIRECT on first import
-routing = 1
-2, cdn.myservice.example
-0, 203.0.113.0/24
+```ini
+#!name=My Service
+#!desc=Redirect API requests for My Service.
 
-[Routing]
-name = My Service Trackers
-# 2 = REJECT on first import
-routing = 2
-3, myservice-telemetry
+[URL Rewrite]
+^https://api.myservice.example/v1/ https://api.myservice.example/v2/ 302
 
 [MITM]
-name = My Service API
-hostname = api.myservice.example
-# request: add a header on API paths
-0, 1, ^/v1/, X-Client, naiveflow
-# response: drop a cookie
-1, 2, .*, Set-Cookie
-[Parameter]
-1, 0, region, Region, Used for region-specific rewrites., US, "[US, JP, DE]"
+hostname = %APPEND% api.myservice.example
 ```
 
-Imported, this yields one module with two routing rule sets (one seeded to
-DIRECT, one to REJECT) and one MITM rule set with a `region` picker. Toggling
-the module off removes all three from the Network Extension; turning it back
-on restores them with their assignments and the chosen region intact.
+The equivalent Quantumult X `.snippet` rewrite:
+
+```ini
+^https://api.myservice.example/v1/ url 302 https://api.myservice.example/v2/
+hostname = api.myservice.example
+```
+
+Each imports one module with one MITM rule set. Toggling the module off removes
+its rules from the Network Extension; turning it back on restores them. MITM
+must also be enabled for the rules to take effect.
 
 ---
 
@@ -222,10 +195,9 @@ on restores them with their assignments and the chosen region intact.
   later one, and an earlier set beats a later one in the same module.
 - **Standalone MITM wins duplicates.** For an identical host suffix the
   standalone set is the last writer and wins.
-- **Assignments are per set and per device.** Seeded by `routing` on first
-  appearance only, kept across refreshes by name matching, dropped when the
-  set disappears or the module is deleted, and reset to Default when the
-  assigned proxy or chain is deleted.
+- **Assignments are per set and per device.** Kept across refreshes by name
+  matching, dropped when the set disappears or the module is deleted, and
+  reset to Default when the assigned proxy or chain is deleted.
 - **Subscribed is read-only.** Rules and names come from the file; switches,
   parameter values, and assignments are yours.
 - **Parameters are per module.** MITM parameters are merged by name across

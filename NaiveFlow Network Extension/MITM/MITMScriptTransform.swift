@@ -176,13 +176,16 @@ nonisolated enum MITMScriptTransform {
         let matched = bodyRules.indices.filter { verdicts.matches(at: $0) }.map { bodyRules[$0].operation }
         let edited = await applyNativeBodyEdits(message, operations: matched)
         if Task.isCancelled { return .message(edited) }
-        var selectedScript: (source: String, dialect: MITMScriptDialect)?
+        var selectedScript: (source: String, preamble: String, dialect: MITMScriptDialect)?
         for operation in matched {
-            if case .script(let source, let dialect) = operation { selectedScript = (source, dialect) }
+            if case .script(let source, let preamble, let dialect) = operation {
+                selectedScript = (source, preamble, dialect)
+                break
+            }
         }
         guard let script = selectedScript else { return .message(edited) }
         // Source validation happens once when the immutable policy is compiled.
-        let outcome = await MITMScriptEngine.shared.applyAsync(edited, source: script.source, dialect: script.dialect)
+        let outcome = await MITMScriptEngine.shared.applyAsync(edited, source: script.source, preamble: script.preamble, dialect: script.dialect)
         switch outcome {
         case .modified(let updated):  return .message(updated)
         case .done(let updated):      return .message(updated)

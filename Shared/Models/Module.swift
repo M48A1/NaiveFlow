@@ -7,6 +7,31 @@
 
 import Foundation
 
+nonisolated enum ModuleFormat: String, Codable, CaseIterable, Identifiable {
+    case surge
+    case quantumultX
+
+    var id: Self { self }
+
+    var fileExtension: String {
+        switch self {
+        case .surge: "sgmodule"
+        case .quantumultX: "snippet"
+        }
+    }
+
+    func acceptsFile(_ url: URL) -> Bool {
+        url.pathExtension.lowercased() == fileExtension
+    }
+
+    var displayName: String {
+        switch self {
+        case .surge: "Surge"
+        case .quantumultX: "Quantumult X"
+        }
+    }
+}
+
 nonisolated struct ModuleRoutingRuleSet: Codable, Equatable, Identifiable {
     static let maxRuleCount = CustomRoutingRuleSet.maxRuleCount
 
@@ -118,6 +143,7 @@ nonisolated struct Module: Codable, Equatable, Identifiable, SoftDeletable {
     var description: String?
     var enabled: Bool
     var subscriptionURL: URL?
+    var sourceFormat: ModuleFormat
     var iconLight: Data?
     var iconDark: Data?
     var routingRuleSets: [ModuleRoutingRuleSet]
@@ -131,6 +157,7 @@ nonisolated struct Module: Codable, Equatable, Identifiable, SoftDeletable {
         description: String? = nil,
         enabled: Bool = true,
         subscriptionURL: URL? = nil,
+        sourceFormat: ModuleFormat = .surge,
         iconLight: Data? = nil,
         iconDark: Data? = nil,
         routingRuleSets: [ModuleRoutingRuleSet] = [],
@@ -142,6 +169,7 @@ nonisolated struct Module: Codable, Equatable, Identifiable, SoftDeletable {
         self.description = description
         self.enabled = enabled
         self.subscriptionURL = subscriptionURL
+        self.sourceFormat = sourceFormat
         self.iconLight = iconLight
         self.iconDark = iconDark
         self.routingRuleSets = routingRuleSets
@@ -150,8 +178,8 @@ nonisolated struct Module: Codable, Equatable, Identifiable, SoftDeletable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, description, enabled, subscriptionURL, iconLight, iconDark
-        case routingRuleSets, mitmRuleSets, updatedAt, deletedAt
+        case id, name, description, enabled, subscriptionURL, sourceFormat, iconLight, iconDark
+        case routingRuleSets, mitmRuleSets, scriptSources, updatedAt, deletedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -161,10 +189,14 @@ nonisolated struct Module: Codable, Equatable, Identifiable, SoftDeletable {
         description = try c.decodeIfPresent(String.self, forKey: .description)
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         subscriptionURL = try c.decodeIfPresent(URL.self, forKey: .subscriptionURL)
+        sourceFormat = try c.decode(ModuleFormat.self, forKey: .sourceFormat)
         iconLight = try c.decodeIfPresent(Data.self, forKey: .iconLight)
         iconDark = try c.decodeIfPresent(Data.self, forKey: .iconDark)
         routingRuleSets = (try? c.decodeSkippingInvalid([ModuleRoutingRuleSet].self, forKey: .routingRuleSets)) ?? []
         mitmRuleSets = (try? c.decodeSkippingInvalid([ModuleMITMRuleSet].self, forKey: .mitmRuleSets)) ?? []
+        if let sources = try c.decodeIfPresent([Data].self, forKey: .scriptSources) {
+            mitmRuleSets = try ModuleScriptArchive.unpack(mitmRuleSets, sources: sources)
+        }
         deletedAt = try c.decodeIfPresent(Date.self, forKey: .deletedAt)
         updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? deletedAt ?? .distantPast
     }
@@ -176,10 +208,13 @@ nonisolated struct Module: Codable, Equatable, Identifiable, SoftDeletable {
         try c.encodeIfPresent(description, forKey: .description)
         try c.encode(enabled, forKey: .enabled)
         try c.encodeIfPresent(subscriptionURL, forKey: .subscriptionURL)
+        try c.encode(sourceFormat, forKey: .sourceFormat)
         try c.encodeIfPresent(iconLight, forKey: .iconLight)
         try c.encodeIfPresent(iconDark, forKey: .iconDark)
         try c.encode(routingRuleSets, forKey: .routingRuleSets)
-        try c.encode(mitmRuleSets, forKey: .mitmRuleSets)
+        let archive = try ModuleScriptArchive.pack(mitmRuleSets)
+        try c.encode(archive.sets, forKey: .mitmRuleSets)
+        if !archive.sources.isEmpty { try c.encode(archive.sources, forKey: .scriptSources) }
         try c.encode(updatedAt, forKey: .updatedAt)
         try c.encodeIfPresent(deletedAt, forKey: .deletedAt)
     }
@@ -222,7 +257,7 @@ nonisolated struct Module: Codable, Equatable, Identifiable, SoftDeletable {
         guard let url = URL(string: trimmed),
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
-              url.path.lowercased().hasSuffix(".amod") else { return nil }
+              let host = url.host, !host.isEmpty else { return nil }
         return url
     }
     

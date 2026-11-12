@@ -84,6 +84,8 @@ actor MITMScriptEngine {
 
         fileprivate var isFormattingException = false
 
+        fileprivate var pendingTimers: [Int: (callback: JSValue, task: Task<Void, Never>)] = [:]
+        fileprivate var nextTimerID = 0
         fileprivate var pendingFetches: [Int: PendingFetch] = [:]
         private var nextFetchID = 0
 
@@ -110,6 +112,8 @@ actor MITMScriptEngine {
             isClosed = true
             for fetch in pendingFetches.values { fetch.task?.cancel() }
             pendingFetches.removeAll()
+            for timer in pendingTimers.values { timer.task.cancel() }
+            pendingTimers.removeAll()
             context.exception = nil
             context.exceptionHandler = nil
         }
@@ -189,6 +193,11 @@ actor MITMScriptEngine {
             defer { run.isFormattingException = false }
             logger.warning("\(run.logPrefix): \(exception.map(Self.describe) ?? "Uncaught exception")")
         }
+        ForeignScriptContext.install(in: context) { [weak run] message in
+            logger.info("\(run?.logPrefix ?? "[Script]"): \(message)")
+        }
+        installTimers(context: context, for: run)
+        context.evaluateScript("globalThis.$script = {startTime: Date.now()/1000, binaryBodyMode:false};")
         switch run.dialect {
         case .surge:
             if let message = run.original {
@@ -289,12 +298,13 @@ actor MITMScriptEngine {
     func applyAsync(
         _ message: Message,
         source: String,
+        preamble: String = "",
         dialect: MITMScriptDialect = .surge
     ) async -> Outcome {
         let cancelHandle = CancelHandle()
         return await withTaskCancellationHandler {
             await JSCConcurrencyBridge.shared.runParked { (continuation: CheckedContinuation<Outcome, Never>) in
-                self.runApply(message, source: source, dialect: dialect, continuation: continuation, cancelHandle: cancelHandle)
+                self.runApply(message, source: source, preamble: preamble, dialect: dialect, continuation: continuation, cancelHandle: cancelHandle)
             }
         } onCancel: {
             JSCConcurrencyBridge.shared.enqueue { [self] in
@@ -315,6 +325,7 @@ actor MITMScriptEngine {
     private func runApply(
         _ message: Message,
         source: String,
+        preamble: String,
         dialect: MITMScriptDialect,
         continuation: CheckedContinuation<Outcome, Never>,
         cancelHandle: CancelHandle
@@ -352,7 +363,7 @@ actor MITMScriptEngine {
         if cancelled { deliver(.modified(message), for: run); return }
         run.isEvaluating = true
         runUserScript(source) {
-            let wrapped = "(function(){\n\"use strict\";\n\(source)\n})()"
+            let wrapped = "(function(){\n\"use strict\";\n\(preamble)\n\(source)\n})()"
             run.context.evaluateScript(wrapped)
         }
         run.isEvaluating = false
@@ -422,56 +433,51 @@ actor MITMScriptEngine {
     }
 
     private static func headersFromValue(_ value: JSValue) -> [(name: String, value: String)]? {
-        guard value.isArray else { return nil }
-        guard let length = Self.validatedArrayLength(value, maxLength: 100_000) else {
-            logger.warning("[Script] Invalid ctx.headers")
-            return nil
+        ForeignScriptContext.headers(value)
+    }
+
+    nonisolated private func installTimers(context: JSContext, for run: ScriptRun) {
+        let schedule: @convention(block) (JSValue, Double) -> Int = { [weak self, weak run] callback, milliseconds in
+            guard let self, let run, !run.isClosed, run.pendingTimers.count < 32 else { return 0 }
+            return self.assumeIsolated { engine in
+                run.nextTimerID += 1
+                let id = run.nextTimerID
+                let delay = milliseconds.isFinite ? min(max(milliseconds, 0), 60_000) : 0
+                let task = Task {
+                    do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000)) }
+                    catch { return }
+                    engine.fireTimer(runID: run.id, timerID: id)
+                }
+                run.pendingTimers[id] = (callback, task)
+                return id
+            }
         }
-        if length == 0 { return [] }
-        var result: [(name: String, value: String)] = []
-        result.reserveCapacity(length)
-        for index in 0..<length {
-            guard let entry = value.objectAtIndexedSubscript(index),
-                  entry.isArray,
-                  let entryLength = entry.objectForKeyedSubscript("length")?.toInt32(),
-                  entryLength == 2
-            else {
-                logger.warning("[Script] Invalid ctx.headers entry")
-                continue
-            }
-            guard let nameElement = entry.objectAtIndexedSubscript(0),
-                  let valueElement = entry.objectAtIndexedSubscript(1),
-                  !nameElement.isUndefined, !nameElement.isNull,
-                  !valueElement.isUndefined, !valueElement.isNull,
-                  let name = nameElement.toString(),
-                  let value = valueElement.toString()
-            else {
-                logger.warning("[Script] Invalid ctx.headers entry")
-                continue
-            }
-            guard HTTPHeader.isValidName(name) else {
-                logger.warning("[Script] Invalid header name: \(name)")
-                continue
-            }
-            guard HTTPHeader.isValidValue(value) else {
-                logger.warning("[Script] Invalid header value: \(name)")
-                continue
-            }
-            result.append((name: name, value: value))
+        let cancel: @convention(block) (Int) -> Void = { [weak run] id in
+            run?.pendingTimers.removeValue(forKey: id)?.task.cancel()
         }
-        if result.isEmpty {
-            logger.warning("[Script] Script headers have no valid entries")
-            return nil
-        }
-        return result
+        context.setObject(schedule, forKeyedSubscript: "__foreignTimer" as NSString)
+        context.setObject(cancel, forKeyedSubscript: "clearTimeout" as NSString)
+        context.evaluateScript("globalThis.setTimeout = (fn,ms=0,...args) => __foreignTimer(()=>fn(...args),ms);")
+    }
+
+    private func fireTimer(runID: UInt64, timerID: Int) {
+        guard let run = liveRuns[runID], !run.isDelivered,
+              let timer = run.pendingTimers.removeValue(forKey: timerID) else { return }
+        run.isEvaluating = true
+        runUserScript("setTimeout") { _ = timer.callback.call(withArguments: []) }
+        run.isEvaluating = false
+        if run.directive != nil || run.context.exception != nil { finishForeignRun(run) }
     }
 
     // MARK: - Surge / Quantumult X globals
 
     nonisolated private func installSurgeGlobals(context: JSContext, for run: ScriptRun, message: Message) {
+        context.setObject(["surge-version": "NaiveFlow"], forKeyedSubscript: "$environment" as NSString)
         context.globalObject.setObject(makeSurgeDoneBlock(for: run), forKeyedSubscript: "$done" as NSString)
         context.globalObject.setObject(makeSurgeRequest(message, in: context), forKeyedSubscript: "$request" as NSString)
-        context.globalObject.setObject(makeSurgeResponse(message, in: context), forKeyedSubscript: "$response" as NSString)
+        if message.phase == .httpResponse {
+            context.globalObject.setObject(makeSurgeResponse(message, in: context), forKeyedSubscript: "$response" as NSString)
+        }
         context.globalObject.setObject(makeSurgeHTTPClient(in: context, for: run), forKeyedSubscript: "$httpClient" as NSString)
         context.globalObject.setObject(makeSurgePersistentStore(in: context, scope: run.scope), forKeyedSubscript: "$persistentStore" as NSString)
         context.globalObject.setObject(makeSurgeNotification(in: context), forKeyedSubscript: "$notification" as NSString)
@@ -481,7 +487,9 @@ actor MITMScriptEngine {
     nonisolated private func installQXGlobals(context: JSContext, for run: ScriptRun, message: Message) {
         context.globalObject.setObject(makeSurgeDoneBlock(for: run), forKeyedSubscript: "$done" as NSString)
         context.globalObject.setObject(makeSurgeRequest(message, in: context), forKeyedSubscript: "$request" as NSString)
-        context.globalObject.setObject(makeSurgeResponse(message, in: context), forKeyedSubscript: "$response" as NSString)
+        if message.phase == .httpResponse {
+            context.globalObject.setObject(makeSurgeResponse(message, in: context), forKeyedSubscript: "$response" as NSString)
+        }
         context.globalObject.setObject(makeQXTask(in: context, for: run), forKeyedSubscript: "$task" as NSString)
         context.globalObject.setObject(makeQXPrefs(in: context, scope: run.scope), forKeyedSubscript: "$prefs" as NSString)
         let notifyBlock: @convention(block) (String, String, String) -> Void = { title, subtitle, body in
@@ -493,10 +501,21 @@ actor MITMScriptEngine {
     nonisolated private func makeSurgeDoneBlock(for run: ScriptRun) -> @convention(block) (JSValue) -> Void {
         return { [weak self, weak run] argument in
             guard let run, !run.isDelivered, run.directive == nil, let original = run.original else { return }
+            let argument: JSValue = {
+                if argument.isString || ForeignScriptContext.bytes(argument, in: run.context) != nil {
+                    let result = JSValue(newObjectIn: run.context)!
+                    result.setObject(argument, forKeyedSubscript: "body" as NSString)
+                    return result
+                }
+                return argument
+            }()
             if argument.isObject, !argument.isUndefined, !argument.isNull {
                 if let responseValue = argument.objectForKeyedSubscript("response"),
                    !responseValue.isUndefined, !responseValue.isNull, responseValue.isObject {
                     run.directive = .respond(Self.synthesizedResponse(from: responseValue))
+                } else if run.dialect == .quantumultX, original.phase == .httpRequest,
+                          ForeignScriptContext.status(argument.objectForKeyedSubscript("status")) != nil {
+                    run.directive = .respond(Self.synthesizedResponse(from: argument))
                 } else {
                     run.surgeDoneMessage = Self.applySurgeEdits(argument, to: original)
                     run.directive = .done
@@ -580,9 +599,12 @@ actor MITMScriptEngine {
             else { return JSValue(nullIn: context) }
             return JSValue(object: string, in: context)
         }
-        let writeBlock: @convention(block) (String, String) -> Void = { value, key in
-            guard let scope else { return }
-            try? MITMScriptStore.shared.setValue(value.data(using: .utf8) ?? Data(), forKey: key, scope: scope, onDisk: true)
+        let writeBlock: @convention(block) (String, String) -> Bool = { value, key in
+            guard let scope else { return false }
+            do {
+                try MITMScriptStore.shared.setValue(Data(value.utf8), forKey: key, scope: scope, onDisk: true)
+                return true
+            } catch { return false }
         }
         store.setObject(readBlock, forKeyedSubscript: "read" as NSString)
         store.setObject(writeBlock, forKeyedSubscript: "write" as NSString)
@@ -601,9 +623,12 @@ actor MITMScriptEngine {
             else { return JSValue(nullIn: context) }
             return JSValue(object: string, in: context)
         }
-        let setValueForKeyBlock: @convention(block) (String, String) -> Void = { value, key in
-            guard let scope else { return }
-            try? MITMScriptStore.shared.setValue(value.data(using: .utf8) ?? Data(), forKey: key, scope: scope, onDisk: true)
+        let setValueForKeyBlock: @convention(block) (String, String) -> Bool = { value, key in
+            guard let scope else { return false }
+            do {
+                try MITMScriptStore.shared.setValue(Data(value.utf8), forKey: key, scope: scope, onDisk: true)
+                return true
+            } catch { return false }
         }
         let removeValueForKeyBlock: @convention(block) (String) -> Void = { key in
             guard let scope else { return }
@@ -655,36 +680,21 @@ actor MITMScriptEngine {
     nonisolated private func makeSurgeHTTPClient(in context: JSContext, for run: ScriptRun) -> JSValue {
         let client = JSValue(newObjectIn: context)!
 
-        let getBlock: @convention(block) (JSValue, JSValue) -> Void = { [weak self, weak run] urlValue, callbackValue in
-            let context = JSContext.current()!
-            guard let self, let run else { return }
-            guard let urlString = Self.surgeURLString(from: urlValue), !urlString.isEmpty else {
-                Self.invokeSurgeCallback(callbackValue, response: nil, error: Self.error("$httpClient: invalid URL", in: context), in: context)
-                return
+        for method in ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"] {
+            let block: @convention(block) (JSValue, JSValue) -> Void = { [weak self, weak run] spec, callback in
+                let context = JSContext.current()!
+                guard let self, let run else { return }
+                guard let urlString = Self.surgeURLString(from: spec) else {
+                    Self.invokeSurgeCallback(callback, response: nil, error: Self.error("$httpClient: invalid URL", in: context), in: context)
+                    return
+                }
+                let url = JSValue(object: urlString, in: context)!
+                let options = Self.surgeOptions(from: spec, in: context)
+                let promise = self.assumeIsolated { $0.startHTTP(run: run, defaultMethod: method, urlValue: url, optionsValue: options) }
+                Self.attachSurgeCallback(promise, to: callback, in: context)
             }
-            let urlJS = JSValue(object: urlString, in: context)!
-            let options = Self.surgeOptions(from: urlValue, in: context)
-            let promise = self.assumeIsolated { $0.startHTTP(run: run, defaultMethod: "GET", urlValue: urlJS, optionsValue: options) }
-            Self.attachSurgeCallback(promise, to: callbackValue, in: context)
+            client.setObject(block, forKeyedSubscript: method.lowercased() as NSString)
         }
-        let postBlock: @convention(block) (JSValue, JSValue, JSValue) -> Void = { [weak self, weak run] urlValue, bodyValue, callbackValue in
-            let context = JSContext.current()!
-            guard let self, let run else { return }
-            guard let urlString = Self.surgeURLString(from: urlValue), !urlString.isEmpty else {
-                Self.invokeSurgeCallback(callbackValue, response: nil, error: Self.error("$httpClient: invalid URL", in: context), in: context)
-                return
-            }
-            let urlJS = JSValue(object: urlString, in: context)!
-            var options = Self.surgeOptions(from: urlValue, in: context)
-            if !bodyValue.isUndefined, !bodyValue.isNull {
-                options.setObject(bodyValue, forKeyedSubscript: "body" as NSString)
-            }
-            let promise = self.assumeIsolated { $0.startHTTP(run: run, defaultMethod: "POST", urlValue: urlJS, optionsValue: options) }
-            Self.attachSurgeCallback(promise, to: callbackValue, in: context)
-        }
-
-        client.setObject(getBlock, forKeyedSubscript: "get" as NSString)
-        client.setObject(postBlock, forKeyedSubscript: "post" as NSString)
         return client
     }
 
@@ -746,20 +756,19 @@ actor MITMScriptEngine {
         if let url = argument.objectForKeyedSubscript("url"), url.isString {
             updated.url = url.toString()
         }
-        if let status = argument.objectForKeyedSubscript("status"), status.isNumber {
-            updated.status = Int(status.toInt32())
+        if let status = ForeignScriptContext.status(argument.objectForKeyedSubscript("status")) {
+            updated.status = status
+        }
+        if let method = argument.objectForKeyedSubscript("method"), method.isString {
+            updated.method = method.toString()
         }
         if let headersValue = argument.objectForKeyedSubscript("headers"),
            !headersValue.isUndefined, !headersValue.isNull,
            let parsed = Self.headersFromValue(headersValue) {
             updated.headers = parsed
         }
-        if let bodyValue = argument.objectForKeyedSubscript("body"),
-           !bodyValue.isUndefined, !bodyValue.isNull {
-            let context = JSContext.current()!
-            if let body = Self.bytesFromValue(bodyValue, in: context) {
-                updated.body = body
-            }
+        if let body = ForeignScriptContext.resultBody(argument, in: JSContext.current()!) {
+            updated.body = body
         }
         return updated
     }
@@ -773,19 +782,28 @@ actor MITMScriptEngine {
             headers.setObject(header.value, forKeyedSubscript: header.name as NSString)
         }
         object.setObject(headers, forKeyedSubscript: "headers" as NSString)
-        object.setObject(String(data: message.body, encoding: .utf8) ?? "", forKeyedSubscript: "body" as NSString)
+        if message.phase == .httpRequest {
+            object.setObject(String(data: message.body, encoding: .utf8) ?? "", forKeyedSubscript: "body" as NSString)
+            object.setObject(Self.makeUint8Array(in: context, from: message.body), forKeyedSubscript: "bodyBytes" as NSString)
+        }
+        if let url = message.url.flatMap(URL.init(string:)) {
+            object.setObject(url.scheme ?? "", forKeyedSubscript: "scheme" as NSString)
+            object.setObject(url.path, forKeyedSubscript: "path" as NSString)
+        }
         return object
     }
 
     nonisolated private func makeSurgeResponse(_ message: Message, in context: JSContext) -> JSValue {
         let object = JSValue(newObjectIn: context)!
         object.setObject(message.status as Any, forKeyedSubscript: "status" as NSString)
+        object.setObject(message.status as Any, forKeyedSubscript: "statusCode" as NSString)
         let headers = JSValue(newObjectIn: context)!
         for header in message.headers {
             headers.setObject(header.value, forKeyedSubscript: header.name as NSString)
         }
         object.setObject(headers, forKeyedSubscript: "headers" as NSString)
         object.setObject(String(data: message.body, encoding: .utf8) ?? "", forKeyedSubscript: "body" as NSString)
+        object.setObject(Self.makeUint8Array(in: context, from: message.body), forKeyedSubscript: "bodyBytes" as NSString)
         return object
     }
 
@@ -793,34 +811,14 @@ actor MITMScriptEngine {
         guard !spec.isUndefined, !spec.isNull else {
             return SynthesizedResponse(status: 200, headers: [], body: Data())
         }
-        let status: Int
-        if let statusValue = spec.objectForKeyedSubscript("status"),
-           statusValue.isNumber {
-            let statusDouble = statusValue.toDouble()
-            let raw = Int(exactly: statusDouble) ?? -1
-            if (100...599).contains(raw) {
-                status = raw
-            } else {
-                logger.warning("[Script] NaiveFlow.respond: Invalid status: \(statusDouble)")
-                status = 200
-            }
-        } else {
-            status = 200
-        }
+        let status = ForeignScriptContext.status(spec.objectForKeyedSubscript("status")) ?? 200
         var headers: [(name: String, value: String)] = []
         if let headersValue = spec.objectForKeyedSubscript("headers"),
            !headersValue.isUndefined, !headersValue.isNull,
            let parsed = Self.headersFromValue(headersValue) {
             headers = parsed
         }
-        let body: Data
-        if let bodyValue = spec.objectForKeyedSubscript("body"),
-           !bodyValue.isUndefined, !bodyValue.isNull {
-            let context = JSContext.current()!
-            body = Self.bytesFromValue(bodyValue, in: context) ?? Data()
-        } else {
-            body = Data()
-        }
+        let body = ForeignScriptContext.resultBody(spec, in: JSContext.current()!) ?? Data()
         return SynthesizedResponse(status: status, headers: headers, body: body)
     }
 

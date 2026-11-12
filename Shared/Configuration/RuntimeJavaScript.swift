@@ -2,6 +2,8 @@ import Foundation
 import JavaScriptCore
 
 nonisolated enum RuntimeJavaScript {
+    static let maximumScriptBytes = 4 * 1024 * 1024
+
     /// Ignore comments and literal text when recognizing legacy API usage.
     private static func codeTokens(_ source: String) -> String {
         source.replacingOccurrences(
@@ -12,6 +14,9 @@ nonisolated enum RuntimeJavaScript {
     }
 
     static func validate(_ source: String) throws {
+        guard source.utf8.count <= maximumScriptBytes else {
+            throw RuntimeConfigurationFailure.rejected("A script exceeds 4 MB.")
+        }
         guard let context = JSGlobalContextCreate(nil) else { throw RuntimeConfigurationFailure.invalidBundle }
         defer { JSGlobalContextRelease(context) }
         let script = JSStringCreateWithUTF8CString("(function(){\n\(source)\n})")!
