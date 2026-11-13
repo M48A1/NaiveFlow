@@ -4,6 +4,7 @@ import zlib
 
 /// Common data and Web API adapters used by the actual MITM JavaScript context.
 nonisolated enum ForeignScriptContext {
+    static let timeoutPrefix = "// naiveflow-module-timeout: "
     static let sourceMarker = "\n// downloaded-module-source\n"
 
     static func bytes(_ value: JSValue, in context: JSContext) -> Data? {

@@ -802,6 +802,14 @@ actor MITMHTTP2UpstreamLeg {
 
         let isHead = head.originatingRequest?.method?.uppercased() == "HEAD"
         if head.endStream || isHead || status == 204 || status == 304 {
+            if rewriter.hasBufferedBodyRule(phase: .httpResponse, verdicts: verdicts) {
+                responseStreams[clientID] = .buffering(BufferedResponse(
+                    data: Data(), codec: MITMBodyCodec.plan(for: nil), status: status,
+                    headers: rewritten, originatingRequest: head.originatingRequest, neverIndexed: head.neverIndexed
+                ))
+                return runResponseScripts(clientID, originEnded: head.endStream,
+                    headerOnly: isHead || status == 204 || status == 304)
+            }
             sink?.deliverResponseHead(streamID: clientID, status: status, headers: regular, endStream: true, neverIndexed: head.neverIndexed)
             finalizeResponseHalf(clientID: clientID, originEnded: head.endStream)
             return false
@@ -906,7 +914,7 @@ actor MITMHTTP2UpstreamLeg {
     private func appendBufferedResponse(clientID: UInt32, body: Data, endStream: Bool) -> Bool {
         guard case .buffering(var buffer)? = responseStreams.removeValue(forKey: clientID) else { return false }
         buffer.data.append(body)
-        if !endStream, buffer.data.count > MITMBodyCodec.maxBufferedBodyBytes {
+        if buffer.data.count > MITMBodyCodec.maxBufferedBodyBytes {
             responseStreams[clientID] = .passthrough
             sink?.deliverResponseHead(
                 streamID: clientID, status: buffer.status,
@@ -914,7 +922,8 @@ actor MITMHTTP2UpstreamLeg {
                 endStream: false,
                 neverIndexed: buffer.neverIndexed
             )
-            sink?.deliverResponseData(streamID: clientID, buffer.data, endStream: false)
+            sink?.deliverResponseData(streamID: clientID, buffer.data, endStream: endStream)
+            if endStream { finalizeResponseHalf(clientID: clientID, originEnded: true) }
             return false
         }
         responseStreams[clientID] = .buffering(buffer)
@@ -1000,9 +1009,14 @@ actor MITMHTTP2UpstreamLeg {
 
     // MARK: Buffered response rewrite
 
-    private func runResponseScripts(_ streamID: UInt32, trailers: [(name: String, value: String)] = []) -> Bool {
+    private func runResponseScripts(
+        _ streamID: UInt32,
+        trailers: [(name: String, value: String)] = [],
+        originEnded: Bool = true,
+        headerOnly: Bool = false
+    ) -> Bool {
         guard case .buffering(let buffer)? = responseStreams[streamID] else { return false }
-        finalizeResponseHalf(clientID: streamID, originEnded: true)
+        finalizeResponseHalf(clientID: streamID, originEnded: originEnded)
         let plaintext: Data
         if buffer.codec.requiresDecompression {
             guard let decoded = MITMBodyCodec.decompress(buffer.data, plan: buffer.codec, host: host) else {
@@ -1040,41 +1054,43 @@ actor MITMHTTP2UpstreamLeg {
             self.sessionContext.enqueue {
                 self.assumeIsolated { leg in
                     guard leg.phase != .torn else { return }
-                    let regular = scriptedHeaders.filter { !$0.name.hasPrefix(":") }
-                    let original = buffer.headers.filter { !$0.name.hasPrefix(":") }
                     switch outcome {
-                    case .message(let updated) where updated.body == plaintext:
-                        leg.deliverFinalResponse(
-                            streamID: streamID,
-                            status: buffer.status,
-                            headers: original,
-                            body: buffer.data,
-                            trailers: trailers,
-                            neverIndexed: buffer.neverIndexed
-                        )
                     case .message(let updated):
-                        var body = updated.body
-                        if body.count > plaintext.count, body.count - plaintext.count > Self.maxBufferedRewriteGrowthBytes {
-                            logger.warning("[MITM] \(leg.host): Rewritten body too large")
-                            body = plaintext
+                        var headers = updated.headers
+                        let body = updated.body
+                        let keepWireBody = body == plaintext
+                            || (body.count > plaintext.count && body.count - plaintext.count > Self.maxBufferedRewriteGrowthBytes)
+                        if buffer.codec.requiresDecompression {
+                            headers.removeAll { ASCII.equalsIgnoringCase($0.name, "content-encoding") }
+                            if keepWireBody {
+                                headers += buffer.headers.filter { ASCII.equalsIgnoringCase($0.name, "content-encoding") }
+                            }
                         }
-                        leg.deliverFinalResponse(
-                            streamID: streamID,
-                            status: buffer.status,
-                            headers: regular,
-                            body: body,
-                            trailers: trailers,
-                            neverIndexed: buffer.neverIndexed
-                        )
-                    case .synthesizedResponse:
-                        leg.deliverFinalResponse(
-                            streamID: streamID,
-                            status: buffer.status,
-                            headers: original,
-                            body: buffer.data,
-                            trailers: trailers,
-                            neverIndexed: buffer.neverIndexed
-                        )
+                        let status = updated.status.flatMap { (200...599).contains($0) ? $0 : nil } ?? buffer.status
+                        if headerOnly || status == 204 || status == 304 {
+                            if status == 204 { headers = MITMBridgeHeaders.droppingContentLength(headers) }
+                            leg.sink?.deliverResponseHead(streamID: streamID, status: status,
+                                headers: headers, endStream: true, neverIndexed: buffer.neverIndexed)
+                        } else {
+                            leg.deliverFinalResponse(streamID: streamID, status: status, headers: headers,
+                                body: keepWireBody ? buffer.data : body, trailers: trailers,
+                                neverIndexed: buffer.neverIndexed)
+                        }
+                    case .synthesizedResponse(let response):
+                        let status = (200...599).contains(response.status) ? response.status : 200
+                        let headers = response.sanitizedHeaders(lowercaseNames: true) {
+                            logger.warning("[Script] Invalid synthesized header: \($0)")
+                        }
+                        if headerOnly || status == 204 || status == 304 {
+                            leg.sink?.deliverResponseHead(streamID: streamID, status: status,
+                                headers: MITMBridgeHeaders.droppingContentLength(headers),
+                                endStream: true, neverIndexed: [])
+                        } else {
+                            leg.deliverFinalResponse(streamID: streamID, status: status, headers: headers,
+                                body: response.truncatedBody(cap: MITMBodyCodec.maxBufferedBodyBytes) {
+                                    logger.warning("[Script] Synthesized body too large")
+                                }, trailers: [], neverIndexed: [])
+                        }
                     }
                 }
             }

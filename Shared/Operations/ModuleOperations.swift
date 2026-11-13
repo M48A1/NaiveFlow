@@ -178,7 +178,7 @@ struct ModuleOperations {
             var rule = content.mitmRuleSets[0].rules[resource.ruleIndex]
             let source: String
             switch resource.kind {
-            case .script(let argument, let binary, let requiresBody, let maxSize, let name):
+            case .script(let argument, let binary, let requiresBody, let maxSize, let timeout, let name):
                 guard let body = String(data: resourceData, encoding: .utf8) else { throw ModuleImportError.undecodableBody }
                 if argument?.contains("{{{") == true {
                     throw RuntimeConfigurationFailure.rejected("Unresolved script argument: \(name)")
@@ -188,6 +188,7 @@ struct ModuleOperations {
                     String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
                 }
                 var prefix = "globalThis.$script = {name: \(try json(name)), startTime: Date.now()/1000, binaryBodyMode: \(binary)};\n"
+                if let timeout { prefix = ForeignScriptContext.timeoutPrefix + String(timeout) + "\n" + prefix }
                 if let argument { prefix += "globalThis.$argument = \(try json(argument));\n" }
                 let target = rule.phase == .httpRequest ? "$request" : "$response"
                 if let maxSize, maxSize >= 0 {

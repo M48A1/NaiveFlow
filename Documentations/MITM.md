@@ -82,16 +82,13 @@ unbuffered), so an intercepted-but-unrewritten request is cheap — but
 interception itself (the extra TLS handshakes) is not. Scope `hostname` as
 tightly as you can.
 
-> **Performance note.** All script execution runs on a **single serial queue**,
-> and a **single JavaScript VM is shared process-wide** — across every rule set
-> and connection. A script that loops forever, recurses without bound, or
-> triggers catastrophic regex backtracking stalls **every** other script, not
-> just its own connection: CPU-bound execution can't be preempted. A watchdog
-> crashes and relaunches the extension after a ~30 s synchronous span, so a
-> runaway self-recovers rather than wedging for the process's life, but keep
-> scripts bounded. Asynchronous HTTP callbacks are the
-> exception — the connection parks while the shared runtime stays **free** for
-> other scripts; only CPU-bound work monopolizes it.
+> **Performance note.** Scripts share one serial executor and one JavaScript VM.
+> JavaScriptCore interrupts a synchronous span after at most 30 seconds of
+> execution. A failed invocation forwards the input to the script. On systems
+> without the JavaScriptCore execution-limit entry point, script rules pass
+> through. Asynchronous HTTP callbacks release the executor while waiting.
+> Imported Surge modules can set a per-invocation `timeout` in seconds, capped
+> at 180 seconds. Reimport existing modules to pick up this setting.
 
 ---
 

@@ -39,7 +39,7 @@ struct ModuleScriptExecutionTests {
             #!name = JSON example
             #!arguments = RemoveAds:true
             [Script]
-            clean = type=http-response, pattern=., requires-body=true, script-path=clean.js, argument=RemoveAds={{{RemoveAds}}}
+            clean = type=http-response, pattern=., requires-body=true, timeout=2.5, script-path=clean.js, argument=RemoveAds={{{RemoveAds}}}
             [MITM]
             hostname = example.com
             """, fallbackName: "Fallback", subscriptionURL: URL(string: "https://example.com/module.sgmodule"), format: .surge,
@@ -50,6 +50,7 @@ struct ModuleScriptExecutionTests {
         let rule = try #require(made.module.mitmRuleSets.first?.rules.first)
         guard case .script(let encoded, let dialect) = rule.operation else { Issue.record("Missing imported script"); return }
         let source = try #require(Data(base64Encoded: encoded).flatMap { String(data: $0, encoding: .utf8) })
+        #expect(source.hasPrefix(ForeignScriptContext.timeoutPrefix + "2.5\n"))
         let (_, result) = try execute(source, dialect: dialect, response: true, url: "https://example.com/", body: Data(#"{"ad":1,"keep":2}"#.utf8))
         let json = try #require(result.objectForKeyedSubscript("body")?.toString()).data(using: .utf8)!
         #expect(try JSONSerialization.jsonObject(with: json) as? [String: Int] == ["keep": 2])

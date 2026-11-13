@@ -177,7 +177,7 @@ nonisolated enum MITMScriptTransform {
         let edited = await applyNativeBodyEdits(message, operations: matched)
         if Task.isCancelled { return .message(edited) }
         var selectedScript: (source: String, preamble: String, dialect: MITMScriptDialect)?
-        for operation in matched {
+        for operation in matched.reversed() {
             if case .script(let source, let preamble, let dialect) = operation {
                 selectedScript = (source, preamble, dialect)
                 break

@@ -902,20 +902,31 @@ actor MITMBridgeClientLeg: MITMResponseSink {
                     guard leg.phase != .torn else { return }
                     guard leg.streamMethods[streamID] != nil else { return }
                     switch outcome {
-                    case .message(let updated) where updated.body == plaintext:
-                        leg.emitBufferedRequest(
-                            streamID: streamID,
-                            headers: buffer.rewrittenHeaders,
-                            body: buffer.data,
-                            indexing: buffer.indexing,
-                            resolvedUpstream: buffer.resolvedUpstream,
-                            originalURL: buffer.originalURL
-                        )
                     case .message(let updated):
+                        let keepWireBody = updated.body == plaintext
+                        var headers = updated.headers
+                        if buffer.codec.requiresDecompression {
+                            headers.removeAll { ASCII.equalsIgnoringCase($0.name, "content-encoding") }
+                            if keepWireBody {
+                                headers += buffer.rewrittenHeaders.filter { ASCII.equalsIgnoringCase($0.name, "content-encoding") }
+                            }
+                        }
+                        var pseudoHeaders = buffer.rewrittenHeaders.filter { $0.name.hasPrefix(":") }
+                        if let method = updated.method, HTTPHeader.isValidName(method) {
+                            pseudoHeaders.removeAll { $0.name == ":method" }
+                            pseudoHeaders.append((name: ":method", value: method))
+                            leg.streamMethods[streamID] = method.uppercased()
+                        }
+                        if let url = updated.url, url != message.url,
+                           let target = MITMRewritePolicy.parseReplacementURL(url),
+                           HTTPHeader.isValidValue(target.requestTarget), !target.requestTarget.utf8.contains(0x20) {
+                            pseudoHeaders.removeAll { $0.name == ":path" }
+                            pseudoHeaders.append((name: ":path", value: target.requestTarget))
+                        }
                         leg.emitBufferedRequest(
                             streamID: streamID,
-                            headers: scriptedHeaders,
-                            body: updated.body,
+                            headers: pseudoHeaders + headers,
+                            body: keepWireBody ? buffer.data : updated.body,
                             indexing: buffer.indexing,
                             resolvedUpstream: buffer.resolvedUpstream,
                             originalURL: buffer.originalURL

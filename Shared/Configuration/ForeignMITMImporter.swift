@@ -5,7 +5,7 @@ import Foundation
 nonisolated enum ForeignMITMImporter {
     struct Resource: Sendable {
         enum Kind: Sendable {
-            case script(argument: String?, binary: Bool, requiresBody: Bool, maxSize: Int?, name: String)
+            case script(argument: String?, binary: Bool, requiresBody: Bool, maxSize: Int?, timeout: Double?, name: String)
             case response(status: Int, headers: [String: String])
         }
         var ruleIndex: Int
@@ -121,6 +121,8 @@ nonisolated enum ForeignMITMImporter {
             if let value = fields[key], !["true", "false", "1", "0"].contains(value.lowercased()) { return false }
         }
         if let size = fields["max-size"], Int(size) == nil { return false }
+        let timeout = fields["timeout"].flatMap(Double.init)
+        if fields["timeout"] != nil, !(timeout.map { $0.isFinite && $0 > 0 } ?? false) { return false }
         let index = result.rules.count
         result.rules.append(MITMRule(phase: type == "http-request" ? .httpRequest : .httpResponse,
             urlPattern: pattern, operation: .script(scriptBase64: "", dialect: .surge)))
@@ -128,7 +130,7 @@ nonisolated enum ForeignMITMImporter {
             kind: .script(argument: fields["argument"],
                 binary: ["true", "1"].contains(fields["binary-body-mode"]?.lowercased() ?? ""),
                 requiresBody: ["true", "1"].contains(fields["requires-body"]?.lowercased() ?? ""),
-                maxSize: fields["max-size"].flatMap(Int.init), name: name)))
+                maxSize: fields["max-size"].flatMap(Int.init), timeout: timeout, name: name)))
         return true
     }
 
@@ -163,7 +165,7 @@ nonisolated enum ForeignMITMImporter {
         let index = result.rules.count
         result.rules.append(MITMRule(phase: phase, urlPattern: parts[0], operation: .script(scriptBase64: "", dialect: .quantumultX)))
         result.resources.append(Resource(ruleIndex: index, source: parts[3],
-            kind: .script(argument: nil, binary: false, requiresBody: action.hasSuffix("body") || action == "script-analyze-echo-response", maxSize: nil, name: action)))
+            kind: .script(argument: nil, binary: false, requiresBody: action.hasSuffix("body") || action == "script-analyze-echo-response", maxSize: nil, timeout: nil, name: action)))
         return true
     }
 

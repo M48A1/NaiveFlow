@@ -79,6 +79,7 @@ actor MITMScriptEngine {
         fileprivate var isClosed = false
         fileprivate var pinnedBodyBytes = 0
         fileprivate let memoryReservation = TransientMemoryReservation()
+        fileprivate var timeout: TimeInterval?
         fileprivate var watchdogDisarm: AsyncInbox<Void>?
 
 
@@ -134,6 +135,7 @@ actor MITMScriptEngine {
     private struct WatchdogJob: Sendable {
         let id: UInt64
         let disarm: AsyncInbox<Void>
+        let delay: TimeInterval
     }
     private let watchdogJobs: AsyncStream<WatchdogJob>
     private nonisolated let watchdogJobContinuation: AsyncStream<WatchdogJob>.Continuation
@@ -215,17 +217,17 @@ actor MITMScriptEngine {
     private func runWatchdogTree() async {
         await withDiscardingTaskGroup { group in
             for await job in watchdogJobs {
-                group.addTask { await self.runWatchdog(id: job.id, disarm: job.disarm) }
+                group.addTask { await self.runWatchdog(id: job.id, disarm: job.disarm, delay: job.delay) }
             }
             group.cancelAll()
         }
     }
 
-    private func runWatchdog(id: UInt64, disarm: AsyncInbox<Void>) async {
+    private func runWatchdog(id: UInt64, disarm: AsyncInbox<Void>, delay: TimeInterval) async {
         let timedOut = await withTaskGroup(of: Bool.self) { group in
             group.addTask {
                 do {
-                    try await Task.sleep(seconds: Self.invocationIdleTimeout, precision: .relaxed)
+                    try await Task.sleep(seconds: delay, precision: .relaxed)
                     return true
                 } catch {
                     return false
@@ -240,7 +242,7 @@ actor MITMScriptEngine {
             return first
         }
         guard timedOut else { return }
-        guard let run = liveRuns[id], !run.isDelivered, let original = run.original else { return }
+        guard let run = liveRuns[id], run.watchdogDisarm === disarm, !run.isDelivered, let original = run.original else { return }
         logger.warning("\(run.logPrefix): HTTP script timed out")
         deliver(.modified(original), for: run)
     }
@@ -257,21 +259,29 @@ actor MITMScriptEngine {
         }
     }
 
-    @inline(__always)
-    private func runUserScript<T>(_ label: String, _ body: () -> T) -> T {
-        MITMScriptWatchdog.begin(label)
-        defer { MITMScriptWatchdog.end() }
-        return body()
+    private func runUserScript(for run: ScriptRun, _ body: () -> Void) {
+        guard let original = run.original else { return }
+        let remaining = (run.timeout ?? Self.invocationAbsoluteTimeout) - (MonotonicClock.now - run.startedAt)
+        guard remaining > 0 else {
+            logger.warning("\(run.logPrefix): HTTP script timed out")
+            deliver(.modified(original), for: run)
+            return
+        }
+        MITMScriptWatchdog.arm(context: run.context, seconds: remaining)
+        run.isEvaluating = true
+        body()
+        run.isEvaluating = false
+        if run.directive != nil || run.context.exception != nil {
+            finishForeignRun(run)
+        }
     }
 
     private func finalize(_ run: ScriptRun, original: Message, updated: Message) -> Outcome {
         let hadException = run.context.exception != nil
         run.context.exception = nil
+        if hadException { return .modified(original) }
         if let directive = run.directive {
             return outcome(forDirective: directive, original: original, updated: updated)
-        }
-        if hadException {
-            return .modified(original)
         }
         return .modified(updated)
     }
@@ -330,6 +340,11 @@ actor MITMScriptEngine {
         continuation: CheckedContinuation<Outcome, Never>,
         cancelHandle: CancelHandle
     ) {
+        guard MITMScriptWatchdog.isAvailable else {
+            logger.warning("[Script] JavaScriptCore execution limit unavailable")
+            continuation.resume(returning: .modified(message))
+            return
+        }
         let bodyBytes = message.body.count
         let pinned = Self.suspendedBodyBytes()
         if pinned + bodyBytes > Self.maxSuspendedBodyBytes {
@@ -345,6 +360,12 @@ actor MITMScriptEngine {
 
         let run = makeRun(scope: message.ruleSetID, allowsHTTP: true, original: message, dialect: dialect)
         run.continuation = continuation
+        if let line = preamble.split(separator: "\n", maxSplits: 1).first,
+           line.hasPrefix(ForeignScriptContext.timeoutPrefix),
+           let timeout = Double(line.dropFirst(ForeignScriptContext.timeoutPrefix.count)),
+           timeout.isFinite, timeout > 0 {
+            run.timeout = min(timeout, Self.invocationAbsoluteTimeout)
+        }
         // Account for native/JS body copies before creating JS representations.
         guard run.memoryReservation.resize(bodyBytes * 4 + 256 * 1024) else {
             logger.warning("[Script] Shared MITM memory budget exceeded")
@@ -361,14 +382,9 @@ actor MITMScriptEngine {
             return state.isCancelled
         }
         if cancelled { deliver(.modified(message), for: run); return }
-        run.isEvaluating = true
-        runUserScript(source) {
+        runUserScript(for: run) {
             let wrapped = "(function(){\n\"use strict\";\n\(preamble)\n\(source)\n})()"
             run.context.evaluateScript(wrapped)
-        }
-        run.isEvaluating = false
-        if run.directive != nil || run.context.exception != nil {
-            finishForeignRun(run)
         }
         // Async Surge/QX scripts complete through $done or the existing watchdog.
     }
@@ -401,7 +417,9 @@ actor MITMScriptEngine {
         run.watchdogDisarm?.finish()
         let disarm = AsyncInbox<Void>(capacity: 1)
         run.watchdogDisarm = disarm
-        watchdogJobContinuation.yield(WatchdogJob(id: run.id, disarm: disarm))
+        let remaining = (run.timeout ?? Self.invocationAbsoluteTimeout) - (MonotonicClock.now - run.startedAt)
+        let delay = max(0, run.timeout == nil ? min(remaining, Self.invocationIdleTimeout) : remaining)
+        watchdogJobContinuation.yield(WatchdogJob(id: run.id, disarm: disarm, delay: delay))
     }
 
     private static func suspendedBodyBytes() -> Int {
@@ -463,10 +481,7 @@ actor MITMScriptEngine {
     private func fireTimer(runID: UInt64, timerID: Int) {
         guard let run = liveRuns[runID], !run.isDelivered,
               let timer = run.pendingTimers.removeValue(forKey: timerID) else { return }
-        run.isEvaluating = true
-        runUserScript("setTimeout") { _ = timer.callback.call(withArguments: []) }
-        run.isEvaluating = false
-        if run.directive != nil || run.context.exception != nil { finishForeignRun(run) }
+        runUserScript(for: run) { _ = timer.callback.call(withArguments: []) }
     }
 
     // MARK: - Surge / Quantumult X globals
@@ -936,7 +951,7 @@ actor MITMScriptEngine {
     ) {
         if run.inFlightFetches > 0 { run.inFlightFetches -= 1 }
         guard !run.isDelivered else { return }
-        if MonotonicClock.now - run.startedAt > Self.invocationAbsoluteTimeout,
+        if MonotonicClock.now - run.startedAt >= (run.timeout ?? Self.invocationAbsoluteTimeout),
            let original = run.original {
             logger.warning("\(run.logPrefix): HTTP script timed out")
             deliver(.modified(original), for: run)
@@ -944,7 +959,7 @@ actor MITMScriptEngine {
         }
         armWatchdog(for: run)
         let context = run.context
-        _ = runUserScript("async script (NaiveFlow.http resume continuation)") {
+        runUserScript(for: run) {
             switch result {
             case .success(let response):
                 // JS can retain every fetch result until the invocation ends.
@@ -957,7 +972,6 @@ actor MITMScriptEngine {
                 reject?.call(withArguments: [Self.error("NaiveFlow.http: \(NaiveFlowError.describe(error))", in: context)])
             }
         }
-        if context.exception != nil { context.exception = nil }
     }
 
     // MARK: NaiveFlow.http helpers

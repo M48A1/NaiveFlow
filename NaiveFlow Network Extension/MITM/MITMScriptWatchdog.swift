@@ -1,63 +1,26 @@
-//
-//  MITMScriptWatchdog.swift
-//  NaiveFlow
-//
-//  Created by NodePassProject on 6/3/26.
-//
-
+import Darwin
 import Foundation
-import Synchronization
+import JavaScriptCore
 
 nonisolated enum MITMScriptWatchdog {
-    static let hardCapSeconds = 30
+    static let hardCapSeconds: TimeInterval = 30
 
-    private final class Source: DeadlineSource {
-        private struct Span {
-            var label = ""
-            var deadline: Deadline?
-        }
-        private let span = Mutex(Span())
+    // JavaScriptCore's execution limit interrupts the VM itself. A Swift task
+    // cannot cancel a synchronous JS evaluation on the script executor.
+    private typealias TerminateCallback = @convention(c) (JSContextRef?, UnsafeMutableRawPointer?) -> Bool
+    private typealias SetLimit = @convention(c) (
+        JSContextGroupRef, Double, TerminateCallback?, UnsafeMutableRawPointer?
+    ) -> Void
 
-        func begin(_ label: String) {
-            let deadline = Deadline(in: .seconds(MITMScriptWatchdog.hardCapSeconds), precision: .lazy)
-            span.withLock { span in
-                span.label = label
-                span.deadline = deadline
-            }
-        }
+    private static let setLimit: SetLimit? = {
+        guard let framework = dlopen("/System/Library/Frameworks/JavaScriptCore.framework/JavaScriptCore", RTLD_LAZY),
+              let symbol = dlsym(framework, "JSContextGroupSetExecutionTimeLimit") else { return nil }
+        return unsafeBitCast(symbol, to: SetLimit.self)
+    }()
 
-        func end() {
-            span.withLock { span in
-                span.label = ""
-                span.deadline = nil
-            }
-        }
+    static var isAvailable: Bool { setLimit != nil }
 
-        func nextDeadline() -> Deadline? {
-            span.withLock { $0.deadline }
-        }
-
-        func fire(now: MonotonicClock.Instant) {
-            let label: String? = span.withLock { span in
-                guard let deadline = span.deadline, deadline.scheduledAt <= now else { return nil }
-                return span.label
-            }
-            guard let label else { return }
-            let shown = label.count > 200 ? String(label.prefix(200)) + "…" : label
-            MITMScriptDiskStore.shared.flush()
-            fatalError("A JavaScript script span ran \(MITMScriptWatchdog.hardCapSeconds)s without returning. Offending script: \(shown)")
-        }
-    }
-
-    private static let source = Source()
-    private static let registration = TickScheduler.shared.register(source)
-
-    static func begin(_ label: String) {
-        source.begin(label)
-        registration.poke()
-    }
-
-    static func end() {
-        source.end()
+    static func arm(context: JSContext, seconds: TimeInterval) {
+        setLimit?(JSContextGetGroup(context.jsGlobalContextRef), min(hardCapSeconds, max(0.001, seconds)), nil, nil)
     }
 }
