@@ -106,6 +106,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
     }
 
     private enum RequestStream {
+        case awaitingHeaderScript(MITMPendingHeaderScript)
         case streaming(remaining: Int?)
         case buffering(BufferedRequest)
         case answeredWithSynthesizedResponse
@@ -560,29 +561,47 @@ actor MITMBridgeClientLeg: MITMResponseSink {
                 originalURL: requestURL, status: nil, headers: rewritten.filter { !$0.name.hasPrefix(":") },
                 body: Data(), ruleSetID: rewriter.ruleSetID)
             let originalHeaders = rewritten
-            Task { [weak self] in
+            let pending = MITMPendingHeaderScript(ended: head.endStream)
+            requestStreams[streamID] = .awaitingHeaderScript(pending)
+            pending.task = Task { [weak self] in
                 let outcome = await MITMScriptTransform.apply(message, rules: rules)
                 guard let self else { return }
                 self.sessionContext.enqueue {
                     self.assumeIsolated { leg in
-                        if leg.phase != .torn, leg.phase != .failed, leg.streamMethods[streamID] != nil {
+                        if leg.phase != .torn, leg.phase != .failed,
+                           case .awaitingHeaderScript(let pending)? = leg.requestStreams[streamID] {
                             switch outcome {
                             case .message(let updated):
                                 let headers = MITMScriptTransform.preservingBodyHeaders(updated.headers, from: message.headers)
                                 let (finalHeaders, upstream) = leg.applyScriptRequestHead(updated, original: message,
                                     regularHeaders: headers, wireHeaders: originalHeaders, upstream: resolvedUpstream)
                                 _ = leg.forwardRequestHead(head, headers: finalHeaders, resolvedUpstream: upstream,
-                                    buffersBody: false)
+                                    buffersBody: false, forceStreaming: true)
+                                if case .streaming(let remaining)? = leg.requestStreams[streamID] {
+                                    let bodyEndsStream = pending.ended && pending.trailers.isEmpty
+                                    if !pending.body.isEmpty || bodyEndsStream {
+                                        if !leg.streamDeferredUpload.contains(streamID), !pending.ended {
+                                            leg.unannouncedStreamCredit[streamID, default: 0] += pending.body.count
+                                        }
+                                        leg.forwardRequestData(streamID: streamID, body: pending.body,
+                                            endStream: bodyEndsStream, remaining: remaining)
+                                    }
+                                    if !pending.trailers.isEmpty {
+                                        _ = leg.endRequestBody(streamID, trailers: pending.trailers)
+                                    }
+                                }
                             case .synthesizedResponse(let response):
+                                if !pending.ended {
+                                    leg.unannouncedStreamCredit[streamID, default: 0] += pending.body.count
+                                }
                                 leg.answerWithSynthesizedResponse(streamID: streamID, response: response)
                             }
                         }
-                        let parked = leg.phase != .torn && leg.phase != .failed && leg.pump()
-                        leg.finishPass(parked: parked)
+                        leg.announceDueCredits()
                     }
                 }
             }
-            return true
+            return false
         }
         return forwardRequestHead(head, headers: rewritten, resolvedUpstream: resolvedUpstream, buffersBody: hasBufferedRule)
     }
@@ -591,7 +610,8 @@ actor MITMBridgeClientLeg: MITMResponseSink {
         _ head: PendingRequestHead,
         headers: [(name: String, value: String)],
         resolvedUpstream: (host: String, port: UInt16?)?,
-        buffersBody: Bool
+        buffersBody: Bool,
+        forceStreaming: Bool = false
     ) -> Bool {
         let streamID = head.streamID
         let endStream = head.endStream
@@ -637,7 +657,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
         } else if let raw = HTTPHeader.firstValue(in: rewritten, named: "content-length"),
                   let length = Int(raw.trimmingCharacters(in: .whitespaces)), length >= 0 {
             framing = length == 0 ? .none : .contentLength(length)
-        } else if isBodylessMethod, bodyMemory.resize(MITMBodyCodec.maxBufferedBodyBytes * 2) {
+        } else if !forceStreaming, isBodylessMethod, bodyMemory.resize(MITMBodyCodec.maxBufferedBodyBytes * 2) {
             let codec = MITMBodyCodec.plan(for: HTTPHeader.firstValue(in: rewritten, named: "content-encoding"))
             requestStreams[streamID] = .buffering(
                 BufferedRequest(
@@ -769,22 +789,16 @@ actor MITMBridgeClientLeg: MITMResponseSink {
             } else {
                 creditClientUpload(streamID: id, length: onWireLength)
             }
-            if let remaining {
-                guard body.count <= remaining else {
-                    logger.warning("[MITM] \(host): HTTP/2 client: Body exceeds Content-Length")
-                    rstToClient(id, errorCode: Codec.ErrorCode.protocolError, abortUpstream: true)
-                    return false
-                }
-                let left = remaining - body.count
-                guard !(endStream && left != 0) else {
-                    logger.warning("[MITM] \(host): HTTP/2 client: Body shorter than Content-Length")
-                    rstToClient(id, errorCode: Codec.ErrorCode.protocolError, abortUpstream: true)
-                    return false
-                }
-                if !endStream { requestStreams[id] = .streaming(remaining: left) }
+            forwardRequestData(streamID: id, body: body, endStream: endStream, remaining: remaining)
+            return false
+
+        case .awaitingHeaderScript(let pending):
+            unannouncedConnCredit += onWireLength
+            unannouncedStreamCredit[id, default: 0] += onWireLength - body.count
+            if !pending.append(body, endStream: endStream) {
+                let code = pending.ended ? Codec.ErrorCode.streamClosed : Codec.ErrorCode.cancel
+                rstToClient(id, errorCode: code, abortUpstream: false)
             }
-            delegate?.clientLegSendRequestData(streamID: id, body, endStream: endStream)
-            if endStream { finishRequestUpload(id) }
             return false
 
         case .buffering:
@@ -803,6 +817,25 @@ actor MITMBridgeClientLeg: MITMResponseSink {
             if onWireLength > 0 { unannouncedConnCredit += onWireLength }
             return false
         }
+    }
+
+    private func forwardRequestData(streamID id: UInt32, body: Data, endStream: Bool, remaining: Int?) {
+        if let remaining {
+            guard body.count <= remaining else {
+                logger.warning("[MITM] \(host): HTTP/2 client: Body exceeds Content-Length")
+                rstToClient(id, errorCode: Codec.ErrorCode.protocolError, abortUpstream: true)
+                return
+            }
+            let left = remaining - body.count
+            guard !(endStream && left != 0) else {
+                logger.warning("[MITM] \(host): HTTP/2 client: Body shorter than Content-Length")
+                rstToClient(id, errorCode: Codec.ErrorCode.protocolError, abortUpstream: true)
+                return
+            }
+            if !endStream { requestStreams[id] = .streaming(remaining: left) }
+        }
+        delegate?.clientLegSendRequestData(streamID: id, body, endStream: endStream)
+        if endStream { finishRequestUpload(id) }
     }
 
     private func appendBufferedRequest(streamID: UInt32, body: Data, endStream: Bool) -> Bool {
@@ -838,6 +871,13 @@ actor MITMBridgeClientLeg: MITMResponseSink {
                 delegate?.clientLegSendRequestTrailers(streamID: streamID, trailers)
             }
             finishRequestUpload(streamID)
+            return false
+        case .awaitingHeaderScript(let pending):
+            guard pending.finish(with: trailers) else {
+                let code = pending.ended ? Codec.ErrorCode.streamClosed : Codec.ErrorCode.cancel
+                rstToClient(streamID, errorCode: code, abortUpstream: false)
+                return false
+            }
             return false
         case .buffering:
             return finishBufferedRequest(streamID)

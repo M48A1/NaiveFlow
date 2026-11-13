@@ -187,3 +187,36 @@ nonisolated enum MITMBridgeHeaders {
         headers.filter { $0.name.lowercased() != "content-length" }
     }
 }
+
+/// Holds frames for one HTTP/2 stream while its header script is running.
+nonisolated final class MITMPendingHeaderScript {
+    private static let bodyLimit = 256 * 1024
+    private let memory = TransientMemoryReservation()
+    private(set) var body = Data()
+    private(set) var ended: Bool
+    private(set) var trailers: [(name: String, value: String)] = []
+    var task: Task<Void, Never>?
+
+    init(ended: Bool) {
+        self.ended = ended
+    }
+
+    func append(_ data: Data, endStream: Bool) -> Bool {
+        guard !ended, data.count <= Self.bodyLimit - body.count,
+              memory.resize(body.count + data.count) else { return false }
+        body.append(data)
+        ended = endStream
+        return true
+    }
+
+    func finish(with trailers: [(name: String, value: String)]) -> Bool {
+        guard !ended else { return false }
+        let cost = trailers.reduce(0) { $0 + $1.name.utf8.count + $1.value.utf8.count + 32 }
+        guard memory.add(cost) else { return false }
+        self.trailers = trailers
+        ended = true
+        return true
+    }
+
+    deinit { task?.cancel() }
+}

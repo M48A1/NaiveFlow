@@ -71,6 +71,22 @@ nonisolated enum ForeignScriptContext {
         return result.allSatisfy(validHeader) ? result : nil
     }
 
+    /// A script returning an object can only echo the last value of an exact
+    /// spelling. Restore values hidden by that representation when unchanged.
+    static func preservingRepeatedHeaders(
+        _ returned: [(name: String, value: String)],
+        from original: [(name: String, value: String)]
+    ) -> [(name: String, value: String)] {
+        let originalGroups = Dictionary(grouping: original, by: { $0.name })
+        let returnedGroups = Dictionary(grouping: returned, by: { $0.name.lowercased() })
+        return returned.flatMap { header in
+            guard returnedGroups[header.name.lowercased()]?.count == 1,
+                  let previous = originalGroups[header.name], previous.count > 1,
+                  previous.last?.value == header.value else { return [header] }
+            return previous
+        }
+    }
+
     private static func validHeader(_ pair: (name: String, value: String)) -> Bool {
         !pair.name.isEmpty && pair.name.utf8.allSatisfy { byte in
             (65...90).contains(byte) || (97...122).contains(byte) || (48...57).contains(byte) || "!#$%&'*+-.^_`|~".utf8.contains(byte)

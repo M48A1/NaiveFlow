@@ -100,6 +100,11 @@ Surge scripts imported without body access and Quantumult X header scripts
 run before forwarding a message body. A simultaneous matching body rewrite
 still requires buffering. For messages with a body, header-only scripts leave
 the body and its framing headers intact.
+HTTP/2 keeps processing other streams while a header script awaits completion.
+Each waiting stream can retain up to 256 KiB of body data under the shared MITM
+memory budget. If admission fails, the affected stream is reset.
+Returning a headers object preserves repeated fields whose visible value is
+unchanged. Return an explicit header list to replace repeated values.
 The app shows the resulting rules in the module preview.
 
 A rule set limits interception to its configured hostname suffixes. The

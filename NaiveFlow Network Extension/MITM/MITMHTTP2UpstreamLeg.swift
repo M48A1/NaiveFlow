@@ -208,6 +208,7 @@ actor MITMHTTP2UpstreamLeg {
     }
     private enum ResponseStream {
         case passthrough
+        case awaitingHeaderScript(MITMPendingHeaderScript)
         case buffering(BufferedResponse)
     }
     private var responseStreams: [UInt32: ResponseStream] = [:]
@@ -814,13 +815,15 @@ actor MITMHTTP2UpstreamLeg {
                 url: head.responseURL, originalURL: head.originatingRequest?.originalURL,
                 status: status, headers: regular, body: Data(), ruleSetID: rewriter.ruleSetID,
                 requestHeaders: head.originatingRequest?.headers ?? [])
-            Task { [weak self] in
+            let pending = MITMPendingHeaderScript(ended: false)
+            responseStreams[clientID] = .awaitingHeaderScript(pending)
+            pending.task = Task { [weak self] in
                 let outcome = await MITMScriptTransform.apply(message, rules: rules)
                 guard let self else { return }
                 self.sessionContext.enqueue {
                     self.assumeIsolated { leg in
                         if leg.phase != .torn, leg.phase != .failed,
-                           leg.upstreamStreamIDByClient[clientID] != nil {
+                           case .awaitingHeaderScript(let pending)? = leg.responseStreams[clientID] {
                             var finalStatus = status
                             var finalHeaders = regular
                             if case .message(let updated) = outcome {
@@ -831,15 +834,24 @@ actor MITMHTTP2UpstreamLeg {
                             }
                             leg.responseStreams[clientID] = .passthrough
                             leg.drainCoupledStreams.insert(clientID)
+                            let headEndsStream = pending.ended && pending.body.isEmpty && pending.trailers.isEmpty
                             leg.sink?.deliverResponseHead(streamID: clientID, status: finalStatus,
-                                headers: finalHeaders, endStream: false, neverIndexed: head.neverIndexed)
+                                headers: finalHeaders, endStream: headEndsStream, neverIndexed: head.neverIndexed)
+                            if !pending.body.isEmpty {
+                                leg.sink?.deliverResponseData(streamID: clientID, pending.body,
+                                    endStream: pending.ended && pending.trailers.isEmpty)
+                            }
+                            if !pending.trailers.isEmpty {
+                                leg.sink?.deliverResponseTrailers(streamID: clientID, pending.trailers)
+                            }
+                            if pending.ended {
+                                leg.finalizeResponseHalf(clientID: clientID, originEnded: true)
+                            }
                         }
-                        let parked = leg.phase != .torn && leg.phase != .failed && leg.pump()
-                        leg.finishPass(parked: parked)
                     }
                 }
             }
-            return true
+            return false
         }
 
         if buffersBody {
@@ -914,6 +926,16 @@ actor MITMHTTP2UpstreamLeg {
             if endStream { finalizeResponseHalf(clientID: clientID, originEnded: true) }
             return false
 
+        case .awaitingHeaderScript(let pending):
+            creditConnectionWindow(onWireLength)
+            creditStreamWindow(upstreamStreamID, onWireLength - body.count)
+            if !pending.append(body, endStream: endStream) {
+                let code = pending.ended ? Codec.ErrorCode.streamClosed : Codec.ErrorCode.cancel
+                releaseStream(clientID: clientID, resetOrigin: true)
+                sink?.deliverResponseReset(streamID: clientID, errorCode: code)
+            }
+            return false
+
         case .buffering:
             ackUpstream(upstreamStreamID: upstreamStreamID, length: onWireLength)
             return appendBufferedResponse(clientID: clientID, body: body, endStream: endStream)
@@ -973,6 +995,14 @@ actor MITMHTTP2UpstreamLeg {
                 sink?.deliverResponseData(streamID: streamID, Data(), endStream: true)
             } else {
                 sink?.deliverResponseTrailers(streamID: streamID, trailers)
+            }
+            return false
+        case .awaitingHeaderScript(let pending):
+            guard pending.finish(with: trailers) else {
+                let code = pending.ended ? Codec.ErrorCode.streamClosed : Codec.ErrorCode.cancel
+                releaseStream(clientID: streamID, resetOrigin: true)
+                sink?.deliverResponseReset(streamID: streamID, errorCode: code)
+                return false
             }
             return false
         case .buffering:

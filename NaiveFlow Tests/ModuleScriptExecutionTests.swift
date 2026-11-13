@@ -78,6 +78,22 @@ struct ModuleScriptExecutionTests {
         #expect(source[..<marker.lowerBound].contains(ForeignScriptContext.headerOnlyMarker))
     }
 
+    @Test func headerObjectsPreserveUnchangedRepeatedFields() {
+        let original = [
+            (name: "set-cookie", value: "a=1"),
+            (name: "set-cookie", value: "b=2"),
+            (name: "x-old", value: "remove"),
+        ]
+        let unchanged = ForeignScriptContext.preservingRepeatedHeaders(
+            [(name: "set-cookie", value: "b=2"), (name: "x-new", value: "yes")], from: original)
+        #expect(unchanged.map(\.value) == ["a=1", "b=2", "yes"])
+
+        let replaced = ForeignScriptContext.preservingRepeatedHeaders(
+            [(name: "set-cookie", value: "new=3")], from: original)
+        #expect(replaced.map(\.value) == ["new=3"])
+        #expect(ForeignScriptContext.preservingRepeatedHeaders([], from: original).isEmpty)
+    }
+
     @Test func binaryBodiesAndQuantumultStringDoneRoundTrip() throws {
         let (ctx, result) = try execute("$done($response.bodyBytes.subarray(1,3));", dialect: .quantumultX, response: true, url: "https://example.com/", body: Data([0, 255, 128, 0]))
         #expect(ForeignScriptContext.bytes(result, in: ctx) == Data([255, 128]))

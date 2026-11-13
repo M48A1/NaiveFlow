@@ -30,6 +30,7 @@ nonisolated enum MITMHTTP2FrameCodec {
         static let noError: UInt32        = 0x0
         static let protocolError: UInt32  = 0x1
         static let internalError: UInt32  = 0x2
+        static let streamClosed: UInt32   = 0x5
         static let frameSizeError: UInt32 = 0x6
         static let refusedStream: UInt32  = 0x7
         static let cancel: UInt32         = 0x8

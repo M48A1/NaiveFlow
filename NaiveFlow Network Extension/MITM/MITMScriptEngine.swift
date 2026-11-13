@@ -764,7 +764,8 @@ actor MITMScriptEngine {
         if let headersValue = argument.objectForKeyedSubscript("headers"),
            !headersValue.isUndefined, !headersValue.isNull,
            let parsed = Self.headersFromValue(headersValue) {
-            updated.headers = parsed
+            updated.headers = headersValue.isArray ? parsed
+                : ForeignScriptContext.preservingRepeatedHeaders(parsed, from: message.headers)
         }
         if let body = ForeignScriptContext.resultBody(argument, in: JSContext.current()!) {
             updated.body = body
