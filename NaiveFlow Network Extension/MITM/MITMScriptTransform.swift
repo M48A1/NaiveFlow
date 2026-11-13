@@ -56,6 +56,13 @@ nonisolated enum MITMScriptTransform {
         return false
     }
 
+    static func hasBodyJSONRule(in rules: [CompiledMITMRule], verdicts: MITMGateVerdictTable) -> Bool {
+        for (index, rule) in rules.enumerated() {
+            if case .bodyJSON = rule.operation, verdicts.matches(at: index) { return true }
+        }
+        return false
+    }
+
     static func hasHeaderOnlyScript(in rules: [CompiledMITMRule], verdicts: MITMGateVerdictTable) -> Bool {
         for index in rules.indices.reversed() where verdicts.matches(at: index) {
             if case .script(_, _, _, let headerOnly) = rules[index].operation {

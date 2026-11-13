@@ -98,7 +98,7 @@ struct ModuleScriptExecutionTests {
         let context = try #require(JSContext())
         let message = try #require(JSValue(newObjectIn: context))
         ForeignScriptContext.installBody(Data("hello".utf8), on: message, in: context)
-        context.setObject(message, forKeyedSubscript: "message")
+        context.setObject(message, forKeyedSubscript: "message" as NSString)
         let result = try #require(context.evaluateScript("""
             Object.keys(message).join(',') === 'body,bodyBytes' &&
             message.body === 'hello' &&

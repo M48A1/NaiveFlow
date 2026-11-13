@@ -10,10 +10,36 @@ import Synchronization
 
 nonisolated final class AsyncInbox<Element: Sendable>: Sendable {
     private struct State {
-        var buffer: [Element] = []
+        var buffer: [Element?] = []
+        var head = 0
         var finished = false
         var failure: Error?
         var waiter: CheckedContinuation<Void, Never>?
+
+        var count: Int { buffer.count - head }
+
+        mutating func popFirst() -> Element {
+            let element = buffer[head]!
+            // Release consumed payloads immediately, even while the queue stays busy.
+            buffer[head] = nil
+            head += 1
+            if head == buffer.count {
+                buffer.removeAll(keepingCapacity: true)
+                head = 0
+            } else if head >= 64 && head >= count {
+                // Compact only after enough reads to amortize moving the live suffix.
+                buffer.removeFirst(head)
+                head = 0
+            }
+            return element
+        }
+
+        mutating func drain() -> [Element] {
+            let batch = buffer[head...].map { $0! }
+            buffer.removeAll(keepingCapacity: true)
+            head = 0
+            return batch
+        }
     }
 
     private enum Step {
@@ -39,8 +65,8 @@ nonisolated final class AsyncInbox<Element: Sendable>: Sendable {
     func yield(_ element: Element, compactingAbove depth: Int, _ compact: (Element) -> Element) {
         let waiter: CheckedContinuation<Void, Never>? = state.withLock { s in
             guard !s.finished else { return nil }
-            if let capacity, s.buffer.count >= capacity { return nil }
-            s.buffer.append(s.buffer.count >= depth ? compact(element) : element)
+            if let capacity, s.count >= capacity { return nil }
+            s.buffer.append(s.count >= depth ? compact(element) : element)
             let waiter = s.waiter
             s.waiter = nil
             return waiter
@@ -71,8 +97,8 @@ nonisolated final class AsyncInbox<Element: Sendable>: Sendable {
     func next() async throws -> Element? {
         while true {
             let step: Step = state.withLock { s in
-                if !s.buffer.isEmpty {
-                    return .element(s.buffer.removeFirst())
+                if s.count > 0 {
+                    return .element(s.popFirst())
                 }
                 if let failure = s.failure {
                     s.failure = nil   // surface once, then behave as a clean end
@@ -102,10 +128,8 @@ nonisolated final class AsyncInbox<Element: Sendable>: Sendable {
     func nextBatch() async throws -> [Element]? {
         while true {
             let step: Step = state.withLock { s in
-                if !s.buffer.isEmpty {
-                    let batch = s.buffer
-                    s.buffer.removeAll(keepingCapacity: true)
-                    return .batch(batch)
+                if s.count > 0 {
+                    return .batch(s.drain())
                 }
                 if let failure = s.failure {
                     s.failure = nil
@@ -136,7 +160,7 @@ nonisolated final class AsyncInbox<Element: Sendable>: Sendable {
         await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 let ready: Bool = state.withLock { s in
-                    if !s.buffer.isEmpty || s.failure != nil || s.finished || Task.isCancelled { return true }
+                    if s.count > 0 || s.failure != nil || s.finished || Task.isCancelled { return true }
                     s.waiter = continuation
                     return false
                 }

@@ -23,6 +23,9 @@ nonisolated final class DNSLookupCache<Key: Hashable & Sendable, Value: Sendable
 
     private struct State: Sendable {
         var entries: [Key: Entry] = [:]
+        // A conservative lower bound: refreshing or evicting the earliest entry
+        // may leave an earlier deadline, which only causes an extra cleanup.
+        var nextExpiry: TimeInterval = .infinity
         var inFlight: [Key: LookupBroadcast<Outcome>] = [:]
         var activeLookups = 0
         var upstream: DNSUpstream?
@@ -41,13 +44,16 @@ nonisolated final class DNSLookupCache<Key: Hashable & Sendable, Value: Sendable
     private let missing: Value
     private let servesStaleOnFailure: Bool
     private let waitLimit: Duration?
+    private let now: @Sendable () -> TimeInterval
     
-    init(capacity: Int, missing: Value, servesStaleOnFailure: Bool = false, waitLimit: Duration? = nil, maxInFlight: Int = 64) {
+    init(capacity: Int, missing: Value, servesStaleOnFailure: Bool = false, waitLimit: Duration? = nil, maxInFlight: Int = 64,
+         now: @escaping @Sendable () -> TimeInterval = { MonotonicClock.now }) {
         self.capacity = max(0, capacity)
         self.maxInFlight = max(0, maxInFlight)
         self.missing = missing
         self.servesStaleOnFailure = servesStaleOnFailure
         self.waitLimit = waitLimit
+        self.now = now
     }
 
     var activeLookupCount: Int { state.withLock { $0.activeLookups } }
@@ -58,7 +64,7 @@ nonisolated final class DNSLookupCache<Key: Hashable & Sendable, Value: Sendable
         var retired: [LookupBroadcast<Outcome>] = []
         let value: Value? = state.withLock { state in
             retired = adopt(upstream, in: &state)
-            guard let entry = state.entries[key], entry.expiry > MonotonicClock.now else { return nil }
+            guard let entry = state.entries[key], entry.expiry > now() else { return nil }
             return entry.value
         }
         Self.cancel(retired)
@@ -105,7 +111,7 @@ nonisolated final class DNSLookupCache<Key: Hashable & Sendable, Value: Sendable
         let joined: Join = state.withLock { state in
             retired = adopt(upstream, in: &state)
             let entry = state.entries[key]
-            if let entry, !forceFresh, entry.expiry > MonotonicClock.now { return .hit(entry.value) }
+            if let entry, !forceFresh, entry.expiry > now() { return .hit(entry.value) }
             guard !Task.isCancelled else { return .rejected }
             if let existing = state.inFlight[key] {
                 return .wait(existing, stale: entry?.value)
@@ -152,9 +158,10 @@ nonisolated final class DNSLookupCache<Key: Hashable & Sendable, Value: Sendable
             state.activeLookups -= 1
             if state.inFlight[key] === pending { state.inFlight.removeValue(forKey: key) }
             guard scheduledGeneration == state.generation, let result else { return }
-            let now = MonotonicClock.now
+            let now = now()
             state.entries[key] = Entry(value: result.value, expiry: now + result.ttl)
-            Self.compact(&state.entries, now: now, capacity: capacity)
+            state.nextExpiry = min(state.nextExpiry, now + result.ttl)
+            Self.compact(&state, now: now, capacity: capacity)
         }
     }
     
@@ -167,6 +174,7 @@ nonisolated final class DNSLookupCache<Key: Hashable & Sendable, Value: Sendable
     private static func reset(_ state: inout State) -> [LookupBroadcast<Outcome>] {
         state.generation &+= 1
         state.entries.removeAll(keepingCapacity: false)
+        state.nextExpiry = .infinity
         let retired = Array(state.inFlight.values)
         state.inFlight.removeAll(keepingCapacity: false)
         // Keep cancelled work charged until it actually completes.
@@ -181,16 +189,23 @@ nonisolated final class DNSLookupCache<Key: Hashable & Sendable, Value: Sendable
         }
     }
 
-    private static func compact(_ entries: inout [Key: Entry], now: TimeInterval, capacity: Int) {
-        if entries.contains(where: { $0.value.expiry <= now }) {
-            entries = entries.filter { $0.value.expiry > now }
+    private static func compact(_ state: inout State, now: TimeInterval, capacity: Int) {
+        guard state.nextExpiry <= now || state.entries.count > capacity else { return }
+        var expired: [Key] = []
+        var earliest: (key: Key, expiry: TimeInterval)?
+        for (key, entry) in state.entries {
+            if entry.expiry <= now {
+                expired.append(key)
+            } else if earliest == nil || entry.expiry < earliest!.expiry {
+                earliest = (key, entry.expiry)
+            }
         }
-
-        while entries.count > capacity {
-            guard let coldest = entries.min(by: { $0.value.expiry < $1.value.expiry })?.key
-            else { break }
-            entries.removeValue(forKey: coldest)
+        for key in expired { state.entries.removeValue(forKey: key) }
+        // Each store adds at most one entry, so one eviction restores capacity.
+        if state.entries.count > capacity, let earliest {
+            state.entries.removeValue(forKey: earliest.key)
         }
+        state.nextExpiry = state.entries.isEmpty ? .infinity : (earliest?.expiry ?? .infinity)
     }
 }
 

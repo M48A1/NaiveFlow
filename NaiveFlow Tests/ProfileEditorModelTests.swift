@@ -93,7 +93,12 @@ struct ProfileEditorModelTests {
         // Before the debounce elapses nothing has been compiled.
         #expect(document.previewed.isEmpty)
 
-        try await Task.sleep(for: .milliseconds(400))
+        // Wait for completion rather than assuming the scheduler runs within
+        // 400 ms while the rest of the test suite is competing for the actor.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while document.previewed.isEmpty, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
 
         #expect(document.previewed == ["[Rule]\n#3\n"])
         #expect(document.persisted.last == "[Rule]\n#3\n")

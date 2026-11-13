@@ -1,6 +1,6 @@
 # 第一步：工程基线检查
 
-最新构建与测试记录见文末「2026-11-12 构建与测试回归」。以下早期记录保留当时状态。
+最新构建与测试记录见文末「2026-11-13 DNS 缓存清理优化」。以下早期记录保留当时状态。
 
 检查日期：2026-11-03（静态检查）、2026-11-04（依赖收敛与构建）。状态：iOS 与 tvOS 无签名构建通过；签名、真机与单元测试验收未完成。
 
@@ -285,3 +285,86 @@ macOS、tvOS、Widget 和 Network Extension 没有各自独立的已配置测试
 最终结果（显式方言改动后）：iOS（含 Network Extension / Widget）、tvOS、macOS 无签名构建全部 BUILD SUCCEEDED；全量模拟器测试 TEST SUCCEEDED，**376 项通过、0 失败、7 项跳过，共 383 项**；参数化展开后 **388 次通过**。新增 8 个测试定义全部通过。7 项跳过仍因未配置受控代理。
 
 构建日志：`/tmp/naiveflow-20261112/dialect-ios.log`、`dialect-tvos.log`、`dialect-macos.log`；最终测试日志：`/tmp/naiveflow-20261112/script-dialects-verified.log`；结果包：`/tmp/naiveflow-20261112/ScriptDialects-verified.xcresult`；统计：`/tmp/naiveflow-20261112/script-dialect-summary.json`。`plutil -lint` 和 `git diff --check` 通过。尚未做真机脚本兼容矩阵或性能基准，不声明性能提升数值。
+
+
+### 2026-11-13 队列优化与完整回归
+
+起始提交：`8cbcf63`，工作区干净；环境为 Xcode 27.2（27B52）、iPhone 17 / iOS 27.2 模拟器。此次修改留在本地，未提交或推送。
+
+#### 修改
+
+- `AsyncInbox` 单条读取改用游标，消费后立即清空槽位以释放数据；累计消费至少 64 项且已消费部分不小于未消费部分时才移动剩余数组，避免每次出队都移动全部积压元素。容量判断、压缩回调阈值和唤醒条件均使用未读数量。
+- 批量读取提取未读部分并重置游标；该路径需要线性转换可选槽位，未据单条读取基准推断批量读取也会加速。
+- 首轮构建发现现有 `MITMScriptTransform.hasBufferedBodyRule` 调用了缺失的 `hasBodyJSONRule`；补齐 JSON 正文规则与 gate verdict 的匹配判断，恢复扩展编译。
+- 测试编译发现 `ModuleScriptExecutionTests` 中一处 JavaScriptCore 键名未桥接到 `NSString`；补齐转换。
+- 新增 `AsyncInboxTests` 8 项：积压顺序、容量复用、混合单条/批量读取、压缩阈值、可选 nil 元素、消费后引用释放、终止错误仅交付一次、取消后复用。全部通过。
+
+#### 验证结果
+
+| 检查 | 结果 | 本机日志 / 结果 |
+| --- | --- | --- |
+| iOS 模拟器全量测试，含应用、Network Extension、Widget 编译 | TEST SUCCEEDED；387 项通过、0 失败、8 项跳过，共 395 项 | `/tmp/NaiveFlow-verified.log`；`/tmp/NaiveFlow-verified.xcresult` |
+| macOS 无签名构建，含扩展依赖 | BUILD SUCCEEDED | `/tmp/NaiveFlow-macos-build.log` |
+| tvOS 无签名构建，含扩展 | BUILD SUCCEEDED | `/tmp/NaiveFlow-tvos-build.log` |
+| IPv4 内核包测试 | 3 项通过，0 失败 | `/tmp/NaiveFlow-IP-tests.log` |
+| 工程格式与差异 | `plutil -lint`、`git diff --check` 通过 | — |
+
+全量数量按 xcresult summary 的测试定义口径；参数化展开后的执行实例为 397 次通过、8 次跳过。摘要：`/tmp/NaiveFlow-test-summary.json`。
+
+8 项跳过为：7 项 `ConfigurationConnectivityTests` 缺少 `NAIVEFLOW_TEST_PROXY_URL`；1 项参数化的 BiliBili 实际脚本导入/执行测试缺少 `/private/tmp/BiliBili.ADBlock.sgmodule` 和 `.snippet` 测试素材。跳过项不作为通过。未执行真机签名、VPN 启停或真实代理流量验收。
+
+复现（结果包路径须尚不存在）：
+
+```sh
+xcodebuild -project NaiveFlow.xcodeproj -scheme NaiveFlow -configuration Debug \
+  -destination 'platform=iOS Simulator,id=DE25C87A-6656-4AEF-93E0-12FE8D85407F' \
+  -derivedDataPath /tmp/NaiveFlow-validation \
+  -resultBundlePath /tmp/NaiveFlow-verified.xcresult CODE_SIGNING_ALLOWED=NO test
+swift test --package-path Packages/NaiveFlowIP --scratch-path /tmp/NaiveFlow-IP-validation
+```
+
+#### 单条读取微基准
+
+分别将起始提交与修改后的 `AsyncInbox.swift` 和同一测试程序使用 `swiftc -O -parse-as-library` 编译，在 detached task 内预填充整数，调用 `finish()` 后逐项读取至结束，校验总和；只计读取耗时，每个深度取 7 次中位数。测试程序：`/tmp/NaiveFlowInboxBenchmark.swift`；原始样本：`/tmp/NaiveFlow-inbox-before-final.txt`、`/tmp/NaiveFlow-inbox-after-final.txt`。
+
+| 积压项数 | 修改前中位数 | 修改后中位数 |
+| --- | --- | --- |
+| 256 | 0.214 ms | 0.093 ms |
+| 4,096 | 3.337 ms | 1.563 ms |
+| 20,000 | 105.581 ms | 6.861 ms |
+
+这些是本机合成队列读取数据，尤其 20,000 项的修改前样本波动较大；不能换算为实际 VPN 吞吐、延迟或内存收益。日志和基准程序均位于临时目录，可能被系统清理。已有的源码弃用等非阻塞构建警告仍保留。
+
+
+### 2026-11-13 DNS 缓存清理优化
+
+- `DNSLookupCache` 记录最早到期时间的保守下界。在没有条目到期且容量未超限时，写入不再扫描缓存；触发清理时，一次遍历同时找到过期项和最早到期的可淘汰项，避免原先的多次遍历及过滤字典重建。
+- 刷新、淘汰可能使记录的清理时间早于实际最早到期时间，最多触发一次额外扫描；不会延后清理。每次写入最多新增一条记录，所以超限时只需淘汰一项。满容量且持续插入新域名的路径仍为 O(n)，不声称所有写入都是 O(1)。
+- TTL、零 TTL、最早到期优先淘汰、容量 1,024、现有过期结果回退、并发额度和代次失效策略保留；未引入新的失败退避或过期回退期限。
+- 注入默认使用单调时钟的时间源，新增 `DNSLookupCacheTests` 12 项。覆盖到期边界、提前/延后刷新、清理与淘汰、零容量、失败回退、flush、上游切换、32 个请求合并，以及 ECH 使用的可选 nil 结果缓存。
+
+#### 测试与构建
+
+| 检查 | 最终结果 | 本机结果 / 日志 |
+| --- | --- | --- |
+| iPhone 17 / iOS 27.2 全量测试，含应用、扩展、Widget 编译 | TEST SUCCEEDED；399 项通过、0 失败、8 项跳过，共 407 项 | `/tmp/NaiveFlow-DNS-final.xcresult`；`/tmp/NaiveFlow-DNS-final.log` |
+| macOS 无签名构建 | BUILD SUCCEEDED | `/tmp/NaiveFlow-DNS-macos.log` |
+| tvOS 无签名构建 | BUILD SUCCEEDED | `/tmp/NaiveFlow-DNS-tvos.log` |
+| 差异检查 | `git diff --check` 通过 | — |
+
+数量采用 xcresult summary 测试定义口径，参数化展开后为 409 次通过、8 次跳过。摘要：`/tmp/NaiveFlow-DNS-final-summary.json`。8 项跳过与上一轮相同，仍缺少受控代理或外部脚本素材；未执行真机 VPN 与真实代理流量验收。
+
+首轮回归时新增 DNS 测试中已编译的 11 项通过，但 `ProfileEditorModelTests.debouncedPreviewCoalescesRapidEdits` 在固定等待 400 ms 后仍未收到预览。将该测试改成每 10 ms 检查完成条件、最多等待 5 秒，保留原先对仅预览最终输入、持久化和编辑文本的断言；生产防抖实现未改。随后编译最后补入的 ECH 测试，重新运行全量回归，12 项 DNS 测试及防抖测试全部通过。首轮失败结果保留在 `/tmp/NaiveFlow-DNS-verified.xcresult`，摘要为 `/tmp/NaiveFlow-DNS-first-summary.json`。
+
+全量复现沿用上一节命令，结果包改为尚不存在的 `/tmp/NaiveFlow-DNS-final.xcresult`。代码改动仍未提交或推送。
+
+#### 缓存写入微基准
+
+使用同一个独立程序分别编译起始提交与修改后的缓存源码（`swiftc -O -parse-as-library`）。预填充 256 或 1,024 个整数键，TTL 为 3,600 秒，再对已有键执行 5,000 次 `forceFresh` 查询；查询直接返回整数，不发起网络请求。每组 5 次取中位数，并校验查询结果和最终缓存条数。
+
+| 条目数 | 修改前 | 修改后 |
+| --- | --- | --- |
+| 256 | 224.931 ms | 42.734 ms |
+| 1,024 | 745.190 ms | 31.231 ms |
+
+程序位于 `/tmp/NaiveFlowDNSBenchmark.swift`，最终样本为 `/tmp/NaiveFlow-dns-before-final.txt` 和 `/tmp/NaiveFlow-dns-after-final.txt`。独立程序使用 `systemUptime` 作为单调时钟及睡眠适配器；基准路径未设置等待超时，因此不执行睡眠适配器。结果只说明合成场景的缓存管理开销，受调度影响，不代表真实 DNS 延迟、VPN 吞吐或所有缓存写入场景的收益。临时目录中的日志和程序可能被系统清理。
