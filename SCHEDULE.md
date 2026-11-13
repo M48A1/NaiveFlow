@@ -153,7 +153,6 @@ Geo 更新由用户重新应用触发，不含后台定时刷新。可选 `Rules
 ## 2026-11-12 移除 Anywhere 原生脚本 ABI
 
 - 仅保留 Surge、Quantumult X 脚本方言；删除 `process(ctx)` 原生执行分支与 `NaiveFlow.*` 全局 API 注入及实现。静态 MITM/JSON/regex 改写继续保留。
-- 旧原生脚本、`stream-script` / operation 101 的导入或激活会报错；旧数据仍可解码用于诊断，不自动转换。
 - Surge/QX 顶层脚本语法校验与运行入口保持一致，QX 特有全局变量进入 QX 适配器；`$done` 首次完成生效，异步运行保留取消/超时/内存预算约束。仍属部分兼容，真实脚本矩阵待验收。
 - iOS（含扩展和 Widget）、tvOS、macOS 无签名构建通过；全量测试 **368 项通过、0 失败、7 项环境跳过**。新增 6 个测试定义，含旧 ABI 的 5 组参数化输入，全部通过。
 - 完整记录见 BASELINE_CHECK.md 文末；MITM 文档已移除旧脚本 API 和示例。

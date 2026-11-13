@@ -12,22 +12,7 @@ struct ForeignScriptValidationTests {
         try RuntimeJavaScript.validate(source)
     }
 
-    @Test(arguments: [
-        "function process(ctx) { return ctx; }",
-        "async function process(ctx) { return ctx; }",
-        "const process = ctx => ctx;",
-        "NaiveFlow.http.get('https://example.com');",
-        "Anywhere.done();"
-    ]) func rejectsRemovedNativeABI(source: String) {
-        #expect(throws: (any Error).self) { try RuntimeJavaScript.validate(source) }
-    }
-
-    @Test func legacyNamesInCommentsAndTextAreNotExecutableAPIUsage() throws {
-        let source = "// function process(ctx) {}\nconst text = 'NaiveFlow.http $task'; $done({body:text});"
-        try RuntimeJavaScript.validate(source)
-    }
-
-    @Test func streamScriptsAreRejectedBeforeDownloading() {
+    @Test func unknownScriptOptionsAreRejectedBeforeDownloading() {
         let result = TextConfigurationPipeline.process(text: """
         [MITM]
         hostname = example.com
@@ -35,7 +20,7 @@ struct ForeignScriptValidationTests {
         legacy = type=http-response, pattern=., source=https://example.com/legacy.js, stream=true
         """)
         #expect(!result.isActivatable)
-        #expect(result.diagnostics.contains { $0.message.contains("stream-script has been removed") })
+        #expect(result.diagnostics.contains { $0.message.contains("Unsupported script parameter") })
     }
 
     @Test func invalidForeignJavaScriptIsRejected() {

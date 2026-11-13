@@ -356,7 +356,7 @@ struct MITMRuleEditorView: View {
             operationKind = .bodyReplace
             self.searchText = search
             self.replacement = replacement
-        case .script, .streamScript, .bodyJSON:
+        case .script, .bodyJSON:
             // Scripts and native JSON-body edits are import-only.
             break
         }

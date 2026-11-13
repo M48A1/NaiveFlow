@@ -212,10 +212,6 @@ enum MITMRuleSetParser {
                 operation: .script(scriptBase64: scriptBase64, dialect: dialect)
             )
 
-        case 101:
-            // Anywhere's streaming script ABI was removed.
-            return nil
-
         default:
             return nil
         }

@@ -281,7 +281,7 @@ P0 输出字段级兼容表：字段、默认值、取值、支持状态、运�
 
 ### 8.2 脚本兼容层
 
-保留现有 NaiveFlow 的 `process(ctx)` 与原生 API，在当前脚本运行时上增加显式的 Surge / Quantumult X 方言适配器。每次执行仅注入选定方言，避免同时暴露全部全局变量导致脚本错误识别环境。
+MITM 脚本使用显式的 Surge / Quantumult X 方言。每次执行仅注入选定方言，避免同时暴露全部全局变量导致脚本错误识别环境。
 
 Surge 的 API 与触发方式以 [官方脚本概览](https://manual.nssurge.com/scripting/overview.html)、[API 参考](https://manual.nssurge.com/scripting/api.html) 和 [HTTP 请求脚本](https://manual.nssurge.com/scripting/http-request.html) 为核对依据；Quantumult X 以 [官方改写示例](https://github.com/crossutility/Quantumult-X/blob/master/sample-rewrite-with-script.js)、[二进制改写示例](https://github.com/crossutility/Quantumult-X/blob/master/sample-bytes-rewrite.js) 及官方仓库其他样例为依据。实施时固定样例版本，形成可回归的兼容矩阵。
 

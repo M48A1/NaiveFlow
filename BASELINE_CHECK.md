@@ -261,7 +261,6 @@ macOS、tvOS、Widget 和 Network Extension 没有各自独立的已配置测试
 
 - 删除脚本方言 `.native`、`process(ctx)` 编译/执行分支、原生 `NaiveFlow.*` 全局注入及其 codec/crypto/JWT/JSON/store/params/log/http API 实现；保留 Surge 与 Quantumult X 适配器使用的底层 HTTP、存储和字节转换工具。
 - 配置校验不再要求声明 `process(context)`；有效的 Surge/QX 顶层脚本可通过语法校验，常见的原生入口/命名空间用法会给出明确的已移除错误。注释和字符串中的旧名称不作为可执行 API 判断。
-- `stream-script` / operation 101 不再导入或激活，扩展编译旧记录时拒绝执行。旧序列化枚举仅保留用于读取与诊断，不自动转换或删除用户保存的数据。
 - QX 的 `$task` / `$prefs` / `$notify` 用法进入 Quantumult X 分支；其余接受的脚本进入 Surge。尚未增加显式方言配置，不声称完整 Surge/QX 兼容。
 - 外部脚本使用 `$done` 完成：同步调用首个结果生效，异步回调期间保留运行上下文，并沿用取消、超时和共享内存预算。通用 MITM、静态改写和原生 JSON/regex 正文规则保留。
 - 原生脚本说明与示例从 MITM 文档移除。旧 Parameter 元数据仍可读取/导出，其 `NaiveFlow.params` 脚本 API 不再可用。

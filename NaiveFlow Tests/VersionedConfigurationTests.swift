@@ -117,7 +117,7 @@ struct VersionedConfigurationTests {
         let publisher = publisher(activation)
         _ = try await publisher.publish(text: first)
         let before = try publisher.bundleStore.head()
-        let invalid = Data("function process(ctx) {".utf8).base64EncodedString()
+        let invalid = Data("$done({".utf8).base64EncodedString()
         let text = first + "\n[MITM]\nhostname = example.com\n[Script]\nx = type=http-request, pattern=., source=base64:\(invalid)\n"
         await #expect(throws: (any Error).self) { try await publisher.publish(text: text) }
         #expect(try publisher.bundleStore.head() == before)

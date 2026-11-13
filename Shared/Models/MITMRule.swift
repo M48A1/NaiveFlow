@@ -159,7 +159,6 @@ nonisolated enum MITMOperation: Equatable, Sendable {
     case headerDelete(name: String)
     case headerReplace(name: String, value: String)
     case script(scriptBase64: String, dialect: MITMScriptDialect = .surge)
-    case streamScript(scriptBase64: String)
     case bodyReplace(search: String, replacement: String)
     case bodyJSON(MITMJSONOperation)
 }
@@ -177,8 +176,6 @@ extension MITMOperation: CustomStringConvertible {
             String(localized: "Header Replace")
         case .script:
             String(localized: "Script")
-        case .streamScript:
-            String(localized: "Stream Script")
         case .bodyReplace:
             String(localized: "Body Replace")
         case .bodyJSON:
@@ -194,7 +191,6 @@ extension MITMOperation: Codable {
         case headerDelete
         case headerReplace
         case script
-        case streamScript
         case bodyReplace
         case bodyJSON
     }
@@ -232,8 +228,6 @@ extension MITMOperation: Codable {
         case .script:
             self = .script(scriptBase64: try container.decode(String.self, forKey: .script),
                            dialect: try container.decodeIfPresent(MITMScriptDialect.self, forKey: .dialect) ?? .surge)
-        case .streamScript:
-            self = .streamScript(scriptBase64: try container.decode(String.self, forKey: .script))
         case .bodyReplace:
             self = .bodyReplace(
                 search: try container.decode(String.self, forKey: .search),
@@ -265,9 +259,6 @@ extension MITMOperation: Codable {
             try container.encode(Kind.script, forKey: .kind)
             try container.encode(scriptBase64, forKey: .script)
             try container.encode(dialect, forKey: .dialect)
-        case .streamScript(let scriptBase64):
-            try container.encode(Kind.streamScript, forKey: .kind)
-            try container.encode(scriptBase64, forKey: .script)
         case .bodyReplace(let search, let replacement):
             try container.encode(Kind.bodyReplace, forKey: .kind)
             try container.encode(search, forKey: .search)
@@ -343,8 +334,7 @@ extension MITMRule {
             return name
         case .headerReplace(let name, _):
             return name
-        case .script(let scriptBase64, _),
-             .streamScript(let scriptBase64):
+        case .script(let scriptBase64, _):
             let bytes = Data(base64Encoded: scriptBase64)?.count ?? 0
             return String(localized: "\(bytes) byte(s)")
         case .bodyReplace(let search, _):
@@ -651,7 +641,7 @@ nonisolated enum MITMBinaryFormat {
 
     enum OperationKind: UInt8 {
         case rewrite = 0, headerAdd = 1, headerDelete = 2, headerReplace = 3
-        case script = 4, streamScript = 5, bodyReplace = 6, bodyJSON = 7
+        case script = 4, bodyReplace = 6, bodyJSON = 7
     }
 
     enum RewriteKind: UInt8 {
@@ -727,9 +717,6 @@ nonisolated struct MITMBinaryWriter {
         case .script(let scriptBase64, let dialect):
             bytes.append(MITMBinaryFormat.OperationKind.script.rawValue)
             bytes.append(dialect.binaryValue)
-            appendString32(scriptBase64)
-        case .streamScript(let scriptBase64):
-            bytes.append(MITMBinaryFormat.OperationKind.streamScript.rawValue)
             appendString32(scriptBase64)
         case .bodyReplace(let search, let replacement):
             bytes.append(MITMBinaryFormat.OperationKind.bodyReplace.rawValue)

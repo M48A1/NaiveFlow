@@ -328,10 +328,7 @@ version fixes the source bytes, argument and dialect. `dialect` accepts `surge`
 Both dialects share the same runtime services and memory limits. Dialect is never
 inferred from source. Existing QX scripts must specify it explicitly.
 
-Anywhere's `process(ctx)` / `NaiveFlow.*` script ABI and `stream=true` are no
-longer supported. Exported `[MITM Set]` JSON retains each script's dialect;
-older stored records without the field default to Surge. See [MITM](MITM.md)
-for supported operations, migration and the partial-compatibility boundary.
+Exported `[MITM Set]` JSON retains each script’s dialect. See [MITM](MITM.md) for supported operations.
 
 ## Diagnostics
 

@@ -358,9 +358,6 @@ nonisolated final class MITMRewritePolicy: Sendable {
             let sharedBody = scriptSources[body] ?? body
             scriptSources[body] = sharedBody
             return .script(source: sharedBody, preamble: preamble, dialect: dialect)
-        case .streamScript:
-            logger.warning("[MITM] Anywhere stream-script is no longer supported")
-            return nil
         case .bodyReplace(let search, let replacement):
             guard let compiled = MITMBodyReplace.compile(search: search, replacement: replacement) else {
                 logger.warning("[MITM] \(ruleSet): bodyReplace: Invalid regex: \(search)")
@@ -604,7 +601,6 @@ nonisolated enum MITMBinaryReader {
                     dialect = decoded
                 } else { dialect = .surge }
                 return .script(scriptBase64: try readString32(), dialect: dialect)
-            case .streamScript:  return .streamScript(scriptBase64: try readString32())
             case .bodyReplace:   return .bodyReplace(search: try readString32(), replacement: try readString32())
             case .bodyJSON:      return .bodyJSON(try readJSON())
             }

@@ -309,7 +309,7 @@ struct MITMRuleSetDetailView: View {
                     guard !isReadOnly else { return }
                     // Scripts and native JSON-body edits are import-only.
                     switch rule.operation {
-                    case .script, .streamScript, .bodyJSON: return
+                    case .script, .bodyJSON: return
                     default: break
                     }
                     editingRule = rule
