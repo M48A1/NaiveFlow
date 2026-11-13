@@ -42,8 +42,8 @@ struct ModuleOperations {
         exportAll()
     }
 
-    func move(fromOffsets source: IndexSet, toOffset destination: Int) {
-        moduleStore.move(fromOffsets: source, toOffset: destination)
+    func move(in format: ModuleFormat, fromOffsets source: IndexSet, toOffset destination: Int) {
+        moduleStore.move(in: format, fromOffsets: source, toOffset: destination)
         exportAll()
     }
 

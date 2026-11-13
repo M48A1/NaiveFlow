@@ -26,19 +26,26 @@ struct ModulesView: View {
         NavigationStack {
             List {
                 if !moduleStore.modules.isEmpty {
-                    Section {
-                        ForEach(moduleStore.modules) { module in
-                            NavigationLink {
-                                ModuleDetailView(moduleId: module.id)
-                            } label: {
-                                row(for: module)
+                    ForEach(ModuleFormat.allCases) { format in
+                        let modules = moduleStore.modules.filter { $0.sourceFormat == format }
+                        Section {
+                            ForEach(modules) { module in
+                                NavigationLink {
+                                    ModuleDetailView(moduleId: module.id)
+                                } label: {
+                                    row(for: module)
+                                }
                             }
-                        }
-                        .onDelete { offsets in
-                            operations.modules.remove(atOffsets: offsets)
-                        }
-                        .onMove { source, destination in
-                            operations.modules.move(fromOffsets: source, toOffset: destination)
+                            .onDelete { offsets in
+                                for offset in offsets {
+                                    operations.modules.remove(id: modules[offset].id)
+                                }
+                            }
+                            .onMove { source, destination in
+                                operations.modules.move(in: format, fromOffsets: source, toOffset: destination)
+                            }
+                        } header: {
+                            Text(format.displayName)
                         }
                     }
                 }

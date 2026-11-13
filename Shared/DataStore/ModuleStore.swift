@@ -99,8 +99,15 @@ final class ModuleStore {
         }
     }
 
-    func move(fromOffsets source: IndexSet, toOffset destination: Int) {
-        modules.move(fromOffsets: source, toOffset: destination)
+    func move(in format: ModuleFormat, fromOffsets source: IndexSet, toOffset destination: Int) {
+        let indices = modules.indices.filter { modules[$0].sourceFormat == format }
+        guard !source.isEmpty, source.allSatisfy(indices.indices.contains),
+              (0...indices.count).contains(destination) else { return }
+        var reordered = indices.map { modules[$0] }
+        reordered.move(fromOffsets: source, toOffset: destination)
+        for (index, module) in zip(indices, reordered) {
+            modules[index] = module
+        }
         save()
     }
 
