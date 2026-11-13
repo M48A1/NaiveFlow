@@ -307,6 +307,7 @@ nonisolated final class MITMRewritePolicy: Sendable {
     // MARK: - Compilation
 
     private func compile(_ operation: MITMOperation, ruleSet: String, scriptSources: inout [String: String]) -> CompiledMITMOperation? {
+        guard operation.isSupportedMITMOperation else { return nil }
         switch operation {
         case .rewrite(let action):
             guard let compiled = Self.compileRewrite(action, ruleSet: ruleSet) else { return nil }

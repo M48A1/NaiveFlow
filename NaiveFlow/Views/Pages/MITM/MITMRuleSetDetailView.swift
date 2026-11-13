@@ -34,9 +34,6 @@ struct MITMRuleSetDetailView: View {
     @State private var parameters: [MITMParameter] = []
     @State private var parameterValues: [String: String] = [:]
 
-    @State private var showAddSheet: Bool = false
-    @State private var editingRule: MITMRule?
-
     @State private var validationError: String?
 
     @State private var isUpdating = false
@@ -106,23 +103,6 @@ struct MITMRuleSetDetailView: View {
             if !isReadOnly {
                 ToolbarItem {
                     EditButton()
-                }
-            }
-        }
-        .sheet(isPresented: $showAddSheet) {
-            NavigationStack {
-                MITMRuleEditorView(rule: nil) { rule in
-                    if let rule { rules.append(rule) }
-                }
-            }
-        }
-        .sheet(item: $editingRule) { rule in
-            NavigationStack {
-                MITMRuleEditorView(rule: rule) { updated in
-                    guard let updated else { return }
-                    if let index = rules.firstIndex(where: { $0.id == rule.id }) {
-                        rules[index] = updated
-                    }
                 }
             }
         }
@@ -304,16 +284,6 @@ struct MITMRuleSetDetailView: View {
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    guard !isReadOnly else { return }
-                    // Scripts and native JSON-body edits are import-only.
-                    switch rule.operation {
-                    case .script, .bodyJSON: return
-                    default: break
-                    }
-                    editingRule = rule
-                }
             }
             .onDelete(perform: isReadOnly ? nil : { offsets in
                 rules.remove(atOffsets: offsets)
@@ -327,13 +297,6 @@ struct MITMRuleSetDetailView: View {
                     save()
                 }
             })
-            if isEditing == true {
-                Button {
-                    showAddSheet = true
-                } label: {
-                    Label("Add", systemImage: "plus")
-                }
-            }
         }
     }
 

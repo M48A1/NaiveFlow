@@ -105,6 +105,9 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
             guard set.parameters.count <= MITMRuleSet.maxParameterCount,
                   set.rules.count <= MITMRuleSet.maxRuleCount else { throw RuntimeConfigurationFailure.invalidBundle }
             for rule in set.rules {
+                guard rule.operation.isSupportedMITMOperation else {
+                    throw RuntimeConfigurationFailure.rejected("Import rewrite rules as a Surge or Quantumult X module.")
+                }
                 _ = try NSRegularExpression(pattern: rule.urlPattern)
                 switch rule.operation {
                 case .script(let encoded, _):

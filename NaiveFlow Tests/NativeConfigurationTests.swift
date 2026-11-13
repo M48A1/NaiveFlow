@@ -123,7 +123,7 @@ struct NativeConfigurationTests {
         #expect(result.route(host: "other.test").action == .direct)
     }
 
-    @Test func textRewritesCompileToExistingKernelOperations() {
+    @Test func nativeTextRewritesRequireForeignModuleImport() {
         let result = TextConfigurationPipeline.process(text: #"""
             [MITM]
             enable = false
@@ -138,14 +138,8 @@ struct NativeConfigurationTests {
             [Map Local]
             ^https://example.com/local, text, ""
             """#)
-        #expect(result.isActivatable)
-        let rules = result.compiled.textMITM.rules
-        #expect(rules.count == 5)
-        #expect(rules[0].operation == .rewrite(.redirect302(url: "https://example.com/new")))
-        #expect(rules[1].operation == .headerAdd(name: "X-Test", value: "a,b"))
-        #expect(rules[2].phase == .httpResponse)
-        #expect(rules[3].operation == .bodyJSON(.delete(path: "$.ads")))
-        #expect(rules[4].operation == .rewrite(.reject200Text(content: "")))
+        #expect(!result.isActivatable)
+        #expect(result.compiled.textMITM.rules.isEmpty)
     }
 
     @Test func framingHeadersAndUnimplementedFeaturesAreRejected() {

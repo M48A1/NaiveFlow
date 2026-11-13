@@ -114,36 +114,6 @@ enum MITMRuleSetParser {
 
     // MARK: - Rewrite sub-mode parsing
 
-    private static func parseRewriteAction(subMode: String, fields: [String]) -> MITMRewriteAction? {
-        switch subMode.trimmingCharacters(in: .whitespaces) {
-        case "0":
-            guard fields.count == 1, let url = validRewriteURL(fields[0]) else { return nil }
-            return .transparent(url: url)
-        case "1":
-            guard fields.count == 1, let url = validRewriteURL(fields[0]) else { return nil }
-            return .redirect302(url: url)
-        case "2":
-            guard fields.count <= 1 else { return nil }
-            return .reject200Text(content: fields.first ?? "")
-        case "3":
-            guard fields.isEmpty else { return nil }
-            return .reject200Gif
-        case "4":
-            guard fields.count <= 1 else { return nil }
-            return .reject200Data(base64: fields.first ?? "")
-        default:
-            return nil
-        }
-    }
-
-    private static func validRewriteURL(_ raw: String) -> String? {
-        let trimmed = raw.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty,
-              let urlComponents = URLComponents(string: trimmed),
-              let host = urlComponents.host, !host.isEmpty else { return nil }
-        return trimmed
-    }
-
     // MARK: - Rule line parsing
 
     private static func parseRuleLine(_ trimmed: String) -> MITMRule? {
@@ -155,49 +125,6 @@ enum MITMRuleSetParser {
         let arguments = Array(fields.dropFirst(2))
 
         switch operationCode {
-        case 0:
-            guard arguments.count >= 2 else { return nil }
-            let urlPattern = arguments[0]
-            guard !urlPattern.isEmpty, isValidRegex(urlPattern) else { return nil }
-            guard let action = parseRewriteAction(subMode: arguments[1], fields: Array(arguments.dropFirst(2))) else { return nil }
-            return MITMRule(phase: .httpRequest, urlPattern: urlPattern, operation: .rewrite(action))
-
-        case 1:
-            guard arguments.count == 3 else { return nil }
-            let urlPattern = arguments[0]
-            let name = arguments[1]
-            guard !urlPattern.isEmpty, isValidRegex(urlPattern), !name.isEmpty else { return nil }
-            return MITMRule(phase: phase, urlPattern: urlPattern, operation: .headerAdd(name: name, value: arguments[2]))
-
-        case 2:
-            guard arguments.count == 2 else { return nil }
-            let urlPattern = arguments[0]
-            let name = arguments[1]
-            guard !urlPattern.isEmpty, isValidRegex(urlPattern), !name.isEmpty else { return nil }
-            return MITMRule(phase: phase, urlPattern: urlPattern, operation: .headerDelete(name: name))
-
-        case 3:
-            guard arguments.count == 3 else { return nil }
-            let urlPattern = arguments[0]
-            let name = arguments[1]
-            guard !urlPattern.isEmpty, isValidRegex(urlPattern), !name.isEmpty else { return nil }
-            return MITMRule(phase: phase, urlPattern: urlPattern, operation: .headerReplace(name: name, value: arguments[2]))
-
-        case 4:
-            guard arguments.count == 3 else { return nil }
-            let urlPattern = arguments[0]
-            let search = arguments[1]
-            guard !urlPattern.isEmpty, isValidRegex(urlPattern),
-                  !search.isEmpty, isValidRegex(search) else { return nil }
-            return MITMRule(phase: phase, urlPattern: urlPattern, operation: .bodyReplace(search: search, replacement: arguments[2]))
-
-        case 5:
-            guard arguments.count >= 2 else { return nil }
-            let urlPattern = arguments[0]
-            guard !urlPattern.isEmpty, isValidRegex(urlPattern) else { return nil }
-            guard let operation = parseJSONOperation(action: arguments[1], fields: Array(arguments.dropFirst(2))) else { return nil }
-            return MITMRule(phase: phase, urlPattern: urlPattern, operation: .bodyJSON(operation))
-
         case 100:
             guard (2...3).contains(arguments.count) else { return nil }
             let dialectToken = arguments.count == 3 ? arguments[2].trimmingCharacters(in: .whitespacesAndNewlines).lowercased() : "surge"
@@ -212,34 +139,6 @@ enum MITMRuleSetParser {
                 operation: .script(scriptBase64: scriptBase64, dialect: dialect)
             )
 
-        default:
-            return nil
-        }
-    }
-
-    private static func parseJSONOperation(action rawAction: String, fields: [String]) -> MITMJSONOperation? {
-        switch rawAction.trimmingCharacters(in: .whitespaces).lowercased() {
-        case "add":
-            guard fields.count == 2 else { return nil }
-            return .add(path: fields[0], value: fields[1])
-        case "replace":
-            guard fields.count == 2 else { return nil }
-            return .replace(path: fields[0], value: fields[1])
-        case "delete":
-            guard fields.count == 1 else { return nil }
-            return .delete(path: fields[0])
-        case "replace-recursive", "replacerecursive":
-            guard fields.count == 2 else { return nil }
-            return .replaceRecursive(key: fields[0], value: fields[1])
-        case "delete-recursive", "deleterecursive":
-            guard fields.count == 1 else { return nil }
-            return .deleteRecursive(key: fields[0])
-        case "remove-where-key-exists", "removewherekeyexists":
-            guard fields.count == 2 else { return nil }
-            return .removeWhereKeyExists(path: fields[0], key: fields[1])
-        case "remove-where-field-in", "removewherefieldin":
-            guard fields.count == 3 else { return nil }
-            return .removeWhereFieldIn(path: fields[0], field: fields[1], values: fields[2])
         default:
             return nil
         }

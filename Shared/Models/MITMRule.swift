@@ -161,6 +161,17 @@ nonisolated enum MITMOperation: Equatable, Sendable {
     case script(scriptBase64: String, dialect: MITMScriptDialect = .surge)
     case bodyReplace(search: String, replacement: String)
     case bodyJSON(MITMJSONOperation)
+
+    /// Operations produced by the supported module importers or script compiler.
+    var isSupportedMITMOperation: Bool {
+        switch self {
+        case .script, .headerReplace, .rewrite(.redirect302), .rewrite(.reject200Gif),
+             .rewrite(.reject200Text(content: "")), .bodyJSON(.delete):
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 extension MITMOperation: CustomStringConvertible {
