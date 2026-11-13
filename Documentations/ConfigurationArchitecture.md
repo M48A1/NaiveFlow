@@ -1,5 +1,7 @@
 # NaiveFlow 原生配置与版本发布
 
+运行包使用 schema 2，要求完整快照 ID、顺序规则和设置字段，不读取或迁移旧运行包。启动时删除旧手动偏好、规则集合、旧运行目录和二进制文件；当前运行包保存在 runtime-v2。首次应用没有手动基线回退目标；未应用文本文档时不可启动隧道。
+
 当前首版为 IPv4-only；范围与阻断说明见 [IPv4Only.md](IPv4Only.md)。
 
 
@@ -13,7 +15,7 @@
 | ConfigurationCoordinator | 语义校验、编译、模块归属和变更计划 |
 | ConfigurationPublisher / RuntimeCoordinator | 不可变版本发布；DNS、Rule、MITM、Outbound 的加载、确认、切换与恢复 |
 
-编辑器通过唯一的 ConfigurationPublisher 应用文档。旧的逐 Store 写入安装路径已经移除。手工节点、分组和规则库作为独立资料保留，文本版本控制实际流量；首页显示版本中的默认出站节点。节点库页面提示当前由文本版本控制，不能用库里的选中动作悄悄覆盖运行版本。需要修改活动路由时编辑配置并应用。
+编辑器通过唯一的 ConfigurationPublisher 应用文档。旧的逐 Store 写入安装路径已经移除。节点与分组资料库用于整理素材；文本版本控制实际流量；首页显示版本中的默认出站节点。节点库页面提示当前由文本版本控制，不能用库里的选中动作悄悄覆盖运行版本。需要修改活动路由时编辑配置并应用。
 
 ## DNS 配置
 
@@ -59,7 +61,7 @@ DNS 读取固定在一个设置视图，缓存有代际隔离；旧路由编译�
 | 脚本 | http-request/http-response；Surge 或 Quantumult X；HTTPS 或 base64 源，固定字节；支持 $argument |
 | 无损导出 | [MITM Set] 保存原生规则集的 Base64 JSON，保留作用域 ID、参数和脚本字节；不把多个作用域扁平化 |
 
-PROCESS-NAME、USER-AGENT、URL 路由、定时/DNS 脚本、证书导入、其他客户端脚本 API、未实现 General 字段会明确拒绝。bypass-country 只有本机存在对应预设数据库时才接受；也可使用文档内的 Geo 数据。规则匹配可能先等待 DNS；no-resolve 不触发额外查询。
+PROCESS-NAME、USER-AGENT、URL 路由、定时/DNS 脚本、证书导入、其他客户端脚本 API、未实现 General 字段会明确拒绝。国家分流通过显式 GEOIP 规则与文档内的 Geo 数据声明。规则匹配可能先等待 DNS；no-resolve 不触发额外查询。
 
 路由正则在安装匹配器时预编译；每次匹配共享约 20 ms 的正则执行预算，ICU 进度回调会在预算耗尽时停止匹配。超时会拒绝该次连接，包括逻辑否定和 GeoSite 正则，不会将“未知”作为不匹配继续落入 DIRECT/FINAL。
 

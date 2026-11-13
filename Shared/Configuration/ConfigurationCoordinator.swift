@@ -82,11 +82,8 @@ nonisolated extension ConfigurationModule {
 
         // MITM: interception, its certificate and its exceptions.
         "mitm": .mitm,
-        "allow-insecure": .mitm,
-        "trusted-certificate": .mitm,
 
         // Rule: the routing payload.
-        "bypass-country": .rule,
 
         // Outbound: nodes, groups, mode, and everything shaping the interface.
         "lan-proxy-enabled": .outbound,
@@ -172,32 +169,9 @@ nonisolated struct ConfigurationCoordinator: Sendable {
     /// The extension side of the same table lives in `RuntimeCoordinator`, which
     /// maps these names back to the reload work they trigger.
     enum Announcement: String, CaseIterable, Sendable, Hashable {
-        /// The `[General]` values changed; the extension re-reads them in place.
-        case settings
-        /// The MITM policy changed.
-        case mitm
-        /// The routing payload was rewritten and can be reloaded.
-        case routing
-        /// A different node list or selection is installed.
-        case activeConfiguration
-
-        var name: CFString {
-            switch self {
-            case .settings: return AWNotificationCenter.Notification.tunnelSettingsChanged
-            case .mitm: return AWNotificationCenter.Notification.mitmChanged
-            case .routing: return AWNotificationCenter.Notification.routingChanged
-            case .activeConfiguration: return AWNotificationCenter.Notification.activeConfigurationChanged
-            }
-        }
-
-        func post() {
-            switch self {
-            case .settings: AWNotificationCenter.notifyTunnelSettingsChanged()
-            case .mitm: AWNotificationCenter.notifyMITMChanged()
-            case .routing: AWNotificationCenter.notifyRoutingChanged()
-            case .activeConfiguration: AWNotificationCenter.notifyActiveConfigurationChanged()
-            }
-        }
+        case configurationVersion
+        var name: CFString { AWNotificationCenter.Notification.configurationVersionChanged }
+        func post() { AWNotificationCenter.notifyConfigurationVersionChanged() }
     }
 
     /// What this build can run, so validation reports a supported-but-inert
@@ -438,18 +412,7 @@ nonisolated extension ConfigurationCoordinator {
         /// settings after writing them; binary exporters and node publication
         /// post their events only after their respective resources are ready.
         var announcements: [Announcement] {
-            var events = ConfigurationCoordinator.announcements(for: reload)
-            for change in changes where change.payloadChanged {
-                let event: Announcement
-                switch change.module {
-                case .dns: event = .settings
-                case .rule: event = .routing
-                case .mitm: event = .mitm
-                case .outbound: event = .activeConfiguration
-                }
-                if !events.contains(event) { events.append(event) }
-            }
-            return events
+            changes.isEmpty ? [] : [.configurationVersion]
         }
 
         var summary: String {
@@ -525,12 +488,7 @@ nonisolated extension ConfigurationCoordinator {
     /// second copy of the rule.
     static func announcements(for reload: ConfigurationReloadPlan) -> [Announcement] {
         guard !reload.isEmpty else { return [] }
-        var announcements: [Announcement] = [.settings]
-        let touchesMITM = reload.changes.contains {
-            ConfigurationModule.owning(setting: $0.field) == .mitm
-        }
-        if touchesMITM { announcements.append(.mitm) }
-        return announcements
+        return [.configurationVersion]
     }
 }
 

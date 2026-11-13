@@ -11,38 +11,20 @@ enum Page: Equatable, Hashable, Identifiable, CaseIterable {
     case launchpad
     case dashboard
     case proxies
-    case requests
     case toolbox
     case data
-    case personalization
-    case tunnel
-    case purify
-    case routing
-    case mitm
-    case modules
     case configuration
-    case trustedCertificates
-    case trustedNetwork
     case diagnosis
     case about
     
     var id: Int {
         switch self {
         case .proxies: 15
-        case .requests: 16
         case .launchpad: 0
         case .dashboard: 1
         case .toolbox: 2
         case .data: 3
-        case .personalization: 4
-        case .tunnel: 5
-        case .purify: 6
-        case .routing: 7
-        case .mitm: 8
-        case .modules: 9
         case .configuration: 14
-        case .trustedCertificates: 10
-        case .trustedNetwork: 11
         case .diagnosis: 12
         case .about: 13
         }
@@ -51,20 +33,11 @@ enum Page: Equatable, Hashable, Identifiable, CaseIterable {
     var name: String {
         switch self {
         case .proxies: String(localized: "Policy")
-        case .requests: String(localized: "Requests")
         case .launchpad: String(localized: "Overview")
         case .dashboard: String(localized: "Dashboard")
         case .toolbox: String(localized: "Toolbox")
         case .data: String(localized: "Data")
-        case .personalization: String(localized: "Personalization")
-        case .tunnel: String(localized: "Tunnel")
-        case .purify: String(localized: "Purify")
-        case .routing: String(localized: "Routing")
-        case .mitm: String(localized: "MITM")
-        case .modules: String(localized: "Modules")
         case .configuration: String(localized: "Configuration")
-        case .trustedCertificates: String(localized: "Trusted Certificates")
-        case .trustedNetwork: String(localized: "Trusted Network")
         case .diagnosis: String(localized: "Diagnosis")
         case .about: String(localized: "About")
         }
@@ -73,20 +46,11 @@ enum Page: Equatable, Hashable, Identifiable, CaseIterable {
     var symbol: String {
         switch self {
         case .proxies: "arrow.triangle.branch"
-        case .requests: "list.bullet.rectangle.portrait"
         case .launchpad: "switch.2"
         case .dashboard: "rectangle.3.group"
         case .toolbox: "latch.2.case"
         case .data: "cylinder.split.1x2"
-        case .personalization: "paintpalette"
-        case .tunnel: "hammer"
-        case .purify: "drop"
-        case .routing: "arrow.triangle.branch"
-        case .mitm: "key.horizontal"
-        case .modules: "shippingbox"
         case .configuration: "doc.text"
-        case .trustedCertificates: "checkmark.seal"
-        case .trustedNetwork: "wifi"
         case .diagnosis: "stethoscope"
         case .about: "info.circle"
         }

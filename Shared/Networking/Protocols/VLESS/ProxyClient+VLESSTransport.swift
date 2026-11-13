@@ -96,7 +96,9 @@ nonisolated extension ProxyClient {
                 alpn: ["http/1.1"],
                 echEnabled: baseTLSConfig.echEnabled,
                 echConfig: baseTLSConfig.echConfig,
-                fingerprint: baseTLSConfig.fingerprint
+                fingerprint: baseTLSConfig.fingerprint,
+                insecureSkipVerify: baseTLSConfig.insecureSkipVerify,
+                serverCertificateFingerprint: baseTLSConfig.serverCertificateFingerprint
             )
             let tlsClient = TLSClient(configuration: wsTlsConfig)
             let tlsConnection = try await connectTLSRecord(tlsClient)
@@ -204,7 +206,9 @@ nonisolated extension ProxyClient {
             alpn: ["h2"],
             echEnabled: base.echEnabled,
             echConfig: base.echConfig,
-            fingerprint: base.fingerprint
+            fingerprint: base.fingerprint,
+                insecureSkipVerify: base.insecureSkipVerify,
+                serverCertificateFingerprint: base.serverCertificateFingerprint
         )
     }
 }

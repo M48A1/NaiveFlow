@@ -40,12 +40,14 @@ enum TestEnvironment {
     
     static func proxyConfiguration() throws -> ProxyConfiguration {
         guard let url = proxyURL else { throw TestConfigError.missing("NAIVEFLOW_TEST_PROXY_URL") }
-        return try ProxyConfiguration.parse(url: url)
+        // The override belongs to the test proxy, never to unrelated connections.
+        var components = URLComponents(string: url)
+        if allowInsecure {
+            var items = components?.queryItems ?? []
+            items.append(URLQueryItem(name: "allowInsecure", value: "1"))
+            components?.queryItems = items
+        }
+        return try ProxyConfiguration.parse(url: components?.string ?? url)
     }
     
-    static func applyInsecureOverrideIfNeeded() {
-        guard allowInsecure else { return }
-        AWCore.setAllowInsecure(true)
-        CertificatePolicy.reload()
-    }
 }

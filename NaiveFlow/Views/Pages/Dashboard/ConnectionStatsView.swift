@@ -345,12 +345,7 @@ private struct StatCardChrome: ViewModifier {
             )
     }
 
-    private var background: Color {
-        let data = colorScheme == .light
-            ? settings.statCardBackgroundLightData
-            : settings.statCardBackgroundDarkData
-        return data.flatMap(Color.init(archivedData:)) ?? .statCardBackground
-    }
+    private var background: Color { .statCardBackground }
 }
 
 // MARK: - Donut chart

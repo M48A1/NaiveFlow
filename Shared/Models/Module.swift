@@ -33,7 +33,7 @@ nonisolated enum ModuleFormat: String, Codable, CaseIterable, Identifiable {
 }
 
 nonisolated struct ModuleRoutingRuleSet: Codable, Equatable, Identifiable {
-    static let maxRuleCount = CustomRoutingRuleSet.maxRuleCount
+    static let maxRuleCount = 100_000
 
     var id: UUID
     var name: String

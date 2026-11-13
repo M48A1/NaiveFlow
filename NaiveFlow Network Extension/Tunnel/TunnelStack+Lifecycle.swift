@@ -37,11 +37,6 @@ extension TunnelStack {
         let udpPlane = UDPPlane(stack: self)
         self.udpPlane = udpPlane
 
-        var precompiledRouting: DomainRouter.CompiledRouting?
-        if Self.effectiveProxyMode(settings: TunnelSettings.load(), network: networkContext) == .rule {
-            precompiledRouting = await domainRouter.compileRoutingConfiguration()
-        }
-
         guard phase == .starting, epoch == startEpoch else {
             if epoch == startEpoch {
                 attachPacketFlow(nil)
@@ -50,7 +45,7 @@ extension TunnelStack {
             }
             return false
         }
-        executeLifecycle(.start, configuration: configuration, precompiledRouting: precompiledRouting)
+        executeLifecycle(.start, configuration: configuration)
 
         rootTask = Task { await self.run(packetFlow: packetFlow, udpPlane: udpPlane) }
 
@@ -58,7 +53,6 @@ extension TunnelStack {
 
         recordEngineConfirmation()
 
-        CertificatePolicy.startObserving()
         return true
     }
 
@@ -266,8 +260,7 @@ extension TunnelStack {
     /// All lifecycle ordering is supplied by RuntimeCoordinator.
     func executeLifecycle(
         _ event: RuntimeCoordinator.Lifecycle,
-        configuration: ProxyConfiguration?,
-        precompiledRouting: DomainRouter.CompiledRouting? = nil
+        configuration: ProxyConfiguration?
     ) {
         for action in RuntimeCoordinator.lifecyclePlan(for: event) {
             switch action {
@@ -277,7 +270,7 @@ extension TunnelStack {
                 guard let configuration else { continue }
                 connectionRouter.clearRejectMarks()
                 self.configuration = configuration
-                configureRuntime(for: configuration, precompiledRouting: precompiledRouting)
+                configureRuntime(for: configuration)
             case .startDataPlane:
                 guard let configuration else { continue }
                 bringUpDataPlane(configuration: configuration)
@@ -305,11 +298,11 @@ extension TunnelStack {
         // Serialize with stop on this actor: a detached write could recreate a
         // stale confirmation after shutdown cleared it.
         guard phase == .running else { return }
-        if let bundle = nativeBundle, let snapshotID = bundle.snapshotID {
+        if let bundle = nativeBundle {
             EngineConfirmationStore.record(ConfigurationEngineConfirmation(
-                snapshotId: snapshotID, engineVersion: ConfigurationEngineVersion.current, scope: .configuration
+                snapshotId: bundle.snapshotID, engineVersion: ConfigurationEngineVersion.current
             ))
-        } else { EngineConfirmationStore.recordRoutingReady() }
+        }
     }
 
 }

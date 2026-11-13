@@ -56,9 +56,6 @@ nonisolated final class SyncStore: Sendable {
         case chains
         case groups
         case subscriptions
-        case customRuleSets
-        case mitm
-        case modules
     }
 
     struct ItemSnapshot: Sendable {
@@ -163,6 +160,18 @@ nonisolated final class SyncStore: Sendable {
             logger.error("[Sync] Undecodable \(key.rawValue) payload: \(file.lastPathComponent)")
         } catch {
             logger.report("[Sync] Quarantine write failed", error: error)
+        }
+    }
+
+    /// Remove collections owned by the deleted manual configuration system.
+    func discardRemovedConfigurationCollections() throws {
+        try store.withLock { container in
+            guard let container else { return }
+            let context = ModelContext(container)
+            for item in try context.fetch(FetchDescriptor<SyncItem>()) where Key(rawValue: item.collection) == nil {
+                context.delete(item)
+            }
+            if context.hasChanges { try context.save() }
         }
     }
 

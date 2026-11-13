@@ -45,8 +45,8 @@ struct CoordinationRegressionTests {
             let plan = ConfigurationCoordinator().plan(from: before, to: compile(text), running: CompiledSettings())
             #expect(plan.modules == [.dns])
             #expect(plan.reload.isEmpty)
-            #expect(plan.announcements == [.settings])
-            #expect(RuntimeCoordinator.plan(forAnnouncement: .settings)?.contains(.reloadDNS) == true)
+            #expect(plan.announcements == [.configurationVersion])
+            #expect(RuntimeCoordinator.plan(forAnnouncement: .configurationVersion)?.contains(.reloadConfigurationVersion) == true)
         }
     }
 
@@ -56,7 +56,7 @@ struct CoordinationRegressionTests {
             from: document, to: document, running: CompiledSettings(),
             currentHosts: [HostMapping(host: "example.com", address: "10.0.0.9")]
         )
-        #expect(plan.announcements == [.settings])
+        #expect(plan.announcements == [.configurationVersion])
     }
 
     @Test func freshNodeIDsAndCommentLinesAreNotSemanticChanges() {
@@ -74,7 +74,7 @@ struct CoordinationRegressionTests {
         #expect(before.proxies.count == 1 && after.proxies.count == 1)
         let plan = ConfigurationCoordinator().plan(from: before, to: after, running: CompiledSettings())
         #expect(plan.modules == [.outbound])
-        #expect(plan.announcements == [.activeConfiguration])
+        #expect(plan.announcements == [.configurationVersion])
     }
 
     @Test func emptyInitialDocumentDoesNotInventModuleChanges() {

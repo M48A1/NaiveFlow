@@ -27,9 +27,12 @@ nonisolated final class AWCore {
     
     nonisolated(unsafe) private static let rawUserDefaults: UserDefaults = {
         let defaults = UserDefaults(suiteName: Identifier.appGroupSuite)!
-        defaults.register(defaults: [
+        defaults.register(defaults: runtimeDefaults.merging(["remnawaveHWID": UUID().uuidString], uniquingKeysWith: { _, new in new }))
+        return defaults
+    }()
+
+    private static var runtimeDefaults: [String: Any] { [
             UserDefaultsKey.blockWebRTC: true,
-            UserDefaultsKey.bypassCountryCode: "",
             UserDefaultsKey.echDNSDoHURL: DNSUpstream.defaultDoHURL,
             UserDefaultsKey.echDNSPlainServer: DNSUpstream.defaultPlainServer,
             UserDefaultsKey.fallbackDNSServer: DNSUpstream.defaultPlainServer,
@@ -39,21 +42,17 @@ nonisolated final class AWCore {
             UserDefaultsKey.proxyDNSPlainServer: DNSUpstream.defaultPlainServer,
             UserDefaultsKey.proxyMode: ProxyMode.rule.rawValue,
             UserDefaultsKey.quicPolicy: QUICPolicy.automatic.rawValue,
-            UserDefaultsKey.remnawaveHWID: UUID().uuidString,
             UserDefaultsKey.subscriptionDNSDoHURL: DNSUpstream.defaultDoHURL,
             UserDefaultsKey.subscriptionDNSPlainServer: DNSUpstream.defaultPlainServer,
             UserDefaultsKey.syntheticAddressExcludedDomainSuffixes: [],
-            UserDefaultsKey.trustedCertificateSHA256s: [],
             UserDefaultsKey.trustedSSIDs: [],
-        ])
-        return defaults
-    }()
+        ] }
 
     private static let userDefaults = RuntimePreferences(defaults: rawUserDefaults)
 
     static let runtimePreferenceKeys = [
-        "bootstrapDNS", "activeConfiguration", "allowInsecure", "alwaysOnEnabled", "alwaysTrustCellular",
-        "alwaysUntrustCellular", "blockUDP", "blockWebRTC", "bypassCountryCode",
+        "bootstrapDNS", "activeConfiguration", "alwaysOnEnabled", "alwaysTrustCellular",
+        "alwaysUntrustCellular", "blockUDP", "blockWebRTC",
         "echDNSDoHURL", "echDNSMode", "echDNSPlainServer", "experimentalEnabled",
         "fallbackDNSMode", "fallbackDNSServer", "hideVPNIcon", "hostMappings",
         "localRequestDNSDoHURL", "localRequestDNSMode", "localRequestDNSPlainServer", "lanProxyAllowed",
@@ -61,28 +60,38 @@ nonisolated final class AWCore {
         "proxyDNSPlainServer", "proxyMode", "quicPolicy", "reflectionEnabled",
         "selectedChainId", "selectedConfigurationId", "subscriptionDNSDoHURL",
         "subscriptionDNSMode", "subscriptionDNSPlainServer", "syntheticAddressExcludedDomainSuffixes",
-        "trustedCertificateSHA256s", "trustedSSIDs", "tunnelExcludeAPNs",
+        "trustedSSIDs", "tunnelExcludeAPNs",
         "tunnelExcludeCellularServices", "tunnelExcludeDeviceCommunication",
         "tunnelExcludedRoutes", "tunnelExcludeLocalNetworks", "tunnelIncludeAllNetworks", "tunnelIncludedRoutes"
     ]
+
+    /// Discard preferences from the removed manual settings and appearance UI.
+    static func discardManualSettings() {
+        for key in runtimePreferenceKeys + [
+            "bypassCountryCode", "allowInsecure", "trustedCertificateSHA256s",
+            "ruleSetAssignments", "moduleRuleSetAssignments", "onboardingCompleted", "homeColorScheme"
+        ] { rawUserDefaults.removeObject(forKey: key) }
+        for key in rawUserDefaults.dictionaryRepresentation().keys where key.hasPrefix("themeColor.") {
+            rawUserDefaults.removeObject(forKey: key)
+        }
+    }
+
+    static func defaultRuntimePreferences() -> [String: RuntimePreferenceValue] {
+        Dictionary(uniqueKeysWithValues: runtimePreferenceKeys.map { ($0, RuntimePreferenceValue(runtimeDefaults[$0])) })
+    }
 
     static func runtimePreferences() -> [String: RuntimePreferenceValue] {
         userDefaults.snapshot(keys: runtimePreferenceKeys)
     }
 
     static func installRuntimePreferences(_ values: [String: RuntimePreferenceValue]?) {
-        var pinned = values
-        if pinned != nil, pinned?["bootstrapDNS"] == nil { pinned?["bootstrapDNS"] = .absent }
-        if pinned != nil, pinned?["lanProxyAllowed"] == nil { pinned?["lanProxyAllowed"] = .absent }
-        userDefaults.install(pinned)
+        userDefaults.install(values)
     }
 
     static func captureRuntimePreferences(
         base: [String: RuntimePreferenceValue]? = nil, _ write: () throws -> Void
     ) rethrows -> [String: RuntimePreferenceValue] {
-        var values = base ?? runtimePreferences()
-        if values["bootstrapDNS"] == nil { values["bootstrapDNS"] = .absent }
-        if values["lanProxyAllowed"] == nil { values["lanProxyAllowed"] = .absent }
+        let values = base ?? defaultRuntimePreferences()
         let capture = RuntimePreferenceCapture(values)
         try RuntimePreferenceContext.$capture.withValue(capture, operation: write)
         return capture.values.withLock { $0 }
@@ -92,13 +101,11 @@ nonisolated final class AWCore {
 
     private enum UserDefaultsKey {
         static let activeConfiguration = "activeConfiguration"
-        static let allowInsecure = "allowInsecure"
         static let alwaysOnEnabled = "alwaysOnEnabled"
         static let alwaysTrustCellular = "alwaysTrustCellular"
         static let alwaysUntrustCellular = "alwaysUntrustCellular"
         static let blockUDP = "blockUDP"
         static let blockWebRTC = "blockWebRTC"
-        static let bypassCountryCode = "bypassCountryCode"
         static let chainLatencyResults = "chainLatencyResults"
         static let detailRevealed = "detailRevealed"
         static let echDNSDoHURL = "echDNSDoHURL"
@@ -108,7 +115,6 @@ nonisolated final class AWCore {
         static let fallbackDNSMode = "fallbackDNSMode"
         static let fallbackDNSServer = "fallbackDNSServer"
         static let hideVPNIcon = "hideVPNIcon"
-        static let homeColorScheme = "homeColorScheme"
         static let hostMappings = "hostMappings"
         static let iCloudSyncEnabled = "iCloudSyncEnabled"
         static let identifier = "identifier"
@@ -117,8 +123,6 @@ nonisolated final class AWCore {
         static let localRequestDNSMode = "localRequestDNSMode"
         static let localRequestDNSPlainServer = "localRequestDNSPlainServer"
         static let mitmEnabled = "mitmEnabled"
-        static let moduleRuleSetAssignments = "moduleRuleSetAssignments"
-        static let onboardingCompleted = "onboardingCompleted"
         static let preventDNSLeak = "preventDNSLeak"
         static let proxiesPageProxyType = "proxiesPageProxyType"
         static let proxyDNSDoHURL = "proxyDNSDoHURL"
@@ -129,7 +133,6 @@ nonisolated final class AWCore {
         static let reflectionEnabled = "reflectionEnabled"
         static let remnawaveHWID = "remnawaveHWID"
         static let remnawaveHWIDEnabled = "remnawaveHWIDEnabled"
-        static let ruleSetAssignments = "ruleSetAssignments"
         static let selectedChainId = "selectedChainId"
         static let selectedConfigurationId = "selectedConfigurationId"
         static let subscriptionDNSDoHURL = "subscriptionDNSDoHURL"
@@ -137,7 +140,6 @@ nonisolated final class AWCore {
         static let subscriptionDNSPlainServer = "subscriptionDNSPlainServer"
         static let syntheticAddressExcludedDomainSuffixes = "syntheticAddressExcludedDomainSuffixes"
         static let dnsExemptServers = "dnsExemptServers"
-        static let trustedCertificateSHA256s = "trustedCertificateSHA256s"
         static let trustedSSIDs = "trustedSSIDs"
         static let tunnelExcludeAPNs = "tunnelExcludeAPNs"
         static let tunnelExcludeCellularServices = "tunnelExcludeCellularServices"
@@ -169,13 +171,6 @@ nonisolated final class AWCore {
     // MARK: - Typed UserDefaults Accessors
     
     // App
-    static func getOnboardingCompleted() -> Bool {
-        userDefaults.bool(forKey: UserDefaultsKey.onboardingCompleted)
-    }
-
-    static func setOnboardingCompleted(_ value: Bool) {
-        userDefaults.set(value, forKey: UserDefaultsKey.onboardingCompleted)
-    }
 
     static func getDetailRevealed() -> Bool {
         userDefaults.bool(forKey: UserDefaultsKey.detailRevealed)
@@ -201,28 +196,6 @@ nonisolated final class AWCore {
         userDefaults.set(value, forKey: UserDefaultsKey.iCloudSyncEnabled)
     }
     
-    enum ThemeColorSlot: String {
-        case homeBackgroundLightStart
-        case homeBackgroundLightEnd
-        case homeBackgroundDarkStart
-        case homeBackgroundDarkEnd
-        case statCardBackgroundLight
-        case statCardBackgroundDark
-    }
-    
-    static func getThemeColorData(_ slot: ThemeColorSlot) -> Data? {
-        userDefaults.data(forKey: "themeColor.\(slot.rawValue)")
-    }
-
-    static func setThemeColorData(_ slot: ThemeColorSlot, _ data: Data?) {
-        let key = "themeColor.\(slot.rawValue)"
-        if let data {
-            userDefaults.set(data, forKey: key)
-        } else {
-            userDefaults.removeObject(forKey: key)
-        }
-    }
-
     // Tunnel
     static func getActiveConfigurationData() -> Data? {
         userDefaults.data(forKey: UserDefaultsKey.activeConfiguration)
@@ -411,46 +384,6 @@ nonisolated final class AWCore {
 
     static func setPreventDNSLeak(_ value: Bool) {
         userDefaults.set(value, forKey: UserDefaultsKey.preventDNSLeak)
-    }
-
-    static func getBypassCountryCode() -> String {
-        userDefaults.string(forKey: UserDefaultsKey.bypassCountryCode)!
-    }
-
-    static func setBypassCountryCode(_ value: String) {
-        userDefaults.set(value, forKey: UserDefaultsKey.bypassCountryCode)
-    }
-    
-    static func getRoutingRuleSetAssignments() -> [String: String] {
-        userDefaults.dictionary(forKey: UserDefaultsKey.ruleSetAssignments) as? [String: String] ?? [:]
-    }
-
-    static func setRoutingRuleSetAssignments(_ assignments: [String: String]) {
-        userDefaults.set(assignments, forKey: UserDefaultsKey.ruleSetAssignments)
-    }
-    
-    static func getModuleRoutingRuleSetAssignments() -> [String: String] {
-        userDefaults.dictionary(forKey: UserDefaultsKey.moduleRuleSetAssignments) as? [String: String] ?? [:]
-    }
-
-    static func setModuleRoutingRuleSetAssignments(_ assignments: [String: String]) {
-        userDefaults.set(assignments, forKey: UserDefaultsKey.moduleRuleSetAssignments)
-    }
-
-    static func getAllowInsecure() -> Bool {
-        userDefaults.bool(forKey: UserDefaultsKey.allowInsecure)
-    }
-
-    static func setAllowInsecure(_ value: Bool) {
-        userDefaults.set(value, forKey: UserDefaultsKey.allowInsecure)
-    }
-
-    static func getTrustedCertificateFingerprints() -> [String] {
-        userDefaults.stringArray(forKey: UserDefaultsKey.trustedCertificateSHA256s)!
-    }
-
-    static func setTrustedCertificateFingerprints(_ fingerprints: [String]) {
-        userDefaults.set(fingerprints, forKey: UserDefaultsKey.trustedCertificateSHA256s)
     }
 
     static func getTrustedSSIDs() -> [String] {
@@ -701,51 +634,6 @@ nonisolated final class AWCore {
         userDefaults.string(forKey: UserDefaultsKey.remnawaveHWID)!
     }
 
-    // MARK: - Routing Data
-
-    /// App Group container, or a temporary directory when the group is not
-    /// available (unsigned simulator builds, a test host without the
-    /// entitlement). Sharing the payload with the extension is impossible in
-    /// that case, but launch must not trap: `ConfigurationSnapshotStore` falls
-    /// back the same way for its own directory.
-    private static let containerURL: URL = FileManager.default.containerURL(
-        forSecurityApplicationGroupIdentifier: Identifier.appGroupSuite
-    ) ?? URL.temporaryDirectory
-
-    private static let routingDataURL = containerURL
-        .appendingPathComponent("routing.bin")
-    
-    static func getRoutingData() -> Data? {
-        try? Data(contentsOf: routingDataURL, options: .mappedIfSafe)
-    }
-
-    static func setRoutingData(_ data: Data) {
-        do {
-            try data.write(to: routingDataURL, options: [.atomic, .noFileProtection])
-            // Drop the obsolete UserDefaults copy now that routing lives in a file.
-            userDefaults.removeObject(forKey: "routingData")
-        } catch {
-            logger.report(NaiveFlowError.store(.saveFailed(.routingPayload, underlying: error)))
-        }
-    }
-
-    // MARK: - MITM Data
-
-    private static let mitmDataURL = containerURL
-        .appendingPathComponent("mitm.bin")
-
-    static func getMITMData() -> Data? {
-        try? Data(contentsOf: mitmDataURL, options: .mappedIfSafe)
-    }
-
-    static func setMITMData(_ data: Data) {
-        do {
-            try data.write(to: mitmDataURL, options: [.atomic, .noFileProtection])
-        } catch {
-            logger.report(NaiveFlowError.store(.saveFailed(.mitmPayload, underlying: error)))
-        }
-    }
-    
     static func getMITMEnabled() -> Bool {
         userDefaults.bool(forKey: UserDefaultsKey.mitmEnabled)
     }

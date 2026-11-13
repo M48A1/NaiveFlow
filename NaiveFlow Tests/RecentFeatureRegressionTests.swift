@@ -64,8 +64,8 @@ struct RuntimeGroupRefreshTests {
         let node = ProxyConfiguration(name: "A", serverAddress: "203.0.113.10", serverPort: 1080,
                                       outbound: .socks5(SOCKS5Configuration()))
         var bundle = RuntimeConfigurationBundle(id: UUID(), snapshotID: UUID(), parentID: nil,
-            preferences: [:], nodes: [node], selectedNodeID: node.id, rules: nil,
-            finalAction: .defaultProxy, mitmRuleSets: [], legacyRouting: nil, legacyMITM: nil)
+            preferences: [:], nodes: [node], selectedNodeID: node.id, rules: [],
+            finalAction: .defaultProxy, mitmRuleSets: [])
         let groupID = UUID()
         bundle.displayGroups = [.init(id: groupID, name: "Media", memberCount: 1, iconURL: "https://example.com/old.png")]
         let selection = ProxySelection()
@@ -79,9 +79,9 @@ struct RuntimeGroupRefreshTests {
         #expect(RouteTarget.defaultProxy.displayName(configStore: ConfigurationStore(syncStore: store),
             chainStore: ChainStore(syncStore: store), selection: selection) == node.name)
 
-        let baseline = RuntimeConfigurationBundle(id: UUID(), snapshotID: nil, parentID: nil,
-            preferences: [:], nodes: [], selectedNodeID: UUID(), rules: nil,
-            finalAction: .defaultProxy, mitmRuleSets: [], legacyRouting: nil, legacyMITM: nil)
+        let baseline = RuntimeConfigurationBundle(id: UUID(), snapshotID: UUID(), parentID: nil,
+            preferences: [:], nodes: [], selectedNodeID: UUID(), rules: [],
+            finalAction: .defaultProxy, mitmRuleSets: [])
         selection.showRuntimeVersion(baseline)
         #expect(selection.runtimeGroups.isEmpty)
         #expect(!selection.usesRuntimeVersion)

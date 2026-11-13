@@ -26,36 +26,6 @@
 				<string>com.argsment.NaiveFlow-JSON</string>
 			</array>
 		</dict>
-		<dict>
-			<key>CFBundleTypeName</key>
-			<string>NaiveFlow Routing Rule Set</string>
-			<key>LSHandlerRank</key>
-			<string>Owner</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>com.argsment.NaiveFlow-Routing-Rule-Set</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeName</key>
-			<string>NaiveFlow MITM Rule Set</string>
-			<key>LSHandlerRank</key>
-			<string>Owner</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>com.argsment.NaiveFlow-MITM-Rule-Set</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeName</key>
-			<string>NaiveFlow Module</string>
-			<key>LSHandlerRank</key>
-			<string>Owner</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>com.argsment.NaiveFlow-Module</string>
-			</array>
-		</dict>
 	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
@@ -67,26 +37,6 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>naiveflow</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>CFBundleURLName</key>
-			<string>com.argsment.NaiveFlow.scheme.surge</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>surge</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>CFBundleURLName</key>
-			<string>com.argsment.NaiveFlow.scheme.quantumult-x</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>quantumult-x</string>
 			</array>
 		</dict>
 		<dict>

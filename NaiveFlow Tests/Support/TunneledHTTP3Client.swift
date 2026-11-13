@@ -18,7 +18,7 @@ enum TunneledHTTP3Client {
     ) async throws -> HTTPResponse {
         let transport = ProxyConnectionDatagramTransport(connection: proxyConnection)
         let multiplexer = HTTP3Multiplexer(
-            host: authorityHost, port: port, serverName: authorityHost, transport: transport
+            host: authorityHost, port: port, serverName: authorityHost, certificatePolicy: TLSCertificatePolicy(insecureSkipVerify: TestEnvironment.allowInsecure), transport: transport
         )
         let request = HTTP3GetRequest(
             multiplexer: multiplexer, authorityHost: authorityHost, port: port, path: path

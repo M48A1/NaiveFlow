@@ -200,7 +200,8 @@ nonisolated enum AJSONParser {
             key: try proxy.requiredString("key"),
             network: try proxy.enumeration("network") ?? .tcp,
             morph: try proxy.bool("morph") ?? true,
-            morphPrelude: try proxy.enumeration("morphPrelude") ?? .fade
+            morphPrelude: try proxy.enumeration("morphPrelude") ?? .fade,
+            certificatePolicy: try parseCertificatePolicy(proxy)
         )
     }
 
@@ -239,7 +240,8 @@ nonisolated enum AJSONParser {
             uploadMbps: uploadMbps ?? HysteriaCongestionControl.uploadMbpsDefault,
             downloadMbps: downloadMbps ?? HysteriaCongestionControl.downloadMbpsDefault,
             obfuscation: obfuscation,
-            serverName: try proxy.nonEmptyString("sni") ?? server
+            serverName: try proxy.nonEmptyString("sni") ?? server,
+            certificatePolicy: try parseCertificatePolicy(proxy)
         )
     }
 
@@ -294,7 +296,14 @@ nonisolated enum AJSONParser {
         }
     }
 
+    private static func parseCertificatePolicy(_ fields: Fields) throws -> TLSCertificatePolicy {
+        let pin = try fields.string("server-cert-fingerprint-sha256")
+        guard TLSCertificatePolicy.isValidFingerprint(pin) else { throw Invalid() }
+        return TLSCertificatePolicy(insecureSkipVerify: try fields.bool("insecure") ?? false, certificateSHA256: pin)
+    }
+
     private static func parseTLS(_ tls: Fields, server: String) throws -> TLSConfiguration {
+        _ = try parseCertificatePolicy(tls)
         let ech = try parseECH(tls.lookup("ech"))
         let alpn = try tls.strings("alpn")
         return TLSConfiguration(
@@ -305,7 +314,8 @@ nonisolated enum AJSONParser {
             echEnabled: ech.enabled,
             echConfig: ech.config,
             fingerprint: try parseFingerprint(tls),
-            insecureSkipVerify: try tls.bool("insecure") ?? false
+            insecureSkipVerify: try tls.bool("insecure") ?? false,
+            serverCertificateFingerprint: try tls.string("server-cert-fingerprint-sha256")
         )
     }
 

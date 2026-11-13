@@ -95,6 +95,7 @@ nonisolated final class HTTP3Multiplexer: Multiplexer, Sendable {
         host: String,
         port: UInt16,
         serverName: String,
+        certificatePolicy: TLSCertificatePolicy = .init(),
         tuning: QUICTuning = .http3,
         transport: QUICDatagramTransport? = nil
     ) {
@@ -103,6 +104,7 @@ nonisolated final class HTTP3Multiplexer: Multiplexer, Sendable {
             port: port,
             serverName: serverName,
             alpn: ["h3"],
+            certificatePolicy: certificatePolicy,
             tuning: tuning,
             transport: transport
         )

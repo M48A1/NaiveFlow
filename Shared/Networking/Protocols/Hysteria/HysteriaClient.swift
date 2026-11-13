@@ -12,6 +12,7 @@ nonisolated final class HysteriaClient: Sendable {
     private struct Key: Hashable {
         let host: String
         let port: UInt16
+        let certificatePolicy: TLSCertificatePolicy
         let sni: String
         let password: String
         let obfuscation: HysteriaObfuscation?
@@ -32,6 +33,7 @@ nonisolated final class HysteriaClient: Sendable {
         let key = Key(
             host: configuration.proxyHost,
             port: configuration.proxyPort,
+            certificatePolicy: configuration.certificatePolicy,
             sni: configuration.sni,
             password: configuration.password,
             obfuscation: configuration.obfuscation,
@@ -73,6 +75,7 @@ nonisolated final class HysteriaClient: Sendable {
         let key = Key(
             host: configuration.proxyHost,
             port: configuration.proxyPort,
+            certificatePolicy: configuration.certificatePolicy,
             sni: configuration.sni,
             password: configuration.password,
             obfuscation: configuration.obfuscation,

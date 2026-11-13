@@ -522,8 +522,7 @@ actor TunnelStack {
     // MARK: - Runtime Configuration
 
     func configureRuntime(
-        for configuration: ProxyConfiguration,
-        precompiledRouting: DomainRouter.CompiledRouting? = nil
+        for configuration: ProxyConfiguration
     ) {
         settings = TunnelSettings.load()
         for module in RuntimeCoordinator.configurationOrder {
@@ -543,20 +542,9 @@ actor TunnelStack {
                 publishReflectionEnabled()
                 publishOutboundRoutingContext(configuration: configuration)
             case .rule:
-                if proxyMode == .rule {
-                    if let nativeBundle {
-                        if nativeBundle.rules != nil {
-                            domainRouter.installNative(nativeBundle)
-                            groupProber.start(router: domainRouter, nodes: nativeBundle.nodes, groups: nativeBundle.policyGroups)
-                        } else {
-                            domainRouter.installBaseline(nativeBundle.legacyRouting)
-                            groupProber.stop()
-                        }
-                    } else if let precompiledRouting {
-                        domainRouter.install(precompiledRouting)
-                    } else {
-                        domainRouter.loadRoutingConfiguration()
-                    }
+                if proxyMode == .rule, let nativeBundle {
+                    domainRouter.installNative(nativeBundle)
+                    groupProber.start(router: domainRouter, nodes: nativeBundle.nodes, groups: nativeBundle.policyGroups)
                 } else {
                     domainRouter.reset()
                     groupProber.stop()
@@ -584,15 +572,7 @@ actor TunnelStack {
     }
 
     func loadMITMSetting() {
-        let snapshot: (enabled: Bool, ruleSets: [MITMRuleSet])?
-        if let nativeBundle, nativeBundle.rules != nil {
-            snapshot = (AWCore.getMITMEnabled(), nativeBundle.mitmRuleSets)
-        } else {
-            // Manual mode — including a rolled-back manual baseline — reads the
-            // live export so MITM edits take effect instead of a frozen snapshot.
-            snapshot = AWCore.getMITMData().flatMap(MITMBinaryReader.decode)
-        }
-        guard let snapshot, snapshot.enabled else {
+        guard let nativeBundle, AWCore.getMITMEnabled() else {
             _mitmEnabled.store(false, ordering: .relaxed)
             mitmPolicy.reset()
             return
@@ -607,6 +587,6 @@ actor TunnelStack {
             return
         }
         _mitmEnabled.store(true, ordering: .relaxed)
-        mitmPolicy.load(ruleSets: snapshot.ruleSets)
+        mitmPolicy.load(ruleSets: nativeBundle.mitmRuleSets)
     }
 }

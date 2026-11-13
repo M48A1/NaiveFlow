@@ -37,7 +37,7 @@
 | DNS | 已有 `Shared/Networking/DNS/DNSResolver.swift` 和用途相关配置 | 统一解析目的、出站策略、Bootstrap 依赖与缓存隔离 |
 | 出站 | 已有多个协议的 ProxyClient 实现 | 逐协议核对 TCP/UDP 域名目标支持，建立能力表，禁止隐式本地解析回退 |
 
-核心变化涉及执行语义，不能只新增两个枚举或改几个页面。优先在现有路由模块内增加有序规则执行能力，保留旧配置读取与原有规则行为。新有序规则入口明确使用首条命中语义；旧规则只有在能够等价转换或经用户主动转换后才进入新语义，避免全量替换引擎。
+配置统一由文本文档发布完整运行版本，顺序规则采用首条命中语义。旧手动设置、规则存储与二进制导出已删除，不提供旧格式读取、迁移或手动基线回退。
 
 ## 3. 默认规则与行为契约
 
@@ -338,5 +338,5 @@ P1 的统一配置模型需预留脚本方言、来源、参数、触发条件�
 - **移除付费与会员体系**：删除 StoreKit 内购层（`NaiveFlow/Stores/VoyagerStore.swift`）、付费墙与公开测试页面（`VoyagerNotice`、`JoinVoyagerButton`、`JoinBetaView`）、会员卡片与 `isMember` 门禁，以及 `AWCore`/`AppSettings` 中的会员相关 UserDefaults 键；`Localizable.xcstrings` 删除 22 个失效键（478 → 456）。后续阶段的会员、内购与 Telegram 群组入口不在规划范围内，若需要请另立需求。
 - **不再依赖预设路由数据库**：上游私有包 `AnywhereRules`（改名后 `NaiveFlowRules`）无法公开获取（匿名 404，上游公开仓库依赖同一私有地址），已从工程移除。工程只保留 `NaiveFlowIP`、`NaiveFlowQUIC`、`BLAKE`、`YAML` 四个仓库内核心组件包，无远程依赖；`RoutingRulesDatabase` 改为读取 `Bundle.main` 中可选的 `Rules.db`，缺失时预设为空、路由内核不受影响。因此 **03 阶段的 Geo 数据来源、随包基线与更新方式需按“自备数据库 + 可选随包资源”重新确定**，不再假定上游预设库存在。
 - **占位资源**：工作副本与上游公开仓库都没有 `.xcassets`，而源码依赖 `Color.homeBackgroundStart` 等资源生成符号，因此在 `Shared/Assets.xcassets` 补了仅用于编译验证的中性占位色板与空 `AppIcon.appiconset`。**07 UI 改版前必须先确定真实品牌资源**，不得把占位视觉当作设计稿。
-- **页面范围变化**：`AboutView` 不再有 Telegram 群组入口；`PersonalizationView` 不再有会员卡片开关；`CustomizeAppIconView`、`CustomizeThemeView` 取消会员门禁，所有用户均可使用。07 的 UI 草案按此范围编写。
+- **页面范围变化**：旧手动配置和外观自定义页面已删除；VPN 配置统一从 Configuration 编辑并应用。
 - 验证记录：iOS 主应用（含 Network Extension、Widget）与 tvOS 客户端无签名构建通过，签名与真机验收未做。明细见 [BASELINE_CHECK.md](BASELINE_CHECK.md)，依赖说明见 [Reference/Dependencies.md](Reference/Dependencies.md)。

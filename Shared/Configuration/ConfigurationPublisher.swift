@@ -1,8 +1,5 @@
 import Foundation
 
-/// Publication never mutates the manually maintained node/rule stores. Their
-/// complete bytes are retained as a baseline; text mode has one authoritative
-/// immutable document version, so rollback cannot delete unrelated user items.
 @MainActor
 struct ConfigurationPublisher {
     let activation: ConfigurationActivation
@@ -13,6 +10,7 @@ struct ConfigurationPublisher {
     var deliveryOverride: (@MainActor (RuntimeConfigurationBundle, Bool) async throws -> RuntimeConfigurationReceipt?)? = nil
     var preferencesSink: @MainActor ([String: RuntimePreferenceValue]?) -> Void = { AWCore.installRuntimePreferences($0) }
 
+    var clearStateSink: @MainActor () -> Void = {}
     var stateSink: @MainActor (RuntimeConfigurationBundle) -> Void = { _ in }
 
     private var isRunning: Bool { runningOverride ?? tunnel?.hasRunningTunnel ?? false }
@@ -37,13 +35,10 @@ struct ConfigurationPublisher {
         try validateReceipt(receipt, for: bundle, required: true)
     }
     var bundleStore: RuntimeBundleStore {
-        RuntimeBundleStore(directory: activation.store.directory.appendingPathComponent("runtime", isDirectory: true))
+        RuntimeBundleStore(directory: activation.store.directory.appendingPathComponent("runtime-v2", isDirectory: true))
     }
-    /// Feeds a restored bundle's preference view to the sink. A manual baseline
-    /// (`snapshotID == nil`) must not pin, so it sends `nil` to leave live manual
-    /// edits in effect; a text version pins its captured values.
     private func sinkPreferences(_ bundle: RuntimeConfigurationBundle) {
-        preferencesSink(bundle.pinsRuntimePreferences ? bundle.preferences : nil)
+        preferencesSink(bundle.preferences)
     }
 
     func publish(text: String) async throws -> (ConfigurationActivation.Activation, ConfigurationInstaller.Outcome) {
@@ -67,18 +62,8 @@ struct ConfigurationPublisher {
         let lease = try bundleStore.lease()
         defer { withExtendedLifetime(lease) {} }
         let originalManifest = activation.store.manifest()
-        var head = try bundleStore.head()
-        if head == nil {
-            let fallback = try ActiveConfiguration.load() ?? directNode()
-            let baseline = RuntimeConfigurationBundle(id: UUID(), snapshotID: nil, parentID: nil,
-                preferences: AWCore.runtimePreferences(), nodes: [fallback], selectedNodeID: fallback.id,
-                rules: nil, finalAction: .defaultProxy, mitmRuleSets: [],
-                legacyRouting: AWCore.getRoutingData(), legacyMITM: AWCore.getMITMData())
-            try bundleStore.publish(baseline, expected: nil)
-            head = try bundleStore.head()
-        }
-        guard let head else { throw RuntimeConfigurationFailure.invalidBundle }
-        let previous = try bundleStore.load(head.current)
+        let head = try bundleStore.head()
+        let previous = try head.map { try bundleStore.load($0.current) }
         let compiled = result.compiled
         let snapshot = ConfigurationSnapshot(text: text, compiled: compiled)
         var nodes = compiled.proxies
@@ -91,10 +76,10 @@ struct ConfigurationPublisher {
         // dialable at runtime but are not counted as user proxies.
         nodes.append(contentsOf: compiled.syntheticProxies)
         if nodes.isEmpty { nodes = [directNode()] }
-        let selected = nodes.first { $0.id == previous.selectedNodeID }
-            ?? nodes.first { $0.name == previous.selectedNode?.name } ?? nodes[0]
+        let selected = nodes.first { $0.id == previous?.selectedNodeID }
+            ?? nodes.first { $0.name == previous?.selectedNode?.name } ?? nodes[0]
         let preferences = try AWCore.captureRuntimePreferences(
-            base: previous.pinsRuntimePreferences ? previous.preferences : nil
+            base: AWCore.defaultRuntimePreferences()
         ) {
             // Server fields select their transport; explicit mode fields run last.
             let keys = compiled.settings.values.keys.sorted {
@@ -107,14 +92,14 @@ struct ConfigurationPublisher {
             HostMapping.store(compiled.hosts)
             try ActiveConfiguration.store(selected)
         }
-        let bundle = RuntimeConfigurationBundle(id: UUID(), snapshotID: snapshot.id, parentID: previous.id,
+        let bundle = RuntimeConfigurationBundle(id: UUID(), snapshotID: snapshot.id, parentID: previous?.id,
             preferences: preferences, nodes: nodes, selectedNodeID: selected.id,
             rules: compiled.orderedRules, finalAction: compiled.finalAction, mitmRuleSets: mitm,
             policyGroups: compiled.policyGroups,
             displayGroups: compiled.proxyGroups.map {
                 RuntimeGroupDisplay(id: $0.id, name: $0.name, memberCount: $0.memberIds.count, iconURL: $0.iconURL)
             },
-            legacyRouting: nil, legacyMITM: nil, geo: compiled.geo)
+            geo: compiled.geo)
         let previousCompiled = activation.active?.compiled
         let plan = ConfigurationCoordinator().plan(from: previousCompiled, to: compiled)
         try activation.store.save(snapshot)
@@ -144,12 +129,11 @@ struct ConfigurationPublisher {
                 notes.append("Geo data: \(compiled.geo.sources.count) source(s), \(compiled.geo.entryCount) entries pinned to this version. Reapply to refresh; rollback uses saved data.")
             }
             if receipt == nil { notes.append("Version saved. The stopped tunnel will validate and confirm it at its next start.") }
-            notes.append("Text configuration is authoritative for this version; manual node and rule stores are preserved for rollback.")
-            let installed = ConfigurationInstallation(snapshotId: snapshot.id)
+            notes.append("This document controls the complete runtime configuration.")
             let execution = ConfigurationReloadPlan(changes: plan.reload.changes + [
                 .init(field: "runtime-version", scope: .stackRestart, summary: "All modules switch to the same immutable version.")
             ])
-            let outcome = ConfigurationInstaller.Outcome(installation: installed, plan: execution, modulePlan: plan,
+            let outcome = ConfigurationInstaller.Outcome(plan: execution, modulePlan: plan,
                 addedProxies: compiled.proxies.map(\.name), updatedProxies: [], removedProxies: [],
                 addedGroups: compiled.proxyGroups.map(\.name), removedGroups: [],
                 ruleSets: compiled.ruleSets.map(\.name), removedRuleSets: [], notes: notes)
@@ -162,12 +146,10 @@ struct ConfigurationPublisher {
             do {
                 _ = try bundleStore.rollback(expected: bundle.id)
                 AWNotificationCenter.notifyConfigurationVersionChanged()
-                sinkPreferences(previous)
-                stateSink(previous)
+                if let previous { sinkPreferences(previous); stateSink(previous) }
+                else { preferencesSink(nil); clearStateSink() }
                 try activation.store.restoreManifest(originalManifest)
-                if wasRunning {
-                    try await restoreRunning(previous)
-                }
+                if wasRunning, let previous { try await restoreRunning(previous) }
             } catch {
                 activation.record("Configuration failed and recovery needs attention: \(error.localizedDescription)")
                 throw RuntimeConfigurationFailure.rejected("\(original.localizedDescription) Recovery: \(error.localizedDescription)")
@@ -191,14 +173,12 @@ struct ConfigurationPublisher {
         activation.store.clearConfirmation()
         AWNotificationCenter.notifyConfigurationVersionChanged()
         do {
-            preferencesSink(previous.pinsRuntimePreferences ? previous.preferences : nil)
+            preferencesSink(previous.preferences)
             let receipt = try await deliver(previous, running: wasRunning)
             try validateReceipt(receipt, for: previous, required: wasRunning)
             stateSink(previous)
-            if let id = previous.snapshotID {
-                try activation.store.activate(id, confirmed: receipt != nil)
-                if let snapshot = activation.store.snapshot(id) { try activation.saveDraft(snapshot.text) }
-            } else { try activation.store.restoreManifest(.init()) }
+            try activation.store.activate(previous.snapshotID, confirmed: receipt != nil)
+            if let snapshot = activation.store.snapshot(previous.snapshotID) { try activation.saveDraft(snapshot.text) }
             try? bundleStore.prune()
             return ConfigurationRollbackOutcome(summary: "Restored the previous complete runtime version.",
                 notes: [receipt == nil ? "The tunnel will confirm the restored version at next start." : "All kernel modules confirmed the restored version."],
@@ -258,7 +238,7 @@ struct ConfigurationPublisher {
             try validateReceipt(receipt, for: bundle, required: true)
             sinkPreferences(bundle)
             stateSink(bundle)
-            if let id = bundle.snapshotID { try activation.store.activate(id, confirmed: true) }
+            try activation.store.activate(bundle.snapshotID, confirmed: true)
             try? bundleStore.prune()
         case .rejected:
             let backupURL = bundleStore.directory.appendingPathComponent("\(head.current.uuidString).manifest-backup.json")
@@ -268,8 +248,8 @@ struct ConfigurationPublisher {
                 let bundle = try bundleStore.load(current.current)
                 sinkPreferences(bundle)
                 stateSink(bundle)
-                try activation.store.restoreManifest(backup)
-            }
+            } else { preferencesSink(nil); clearStateSink() }
+            try activation.store.restoreManifest(backup)
             activation.record(receipt.message ?? "The kernel restored the previous configuration.")
         }
     }

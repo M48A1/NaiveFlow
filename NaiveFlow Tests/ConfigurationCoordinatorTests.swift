@@ -167,7 +167,7 @@ struct ConfigurationCoordinatorTests {
         #expect(mitm?.payloadChanged == false)
         #expect(plan.change(for: .dns) == nil)
         #expect(plan.change(for: .outbound) == nil)
-        #expect(plan.announcements == [.settings, .mitm])
+        #expect(plan.announcements == [.configurationVersion])
     }
 
     @Test func announcesOnlySettingsWhenMITMIsUntouched() {
@@ -175,7 +175,7 @@ struct ConfigurationCoordinatorTests {
         after["block-udp"] = .flag(true)
         let reload = ConfigurationReloadPlan.make(from: CompiledSettings(), to: after)
 
-        #expect(ConfigurationCoordinator.announcements(for: reload) == [.settings])
+        #expect(ConfigurationCoordinator.announcements(for: reload) == [.configurationVersion])
         #expect(ConfigurationCoordinator.announcements(for: ConfigurationReloadPlan()).isEmpty)
     }
 
@@ -215,10 +215,7 @@ struct ConfigurationCoordinatorTests {
     }
 
     @Test func plansRunTheStepsInOrder() {
-        #expect(RuntimeCoordinator.plan(for: .settings).actions == [.reloadHostMappings, .reloadDNS, .reloadSettings])
-        #expect(RuntimeCoordinator.plan(for: .mitm).actions == [.reloadMITM, .revalidateQUIC])
-        #expect(RuntimeCoordinator.plan(for: .routing).actions == [.reloadRouting])
-        #expect(RuntimeCoordinator.plan(for: .activeConfiguration).actions == [.reloadActiveConfiguration])
+        #expect(RuntimeCoordinator.plan(for: .configurationVersion).actions == [.reloadConfigurationVersion])
 
         for event in RuntimeCoordinator.Event.allCases {
             #expect(!RuntimeCoordinator.plan(for: event).isEmpty, "\(event.rawValue) reloads nothing.")
@@ -226,10 +223,10 @@ struct ConfigurationCoordinatorTests {
         }
     }
 
-    @Test func onlyHostInvalidationRunsOutsideTheRunningPhase() {
+    @Test func versionReloadRequiresRunningPhase() {
         for action in RuntimeCoordinator.Action.allCases {
             #expect(
-                action.requiresRunningPhase == (action != .reloadHostMappings),
+                action.requiresRunningPhase,
                 "\(action.rawValue) has the wrong phase rule."
             )
         }

@@ -12,6 +12,5 @@ import SwiftUI
 struct NaiveFlowWidgetBundle: WidgetBundle {
     var body: some Widget {
         VPNToggleControl()
-        ModeToggleControl()
     }
 }

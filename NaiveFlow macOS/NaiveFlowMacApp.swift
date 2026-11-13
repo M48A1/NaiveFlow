@@ -15,7 +15,6 @@ struct NaiveFlowMacApp: App {
         WindowGroup("NaiveFlow") {
             MacHomeView()
                 .environment(Operations(container: container))
-                .environment(container.appState)
                 .environment(container.tunnel)
                 .environment(container.selection)
                 .environment(container.chainStore)
@@ -23,10 +22,6 @@ struct NaiveFlowMacApp: App {
                 .environment(container.configurationStore)
                 .environment(container.groupStore)
                 .environment(container.subscriptionStore)
-                .environment(container.routingRuleSetStore)
-                .environment(container.mitmRuleSetStore)
-                .environment(container.moduleStore)
-                .environment(container.certificateStore)
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             container.stats.setPresentationActive(phase == .active)

@@ -11,47 +11,6 @@ import Security
 import Synchronization
 
 nonisolated enum CertificatePolicy {
-    private struct State {
-        var allowInsecure = AWCore.getAllowInsecure()
-        var trustedFingerprints = AWCore.getTrustedCertificateFingerprints()
-        var observerRegistered = false
-    }
-
-    private static let state = Mutex(State())
-    
-    static func startObserving() {
-        state.withLock { state in
-            guard !state.observerRegistered else { return }
-            state.observerRegistered = true
-
-            CFNotificationCenterAddObserver(
-                CFNotificationCenterGetDarwinNotifyCenter(),
-                nil,
-                { _, _, _, _, _ in
-                    CertificatePolicy.reload()
-                },
-                AWNotificationCenter.Notification.certificatePolicyChanged,
-                nil,
-                .deliverImmediately
-            )
-        }
-    }
-
-    static func reload() {
-        state.withLock { state in
-            state.allowInsecure = AWCore.getAllowInsecure()
-            state.trustedFingerprints = AWCore.getTrustedCertificateFingerprints()
-        }
-    }
-
-    static var allowInsecure: Bool {
-        state.withLock { $0.allowInsecure }
-    }
-    
-    private static var trustedFingerprints: [String] {
-        state.withLock { $0.trustedFingerprints }
-    }
-
     // MARK: - Verification
     
     enum Verification {
@@ -59,8 +18,8 @@ nonisolated enum CertificatePolicy {
         case rejected(reason: String)
     }
     
-    static func verify(chain: [SecCertificate], serverName: String) async -> Verification {
-        switch prepare(chain: chain, serverName: serverName) {
+    static func verify(chain: [SecCertificate], serverName: String, policy: TLSCertificatePolicy = .init()) async -> Verification {
+        switch prepare(chain: chain, serverName: serverName, policy: policy) {
         case .decided(let verification):
             return verification
         case .evaluate(let trust):
@@ -94,18 +53,17 @@ nonisolated enum CertificatePolicy {
         case evaluate(SecTrust)
     }
 
-    private static func prepare(chain: [SecCertificate], serverName: String) -> Preparation {
-        if allowInsecure {
-            return .decided(.trusted)
-        }
-
+    private static func prepare(chain: [SecCertificate], serverName: String, policy: TLSCertificatePolicy) -> Preparation {
         guard let leaf = chain.first else {
             return .decided(.rejected(reason: "No server certificates received"))
         }
 
-        if isPinned(leaf) {
-            return .decided(.trusted)
+        if let expected = policy.certificateSHA256 {
+            let actual = SHA256.hash(data: SecCertificateCopyData(leaf) as Data)
+                .map { String(format: "%02x", $0) }.joined()
+            return .decided(actual == expected ? .trusted : .rejected(reason: "Server certificate SHA-256 fingerprint mismatch"))
         }
+        if policy.insecureSkipVerify { return .decided(.trusted) }
 
         var trust: SecTrust?
         let policy = SecPolicyCreateSSL(true, serverName as CFString)
@@ -124,11 +82,4 @@ nonisolated enum CertificatePolicy {
         return .rejected(reason: message)
     }
 
-    private static func isPinned(_ leaf: SecCertificate) -> Bool {
-        let trusted = trustedFingerprints
-        guard !trusted.isEmpty else { return false }
-        let certData = SecCertificateCopyData(leaf) as Data
-        let sha256 = SHA256.hash(data: certData).map { String(format: "%02x", $0) }.joined()
-        return trusted.contains(sha256)
-    }
 }

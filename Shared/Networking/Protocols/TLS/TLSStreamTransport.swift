@@ -17,6 +17,7 @@ nonisolated final class TLSStreamTransport: Sendable {
     private let sni: String
     private let alpn: [String]
     private let tunnel: ProxyConnection?
+    private let certificatePolicy: TLSCertificatePolicy
 
     private enum Phase: PhaseTransitionable {
         case idle
@@ -45,12 +46,13 @@ nonisolated final class TLSStreamTransport: Sendable {
     // MARK: Initialization
 
     /// - Parameter sni: TLS SNI hostname; defaults to `host` when `nil`.
-    init(host: String, port: UInt16, sni: String?, alpn: [String] = ["h2"], tunnel: ProxyConnection? = nil) {
+    init(host: String, port: UInt16, sni: String?, alpn: [String] = ["h2"], tunnel: ProxyConnection? = nil, certificatePolicy: TLSCertificatePolicy = .init()) {
         self.host = host
         self.port = port
         self.sni = sni ?? host
         self.alpn = alpn
         self.tunnel = tunnel
+        self.certificatePolicy = certificatePolicy
     }
 
     // MARK: - Connect
@@ -58,7 +60,9 @@ nonisolated final class TLSStreamTransport: Sendable {
     func connect() async throws {
         let configuration = TLSConfiguration(
             serverName: sni,
-            alpn: alpn
+            alpn: alpn,
+            insecureSkipVerify: certificatePolicy.insecureSkipVerify,
+            serverCertificateFingerprint: certificatePolicy.certificateSHA256
         )
         let client = TLSClient(configuration: configuration)
         let claimed = phase.withLock { Phase.transition(&$0, to: .connecting(client)) }

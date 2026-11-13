@@ -38,6 +38,7 @@ struct ProfileView: View {
                 resultSection
                 reloadSection
                 actionSection
+                NavigationLink("MITM Certificate") { MITMCertificateView() }
                 ConfigurationDriveSection(model: model)
                 historySection
             }

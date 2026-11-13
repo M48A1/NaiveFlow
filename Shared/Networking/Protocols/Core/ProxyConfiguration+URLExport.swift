@@ -51,7 +51,7 @@ extension ProxyConfiguration {
         let usernameCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
         let encodedKey = configuration.key.addingPercentEncoding(withAllowedCharacters: usernameCharacters) ?? ""
         let fragment = name.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) ?? name
-        let parameters = ["net=\(configuration.network.rawValue)", "morph=\(configuration.morph ? 1 : 0)"]
+        let parameters = configuration.certificatePolicy.queryParameters + ["net=\(configuration.network.rawValue)", "morph=\(configuration.morph ? 1 : 0)"]
         return "nowhere://\(encodedKey)@\(bracketedServerAddress):\(serverPort)?\(parameters.joined(separator: "&"))#\(fragment)"
     }
 
@@ -71,6 +71,7 @@ extension ProxyConfiguration {
         }
         
         if case .tls(let tls) = vless.security {
+            parameters += tls.certificatePolicy.queryParameters
             if tls.serverName != serverAddress {
                 parameters.append("sni=\(encodedQueryValue(tls.serverName))")
             }
@@ -171,6 +172,7 @@ extension ProxyConfiguration {
                 parameters.append("obfs-max-packet-size=\(maxPacketSize)")
             }
         }
+        parameters += configuration.certificatePolicy.queryParameters
         if configuration.serverName != serverAddress {
             parameters.append("sni=\(encodedQueryValue(configuration.serverName))")
         }
@@ -184,6 +186,7 @@ extension ProxyConfiguration {
         let encodedPassword = encodedCredential(configuration.password)
         let fragment = name.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) ?? name
         var parameters: [String] = []
+        parameters += tls.certificatePolicy.queryParameters
         if tls.serverName != serverAddress {
             parameters.append("sni=\(encodedQueryValue(tls.serverName))")
         }
@@ -207,6 +210,7 @@ extension ProxyConfiguration {
         let encodedPassword = encodedCredential(configuration.password)
         let fragment = name.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) ?? name
         var parameters: [String] = []
+        parameters += tls.certificatePolicy.queryParameters
         if tls.serverName != serverAddress {
             parameters.append("sni=\(encodedQueryValue(tls.serverName))")
         }

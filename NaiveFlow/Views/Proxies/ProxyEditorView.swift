@@ -14,6 +14,10 @@ struct ProxyEditorView: View {
     let onSave: (ProxyConfiguration) -> Void
     
     @State private var selectedProtocol: OutboundProtocol = .nowhere
+    @State private var verifyServerCertificate = true
+    @State private var serverCertificateFingerprint = ""
+    @State private var verifyDownloadCertificate = true
+    @State private var downloadCertificateFingerprint = ""
     @State private var name = ""
     @State private var serverAddress = ""
     @State private var serverPort = ""
@@ -111,6 +115,9 @@ struct ProxyEditorView: View {
     
     private var isValid: Bool {
         guard !name.isEmpty else { return false }
+        if usesNodeTLS && !TLSCertificatePolicy.isValidFingerprint(serverCertificateFingerprint) { return false }
+        if isVLESS && vlessXHTTPDownloadEnabled && vlessXHTTPDownloadSecurity == "tls"
+            && !TLSCertificatePolicy.isValidFingerprint(downloadCertificateFingerprint) { return false }
         if isDirect { return true }
         guard !serverAddress.isEmpty else { return false }
         if isNowhere {
@@ -196,6 +203,12 @@ struct ProxyEditorView: View {
                     securityLayerSettings
                 }
                 
+                if usesNodeTLS {
+                    certificateSettings(verify: $verifyServerCertificate, fingerprint: $serverCertificateFingerprint, title: "TLS Certificate")
+                }
+                if isVLESS && vlessTransport == "xhttp" && vlessXHTTPDownloadEnabled && vlessXHTTPDownloadSecurity == "tls" {
+                    certificateSettings(verify: $verifyDownloadCertificate, fingerprint: $downloadCertificateFingerprint, title: "TLS Certificate (Download)")
+                }
                 moreSettings
             }
             .navigationTitle(configuration != nil ? "Edit Configuration" : "Add Configuration")
@@ -828,8 +841,40 @@ struct ProxyEditorView: View {
         
     }
     
+    private var usesNodeTLS: Bool { isNowhere || isHysteria || isTrojan || isAnyTLS || (isVLESS && isVLESSTLS) }
+    private var nodeCertificatePolicy: TLSCertificatePolicy {
+        TLSCertificatePolicy(insecureSkipVerify: !verifyServerCertificate, certificateSHA256: serverCertificateFingerprint)
+    }
+
+    private func certificateSettings(verify: Binding<Bool>, fingerprint: Binding<String>, title: String) -> some View {
+        Section {
+            Toggle("Verify Server Certificate", isOn: verify)
+            TextField("Certificate SHA-256 Fingerprint (Optional)", text: fingerprint)
+                .font(.system(.footnote, design: .monospaced))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !TLSCertificatePolicy.isValidFingerprint(fingerprint.wrappedValue) {
+                Text("Enter a SHA-256 fingerprint containing 64 hexadecimal characters.")
+                    .font(.footnote).foregroundStyle(.red)
+            }
+        } header: {
+            Text(title)
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("A certificate fingerprint applies only to this node and must match when set. Leave it empty to use system trust.")
+                if !verify.wrappedValue {
+                    Text("With verification disabled and no fingerprint, the server's identity is not checked.")
+                }
+
+            }
+        }
+    }
+
     private func populateFromExisting() {
         guard let configuration else { return }
+        let policy = configuration.nodeCertificatePolicy
+        verifyServerCertificate = !policy.insecureSkipVerify
+        serverCertificateFingerprint = policy.certificateSHA256 ?? ""
         selectedProtocol = configuration.outboundProtocol
         name = configuration.name
         serverAddress = configuration.serverAddress
@@ -881,6 +926,8 @@ struct ProxyEditorView: View {
                     vlessXHTTPDownloadPort = String(download.serverPort)
                     vlessXHTTPDownloadSecurity = download.security
                     if let tls = download.tls {
+                        verifyDownloadCertificate = !tls.insecureSkipVerify
+                        downloadCertificateFingerprint = tls.serverCertificateFingerprint ?? ""
                         vlessXHTTPDownloadTLSSNI = tls.serverName
                         vlessXHTTPDownloadTLSALPN = tls.alpn?.joined(separator: ",") ?? ""
                         vlessXHTTPDownloadFingerprint = tls.fingerprint
@@ -976,6 +1023,8 @@ struct ProxyEditorView: View {
                 .map { String($0).trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
             if !alpn.isEmpty { tls["alpn"] = alpn }
+            tls["allowInsecure"] = !verifyDownloadCertificate
+            if let pin = TLSCertificatePolicy.normalize(downloadCertificateFingerprint) { tls["server-cert-fingerprint-sha256"] = pin }
             download["tlsSettings"] = tls
         case "reality":
             download["realitySettings"] = [
@@ -1030,7 +1079,8 @@ struct ProxyEditorView: View {
                 key: nowhereKey,
                 network: nowhereNetwork,
                 morph: nowhereMorph,
-                morphPrelude: nowhereMorphPrelude
+                morphPrelude: nowhereMorphPrelude,
+                certificatePolicy: nodeCertificatePolicy
             ))
         case .vless:
             var vlessTLSConfiguration: TLSConfiguration?
@@ -1043,7 +1093,9 @@ struct ProxyEditorView: View {
                     alpn: alpn,
                     echEnabled: vlessTLSECHEnabled,
                     echConfig: vlessTLSECHEnabled && !ech.isEmpty ? ech : nil,
-                    fingerprint: vlessFingerprint
+                    fingerprint: vlessFingerprint,
+                    insecureSkipVerify: nodeCertificatePolicy.insecureSkipVerify,
+                    serverCertificateFingerprint: nodeCertificatePolicy.certificateSHA256
                 )
             }
             
@@ -1135,7 +1187,8 @@ struct ProxyEditorView: View {
                     uploadMbps: Int(hysteriaUploadMbpsText) ?? HysteriaCongestionControl.uploadMbpsDefault,
                     downloadMbps: Int(hysteriaDownloadMbpsText) ?? HysteriaCongestionControl.downloadMbpsDefault,
                     obfuscation: hysteriaObfuscationValue,
-                    serverName: hysteriaSNI.isEmpty ? bareAddress : hysteriaSNI
+                    serverName: hysteriaSNI.isEmpty ? bareAddress : hysteriaSNI,
+                    certificatePolicy: nodeCertificatePolicy
                 )
             )
         case .trojan:
@@ -1145,7 +1198,7 @@ struct ProxyEditorView: View {
             outbound = .trojan(
                 TrojanConfiguration(
                     password: trojanPassword,
-                    tls: TLSConfiguration(serverName: sni, alpn: alpn, echEnabled: trojanECHEnabled, echConfig: trojanECHEnabled && !ech.isEmpty ? ech : nil, fingerprint: trojanFingerprint)
+                    tls: TLSConfiguration(serverName: sni, alpn: alpn, echEnabled: trojanECHEnabled, echConfig: trojanECHEnabled && !ech.isEmpty ? ech : nil, fingerprint: trojanFingerprint, insecureSkipVerify: nodeCertificatePolicy.insecureSkipVerify, serverCertificateFingerprint: nodeCertificatePolicy.certificateSHA256)
                 )
             )
         case .anytls:
@@ -1155,7 +1208,7 @@ struct ProxyEditorView: View {
             outbound = .anytls(
                 AnyTLSConfiguration(
                     password: anytlsPassword,
-                    securityLayer: .tls(TLSConfiguration(serverName: sni, alpn: alpn, echEnabled: anytlsECHEnabled, echConfig: anytlsECHEnabled && !ech.isEmpty ? ech : nil, fingerprint: anytlsFingerprint)),
+                    securityLayer: .tls(TLSConfiguration(serverName: sni, alpn: alpn, echEnabled: anytlsECHEnabled, echConfig: anytlsECHEnabled && !ech.isEmpty ? ech : nil, fingerprint: anytlsFingerprint, insecureSkipVerify: nodeCertificatePolicy.insecureSkipVerify, serverCertificateFingerprint: nodeCertificatePolicy.certificateSHA256)),
                     inheritingTuningFrom: self.configuration?.anytls
                 )
             )

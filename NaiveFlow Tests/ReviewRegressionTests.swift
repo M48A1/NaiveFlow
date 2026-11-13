@@ -10,22 +10,7 @@ struct ReviewRegressionTests {
         return RuntimeConfigurationBundle(id: UUID(), snapshotID: UUID(), parentID: UUID(),
             preferences: [:], nodes: [node], selectedNodeID: node.id,
             rules: [], finalAction: .direct, mitmRuleSets: [],
-            policyGroups: [RuntimeProxyGroup(name: "Auto", kind: .loadBalance, memberIDs: [node.id])],
-            legacyRouting: Data([1]), legacyMITM: Data([2]))
-    }
-
-    @Test func oldBundleDefaultsMissingPolicyGroupsAndGeo() throws {
-        let original = bundle()
-        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
-        json.removeValue(forKey: "policyGroups")
-        json.removeValue(forKey: "geo")
-        let restored = try JSONDecoder().decode(RuntimeConfigurationBundle.self,
-            from: JSONSerialization.data(withJSONObject: json))
-        #expect(restored.policyGroups.isEmpty)
-        #expect(restored.id == original.id)
-        #expect(restored.selectedNodeID == original.selectedNodeID)
-        #expect(restored.geo.entryCount == 0)
-        #expect(restored.legacyRouting == original.legacyRouting)
+            policyGroups: [RuntimeProxyGroup(name: "Auto", kind: .loadBalance, memberIDs: [node.id])])
     }
 
     @Test func bundleRoundTripPreservesCurrentFields() throws {
@@ -36,7 +21,6 @@ struct ReviewRegressionTests {
         #expect(restored.parentID == original.parentID)
         #expect(restored.rules == original.rules)
         #expect(restored.finalAction == original.finalAction)
-        #expect(restored.legacyMITM == original.legacyMITM)
     }
 
     @Test func malformedPolicyGroupsStillFailDecoding() throws {

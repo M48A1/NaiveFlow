@@ -18,6 +18,7 @@ nonisolated struct HysteriaConfiguration: Hashable, Sendable {
     
     let obfuscation: HysteriaObfuscation?
     
+    let certificatePolicy: TLSCertificatePolicy
     let serverName: String
 
     init(
@@ -26,7 +27,8 @@ nonisolated struct HysteriaConfiguration: Hashable, Sendable {
         uploadMbps: Int = HysteriaCongestionControl.uploadMbpsDefault,
         downloadMbps: Int = HysteriaCongestionControl.downloadMbpsDefault,
         obfuscation: HysteriaObfuscation? = nil,
-        serverName: String
+        serverName: String,
+        certificatePolicy: TLSCertificatePolicy = .init()
     ) {
         self.password = password
         self.congestionControl = congestionControl
@@ -34,6 +36,7 @@ nonisolated struct HysteriaConfiguration: Hashable, Sendable {
         self.downloadMbps = HysteriaCongestionControl.clampDownloadMbps(downloadMbps)
         self.obfuscation = obfuscation
         self.serverName = serverName
+        self.certificatePolicy = certificatePolicy
     }
 }
 
@@ -59,6 +62,7 @@ nonisolated struct HysteriaRuntimeConfiguration {
     
     let obfuscation: HysteriaObfuscation?
     
+    let certificatePolicy: TLSCertificatePolicy
     let sni: String
 
     init(configuration: HysteriaConfiguration, proxyHost: String, proxyPort: UInt16) {
@@ -70,12 +74,13 @@ nonisolated struct HysteriaRuntimeConfiguration {
         self.downloadMbps = configuration.downloadMbps
         self.obfuscation = configuration.obfuscation
         self.sni = configuration.serverName
+        self.certificatePolicy = configuration.certificatePolicy
     }
 }
 
 nonisolated extension HysteriaConfiguration: Codable {
     private enum CodingKeys: String, CodingKey {
-        case password, congestionControl, uploadMbps, downloadMbps, obfuscation, serverName
+        case password, congestionControl, uploadMbps, downloadMbps, obfuscation, serverName, certificatePolicy
     }
 
     init(from decoder: Decoder) throws {
@@ -86,7 +91,8 @@ nonisolated extension HysteriaConfiguration: Codable {
             uploadMbps: try container.decodeIfPresent(Int.self, forKey: .uploadMbps) ?? HysteriaCongestionControl.uploadMbpsDefault,
             downloadMbps: try container.decodeIfPresent(Int.self, forKey: .downloadMbps) ?? HysteriaCongestionControl.downloadMbpsDefault,
             obfuscation: try container.decodeIfPresent(HysteriaObfuscation.self, forKey: .obfuscation),
-            serverName: try container.decode(String.self, forKey: .serverName)
+            serverName: try container.decode(String.self, forKey: .serverName),
+            certificatePolicy: try container.decodeIfPresent(TLSCertificatePolicy.self, forKey: .certificatePolicy) ?? .init()
         )
     }
 
@@ -98,5 +104,6 @@ nonisolated extension HysteriaConfiguration: Codable {
         try container.encode(downloadMbps, forKey: .downloadMbps)
         try container.encodeIfPresent(obfuscation, forKey: .obfuscation)
         try container.encode(serverName, forKey: .serverName)
+        if certificatePolicy != .init() { try container.encode(certificatePolicy, forKey: .certificatePolicy) }
     }
 }

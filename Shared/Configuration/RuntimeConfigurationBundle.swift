@@ -17,52 +17,35 @@ nonisolated struct RuntimeGroupDisplay: Codable, Sendable, Identifiable {
 /// A complete immutable input to DNS, Rule, MITM and Outbound. Scripts are
 /// embedded after fetching; the extension never downloads mutable dependencies.
 nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
-    static let schema = 1
+    static let schema = 2
     var schemaVersion = RuntimeConfigurationBundle.schema
     let id: UUID
-    let snapshotID: UUID?
+    let snapshotID: UUID
     let parentID: UUID?
     let preferences: [String: RuntimePreferenceValue]
     let nodes: [ProxyConfiguration]
     let selectedNodeID: UUID
-    let rules: [OrderedRoutingRule]?
+    let rules: [OrderedRoutingRule]
     let finalAction: RouteMatchAction
     let mitmRuleSets: [MITMRuleSet]
-    /// Text-configured groups with their automatic-selection strategy. Defaults
-    /// to empty so bundles published before this field existed still decode.
+    /// Text-configured groups with their automatic-selection strategy.
     var policyGroups: [RuntimeProxyGroup] = []
     /// UI metadata for every group, including select groups flattened by the engine.
     var displayGroups: [RuntimeGroupDisplay] = []
-    /// Used only by the preserved manual/app configuration baseline.
-    let legacyRouting: Data?
-    let legacyMITM: Data?
     var geo = NativeGeoDatabase()
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, id, snapshotID, parentID, preferences, nodes, selectedNodeID
-        case rules, finalAction, mitmRuleSets, policyGroups, displayGroups, legacyRouting, legacyMITM, geo
+        case rules, finalAction, mitmRuleSets, policyGroups, displayGroups, geo
     }
 
     var selectedNode: ProxyConfiguration? { nodes.first { $0.id == selectedNodeID } }
 
-    /// A text version (`snapshotID != nil`) pins every runtime preference so the
-    /// kernel reads exactly the published document. The preserved manual/app
-    /// baseline (`snapshotID == nil`) does NOT pin: rolling back to it must return
-    /// to a live, editable manual mode where later UserDefaults changes — proxy
-    /// mode, node switches, Always On, certificates — take effect again.
-    var pinsRuntimePreferences: Bool { snapshotID != nil }
-
-    /// The value to hand to `AWCore.installRuntimePreferences(_:)`: the captured
-    /// dict for a pinned text version, or `nil` (unpinned) for a manual baseline.
-    var runtimePreferencesForInstall: [String: RuntimePreferenceValue]? {
-        pinsRuntimePreferences ? preferences : nil
-    }
-
     func validate() throws {
         guard schemaVersion == Self.schema, selectedNode != nil,
               Set(nodes.map(\.id)).count == nodes.count,
-              nodes.count <= 10_000, (rules?.count ?? 0) <= 100_000,
-              Set(preferences.keys).subtracting(["bootstrapDNS"]) == Set(AWCore.runtimePreferenceKeys).subtracting(["bootstrapDNS"])
+              nodes.count <= 10_000, rules.count <= 100_000,
+              Set(preferences.keys) == Set(AWCore.runtimePreferenceKeys)
         else { throw RuntimeConfigurationFailure.invalidBundle }
         if let value = preferences["bootstrapDNS"], value != .absent {
             guard case .string(let raw) = value, DNSBootstrapPolicy.parse(raw) != nil else {
@@ -87,7 +70,7 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
         // A `.proxy` action may name a node or a text-configured group; both
         // carry stable ids in the bundle.
         let ids = Set(nodes.map(\.id)).union(policyGroups.map(\.id))
-        for rule in rules ?? [] {
+        for rule in rules {
             if case .proxy(let id) = rule.action, !ids.contains(id) { throw RuntimeConfigurationFailure.invalidBundle }
             try validateMatcher(rule.matcher, depth: 0)
         }
@@ -146,29 +129,6 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
 
 }
 
-// Keep the memberwise initializer while decoding fields added to schema 1
-// explicitly: synthesized Decodable does not use stored-property defaults.
-nonisolated extension RuntimeConfigurationBundle {
-    init(from decoder: Decoder) throws {
-        let values = try decoder.container(keyedBy: CodingKeys.self)
-        schemaVersion = try values.decode(Int.self, forKey: .schemaVersion)
-        id = try values.decode(UUID.self, forKey: .id)
-        snapshotID = try values.decodeIfPresent(UUID.self, forKey: .snapshotID)
-        parentID = try values.decodeIfPresent(UUID.self, forKey: .parentID)
-        preferences = try values.decode([String: RuntimePreferenceValue].self, forKey: .preferences)
-        nodes = try values.decode([ProxyConfiguration].self, forKey: .nodes)
-        selectedNodeID = try values.decode(UUID.self, forKey: .selectedNodeID)
-        rules = try values.decodeIfPresent([OrderedRoutingRule].self, forKey: .rules)
-        finalAction = try values.decode(RouteMatchAction.self, forKey: .finalAction)
-        mitmRuleSets = try values.decode([MITMRuleSet].self, forKey: .mitmRuleSets)
-        policyGroups = try values.decodeIfPresent([RuntimeProxyGroup].self, forKey: .policyGroups) ?? []
-        displayGroups = try values.decodeIfPresent([RuntimeGroupDisplay].self, forKey: .displayGroups) ?? []
-        legacyRouting = try values.decodeIfPresent(Data.self, forKey: .legacyRouting)
-        legacyMITM = try values.decodeIfPresent(Data.self, forKey: .legacyMITM)
-        geo = try values.decodeIfPresent(NativeGeoDatabase.self, forKey: .geo) ?? NativeGeoDatabase()
-    }
-}
-
 nonisolated enum RuntimeConfigurationFailure: LocalizedError {
     case invalidBundle, corruptedBundle, busy, superseded, rejected(String), unavailable, reconnectRequired, rollbackFailed
     var errorDescription: String? {
@@ -214,7 +174,7 @@ nonisolated struct RuntimeBundleStore: Sendable {
     let directory: URL
 
     init(directory: URL? = nil) {
-        self.directory = directory ?? EngineConfirmationStore.directory.appendingPathComponent("runtime", isDirectory: true)
+        self.directory = directory ?? EngineConfirmationStore.directory.appendingPathComponent("runtime-v2", isDirectory: true)
     }
 
     func head() throws -> Head? {

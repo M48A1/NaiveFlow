@@ -35,13 +35,12 @@ text → ConfigurationDocument     (lossless: comments, blank lines, order, raw 
      → ParsedConfiguration      (typed sections and rules)
      → ConfigurationValidator   (capability gates, references, FINAL, cycles)
      → ConfigurationCompiler    (ProxyConfiguration / ProxyGroup / rule sets / settings)
-     → ConfigurationActivation  (snapshot + manifest)
-     → ConfigurationInstaller   (writes the app's existing stores)
-     → RoutingExportOperation   (routing.bin + darwin notification to the tunnel)
+     → ConfigurationPublisher   (immutable runtime bundle + snapshot + manifest)
+     → RuntimeCoordinator       (DNS / Rule / MITM / Outbound switch together)
 ```
 
 Entry point for editors and importers is `TextConfigurationPipeline.process(text:)`.
-`ConfigurationImport.read(from:)` turns a picked file into text (UTF-8 only, 1 MB
+`ConfigurationImport.read(from:)` turns a picked file into text (UTF-8 only, 16 MiB
 cap, BOM and CRLF normalized) so a file and a pasted document travel the same
 path. `TextConfigurationPipeline.Result.route(host:ip:port:)` previews the
 decision through the same `OrderedRouteMatcher` the tunnel will use, so an editor
@@ -61,12 +60,12 @@ under `configurations/`:
 | `draft.txt` | host app | what the editor shows; survives a relaunch even with errors |
 | `manifest.json` | host app | active snapshot, rollback target, last failure, `appliedAt` |
 | `snapshots/<uuid>.json` | host app | frozen text + summary + diagnostics per activation (20 kept) |
-| `installation.json` | host app | which nodes/groups/rule sets the text configuration owns |
+| `runtime-v2/head.json` | host app | current and previous complete runtime versions |
+| `runtime-v2/<uuid>.json` | host app | schema-2 immutable bundle and integrity digest |
 | `engine-confirmation.json` | extension | the snapshot the engine is actually running + engine version |
 
-`installation.json` is what makes re-activation idempotent: nodes are matched by
-name against the ids listed there, so re-activating updates in place, and a node
-the user added by hand is never overwritten or deleted.
+A configuration runs only after its text document is applied. Runtime bundles
+require a snapshot ID and ordered rules. Earlier bundle schemas are rejected.
 
 `engine-confirmation.json` is written by the Network Extension, not the host.
 `ConfigurationSnapshotStore.isActiveSnapshotConfirmed()` compares it with the
@@ -112,7 +111,6 @@ apart.
 | `block-webrtc` | boolean | live | applied |
 | `prevent-dns-leak` | boolean | live | applied |
 | `hide-vpn-icon` | boolean | live | applied |
-| `bypass-country` | ISO country code | live | applied through routing export |
 | `include-all-networks` | boolean | reconnect | applied |
 | `exclude-local-network` | boolean | reconnect | applied |
 | `include-apns` | boolean | reconnect | applied |
@@ -137,8 +135,8 @@ apart.
 | `ech-encrypted-dns-server` | `https://` URL | data-plane restart | applied |
 | `synthetic-address-excluded-suffix` | comma list | data-plane restart | applied |
 | `mitm` | boolean | live | applied; `[MITM] enable` wins when both appear |
-| `allow-insecure` | boolean | data-plane restart | applied |
-| `trusted-certificate` | comma list of SHA-256 fingerprints | live | applied |
+| `allow-insecure` | boolean | — | removed; configure each node with `skip-cert-verify` |
+| `trusted-certificate` | comma list of SHA-256 fingerprints | — | removed; use node `server-cert-fingerprint-sha256` |
 | `trusted-ssid` | comma list | live | applied |
 | `always-trust-cellular` | boolean | live | applied |
 | `always-untrust-cellular` | boolean | live | applied |
@@ -234,7 +232,23 @@ forms end up as exactly the same outbound configuration.
 Option names are translated (`id` → `uuid`, `sni`/`peer` → `servername`,
 `ws` → `network`, `ws-path` → `path`, `ws-headers` → `host`, `cipher`/`method` →
 `cipher`, `aead` → `aead-method`, `public-key`/`short-id` → `reality-opts`).
-Options this build cannot express (`skip-cert-verify`, `udp`, `udp-relay`, `tfo`,
+TLS nodes accept `skip-cert-verify=true|false` (default `false`) and optional
+`server-cert-fingerprint-sha256` (64 hexadecimal characters). A configured
+fingerprint must match the leaf certificate, including when `skip-cert-verify`
+is true. Without a fingerprint, normal system trust is used unless that node
+explicitly disables validation. These exceptions never apply to other nodes,
+subscription downloads, or MITM root certificate management.
+
+The node editor exposes **Verify Server Certificate** and **Certificate SHA-256
+Fingerprint**. XHTTP download endpoints have their own fields. A malformed
+fingerprint prevents saving. Existing JSON without these fields defaults to
+system verification. Share links and saved JSON preserve each node's settings.
+Legacy global trust values remain stored for reference but have no effect;
+re-enter exceptions on the relevant nodes. Global `[General] allow-insecure` and
+`trusted-certificate` are recognized as removed settings and block activation.
+The separate Trusted Certificates page has been removed.
+
+Options this build cannot express (`udp`, `udp-relay`, `tfo`,
 `mptcp`, `ecn`, `test-url`, `ip-version`, `underlying-proxy`, `block-quic`,
 `no-error-alert`, `fast-open`) are dropped **with a `notApplied` warning** — never
 silently.
@@ -367,229 +381,51 @@ Errors block activation; warnings and info do not.
 
 ## Reload scopes
 
-`ConfigurationReloadPlan` diffs the settings the document asks for against what
-the engine is running, and classifies each change by what has to happen:
-
-| Scope | Fields | What the app does |
-| --- | --- | --- |
-| `live` | `quic-policy`, `block-udp`, `block-webrtc`, `prevent-dns-leak`, `mitm`, `hide-vpn-icon`, `tun-included-routes`, `tun-excluded-routes`, `bypass-country`, `loglevel` | nothing: `ConfigurationCoordinator` announces the change, `RuntimeCoordinator` turns the announcement into `TunnelStack+Runtime.reloadSettings()` and the other reload steps |
-| `stackRestart` | `proxy-mode`, `dns-mode`, `dns-server`, `encrypted-dns-server` | extension rebuilds its data plane in place |
-| `reconnect` | `include-all-networks`, `exclude-local-network`, `include-apns`, `include-cellular-services` | host reconnects so the packet-tunnel preferences are rewritten |
-
-Rule, node, group and `[Host]` changes are not part of the plan: they travel
-through `routing.bin`, `ActiveConfiguration` and `DNSHosts`, all of which the
-extension picks up from a darwin notification without a disconnect.
-
-`Outcome.requiresReconnect` tells the editor whether to offer a reconnect prompt
-after activation.
-
-## Announcements
-
-The host never posts a notification by name. `ConfigurationCoordinator` decides
-which announcements an activation owes — `settings` whenever any `[General]`
-value changed, `mitm` when the changed keys belong to interception — and
-`ConfigurationInstaller` posts exactly that list.
-
-The extension half is `RuntimeCoordinator`. It turns each announcement back into
-an ordered plan of reload steps (`reloadHostMappings`, `reloadSettings`,
-`reloadRouting`, `reloadMITM`, `reloadActiveConfiguration`, `revalidateQUIC`)
-and skips the steps that only make sense while the tunnel is running — only the
-host-cache invalidation runs in every phase, so a stale `[Host]` override cannot
-survive a start. A test holds the two tables against each other: a notification
-the host can post that no event recognizes fails instead of waking the tunnel for
-nothing.
+Every publication switches one complete runtime version. Changes to connection-level
+Network Extension preferences reconnect the provider; other changes rebuild the data
+plane in place. The host announces only `configurationVersionChanged`.
 
 ## Activation lifecycle
 
-1. `ConfigurationActivation.saveDraft` stores the editor text (errors allowed).
-2. `ConfigurationActivation.activate(text:)` compiles, refuses to continue while
-   errors remain, freezes a snapshot, and points the manifest at it.
-3. `ConfigurationInstaller.install(_:)` reconciles nodes, groups and rule sets,
-   replaces `[Host]`, applies settings, keeps one node selected, and writes
-   `installation.json`.
-4. `StoreMutationReaction` / `RoutingExportScheduler` rebuilds `routing.bin` and
-   posts `routingChanged`, so the tunnel reloads rules live.
-5. The extension installs the payload and writes `engine-confirmation.json`.
-6. `isActiveSnapshotConfirmed()` compares steps 2 and 5. Anything else means the
-   editor should show "activated, not yet confirmed".
+1. Save the draft and compile the complete document.
+2. Resolve scripts, rule sets and Geo resources, then validate their fixed bytes.
+3. Capture document settings over clean built-in defaults; omitted settings reset.
+4. Publish the immutable schema-2 bundle and atomically advance its head.
+5. The extension validates and installs DNS, Rule, MITM and Outbound together.
+6. Confirm the exact version with a receipt, or restore the previous text version.
 
-If step 3 fails, the installer records the reason, rolls the manifest back to the
-previous snapshot, and installs that snapshot again, so the engine is never left
-pointing at a document whose nodes are missing.
+The first publication has no previous version. Startup requires an applied text
+configuration. See [ConfigurationArchitecture.md](ConfigurationArchitecture.md).
 
 ## Exporting the current setup
 
-`ConfigurationExporter` is the other direction: it renders what the app already
-holds as a text document, so switching to the text configuration starts from the
-user's existing nodes, groups, rules, host overrides and settings instead of an
-empty editor.
-
-```swift
-let result = ConfigurationExporter.exportCurrentConfiguration(container: appContainer)
-// result.text    — the document
-// result.notes   — everything the stores held that the document cannot express
-// result.counts  — nodes / groups / rules / hosts written
-```
-
-What it will and will not do:
-
-- Only what the engine can act on is written. Chains, chain groups, module rule
-  sets, rule sets with no assigned policy, group members that are not exported,
-  and nodes without a share link are listed in `notes` instead of being turned
-  into something they are not. An unassigned rule set is *matched but decides
-  nothing* in the engine, which no text rule can say.
-- Names that cannot survive `Name = value` parsing or comma lists (`=`, `,`,
-  `#`) are sanitized, and duplicates are numbered, because a duplicate name is an
-  error on the way back in. Names that collide with a policy token
-  (`DIRECT`, `REJECT`, `REJECT-TINYGIF`, `PROXY`) are suffixed too, since such a
-  node could never be referenced by a rule; both kinds of rename are listed in
-  `notes`.
-- `[Host]` comes from the DNS override table. `[MITM]` comes from the enabled MITM
-  rule sets' host list and is left out entirely when MITM is enabled but lists no
-  host, since `enable = true` with an empty `hostname` is an error.
-- The generated `FINAL` uses `PROXY`, which is the engine's terminal action (the
-  selected node); `Options.finalPolicy` overrides it.
-
-The output is Surge-style INI — the section names and rule tokens that
-`SurgeConfigurationParser` reads, so an exported document is a document this app
-imports back. No section is generated that the parser keeps but the engine does
-not act on (`[Script]`, `[URL Rewrite]`, `[Header Rewrite]`), and none for data
-the stores do not hold. Export is *this app's* format only: it is not aimed at
-another client's dialect, and no other client's proprietary sections exist in
-the stores to write.
-
-`ConfigurationExporterTests` round-trips every fixture through
-`TextConfigurationPipeline.process(text:)` and asserts zero errors, so an export
-that drifts away from the parser fails a test rather than a user's activation.
+`ConfigurationDocumentOperations.exportCurrent()` returns the applied text document,
+or the starter template when no document has been applied. It reads no manual
+configuration stores.
 
 ## Editing inside the app
 
-Two pieces, split on purpose:
-
-- `NaiveFlow/Views/Pages/Profile/ProfileView.swift` — a renderer. It draws the
-  editor, the counts, the diagnostics, the reload notice, the actions and the
-  applied-document list, and nothing else.
-- `Shared/ViewModels/ProfileEditorModel.swift` — the session state machine
-  (buffer, preview, draft, dirty flag, apply, import, revert, discard, status and
-  error). It talks to the pipeline through the small `ProfileEditing` protocol, so
-  it can be exercised without SwiftUI, an App Group container or a tunnel;
-  `ConfigurationDocumentOperations` is the implementation used in the app.
-- `ConfigurationDocumentOperations` (`Shared/Operations/`) remains the two-way
-  bridge. Both directions run on the same pipeline as every other importer —
-  there is no second code path.
-
-The naming is deliberate: in this project `Configuration…` means a *proxy node*
-(`ProxyConfiguration`, `ConfigurationStore`), while the *profile* is the single
-text document that describes the whole setup. Keeping the new session layer under
-`Profile…` leaves room for the profile to become the source of truth.
-
-| Direction | Entry point | What is written |
-| --- | --- | --- |
-| stores → text | `exportCurrent()` (`ConfigurationExporter`) | the editor buffer only |
-| text → stores | `apply(_:)` (`ConfigurationInstaller.activate(text:)`) | stores, snapshot, `routing.bin` |
-
-How the screen behaves:
-
-- The buffer *is* the document. Every edit recompiles it after a 250 ms pause
-  (`TextConfigurationPipeline.process`), refreshes the counts and the diagnostic
-  list, and saves `draft.txt`. Editing never installs anything. The debounce lives
-  in `ProfileEditorModel` (`previewDelay`), not in the view, so a second surface
-  (deep link, tvOS, tests) behaves identically.
-- "Apply to App" stays disabled while the compile has errors, so a broken
-  document cannot replace a working one. A refused apply keeps the buffer and the
-  baseline untouched and only sets `errorMessage`. On success the footer shows
-  `ConfigurationInstaller.Outcome.summary`, the applied-document list picks up the
-  new snapshot, and the buffer becomes the new baseline (so "unsaved" clears).
-- The "Last Apply" section lists the changes from `ConfigurationReloadPlan` with
-  their scope (`Applies immediately` / `Restarts the tunnel data plane` /
-  `Requires reconnect`) plus the matching one-line instruction. This is the
-  information the installer already computed but the page used to drop.
-- Unsaved changes are visible twice: an "Unsaved" marker in the section header and
-  a footer line comparing the buffer with the applied document. "Discard Changes"
-  appears only while the buffer differs and restores the applied text.
-- "Load from Current Setup" renders the live stores, so editing starts from what
-  the app already runs instead of the starter template. Export notes (chains,
-  chain groups, module rule sets, unassigned rule sets) are shown under the
-  result rather than being dropped.
-- "Import File" only loads a picked file (UTF-8, 1 MB cap) into the buffer;
-  applying stays a separate, explicit press. A file that cannot be read leaves the
-  buffer exactly as it was. "Export File" shares the buffer text through the
-  system share sheet.
-- Rows in "Applied Documents" put that snapshot's text back in the editor for
-  review; applying it again is still an explicit press.
-- Applying is an ordinary store mutation, so `StoreMutationReaction` →
-  `RoutingExportScheduler` rewrites `routing.bin` and the tunnel reloads by the
-  scope in `ConfigurationReloadPlan`; a changed node still needs a reconnect.
-
-What this is deliberately not:
-
-- No auto-apply while typing, and no file watcher. Applying stays an explicit
-  press; the profile is written into the stores through the same installer every
-  other path uses, so nothing can change the running configuration invisibly.
-- `draft.txt` is not an open-in-place document. `LSSupportsOpeningDocumentsInPlace`
-  stays `NO`, so the file cannot be edited from the Files app behind the app's
-  back; the editor is the only writer.
-- There is still no structured (form-based) editor for individual nodes, groups
-  or rules — those are edited in their own screens, and the document is generated
-  from them on demand.
-
-### Where this is heading
-
-The profile is meant to become the place configuration is *written*, with the
-per-feature pages shrinking to what text cannot express. That direction is only
-taken one capability at a time, and each step needs the same two things:
-
-1. **The profile can express it completely.** A page is only retired after the
-   parser, compiler, installer and exporter round-trip its capability with no
-   silent loss; otherwise deleting the page would delete the feature.
-2. **It survives `Load from Current Setup` → `Apply`.** Export notes must be
-   empty for that data, or the edit would disappear on the next profile write.
-
-So the remaining gaps listed under "Known gaps" (ordered rules and `FINAL` in the
-payload, `[Proxy Group]` types, `[MITM] hostname`, `[Script]`) are prerequisites,
-not follow-up work: they are the features whose pages still have no textual
-equivalent. What stays on a page even afterwards is state that is not
-configuration of the tunnel — latency results, the current node selection,
-appearance, certificate trust and install flows — because those describe the
-session and the device, not the profile.
+`ProfileView` renders `ProfileEditorModel`, which owns the draft, preview, apply,
+import, history and rollback actions. Editing saves a draft; Apply publishes a
+complete version. Importing a file loads text for review. iCloud Drive exchanges
+text files between devices. MITM certificate installation is available from this
+page; interception rules and settings belong to the document.
 
 ## Limits
 
-| Limit | Value | Source |
-| --- | --- | --- |
-| Rules per rule set | 200 000 | `CustomRoutingRuleSet.maxRuleCount` |
-| Rule value in the payload | 65 535 UTF-8 bytes | `RoutingBinaryFormat` (`valueLen` is `UInt16`) |
-| Rule set name in the payload | 64 characters | `RoutingExportOperation` (`prefix(64)`) |
-| Snapshots kept | 20 (+ active and rollback target) | `ConfigurationSnapshotStore.retainedSnapshotCount` |
-| Editor edit payload | ~6 000 characters per call | `ConfigurationDocumentEditing` helpers |
-
-The routing payload writer (`RoutingBinaryWriter.encode`) skips a rule whose value
-is longer than its `UInt16` length field, and truncates a rule-set name to 64
-characters. Validation therefore rejects an over-long value up front
-(`ruleValueTooLong`) instead of letting the rule vanish between activation and the
-tunnel; a long name only loses its tail in logs and match attribution.
+| Limit | Value |
+| --- | --- |
+| Text document | 16 MiB |
+| Ordered runtime rules | 100 000 |
+| Script source | 1 MB |
+| Runtime bundle | 64 MiB |
+| Retained runtime versions | 20, subject to 256 MiB total |
 
 ## Known gaps
 
-These are deliberate, documented gaps, not silent failures:
-
-- **Ordered payload.** `OrderedRouteMatcher` and `CompiledConfiguration.orderedRules`
-  exist and are used by previews, but `RoutingBinaryFormat` still carries the
-  tiered, one-policy-per-rule-set model. Until the payload carries rule order,
-  FINAL, GeoIP/GeoSite and the extra rule types, the tunnel keeps using
-  `TieredRouteMatcher`; the editor reports those rules as not compiled.
-- **Geo databases.** Explicit external V2Ray GeoIP/GeoSite and CIDR/domain text
-  sources are downloaded and validated on apply, pinned into runtime versions,
-  and indexed at compilation/decode. Refresh is manual; performance and runtime
-  acceptance are unverified. See [Geo databases](GeoDatabases.md).
-- **Scripts.** Only buffered HTTP request/response scripts are supported, with explicit Surge/QX dialect metadata. Full external-client compatibility remains unverified.
-- **MITM host list.** Only `[MITM] enable` is applied; the certificate and host
-  fields are stored and reported.
-- **`loglevel`.** Recorded, not applied.
-- **macOS.** No macOS target exists yet; this document covers iOS, iPadOS and
-  tvOS builds.
-
-
+External Geo resources refresh on explicit Apply. Unsupported rule metadata and
+settings fail validation. See [ConfigurationArchitecture.md](ConfigurationArchitecture.md)
+for supported native capabilities and [MITM.md](MITM.md) for script behavior.
 
 ### 代理组第三方图标
 
@@ -600,6 +436,6 @@ These are deliberate, documented gaps, not silent failures:
 Streaming = select, Relay, DIRECT, icon-url=https://example.com/icons/streaming.png
 ```
 
-填写 HTTPS 图片直链，支持 PNG、JPEG 等系统可解码的图片；不支持 SVG。URL 中包含逗号或 `#` 时加双引号。图标随组保存、同步与导出；手动组可在编辑器中修改地址，文本配置组通过编辑配置修改。图片由应用界面按需加载，失败时使用默认文件夹图标，不参与分流和节点测速。新字段兼容无图标的旧配置；旧运行版本需重新应用配置后显示手动选择组的图标。
+填写 HTTPS 图片直链，支持 PNG、JPEG 等系统可解码的图片；不支持 SVG。URL 中包含逗号或 `#` 时加双引号。图标随组保存、同步与导出；手动组可在编辑器中修改地址，文本配置组通过编辑配置修改。图片由应用界面按需加载，失败时使用默认文件夹图标，不参与分流和节点测速。图标元数据随当前格式的完整运行版本发布。
 
 图标加载限制：单个文件不超过 2 MiB，原图宽高各不超过 4096 像素；应用只保留最长边 128 像素的缩略图，解码缓存预算为 1 MiB，最多同时下载 4 个图标。超限使用默认图标。此限制针对图片资源，不代表应用或 VPN 进程的内存总量上限。

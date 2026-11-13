@@ -92,15 +92,6 @@ struct ConfigurationSettingsTests {
         #expect(key.parse("") == .list([]))
     }
 
-    @Test func normalizesCountryCode() {
-        let key = ConfigurationSettingKey(
-            name: "bypass-country", kind: .countryCode, scope: .live, applies: true, summary: ""
-        )
-        #expect(key.parse("cn") == .text("CN"))
-        #expect(key.parse("") == nil)
-        #expect(key.parse("CHN") == nil)
-    }
-
     @Test func validatesDNSServers() {
         let plain = ConfigurationSettingKey(
             name: "dns-server", kind: .plainServer, scope: .live, applies: true, summary: ""
@@ -203,8 +194,6 @@ struct ConfigurationSettingsTests {
             return [.text("example.com")]
         case .enumeration(let values):
             return values.map { .text($0) }
-        case .countryCode:
-            return [.text("CN")]
         case .list:
             return [.list(["one", "two"])]
         case .plainServer:

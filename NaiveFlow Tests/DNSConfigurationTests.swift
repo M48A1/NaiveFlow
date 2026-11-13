@@ -71,18 +71,18 @@ struct DNSConfigurationTests {
         }
     }
 
-    @Test func existingVersionWithoutBootstrapRemainsLoadable() throws {
+    @Test func incompleteVersionWithoutBootstrapIsRejected() throws {
         let direct = ProxyConfiguration(name: "Direct", serverAddress: "", serverPort: 0, outbound: .direct(DirectConfiguration()))
         var old = AWCore.runtimePreferences()
         old.removeValue(forKey: "bootstrapDNS")
-        let bundle = RuntimeConfigurationBundle(id: UUID(), snapshotID: nil, parentID: nil,
+        let bundle = RuntimeConfigurationBundle(id: UUID(), snapshotID: UUID(), parentID: nil,
             preferences: old, nodes: [direct], selectedNodeID: direct.id, rules: [], finalAction: .direct,
-            mitmRuleSets: [], legacyRouting: nil, legacyMITM: nil)
-        try bundle.validate()
+            mitmRuleSets: [])
+        #expect(throws: (any Error).self) { try bundle.validate() }
         old["bootstrapDNS"] = .string("https://recursive.example")
-        let invalid = RuntimeConfigurationBundle(id: UUID(), snapshotID: nil, parentID: nil,
+        let invalid = RuntimeConfigurationBundle(id: UUID(), snapshotID: UUID(), parentID: nil,
             preferences: old, nodes: [direct], selectedNodeID: direct.id, rules: [], finalAction: .direct,
-            mitmRuleSets: [], legacyRouting: nil, legacyMITM: nil)
+            mitmRuleSets: [])
         #expect(throws: (any Error).self) { try invalid.validate() }
     }
 

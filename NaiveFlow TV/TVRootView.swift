@@ -16,16 +16,11 @@ struct TVRootView: View {
                 TVPageHost { TVLaunchpadViewController(container: container) }
                     .ignoresSafeArea()
             }
+            Tab("Configuration", systemImage: "doc.text") {
+                TVConfigurationView(container: container)
+            }
             Tab("Data", systemImage: "cylinder.split.1x2.fill") {
                 TVPageHost { TVDataViewController(container: container) }
-                    .ignoresSafeArea()
-            }
-            Tab("Tunnel", systemImage: "hammer.fill") {
-                TVPageHost { TVTunnelViewController(container: container) }
-                    .ignoresSafeArea()
-            }
-            Tab("Trusted Certificates", systemImage: "checkmark.seal.fill") {
-                TVPageHost { TVTrustedCertificatesViewController(container: container) }
                     .ignoresSafeArea()
             }
         }

@@ -28,7 +28,7 @@ final class MITMCertificateController {
         guard exists != hasCA || trustedNow != isTrusted else { return }
         hasCA = exists
         isTrusted = trustedNow
-        AWNotificationCenter.notifyMITMChanged()
+        AWNotificationCenter.notifyConfigurationVersionChanged()
     }
 
     func ensureCA() throws {

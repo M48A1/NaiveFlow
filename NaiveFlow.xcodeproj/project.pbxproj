@@ -23,9 +23,6 @@
 		CB1C10652F23B81500B74CD8 = { "path" = "NaiveFlow.app"; "isa" = "PBXFileReference"; "includeInIndex" = "0"; "explicitFileType" = "wrapper.application"; "sourceTree" = "BUILT_PRODUCTS_DIR"; };
 
 /* Begin PBXBuildFile section */
-		E10000000000000000000004 /* MITMRuleSetParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000001; };
-		E10000000000000000000005 /* ModuleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000002; };
-		E10000000000000000000006 /* RoutingRuleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000003; };
 		382A1871306A04490032C2BF /* NaiveFlowIP in Frameworks */ = {isa = PBXBuildFile; productRef = 382A1870306A04490032C2BF /* NaiveFlowIP */; };
 		3853793F30753251000675B7 /* NaiveFlowQUIC in Frameworks */ = {isa = PBXBuildFile; productRef = 3853793E30753251000675B7 /* NaiveFlowQUIC */; };
 		3853794130753258000675B7 /* NaiveFlowQUIC in Frameworks */ = {isa = PBXBuildFile; productRef = 3853794030753258000675B7 /* NaiveFlowQUIC */; };
@@ -96,9 +93,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		E10000000000000000000001 /* MITMRuleSetParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NaiveFlow/Views/Pages/MITM/MITMRuleSetParser.swift"; sourceTree = SOURCE_ROOT; };
-		E10000000000000000000002 /* ModuleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NaiveFlow/Views/Pages/Modules/ModuleParser.swift"; sourceTree = SOURCE_ROOT; };
-		E10000000000000000000003 /* RoutingRuleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NaiveFlow/Views/Pages/Routing/RoutingRuleParser.swift"; sourceTree = SOURCE_ROOT; };
 		CB65476A2F65715600C85E4A /* Exceptions for "Shared" folder in "NaiveFlow Network Extension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -313,7 +307,7 @@
 				Networking/Protocols/VLESS/XHTTP/XHTTPHeaderBlockAccumulator.swift,
 				Networking/Protocols/VLESS/XHTTP/XHTTPProxyConnection.swift,
 				Networking/Routing/FlatLabelTrie.swift,
-				Networking/Routing/TieredRouteMatcher.swift,
+				Networking/Routing/RouteMatching.swift,
 				Networking/Transport/ByteTransport.swift,
 				Networking/Transport/ByteTransportAdapters.swift,
 				Networking/Transport/DialDeadline.swift,
@@ -378,9 +372,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				DeepLinkManager.swift,
-				Views/Pages/MITM/MITMRuleSetParser.swift,
-				Views/Pages/Modules/ModuleParser.swift,
-				Views/Pages/Routing/RoutingRuleParser.swift,
 			);
 			target = CB2B549B2F6C3E2700F24AC2 /* NaiveFlow TV */;
 		};
@@ -875,9 +866,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E10000000000000000000004 /* MITMRuleSetParser.swift in Sources */,
-				E10000000000000000000005 /* ModuleParser.swift in Sources */,
-				E10000000000000000000006 /* RoutingRuleParser.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1096,7 +1084,6 @@
 		CB1C10712F23B81600B74CD8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-Classic AppIcon-Muted";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = NaiveFlow/NaiveFlow.entitlements;
@@ -1137,7 +1124,6 @@
 		CB1C10722F23B81600B74CD8 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-Classic AppIcon-Muted";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = NaiveFlow/NaiveFlow.entitlements;

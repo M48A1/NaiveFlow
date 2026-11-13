@@ -62,6 +62,7 @@ nonisolated final class QUICConnectionCore: QUICPublishingState {
 
     let host: String
     let port: UInt16
+    let certificatePolicy: TLSCertificatePolicy
     let serverName: String
     let alpn: [String]
     let tuning: QUICTuning
@@ -292,6 +293,7 @@ nonisolated final class QUICConnectionCore: QUICPublishingState {
         port: UInt16,
         serverName: String? = nil,
         alpn: [String],
+        certificatePolicy: TLSCertificatePolicy = .init(),
         datagramsEnabled: Bool = false,
         tuning: QUICTuning,
         obfuscator: QUICPacketObfuscator? = nil,
@@ -306,6 +308,7 @@ nonisolated final class QUICConnectionCore: QUICPublishingState {
         self.port = port
         self.serverName = serverName ?? host
         self.alpn = alpn
+        self.certificatePolicy = certificatePolicy
         self.datagramsEnabled = datagramsEnabled
         self.tuning = tuning
         self.obfuscator = obfuscator

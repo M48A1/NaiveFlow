@@ -5,7 +5,7 @@ extension TunnelStack {
     private func validateVersion(_ bundle: RuntimeConfigurationBundle) throws {
         try bundle.validate()
         try MITMRewritePolicy.validate(ruleSets: bundle.mitmRuleSets)
-        if bundle.rules != nil, bundle.preferences["mitmEnabled"] == .boolean(true), !mitmCertificateStore.isCATrusted() {
+        if bundle.preferences["mitmEnabled"] == .boolean(true), !mitmCertificateStore.isCATrusted() {
             throw RuntimeConfigurationFailure.rejected("Install and trust the MITM CA before enabling interception.")
         }
     }
@@ -14,32 +14,24 @@ extension TunnelStack {
     /// the previous complete version and records which candidate was rejected.
     func prepareStartupVersion() throws -> ProxyConfiguration? {
         let store = RuntimeBundleStore()
-        guard let head = try store.head() else { nativeBundle = nil; return try ActiveConfiguration.load() }
+        guard let head = try store.head() else { throw RuntimeConfigurationFailure.unavailable }
         do {
             let bundle = try store.load(head.current)
             try validateVersion(bundle)
             nativeBundle = bundle
-            AWCore.installRuntimePreferences(bundle.runtimePreferencesForInstall)
-            return try startupConfiguration(for: bundle)
+            AWCore.installRuntimePreferences(bundle.preferences)
+            return bundle.selectedNode
         } catch {
             let original = error
             guard let previousID = head.previous else { throw original }
             let previous = try store.load(previousID)
             try validateVersion(previous)
             nativeBundle = previous
-            AWCore.installRuntimePreferences(previous.runtimePreferencesForInstall)
+            AWCore.installRuntimePreferences(previous.preferences)
             try store.record(.init(versionID: head.current, activeVersionID: previousID,
                 snapshotID: nil, status: .rejected, message: original.localizedDescription))
-            return try startupConfiguration(for: previous)
+            return previous.selectedNode
         }
-    }
-
-    /// The node a version starts with. A pinned text version uses its bundled
-    /// selection; a manual baseline uses the live manual ActiveConfiguration so
-    /// the most recent user selection survives a restart or rollback.
-    private func startupConfiguration(for bundle: RuntimeConfigurationBundle) throws -> ProxyConfiguration? {
-        if bundle.pinsRuntimePreferences { return bundle.selectedNode }
-        return try ActiveConfiguration.load() ?? bundle.selectedNode
     }
 
     func restoreStartupVersion(after error: Error) throws -> ProxyConfiguration? {
@@ -48,10 +40,10 @@ extension TunnelStack {
         let previous = try store.load(previousID)
         try validateVersion(previous)
         nativeBundle = previous
-        AWCore.installRuntimePreferences(previous.runtimePreferencesForInstall)
+        AWCore.installRuntimePreferences(previous.preferences)
         try store.record(.init(versionID: head.current, activeVersionID: previousID,
             snapshotID: nil, status: .rejected, message: error.localizedDescription))
-        return try startupConfiguration(for: previous)
+        return previous.selectedNode
     }
 
     func confirmStartedVersion() throws {
@@ -103,9 +95,8 @@ extension TunnelStack {
             // No suspension between updating any module and starting intake.
             executeLifecycle(.stop, configuration: oldConfiguration)
             nativeBundle = bundle
-            AWCore.installRuntimePreferences(bundle.runtimePreferencesForInstall)
-            CertificatePolicy.reload()
-            guard let selected = try startupConfiguration(for: bundle) else {
+            AWCore.installRuntimePreferences(bundle.preferences)
+            guard let selected = bundle.selectedNode else {
                 throw RuntimeConfigurationFailure.invalidBundle
             }
             executeLifecycle(.start, configuration: selected)
@@ -122,9 +113,8 @@ extension TunnelStack {
             defer { configurationTransition.store(false, ordering: .releasing) }
             if phase == .running, runtime.epoch == epoch {
                 nativeBundle = old
-                if let old { AWCore.installRuntimePreferences(old.runtimePreferencesForInstall) }
+                if let old { AWCore.installRuntimePreferences(old.preferences) }
                 else { AWCore.installRuntimePreferences(nil) }
-                CertificatePolicy.reload()
                 do { try await applySettings(oldPreferences) }
                 catch {
                     // Continuing with uncertain OS routes would break rollback.

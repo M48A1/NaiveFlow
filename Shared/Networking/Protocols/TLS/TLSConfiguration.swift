@@ -7,6 +7,58 @@
 
 import Foundation
 
+/// A node's certificate trust settings. A configured pin must always match.
+nonisolated struct TLSCertificatePolicy: Hashable, Sendable, Codable {
+    let insecureSkipVerify: Bool
+    let certificateSHA256: String?
+
+    init(insecureSkipVerify: Bool = false, certificateSHA256: String? = nil) {
+        self.insecureSkipVerify = insecureSkipVerify
+        self.certificateSHA256 = Self.normalize(certificateSHA256)
+    }
+
+    static func normalize(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value.replacingOccurrences(of: ":", with: "")
+            .filter { !$0.isWhitespace }.lowercased()
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    static func isValidFingerprint(_ value: String?) -> Bool {
+        guard let value = normalize(value) else { return true }
+        return value.utf8.count == 64 && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+    }
+
+    static func skipVerification(in parameters: [String: String]) -> Bool {
+        let raw = parameters["skip-cert-verify"] ?? parameters["allowInsecure"] ?? parameters["insecure"] ?? "false"
+        return ["true", "1", "yes"].contains(raw.lowercased())
+    }
+
+    static func fingerprint(in parameters: [String: String]) throws -> String? {
+        let value = normalize(parameters["server-cert-fingerprint-sha256"] ?? parameters["pinSHA256"])
+        guard isValidFingerprint(value) else {
+            throw NaiveFlowError.parse(.invalidURL("Invalid SHA-256 certificate fingerprint"))
+        }
+        return value
+    }
+
+    var queryParameters: [String] {
+        (insecureSkipVerify ? ["allowInsecure=1"] : [])
+            + (certificateSHA256.map { ["server-cert-fingerprint-sha256=\($0)"] } ?? [])
+    }
+
+    private enum CodingKeys: String, CodingKey { case insecureSkipVerify, certificateSHA256 }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let fingerprint = try values.decodeIfPresent(String.self, forKey: .certificateSHA256)
+        guard Self.isValidFingerprint(fingerprint) else {
+            throw DecodingError.dataCorruptedError(forKey: .certificateSHA256, in: values, debugDescription: "Invalid SHA-256 certificate fingerprint")
+        }
+        self.init(insecureSkipVerify: try values.decodeIfPresent(Bool.self, forKey: .insecureSkipVerify) ?? false,
+                  certificateSHA256: fingerprint)
+    }
+}
+
 nonisolated enum TLSVersion: UInt16, Codable {
     case tls10 = 0x0301
     case tls11 = 0x0302
@@ -21,6 +73,10 @@ nonisolated struct TLSConfiguration {
     let maxVersion: TLSVersion?
     
     let insecureSkipVerify: Bool
+    let serverCertificateFingerprint: String?
+    var certificatePolicy: TLSCertificatePolicy {
+        TLSCertificatePolicy(insecureSkipVerify: insecureSkipVerify, certificateSHA256: serverCertificateFingerprint)
+    }
     
     let echEnabled: Bool
     let echConfig: String?
@@ -32,12 +88,13 @@ nonisolated struct TLSConfiguration {
          minVersion: TLSVersion? = nil, maxVersion: TLSVersion? = nil,
          echEnabled: Bool? = nil, echConfig: String? = nil,
          fingerprint: TLSFingerprint = .default,
-         insecureSkipVerify: Bool = false) {
+         insecureSkipVerify: Bool = false, serverCertificateFingerprint: String? = nil) {
         self.serverName = serverName
         self.alpn = alpn
         self.minVersion = minVersion
         self.maxVersion = maxVersion
         self.insecureSkipVerify = insecureSkipVerify
+        self.serverCertificateFingerprint = TLSCertificatePolicy.normalize(serverCertificateFingerprint)
         let inlineECH = (echConfig?.isEmpty ?? true) ? nil : echConfig
         self.echEnabled = echEnabled ?? (inlineECH != nil)
         self.echConfig = inlineECH
@@ -74,7 +131,9 @@ nonisolated struct TLSConfiguration {
             maxVersion: maxVersion,
             echEnabled: ech.enabled,
             echConfig: ech.config,
-            fingerprint: fingerprint
+            fingerprint: fingerprint,
+            insecureSkipVerify: TLSCertificatePolicy.skipVerification(in: params),
+            serverCertificateFingerprint: try TLSCertificatePolicy.fingerprint(in: params)
         )
     }
 
@@ -98,7 +157,7 @@ nonisolated struct TLSConfiguration {
 
 extension TLSConfiguration: Codable {
     enum CodingKeys: String, CodingKey {
-        case serverName, alpn, fingerprint, minVersion, maxVersion, echEnabled, echConfig, insecureSkipVerify
+        case serverName, alpn, fingerprint, minVersion, maxVersion, echEnabled, echConfig, insecureSkipVerify, serverCertificateFingerprint
     }
 
     init(from decoder: Decoder) throws {
@@ -109,6 +168,10 @@ extension TLSConfiguration: Codable {
         minVersion = try container.decodeIfPresent(TLSVersion.self, forKey: .minVersion)
         maxVersion = try container.decodeIfPresent(TLSVersion.self, forKey: .maxVersion)
         insecureSkipVerify = try container.decodeIfPresent(Bool.self, forKey: .insecureSkipVerify) ?? false
+        serverCertificateFingerprint = TLSCertificatePolicy.normalize(try container.decodeIfPresent(String.self, forKey: .serverCertificateFingerprint))
+        guard TLSCertificatePolicy.isValidFingerprint(serverCertificateFingerprint) else {
+            throw DecodingError.dataCorruptedError(forKey: .serverCertificateFingerprint, in: container, debugDescription: "Invalid SHA-256 certificate fingerprint")
+        }
         let rawECH = try container.decodeIfPresent(String.self, forKey: .echConfig)
         let inlineECH = (rawECH?.isEmpty ?? true) ? nil : rawECH
         // Absent flag → infer from inline config presence.
@@ -124,6 +187,7 @@ extension TLSConfiguration: Codable {
         try container.encodeIfPresent(minVersion, forKey: .minVersion)
         try container.encodeIfPresent(maxVersion, forKey: .maxVersion)
         if insecureSkipVerify { try container.encode(insecureSkipVerify, forKey: .insecureSkipVerify) }
+        try container.encodeIfPresent(serverCertificateFingerprint, forKey: .serverCertificateFingerprint)
         // Persist the flag only when it can't be inferred from `echConfig` presence.
         if echEnabled != (echConfig != nil) { try container.encode(echEnabled, forKey: .echEnabled) }
         try container.encodeIfPresent(echConfig, forKey: .echConfig)
@@ -138,6 +202,7 @@ nonisolated extension TLSConfiguration: Equatable, Hashable {
         lhs.minVersion == rhs.minVersion &&
         lhs.maxVersion == rhs.maxVersion &&
         lhs.insecureSkipVerify == rhs.insecureSkipVerify &&
+        lhs.serverCertificateFingerprint == rhs.serverCertificateFingerprint &&
         lhs.echEnabled == rhs.echEnabled &&
         lhs.echConfig == rhs.echConfig
     }
@@ -149,6 +214,7 @@ nonisolated extension TLSConfiguration: Equatable, Hashable {
         hasher.combine(minVersion)
         hasher.combine(maxVersion)
         hasher.combine(insecureSkipVerify)
+        hasher.combine(serverCertificateFingerprint)
         hasher.combine(echEnabled)
         hasher.combine(echConfig)
     }

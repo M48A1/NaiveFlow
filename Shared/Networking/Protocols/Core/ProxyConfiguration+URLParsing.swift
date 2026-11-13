@@ -128,7 +128,8 @@ nonisolated extension ProxyConfiguration {
                 NowhereConfiguration(
                     key: key,
                     network: network,
-                    morph: morph
+                    morph: morph,
+                    certificatePolicy: TLSCertificatePolicy(insecureSkipVerify: TLSCertificatePolicy.skipVerification(in: parameters), certificateSHA256: try TLSCertificatePolicy.fingerprint(in: parameters))
                 )
             )
         )
@@ -226,7 +227,8 @@ nonisolated extension ProxyConfiguration {
                     uploadMbps: rawUp ?? HysteriaCongestionControl.uploadMbpsDefault,
                     downloadMbps: rawDown ?? HysteriaCongestionControl.downloadMbpsDefault,
                     obfuscation: obfuscation,
-                    serverName: sni
+                    serverName: sni,
+                    certificatePolicy: TLSCertificatePolicy(insecureSkipVerify: TLSCertificatePolicy.skipVerification(in: parameters), certificateSHA256: try TLSCertificatePolicy.fingerprint(in: parameters))
                 )
             )
         )
@@ -236,7 +238,7 @@ nonisolated extension ProxyConfiguration {
         let body = try splitLinkBody(url, scheme: "trojan://", label: "trojan")
         
         let password = body.userInfo.removingPercentEncoding ?? body.userInfo
-        let tlsConfiguration = standardTLSConfiguration(from: body.parameters, host: body.host)
+        let tlsConfiguration = try standardTLSConfiguration(from: body.parameters, host: body.host)
 
         return ProxyConfiguration(
             name: body.fragment ?? "Untitled",
@@ -251,7 +253,7 @@ nonisolated extension ProxyConfiguration {
         let parameters = body.parameters
 
         let password = body.userInfo.removingPercentEncoding ?? body.userInfo
-        let tlsConfiguration = standardTLSConfiguration(from: parameters, host: body.host)
+        let tlsConfiguration = try standardTLSConfiguration(from: parameters, host: body.host)
 
         return ProxyConfiguration(
             name: body.fragment ?? "Untitled",
@@ -476,7 +478,7 @@ nonisolated extension ProxyConfiguration {
         return host
     }
     
-    private static func standardTLSConfiguration(from parameters: [String: String], host: String) -> TLSConfiguration {
+    private static func standardTLSConfiguration(from parameters: [String: String], host: String) throws -> TLSConfiguration {
         let serverName = resolvedServerName(from: parameters, host: host)
         var alpn: [String]? = nil
         if let alpnString = parameters["alpn"], !alpnString.isEmpty {
@@ -484,7 +486,7 @@ nonisolated extension ProxyConfiguration {
         }
         let fingerprint = parameters["fp"].flatMap { TLSFingerprint(importValue: $0) } ?? .default
         let ech = TLSConfiguration.echSettings(fromQueryValue: parameters["ech"])
-        return TLSConfiguration(serverName: serverName, alpn: alpn, echEnabled: ech.enabled, echConfig: ech.config, fingerprint: fingerprint)
+        return TLSConfiguration(serverName: serverName, alpn: alpn, echEnabled: ech.enabled, echConfig: ech.config, fingerprint: fingerprint, insecureSkipVerify: TLSCertificatePolicy.skipVerification(in: parameters), serverCertificateFingerprint: try TLSCertificatePolicy.fingerprint(in: parameters))
     }
 
     static func parseQueryParams(_ queryString: String?, keepFirst: Bool = false) -> [String: String] {

@@ -1,25 +1,10 @@
 import Foundation
 
-/// Inventory shape retained for configuration reports. Versioned publication
-/// never claims ownership of or deletes independently maintained app-store data.
-nonisolated struct ConfigurationInstallation: Codable, Equatable, Sendable {
-    var installedAt: Date = .now
-    var snapshotId: UUID?
-    var proxyIds: [String: UUID] = [:]
-    var groupIds: [String: UUID] = [:]
-    var ruleSetIds: [String: UUID] = [:]
-
-    var isEmpty: Bool {
-        proxyIds.isEmpty && groupIds.isEmpty && ruleSetIds.isEmpty
-    }
-}
-
 /// Installation reports are shared with the editor. The only applying adapter
 /// is ConfigurationPublisher; there is no separate store-by-store apply path.
 @MainActor
 enum ConfigurationInstaller {
     struct Outcome: Equatable, Sendable {
-        let installation: ConfigurationInstallation
         let plan: ConfigurationReloadPlan
         let modulePlan: ConfigurationCoordinator.Plan
         let addedProxies: [String]

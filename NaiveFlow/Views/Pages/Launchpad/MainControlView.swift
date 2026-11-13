@@ -61,24 +61,8 @@ struct MainControlView: View {
                 }
 
                 Section {
-                    Picker(selection: Binding(
-                        get: { settings.proxyMode },
-                        set: { settings.proxyMode = $0 }
-                    )) {
-                        Text("Rule").tag(ProxyMode.rule)
-                        Text("Global").tag(ProxyMode.global)
-                        Text("Direct").tag(ProxyMode.direct)
-                    } label: {
-                        Label("Outbound Mode", systemImage: "arrow.triangle.branch")
-                    }
-                    .disabled(selection.usesRuntimeVersion)
-
                     Button {
-                        if selection.effectiveConfiguration == nil {
-                            showingAdd = true
-                        } else {
-                            showingProxies = true
-                        }
+                        showingProxies = true
                     } label: {
                         HStack(spacing: 12) {
                             Label("Proxy", systemImage: "network")
@@ -93,16 +77,11 @@ struct MainControlView: View {
                     }
                     .foregroundStyle(.primary)
 
-                    NavigationLink {
-                        RoutingView()
-                    } label: {
-                        Label("Routing Rules", systemImage: "list.bullet.rectangle")
-                    }
                 } header: {
                     Text("Routing")
                 } footer: {
                     if selection.usesRuntimeVersion {
-                        Text("The active configuration controls routing. Edit Configuration to change it; these lists remain your manual library.")
+                        Text("The active configuration controls routing. Edit Configuration to change it; the node library is for organizing reusable nodes.")
                     }
                 }
 
@@ -134,12 +113,6 @@ struct MainControlView: View {
                 Section("Tools") {
                     NavigationLink { RequestsView() } label: {
                         Label("Requests", systemImage: "list.bullet.rectangle.portrait")
-                    }
-                    NavigationLink { MITMView() } label: {
-                        Label("MITM", systemImage: "lock.open")
-                    }
-                    NavigationLink { ModulesView() } label: {
-                        Label("Modules", systemImage: "shippingbox")
                     }
                     NavigationLink { DiagnosisView() } label: {
                         Label("Diagnosis", systemImage: "stethoscope")

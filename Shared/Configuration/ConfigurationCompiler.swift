@@ -103,24 +103,7 @@ nonisolated enum ConfigurationCompiler {
             capabilities: capabilities,
             diagnostics: &diagnostics
         )
-        var ordered = compileOrderedRules(configuration, policies: policies, diagnostics: &diagnostics)
-        if let country = configuration.general["bypass-country"], !country.isEmpty {
-            let extra = CountryBypassCatalog.shared.rules(for: country.uppercased())
-            if extra.isEmpty {
-                diagnostics.append(.init(severity: .error, code: .missingValue, section: "General",
-                    message: "bypass-country requires an installed country preset database; use explicit [GeoIP] data instead."))
-            }
-            var line = (ordered.rules.map(\.line).max() ?? 0) + 1
-            for rule in extra {
-                let matcher: OrderedRoutingRule.Matcher?
-                switch rule.type {
-                case .domainSuffix: matcher = .domainSuffix(rule.value)
-                case .domainKeyword: matcher = .domainKeyword(rule.value)
-                case .ipCIDR: matcher = CIDRPrefix.parse(rule.value).map { .ipCIDR($0) }
-                }
-                if let matcher { ordered.rules.append(.init(line: line, matcher: matcher, action: .direct, noResolve: true)); line += 1 }
-            }
-        }
+        let ordered = compileOrderedRules(configuration, policies: policies, diagnostics: &diagnostics)
         let geo = compileGeo(configuration, rules: ordered.rules, resources: geoResources, diagnostics: &diagnostics)
 
         let textMITM = TextMITMCompiler.compile(configuration, diagnostics: &diagnostics)
@@ -235,7 +218,7 @@ nonisolated extension ConfigurationCompiler {
     }
 
     /// Options the NaiveFlow field form accepts but this build cannot express are
-    /// reported instead of vanishing: dropping `skip-cert-verify` or `udp-relay`
+    /// reported instead of vanishing: dropping `udp-relay`
     /// silently would change behavior without saying so.
     static func reportDroppedOptions(
         _ proxy: ParsedProxy,
@@ -346,6 +329,8 @@ nonisolated extension ConfigurationCompiler {
             return ("uuid", yamlScalar(value))
         case "sni", "peer":
             return ("servername", yamlScalar(value))
+        case "skip-cert-verify":
+            return (key, yamlBool(value))
         case "tls", "over-tls":
             return ("tls", yamlBool(value))
         case "ws":
@@ -366,7 +351,7 @@ nonisolated extension ConfigurationCompiler {
              "enable-pure-downlink", "idle-session-check-interval",
              "idle-session-timeout", "min-idle-session", "path-root":
             return (key, yamlScalar(value))
-        case "skip-cert-verify", "udp", "udp-relay", "tfo", "mptcp", "ecn",
+        case "udp", "udp-relay", "tfo", "mptcp", "ecn",
              "test-url", "ip-version", "underlying-proxy", "block-quic",
              "no-error-alert", "fast-open":
             return nil
@@ -700,7 +685,7 @@ nonisolated extension ConfigurationCompiler {
 
     /// Emits one `CompiledRuleSet` per policy, in first-appearance order. This
     /// preserves the document's intent as far as the tiered matcher allows: all
-    /// rules that share a policy are evaluated together.
+    /// rules that share a policy are grouped for reports.
     static func compileRules(
         _ configuration: ParsedConfiguration,
         policies: [String: RouteTarget],
@@ -802,7 +787,6 @@ nonisolated extension ConfigurationCompiler {
     /// Unlike `compileRules`, this keeps every rule at its original line position
     /// with its own action (no grouping by policy), which is what first-match-wins
     /// semantics require. The tiered `compileRules` output remains only for the
-    /// preserved manual baseline.
     static func compileOrderedRules(
         _ configuration: ParsedConfiguration,
         policies: [String: RouteTarget],

@@ -13,36 +13,24 @@ actor AWNotificationCenter {
 
     enum Notification {
         nonisolated(unsafe) static let configurationVersionChanged = "\(AWCore.Identifier.bundle).configurationVersion" as CFString
-        nonisolated(unsafe) static let activeConfigurationChanged = "\(AWCore.Identifier.bundle).activeConfigurationChanged" as CFString
         nonisolated(unsafe) static let certificatePolicyChanged = "\(AWCore.Identifier.bundle).certificatePolicyChanged" as CFString
-        nonisolated(unsafe) static let mitmChanged = "\(AWCore.Identifier.bundle).mitmChanged" as CFString
-        nonisolated(unsafe) static let routingChanged = "\(AWCore.Identifier.bundle).routingChanged" as CFString
-        nonisolated(unsafe) static let tunnelSettingsChanged = "\(AWCore.Identifier.bundle).tunnelSettingsChanged" as CFString
     }
 
     // MARK: - Public API
 
     static func notifyConfigurationVersionChanged() { post(Notification.configurationVersionChanged) }
 
-    static func notifyActiveConfigurationChanged() {
-        post(Notification.activeConfigurationChanged)
-    }
 
-    static func notifyTunnelSettingsChanged() {
-        post(Notification.tunnelSettingsChanged)
-    }
 
-    static func notifyRoutingChanged() {
-        post(Notification.routingChanged)
-    }
+
+
+
 
     static func notifyCertificatePolicyChanged() {
         post(Notification.certificatePolicyChanged)
     }
 
-    static func notifyMITMChanged() {
-        post(Notification.mitmChanged)
-    }
+
 
     // MARK: - Throttled Posting
 

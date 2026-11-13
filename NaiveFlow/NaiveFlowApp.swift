@@ -22,10 +22,6 @@ struct NaiveFlowApp: App {
         let operations = Operations(container: container)
 
         let settings = AppSettings()
-        settings.onTunnelBehaviorChange = { [weak tunnel = container.tunnel] in
-            tunnel?.reconnect()
-        }
-
         Task { await CloudSync.shared.start { keys in await operations.reload(keys) } }
 
         _container = State(initialValue: container)
@@ -38,7 +34,6 @@ struct NaiveFlowApp: App {
             ContentView()
                 .dynamicTypeSize(...DynamicTypeSize.large)
                 .environment(operations)
-                .environment(container.appState)
                 .environment(container.tunnel)
                 .environment(container.selection)
                 .environment(container.latency)
@@ -47,10 +42,6 @@ struct NaiveFlowApp: App {
                 .environment(container.chainStore)
                 .environment(container.groupStore)
                 .environment(container.subscriptionStore)
-                .environment(container.routingRuleSetStore)
-                .environment(container.mitmRuleSetStore)
-                .environment(container.moduleStore)
-                .environment(container.certificateStore)
                 .environment(settings)
                 .environment(mitmCertificateController)
                 .environment(deepLinkManager)

@@ -608,10 +608,7 @@ actor TLSClient {
     // MARK: - Certificate Validation
 
     func validateCertificate() async throws {
-        if configuration.insecureSkipVerify {
-            return
-        }
-        switch await CertificatePolicy.verify(chain: serverCertificates, serverName: configuration.serverName) {
+        switch await CertificatePolicy.verify(chain: serverCertificates, serverName: configuration.serverName, policy: configuration.certificatePolicy) {
         case .trusted:
             return
         case .rejected(let reason):

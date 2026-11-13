@@ -62,8 +62,6 @@ nonisolated struct ConfigurationSettingKey: Identifiable, Sendable {
         case text
         /// One of `values`, matched case-insensitively.
         case enumeration([String])
-        /// ISO country code, uppercased.
-        case countryCode
         /// Comma list, trimmed, order preserved. An empty list clears the value.
         case list
         /// A single DNS server that must parse as `1.1.1.1`, `1.1.1.1:53` or
@@ -104,11 +102,6 @@ nonisolated struct ConfigurationSettingKey: Identifiable, Sendable {
         case .enumeration(let values):
             let normalized = trimmed.lowercased()
             return values.contains(normalized) ? .text(normalized) : nil
-
-        case .countryCode:
-            let code = trimmed.uppercased()
-            guard code.isEmpty || (code.count == 2 && code.allSatisfy(\.isLetter)) else { return nil }
-            return code.isEmpty ? nil : .text(code)
 
         case .list:
             let items = trimmed
@@ -196,13 +189,6 @@ nonisolated enum ConfigurationSettings {
             scope: .live,
             applies: true,
             summary: "Hides the VPN badge in the status bar."
-        ),
-        ConfigurationSettingKey(
-            name: "bypass-country",
-            kind: .countryCode,
-            scope: .live,
-            applies: true,
-            summary: "Routes this country's IP ranges directly."
         ),
 
         // MARK: Tunnel
@@ -395,15 +381,15 @@ nonisolated enum ConfigurationSettings {
             name: "allow-insecure",
             kind: .flag,
             scope: .stackRestart,
-            applies: true,
-            summary: "Accepts invalid upstream certificates (testing only)."
+            applies: false,
+            summary: "Removed global override; configure skip-cert-verify on each node."
         ),
         ConfigurationSettingKey(
             name: "trusted-certificate",
             kind: .list,
             scope: .live,
-            applies: true,
-            summary: "SHA-256 fingerprints of upstream certificates to trust."
+            applies: false,
+            summary: "Removed global trust list; configure server-cert-fingerprint-sha256 on each node."
         ),
         ConfigurationSettingKey(
             name: "trusted-ssid",
@@ -629,12 +615,6 @@ nonisolated enum ConfigurationSettingsBindings {
             if let flag = bool(value) { AWCore.setHideVPNIcon(flag) }
         }),
 
-        bind("bypass-country", read: {
-            let code = AWCore.getBypassCountryCode()
-            return code.isEmpty ? nil : .text(code.uppercased())
-        }, write: { value in
-            if let code = text(value) { AWCore.setBypassCountryCode(code.uppercased()) }
-        }),
 
         // MARK: Tunnel
 
@@ -802,16 +782,6 @@ nonisolated enum ConfigurationSettingsBindings {
 
         bind("mitm", read: { .flag(AWCore.getMITMEnabled()) }, write: { value in
             if let flag = bool(value) { AWCore.setMITMEnabled(flag) }
-        }),
-
-        bind("allow-insecure", read: { .flag(AWCore.getAllowInsecure()) }, write: { value in
-            if let flag = bool(value) { AWCore.setAllowInsecure(flag) }
-        }),
-
-        bind("trusted-certificate", read: {
-            .list(AWCore.getTrustedCertificateFingerprints())
-        }, write: { value in
-            if let fingerprints = list(value) { AWCore.setTrustedCertificateFingerprints(fingerprints) }
         }),
 
         bind("trusted-ssid", read: { .list(AWCore.getTrustedSSIDs()) }, write: { value in

@@ -45,6 +45,7 @@ nonisolated final class NowhereClient: Sendable {
         let key: String
         let morph: Bool
         let morphPrelude: NowhereMorphPrelude
+        let certificatePolicy: TLSCertificatePolicy
         let chain: [ProxyConfiguration]
     }
 
@@ -72,6 +73,7 @@ nonisolated final class NowhereClient: Sendable {
             key: configuration.key,
             morph: configuration.morph,
             morphPrelude: configuration.morphPrelude,
+            certificatePolicy: configuration.certificatePolicy,
             chain: []
         )
         return try registry.withLock { state in
@@ -112,6 +114,7 @@ nonisolated final class NowhereClient: Sendable {
             key: configuration.key,
             morph: configuration.morph,
             morphPrelude: configuration.morphPrelude,
+            certificatePolicy: configuration.certificatePolicy,
             chain: chain
         )
 

@@ -19,44 +19,43 @@ final class AppContainer {
     let selection = ProxySelection()
     let latency = LatencyCenter()
     let stats = ConnectionStats()
-    let appState = AppState()
 
     let configurationStore: ConfigurationStore
     let chainStore: ChainStore
     let groupStore: GroupStore
     let subscriptionStore: SubscriptionStore
-    let routingRuleSetStore: RoutingRuleSetStore
-    let mitmRuleSetStore: MITMRuleSetStore
-    let moduleStore: ModuleStore
-    let certificateStore: CertificateStore
     let subscriptionRefreshCoordinator = SubscriptionRefreshCoordinator()
-    let moduleRefreshCoordinator = RefreshTicketCoordinator<UUID>()
-    let mitmRefreshCoordinator = RefreshTicketCoordinator<UUID>()
-    let routingRefreshCoordinator = RefreshTicketCoordinator<UUID>()
 
-    private let routingExportDebouncer = Debouncer(interval: .seconds(2))
-    private let mitmExportDebouncer = Debouncer(interval: .milliseconds(500))
     private var started = false
 
     init(syncStore: SyncStore = .shared, tunnelProvider: TunnelProviding? = nil) {
         self.syncStore = syncStore
+        AWCore.discardManualSettings()
+        do {
+            try syncStore.discardRemovedConfigurationCollections()
+            let configurations = EngineConfirmationStore.directory
+            let group = configurations.deletingLastPathComponent()
+            for url in [configurations.appendingPathComponent("runtime"),
+                        configurations.appendingPathComponent("installation.json"),
+                        group.appendingPathComponent("routing.bin"), group.appendingPathComponent("mitm.bin")] {
+                if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+            }
+        } catch { ConfigurationActivation().record(error.localizedDescription) }
+
 
         tunnel = TunnelController(provider: tunnelProvider ?? LiveTunnelProvider())
         configurationStore = ConfigurationStore(syncStore: syncStore)
         chainStore = ChainStore(syncStore: syncStore)
         groupStore = GroupStore(syncStore: syncStore)
         subscriptionStore = SubscriptionStore(syncStore: syncStore)
-        routingRuleSetStore = RoutingRuleSetStore(syncStore: syncStore)
-        mitmRuleSetStore = MITMRuleSetStore(syncStore: syncStore)
-        moduleStore = ModuleStore(syncStore: syncStore)
-        certificateStore = CertificateStore()
         do {
             let publisher = ConfigurationPublisher(activation: ConfigurationActivation(), tunnel: tunnel,
+                clearStateSink: { [selection] in selection.clearRuntimeVersion() },
                 stateSink: { [selection] in selection.showRuntimeVersion($0) })
             try publisher.reconcile()
             if let head = try RuntimeBundleStore().head() {
                 let version = try RuntimeBundleStore().load(head.current)
-                AWCore.installRuntimePreferences(version.runtimePreferencesForInstall)
+                AWCore.installRuntimePreferences(version.preferences)
                 selection.showRuntimeVersion(version)
             }
         } catch RuntimeConfigurationFailure.busy { }
@@ -65,35 +64,12 @@ final class AppContainer {
 
     // MARK: - Operation Factories
 
-    var routingExportScheduler: RoutingExportScheduler {
-        RoutingExportScheduler(
-            debouncer: routingExportDebouncer,
-            ruleSetStore: routingRuleSetStore,
-            moduleStore: moduleStore,
-            configurationStore: configurationStore,
-            chainStore: chainStore
-        )
-    }
-
-    var mitmExportScheduler: MITMExportScheduler {
-        MITMExportScheduler(
-            debouncer: mitmExportDebouncer,
-            ruleSetStore: mitmRuleSetStore,
-            moduleStore: moduleStore
-        )
-    }
-
     var mutationReaction: StoreMutationReaction {
         StoreMutationReaction(
             configurationStore: configurationStore,
             chainStore: chainStore,
-            routingRuleSetStore: routingRuleSetStore,
-            moduleStore: moduleStore,
             selection: selection,
-            latency: latency,
-            appState: appState,
-            routingExportScheduler: routingExportScheduler,
-            mitmExportScheduler: mitmExportScheduler
+            latency: latency
         )
     }
 
@@ -106,8 +82,6 @@ final class AppContainer {
         Task { await LoadOperation(configurationStore: configurationStore, reaction: mutationReaction).run() }
         observeTunnelStatus()
         observeSelection()
-        routingExportScheduler.schedule()
-        mitmExportScheduler.schedule()
         tunnel.start()
     }
     
@@ -122,6 +96,7 @@ final class AppContainer {
                 if self.tunnel.rawStatus == .connected {
                     do {
                         try await ConfigurationPublisher(activation: ConfigurationActivation(), tunnel: self.tunnel,
+                            clearStateSink: { [selection = self.selection] in selection.clearRuntimeVersion() },
                             stateSink: { [selection = self.selection] in selection.showRuntimeVersion($0) }).recoverPending()
                     } catch RuntimeConfigurationFailure.busy { }
                     catch { ConfigurationActivation().record(error.localizedDescription) }

@@ -253,17 +253,15 @@ extension TLSClient {
                 
                 try await validateCertificate()
                 
-                let skipVerification = self.configuration.insecureSkipVerify || CertificatePolicy.allowInsecure
-                if !skipVerification {
-                    if let error = TLS13CertificateVerifier.verify(
+                // Skipping certificate trust checks must not skip proof of key possession.
+                if let error = TLS13CertificateVerifier.verify(
                         transcriptBeforeCertVerify: self.tls13.transcriptBeforeCertVerify,
                         algorithm: self.tls13.certificateVerifyAlgorithm,
                         signature: self.tls13.certificateVerifySignature,
                         serverCertificates: self.serverCertificates,
                         keyDerivation: self.tls13.keyDerivation
                     ) {
-                        throw error
-                    }
+                    throw error
                 }
                 
                 return try await finishTLS13Handshake(fullTranscript: fullTranscript)

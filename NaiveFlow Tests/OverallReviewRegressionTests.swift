@@ -107,26 +107,7 @@ struct OverallReviewRegressionTests {
         manager.handle(url: try #require(URL(string: raw)))
         #expect(manager.url == inner)
         manager.handle(url: try #require(URL(string: "naiveflow://add-rule-set?link=" + inner)))
-        #expect(manager.ruleSetLink?.absoluteString == inner)
-    }
-
-    @Test func foreignInstallLinksOpenTheModuleImporterWithTheCorrectFormat() throws {
-        let manager = DeepLinkManager()
-        let inner = "https://example.com/a%2Fb?token=x%252Fy&other=1"
-        let surge = try #require(inner.addingPercentEncoding(withAllowedCharacters: .alphanumerics))
-        manager.handle(url: try #require(URL(string: "surge:///install-module?url=" + surge)))
-        #expect(manager.moduleImport?.link.absoluteString == inner)
-        #expect(manager.moduleImport?.format == .surge)
-
-        let payload = #"{"rewrite_remote":["https://example.com/module"]}"#
-        let quantumult = try #require(payload.addingPercentEncoding(withAllowedCharacters: .alphanumerics))
-        manager.handle(url: try #require(URL(string: "quantumult-x:///add-resource?remote-resource=" + quantumult)))
-        #expect(manager.moduleImport?.link.absoluteString == "https://example.com/module")
-        #expect(manager.moduleImport?.format == .quantumultX)
-
-        manager.moduleImport = nil
-        manager.handle(url: try #require(URL(string: "surge:///install-module?url=file%3A%2F%2F%2Ftmp%2Fa")))
-        #expect(manager.moduleImport == nil)
+        #expect(manager.url == inner)
     }
 
     @Test func profileRequestsAreIncrementalBoundedAndPathRestricted() {
@@ -237,9 +218,8 @@ struct OverallReviewRegressionTests {
     private func bundle(parent: UUID?, padding: Int = 0) -> RuntimeConfigurationBundle {
         let node = ProxyConfiguration(name: "Direct", serverAddress: "", serverPort: 0, outbound: .direct(DirectConfiguration()))
         let preferences = Dictionary(uniqueKeysWithValues: AWCore.runtimePreferenceKeys.map { ($0, RuntimePreferenceValue.absent) })
-        return RuntimeConfigurationBundle(id: UUID(), snapshotID: nil, parentID: parent, preferences: preferences,
-            nodes: [node], selectedNodeID: node.id, rules: nil, finalAction: .direct, mitmRuleSets: [],
-            legacyRouting: Data(repeating: 65, count: padding), legacyMITM: nil)
+        return RuntimeConfigurationBundle(id: UUID(), snapshotID: UUID(), parentID: parent, preferences: preferences.merging(["activeConfiguration": .data(Data(repeating: 65, count: padding))], uniquingKeysWith: { _, new in new }),
+            nodes: [node], selectedNodeID: node.id, rules: [], finalAction: .direct, mitmRuleSets: [])
     }
 
     @Test func runtimePruningRetainsHeadsAndStopsRollbackAtRetentionBoundary() throws {

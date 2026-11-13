@@ -171,7 +171,7 @@ nonisolated extension ConfigurationSnapshotStore {
     /// True when the extension confirmed the snapshot the manifest points at.
     func isActiveSnapshotConfirmed() -> Bool {
         guard let activeId = manifest().activeSnapshotId else { return false }
-        guard let confirmation = confirmation(), confirmation.scope == .configuration else { return false }
+        guard let confirmation = confirmation() else { return false }
         return confirmation.snapshotId == activeId
     }
 }

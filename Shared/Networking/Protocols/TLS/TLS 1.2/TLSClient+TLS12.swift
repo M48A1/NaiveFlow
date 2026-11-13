@@ -321,9 +321,6 @@ extension TLSClient {
 
         if !isValid {
             let message = error?.takeRetainedValue().localizedDescription ?? "Signature verification failed"
-            if CertificatePolicy.allowInsecure {
-                return
-            }
             throw NaiveFlowError.tls(.certificateValidationFailed(detail: "ServerKeyExchange signature failed: \(message)"))
         }
     }

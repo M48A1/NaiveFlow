@@ -15,25 +15,9 @@ final class ProxySelection {
     private(set) var runtimeGroups: [RuntimeGroupDisplay] = []
     private(set) var runtimeConfiguration: ProxyConfiguration?
     var usesRuntimeVersion: Bool { runtimeConfiguration != nil }
-    var effectiveConfiguration: ProxyConfiguration? { runtimeConfiguration ?? selectedConfiguration }
+    var effectiveConfiguration: ProxyConfiguration? { runtimeConfiguration }
 
-    /// Adopts the active head configuration.
-    ///
-    /// A published text version (`snapshotID != nil`) pins the selection: the
-    /// document controls routing and the manual library is read-only.
-    ///
-    /// A manually captured baseline (`snapshotID == nil`) only *exits* text mode.
-    /// It must not overwrite the user's most recent manual selection: the live
-    /// node/chain is whatever is already selected in memory, or whatever the store
-    /// persisted (restored by `revalidate`). Only when nothing is selected and
-    /// nothing was saved do we bootstrap from the baseline's node. Keeping this
-    /// idempotent lets it run safely on every startup, reconnection confirmation
-    /// and reconcile receipt.
     func showRuntimeVersion(_ bundle: RuntimeConfigurationBundle) {
-        guard bundle.snapshotID != nil else {
-            adoptManualBaseline(bundle.selectedNode)
-            return
-        }
         guard let node = bundle.selectedNode else { return }
         runtimeConfiguration = node
         runtimeGroups = bundle.displayGroups.isEmpty ? bundle.policyGroups.map {
@@ -41,17 +25,9 @@ final class ProxySelection {
         } : bundle.displayGroups
     }
 
-    /// Leaves text mode without clobbering the saved manual selection. The
-    /// baseline's node is reused only as a last resort, when neither an in-memory
-    /// nor a persisted selection exists to restore.
-    private func adoptManualBaseline(_ baselineNode: ProxyConfiguration?) {
+    func clearRuntimeVersion() {
         runtimeConfiguration = nil
         runtimeGroups = []
-        guard selectedConfiguration == nil, selectedChainId == nil else { return }
-        guard AWCore.getSelectedChainId() == nil, AWCore.getSelectedConfigurationId() == nil else { return }
-        guard let baselineNode else { return }
-        AWCore.setSelectedConfigurationId(baselineNode.id)
-        selectedConfiguration = baselineNode
     }
 
     private(set) var selectedChainId: UUID?

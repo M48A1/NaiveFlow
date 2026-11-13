@@ -106,6 +106,7 @@ nonisolated final class HysteriaSession: Sendable {
             port: configuration.proxyPort,
             serverName: configuration.sni,
             alpn: ["h3"],
+            certificatePolicy: configuration.certificatePolicy,
             datagramsEnabled: true,
             tuning: .hysteria(congestionControl: configuration.congestionControl, uploadMbps: configuration.uploadMbps),
             obfuscator: obfuscator,

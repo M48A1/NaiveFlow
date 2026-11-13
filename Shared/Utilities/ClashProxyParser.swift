@@ -37,6 +37,10 @@ nonisolated enum ClashProxyParser {
 
     private static func parseProxy(_ node: YAML.Node) -> ProxyConfiguration? {
         guard let type = node.string(forKey: "type") else { return nil }
+        guard TLSCertificatePolicy.isValidFingerprint(node.string(forKey: "server-cert-fingerprint-sha256")) else { return nil }
+        if node["skip-cert-verify"] != nil || node["server-cert-fingerprint-sha256"] != nil {
+            guard ["trojan", "anytls", "hysteria2"].contains(type) || (type == "vless" && node.bool(forKey: "tls") == true && node["reality-opts"] == nil) else { return nil }
+        }
         switch type {
         case "vless":     return parseVLESSProxy(node)
         case "hysteria2": return parseHysteria2Proxy(node)
@@ -120,7 +124,9 @@ nonisolated enum ClashProxyParser {
                 alpn: alpn,
                 echEnabled: ech.enabled,
                 echConfig: ech.config,
-                fingerprint: fingerprint
+                fingerprint: fingerprint,
+                insecureSkipVerify: node.bool(forKey: "skip-cert-verify") ?? false,
+                serverCertificateFingerprint: node.string(forKey: "server-cert-fingerprint-sha256")
             ))
         } else {
             xraySecurityLayer = .none
@@ -190,7 +196,8 @@ nonisolated enum ClashProxyParser {
                     uploadMbps: parseBandwidthMbps(upload, default: HysteriaCongestionControl.uploadMbpsDefault),
                     downloadMbps: parseBandwidthMbps(download, default: HysteriaCongestionControl.downloadMbpsDefault),
                     obfuscation: obfuscation,
-                    serverName: serverName
+                    serverName: serverName,
+                    certificatePolicy: TLSCertificatePolicy(insecureSkipVerify: node.bool(forKey: "skip-cert-verify") ?? false, certificateSHA256: node.string(forKey: "server-cert-fingerprint-sha256"))
                 )
             )
         )
@@ -216,7 +223,9 @@ nonisolated enum ClashProxyParser {
             alpn: node.stringArray(forKey: "alpn"),
             echEnabled: ech.enabled,
             echConfig: ech.config,
-            fingerprint: parseFingerprint(node)
+            fingerprint: parseFingerprint(node),
+            insecureSkipVerify: node.bool(forKey: "skip-cert-verify") ?? false,
+            serverCertificateFingerprint: node.string(forKey: "server-cert-fingerprint-sha256")
         )
 
         return ProxyConfiguration(
@@ -245,7 +254,9 @@ nonisolated enum ClashProxyParser {
             alpn: node.stringArray(forKey: "alpn"),
             echEnabled: ech.enabled,
             echConfig: ech.config,
-            fingerprint: parseFingerprint(node)
+            fingerprint: parseFingerprint(node),
+            insecureSkipVerify: node.bool(forKey: "skip-cert-verify") ?? false,
+            serverCertificateFingerprint: node.string(forKey: "server-cert-fingerprint-sha256")
         )
 
         return ProxyConfiguration(

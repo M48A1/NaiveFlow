@@ -228,7 +228,7 @@ extension QUICConnectionCore {
     // MARK: QUIC engine
 
     func initializeQUIC() throws {
-        let tls = QUICTLSHandler(serverName: serverName, alpn: alpn)
+        let tls = QUICTLSHandler(serverName: serverName, alpn: alpn, certificatePolicy: certificatePolicy)
         let payloadSize = transport != nil ? Self.chainedMaxUDPPayload : directMaxUDPPayload
         var probes = Self.pmtudProbes.filter { $0 <= payloadSize }
         if let maximumProbe = UInt16(exactly: payloadSize),

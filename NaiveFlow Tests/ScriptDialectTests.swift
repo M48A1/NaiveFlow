@@ -63,13 +63,6 @@ struct ScriptDialectTests {
         #expect(try JSONDecoder().decode(MITMOperation.self, from: json) == .script(scriptBase64: encoded, dialect: .surge))
     }
 
-    @MainActor @Test func legacyRuleImportAcceptsExplicitQXAndDefaultsToSurge() {
-        let encoded = Data(source.utf8).base64EncodedString()
-        let defaultSet = MITMRuleSetParser.parse("hostname = example.com\n1, 100, ., \(encoded)")
-        let qxSet = MITMRuleSetParser.parse("hostname = example.com\n1, 100, ., \(encoded), quantumult-x")
-        #expect(defaultSet.rules.first?.operation == .script(scriptBase64: encoded, dialect: .surge))
-        #expect(qxSet.rules.first?.operation == .script(scriptBase64: encoded, dialect: .quantumultX))
-    }
     @Test func dialectOnlyEditTriggersMITMReload() {
         let before = TextConfigurationPipeline.process(text: profile()).compiled
         let after = TextConfigurationPipeline.process(text: profile(", dialect=quantumult-x")).compiled
@@ -87,9 +80,9 @@ struct ScriptDialectTests {
             let set = MITMRuleSet(name: "Scripts", domainSuffixes: ["example.com"], rules: [
                 MITMRule(phase: .httpResponse, urlPattern: ".", operation: .script(scriptBase64: Data(source.utf8).base64EncodedString(), dialect: dialect))
             ])
-            let bundle = RuntimeConfigurationBundle(id: UUID(), snapshotID: nil, parentID: nil,
+            let bundle = RuntimeConfigurationBundle(id: UUID(), snapshotID: UUID(), parentID: nil,
                 preferences: Dictionary(uniqueKeysWithValues: AWCore.runtimePreferenceKeys.map { ($0, RuntimePreferenceValue.absent) }), nodes: [node], selectedNodeID: node.id, rules: [], finalAction: .direct,
-                mitmRuleSets: [set], legacyRouting: nil, legacyMITM: nil)
+                mitmRuleSets: [set])
             try store.save(bundle)
             versions.append((bundle.id, dialect))
         }

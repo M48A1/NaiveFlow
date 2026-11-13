@@ -70,7 +70,7 @@ final class TunnelController {
         connectTask = Task { [weak self] in
             if let head = try? RuntimeBundleStore().head(),
                let version = try? RuntimeBundleStore().load(head.current) {
-                AWCore.installRuntimePreferences(version.runtimePreferencesForInstall)
+                AWCore.installRuntimePreferences(version.preferences)
             }
             guard let self else { return }
             await self.publish(configuration, refreshingIP: true)
@@ -144,7 +144,6 @@ final class TunnelController {
         guard let configuration else {
             guard AWCore.getActiveConfigurationData() != nil else { return }
             try? ActiveConfiguration.store(nil)
-            ConfigurationCoordinator.Announcement.activeConfiguration.post()
             return
         }
 
@@ -167,7 +166,6 @@ final class TunnelController {
             logger.report("[Tunnel] Active configuration encode failed", error: error)
             return
         }
-        ConfigurationCoordinator.Announcement.activeConfiguration.post()
     }
 
     /// Apply a complete version. Connection-level NE preferences participate by
@@ -183,13 +181,9 @@ final class TunnelController {
         let oldBundle = (activeID ?? bundle.parentID).flatMap { try? RuntimeBundleStore().load($0) }
         let reconnectKeys = ["alwaysOnEnabled", "tunnelIncludeAllNetworks", "tunnelExcludeLocalNetworks",
             "tunnelExcludeAPNs", "tunnelExcludeCellularServices", "tunnelExcludeDeviceCommunication"]
-        // A manual baseline (snapshotID == nil) is applied by restarting the
-        // provider so startup re-reads the live manual ActiveConfiguration and
-        // live preferences; a pinned text version only reconnects when an OS
-        // connection-level key changed.
-        let reconnect = bundle.snapshotID == nil || !wasUp || runtimeStatus?.phase != "running"
+        let reconnect = !wasUp || runtimeStatus?.phase != "running"
             || reconnectKeys.contains { oldBundle?.preferences[$0] != bundle.preferences[$0] }
-        AWCore.installRuntimePreferences(bundle.runtimePreferencesForInstall)
+        AWCore.installRuntimePreferences(bundle.preferences)
         if reconnect {
             pendingReconnect = false
             await provider.stop(disablingAlwaysOn: true)

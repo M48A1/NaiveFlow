@@ -31,21 +31,24 @@ nonisolated struct NowhereConfiguration: Codable, Hashable, Sendable {
     let network: NowhereNetwork
     let morph: Bool
     let morphPrelude: NowhereMorphPrelude
+    let certificatePolicy: TLSCertificatePolicy
 
     init(
         key: String,
         network: NowhereNetwork = .tcp,
         morph: Bool = true,
-        morphPrelude: NowhereMorphPrelude = .fade
+        morphPrelude: NowhereMorphPrelude = .fade,
+        certificatePolicy: TLSCertificatePolicy = .init()
     ) {
         self.key = key
         self.network = network
         self.morph = morph
         self.morphPrelude = morphPrelude
+        self.certificatePolicy = certificatePolicy
     }
 
     private enum CodingKeys: String, CodingKey {
-        case key, network, morph, morphPrelude
+        case key, network, morph, morphPrelude, certificatePolicy
     }
 
     init(from decoder: Decoder) throws {
@@ -54,16 +57,19 @@ nonisolated struct NowhereConfiguration: Codable, Hashable, Sendable {
             key: try container.decode(String.self, forKey: .key),
             network: try container.decodeIfPresent(NowhereNetwork.self, forKey: .network) ?? .tcp,
             morph: try container.decodeIfPresent(Bool.self, forKey: .morph) ?? true,
-            morphPrelude: try container.decodeIfPresent(NowhereMorphPrelude.self, forKey: .morphPrelude) ?? .fade
+            morphPrelude: try container.decodeIfPresent(NowhereMorphPrelude.self, forKey: .morphPrelude) ?? .fade,
+            certificatePolicy: try container.decodeIfPresent(TLSCertificatePolicy.self, forKey: .certificatePolicy) ?? .init()
         )
     }
 
-    static func tlsConfiguration(for host: String) -> TLSConfiguration {
+    static func tlsConfiguration(for host: String, policy: TLSCertificatePolicy = .init()) -> TLSConfiguration {
         TLSConfiguration(
             serverName: host,
             alpn: [NowhereProtocol.applicationProtocol],
             minVersion: .tls13,
-            maxVersion: .tls13
+            maxVersion: .tls13,
+            insecureSkipVerify: policy.insecureSkipVerify,
+            serverCertificateFingerprint: policy.certificateSHA256
         )
     }
 }
@@ -76,6 +82,7 @@ nonisolated struct NowhereRuntimeConfiguration: Hashable, Sendable {
     let network: NowhereNetwork
     let morph: Bool
     let morphPrelude: NowhereMorphPrelude
+    let certificatePolicy: TLSCertificatePolicy
     let authKey: NowhereProtocol.AuthKey
     let morphKeys: NowhereMorph.Keys?
 
@@ -95,11 +102,12 @@ nonisolated struct NowhereRuntimeConfiguration: Hashable, Sendable {
         network = configuration.network
         morph = configuration.morph
         morphPrelude = configuration.morphPrelude
+        certificatePolicy = configuration.certificatePolicy
         authKey = NowhereProtocol.deriveAuthKey(sharedKey: configuration.key)
         morphKeys = configuration.morph ? NowhereMorph.deriveKeys(sharedKey: configuration.key) : nil
     }
 
     var tlsConfiguration: TLSConfiguration {
-        NowhereConfiguration.tlsConfiguration(for: proxyHost)
+        NowhereConfiguration.tlsConfiguration(for: proxyHost, policy: certificatePolicy)
     }
 }

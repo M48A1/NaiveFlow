@@ -5,7 +5,7 @@ import Testing
 @MainActor
 struct ModuleFormatImportTests {
     @Test func surgeModuleImportsMetadataAndRewrite() async throws {
-        let made = try await ModuleOperations.makeModule(from: """
+        let made = try await ModuleImporter.makeModule(from: """
             #!name=Example
             #!desc=Example rewrite
             [URL Rewrite]
@@ -24,7 +24,7 @@ struct ModuleFormatImportTests {
 
     @Test(arguments: ["", "[rewrite_local]\n"])
     func quantumultSnippetImportsRulesAndScripts(prefix: String) async throws {
-        let made = try await ModuleOperations.makeModule(from: prefix + """
+        let made = try await ModuleImporter.makeModule(from: prefix + """
             ^https://example.com/ad url reject
             ^https://example.com/script url script-response-body https://example.com/test.js
             hostname = *.example.com

@@ -23,7 +23,7 @@ struct HomeView: View {
         } set: { page in
             guard let page else { return }
             switch page {
-            case .launchpad, .proxies, .requests:
+            case .launchpad, .proxies:
                 selectedTab = page
             case .toolbox:
                 toolboxPath = []
@@ -44,24 +44,13 @@ struct HomeView: View {
                 Section {
                     sidebarRow(.launchpad)
                     sidebarRow(.proxies)
-                    sidebarRow(.requests)
                     sidebarRow(.toolbox)
                 }
                 Section("App") {
                     sidebarRow(.data)
-                    sidebarRow(.personalization)
                 }
                 Section("VPN") {
-                    sidebarRow(.tunnel)
-                    sidebarRow(.purify)
-                    sidebarRow(.routing)
-                    sidebarRow(.mitm)
-                    sidebarRow(.modules)
                     sidebarRow(.configuration)
-                }
-                Section("Security") {
-                    sidebarRow(.trustedCertificates)
-                    sidebarRow(.trustedNetwork)
                 }
                 Section("More") {
                     sidebarRow(.diagnosis)
@@ -75,9 +64,6 @@ struct HomeView: View {
                 }
                 Tab(Page.proxies.name, systemImage: Page.proxies.symbol, value: Page.proxies) {
                     ProxiesView(isPresentedAsSheet: false)
-                }
-                Tab(Page.requests.name, systemImage: Page.requests.symbol, value: Page.requests) {
-                    NavigationStack { RequestsView() }
                 }
                 Tab(Page.toolbox.name, systemImage: Page.toolbox.symbol, value: Page.toolbox) {
                     ToolboxView(path: $toolboxPath)

@@ -86,7 +86,9 @@ nonisolated extension ProxyClient {
             alpn: sanitizedALPN,
             echEnabled: base.echEnabled,
             echConfig: base.echConfig,
-            fingerprint: base.fingerprint
+            fingerprint: base.fingerprint,
+            insecureSkipVerify: base.insecureSkipVerify,
+            serverCertificateFingerprint: base.serverCertificateFingerprint
         )
     }
 
@@ -342,7 +344,8 @@ nonisolated extension ProxyClient {
         let port = endpoint.port
         let serverName = endpoint.serverName
         let useResolvedAddress = useResolvedAddressForDirectDial
-        let key = "h3|\(host)|\(port)|\(serverName)"
+        let policy = endpoint.security.tlsConfiguration?.certificatePolicy ?? .init()
+        let key = "h3|\(host)|\(port)|\(serverName)|\(Self.xmuxSecurityKey(endpoint.security))"
         let manager = XHTTPXMUXMultiplexerRegistry.shared.manager(key: key, chain: chain, config: xmux) {
             { () async -> XHTTPXMUXMultiplexerPoolable? in
                 try? await ProxyClient.withChainTunnel(
@@ -352,7 +355,7 @@ nonisolated extension ProxyClient {
                     useResolvedAddressForDirectDial: useResolvedAddress
                 ) { tunnel in
                     HTTP3Multiplexer(
-                        host: host, port: port, serverName: serverName,
+                        host: host, port: port, serverName: serverName, certificatePolicy: policy,
                         transport: tunnel.map { ProxyConnectionDatagramTransport(connection: $0) }
                     )
                 }
@@ -406,7 +409,7 @@ nonisolated extension ProxyClient {
         case .none:
             return "none"
         case .tls(let tls):
-            return "tls|\(tls.fingerprint.rawValue)|\(tls.echEnabled)|\(tls.echConfig ?? "")"
+            return "tls|\(tls.fingerprint.rawValue)|\(tls.echEnabled)|\(tls.echConfig ?? "")|\(tls.insecureSkipVerify)|\(tls.serverCertificateFingerprint ?? "")"
         case .reality(let reality):
             return "reality|\(reality.fingerprint.rawValue)|\(reality.publicKey.base64EncodedString())|\(reality.shortId.base64EncodedString())"
         }
@@ -463,7 +466,9 @@ nonisolated extension ProxyClient {
             case .tls(let tlsConfig):
                 let h2TLS = TLSConfiguration(
                     serverName: tlsConfig.serverName, alpn: ["h2", "http/1.1"],
-                    echEnabled: tlsConfig.echEnabled, echConfig: tlsConfig.echConfig, fingerprint: tlsConfig.fingerprint
+                    echEnabled: tlsConfig.echEnabled, echConfig: tlsConfig.echConfig, fingerprint: tlsConfig.fingerprint,
+                    insecureSkipVerify: tlsConfig.insecureSkipVerify,
+                    serverCertificateFingerprint: tlsConfig.serverCertificateFingerprint
                 )
                 let client = TLSClient(configuration: h2TLS)
                 let connection: TLSRecordConnection
@@ -569,7 +574,7 @@ nonisolated extension ProxyClient {
         route: XHTTPLegRoute
     ) async throws -> XHTTPDialedTransport {
         let makeSession: (String, QUICDatagramTransport?) -> XHTTPDialedTransport = { host, transport in
-            .http3(HTTP3Multiplexer(host: host, port: endpoint.port, serverName: endpoint.serverName, transport: transport))
+            .http3(HTTP3Multiplexer(host: host, port: endpoint.port, serverName: endpoint.serverName, certificatePolicy: endpoint.security.tlsConfiguration?.certificatePolicy ?? .init(), transport: transport))
         }
         switch route {
         case .direct:
@@ -672,7 +677,9 @@ nonisolated extension ProxyClient {
             case .tls(let tlsConfig):
                 let h1TLS = TLSConfiguration(
                     serverName: tlsConfig.serverName, alpn: ["http/1.1"],
-                    echEnabled: tlsConfig.echEnabled, echConfig: tlsConfig.echConfig, fingerprint: tlsConfig.fingerprint
+                    echEnabled: tlsConfig.echEnabled, echConfig: tlsConfig.echConfig, fingerprint: tlsConfig.fingerprint,
+                    insecureSkipVerify: tlsConfig.insecureSkipVerify,
+                    serverCertificateFingerprint: tlsConfig.serverCertificateFingerprint
                 )
                 let client = TLSClient(configuration: h1TLS)
                 let connection: TLSRecordConnection

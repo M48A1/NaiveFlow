@@ -82,7 +82,8 @@ final class ProxyTunnel {
             port: port,
             sni: serverName,
             alpn: alpn,
-            tunnel: connection
+            tunnel: connection,
+            certificatePolicy: TLSCertificatePolicy(insecureSkipVerify: TestEnvironment.allowInsecure)
         )
         try await transport.connect()
         return TLSTransportStream(transport)

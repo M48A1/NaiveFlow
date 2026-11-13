@@ -172,10 +172,21 @@ nonisolated struct ProxyConfiguration: Identifiable, Hashable, Codable, Sendable
     var outboundProtocol: OutboundProtocol { outbound.outboundProtocol }
 
     var isDirect: Bool { outboundProtocol == .direct }
+
+    var nodeCertificatePolicy: TLSCertificatePolicy {
+        switch outbound {
+        case .nowhere(let node): node.certificatePolicy
+        case .hysteria(let node): node.certificatePolicy
+        case .vless(let node): node.security.tlsConfiguration?.certificatePolicy ?? .init()
+        case .trojan(let node): node.tlsConfiguration?.certificatePolicy ?? .init()
+        case .anytls(let node): node.tlsConfiguration?.certificatePolicy ?? .init()
+        default: .init()
+        }
+    }
     
     var genericSecurityLayer: GenericSecurityLayer {
         switch outbound {
-        case .nowhere:                       .tls(NowhereConfiguration.tlsConfiguration(for: serverAddress))
+        case .nowhere(let configuration):    .tls(NowhereConfiguration.tlsConfiguration(for: serverAddress, policy: configuration.certificatePolicy))
         case .trojan(let configuration):    configuration.securityLayer
         case .anytls(let configuration):    configuration.securityLayer
         default:                            .none

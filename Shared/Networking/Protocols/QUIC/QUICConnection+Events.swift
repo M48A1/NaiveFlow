@@ -122,8 +122,9 @@ extension QUICConnectionCore {
 
     func verifyPeer(certificates: [Data]) {
         let serverName = self.serverName
+        let certificatePolicy = self.certificatePolicy
         Task(priority: .userInitiated) { [weak owner] in
-            let failure = await QUICTLSHandler.verifyPeer(certificates: certificates, serverName: serverName)
+            let failure = await QUICTLSHandler.verifyPeer(certificates: certificates, serverName: serverName, policy: certificatePolicy)
             owner?.update { core in
                 guard core.phase == .handshaking, let engine = core.engine else { return }
                 try? engine.completePeerVerification(error: failure, now: core.currentTimestamp())

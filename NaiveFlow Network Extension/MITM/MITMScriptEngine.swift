@@ -884,7 +884,7 @@ actor MITMScriptEngine {
         if let insecureValue = options?.objectForKeyedSubscript("insecure"), insecureValue.isBoolean {
             insecure = insecureValue.toBool()
         } else {
-            insecure = AWCore.getAllowInsecure()
+            insecure = false
         }
 
         let maxBytes = Self.httpMaxResponseBytes

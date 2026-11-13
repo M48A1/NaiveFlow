@@ -12,22 +12,10 @@ import Observation
 @Observable
 final class DeepLinkManager {
     var url: String?
-    var ruleSetLink: URL?
-    struct ModuleImport: Equatable {
-        let link: URL
-        let format: ModuleFormat?
-    }
-
-    var moduleImport: ModuleImport?
-
     func handle(url: URL) {
         switch url.scheme?.lowercased() {
         case "naiveflow":
             handleNaiveFlowScheme(url)
-        case "surge", "quantumult-x":
-            if let request = Self.foreignModuleImport(from: url) {
-                moduleImport = request
-            }
         case "nowhere", "vless", "hysteria2", "hy2", "trojan", "anytls", "ss":
             self.url = url.absoluteString
         default:
@@ -40,45 +28,8 @@ final class DeepLinkManager {
         switch url.host?.lowercased() {
         case "add-proxy":
             self.url = link
-        case "add-rule-set":
-            ruleSetLink = URL(string: link)
-        case "add-module":
-            if let url = URL(string: link) { moduleImport = ModuleImport(link: url, format: nil) }
         default:
             break
-        }
-    }
-
-    private static func foreignModuleImport(from url: URL) -> ModuleImport? {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              components.host?.isEmpty != false else { return nil }
-        let parameters = components.queryItems ?? []
-        let link: String
-        let format: ModuleFormat
-        switch (components.scheme?.lowercased(), components.path) {
-        case ("surge", "/install-module"):
-            guard let value = parameters.first(where: { $0.name == "url" })?.value else { return nil }
-            link = value
-            format = .surge
-        case ("quantumult-x", "/add-resource"):
-            guard let value = parameters.first(where: { $0.name == "remote-resource" })?.value,
-                  let resources = try? JSONDecoder().decode(QuantumultResources.self, from: Data(value.utf8)),
-                  resources.rewriteRemote.count == 1,
-                  let rewrite = resources.rewriteRemote.first else { return nil }
-            link = rewrite
-            format = .quantumultX
-        default:
-            return nil
-        }
-        guard let subscription = Module.validSubscriptionURL(from: link) else { return nil }
-        return ModuleImport(link: subscription, format: format)
-    }
-
-    private struct QuantumultResources: Decodable {
-        let rewriteRemote: [String]
-
-        enum CodingKeys: String, CodingKey {
-            case rewriteRemote = "rewrite_remote"
         }
     }
 

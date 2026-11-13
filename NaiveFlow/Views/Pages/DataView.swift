@@ -11,49 +11,10 @@ struct DataView: View {
     @Environment(AppSettings.self) private var appSettings
     @Environment(Operations.self) private var operations
     @Environment(SubscriptionStore.self) private var subscriptionStore
-    @Environment(RoutingRuleSetStore.self) private var routingRuleSetStore
-    @Environment(MITMRuleSetStore.self) private var mitmRuleSetStore
-    @Environment(ModuleStore.self) private var moduleStore
 
     @State private var isUpdating = false
     @State private var updateSucceeded = false
     @State private var updateError: String?
-
-    private enum SubscribedItem {
-        case proxies(Subscription)
-        case routingRuleSet(CustomRoutingRuleSet)
-        case mitmRuleSet(MITMRuleSet)
-        case module(Module)
-
-        var name: String {
-            switch self {
-            case .proxies(let subscription): subscription.name
-            case .routingRuleSet(let ruleSet): ruleSet.name
-            case .mitmRuleSet(let ruleSet): ruleSet.name
-            case .module(let module): module.name
-            }
-        }
-
-        func refresh(using operations: Operations) async throws {
-            switch self {
-            case .proxies(let subscription):
-                try await operations.subscriptions.refresh(subscription)
-            case .routingRuleSet(let ruleSet):
-                try await operations.routingRuleSets.refresh(ruleSet.id)
-            case .mitmRuleSet(let ruleSet):
-                try await operations.mitmRuleSets.refresh(id: ruleSet.id)
-            case .module(let module):
-                try await operations.modules.refresh(id: module.id)
-            }
-        }
-    }
-
-    private var subscribedItems: [SubscribedItem] {
-        subscriptionStore.subscriptions.map(SubscribedItem.proxies)
-            + routingRuleSetStore.customRuleSets.filter { $0.subscriptionURL != nil }.map(SubscribedItem.routingRuleSet)
-            + mitmRuleSetStore.ruleSets.filter { $0.subscriptionURL != nil }.map(SubscribedItem.mitmRuleSet)
-            + moduleStore.modules.filter(\.isSubscribed).map(SubscribedItem.module)
-    }
 
     var body: some View {
         NavigationStack {
@@ -78,9 +39,9 @@ struct DataView: View {
                             }
                         }
                     }
-                    .disabled(isUpdating || subscribedItems.isEmpty)
+                    .disabled(isUpdating || subscriptionStore.subscriptions.isEmpty)
                 } footer: {
-                    Text("Re-fetches every proxy subscription, subscribed rule set, and subscribed module.")
+                    Text("Re-fetches every proxy subscription.")
                 }
             }
             .navigationTitle("Data")
@@ -97,7 +58,7 @@ struct DataView: View {
 
     private func updateAllSubscriptions() {
         guard !isUpdating else { return }
-        let items = subscribedItems
+        let items = subscriptionStore.subscriptions
         guard !items.isEmpty else { return }
         isUpdating = true
         Task {
@@ -107,7 +68,7 @@ struct DataView: View {
                     let name = item.name
                     group.addTask {
                         do {
-                            try await item.refresh(using: operations)
+                            try await operations.subscriptions.refresh(item)
                             return nil
                         } catch {
                             return "\(name): \(error.localizedDescription)"

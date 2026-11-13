@@ -34,7 +34,7 @@ nonisolated struct SubscriptionFetcher {
             request.setValue(AWCore.getRemnawaveHWID(), forHTTPHeaderField: "x-hwid")
         }
 
-        let allowInsecure = AWCore.getAllowInsecure()
+        let allowInsecure = false // Node exceptions never apply to subscription downloads.
         let (data, response): (Data, URLResponse)
         do {
             if let viaUpstream = try await fetchViaConfiguredDNS(request, allowInsecure: allowInsecure) {

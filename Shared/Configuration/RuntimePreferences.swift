@@ -48,13 +48,6 @@ nonisolated final class RuntimePreferences: @unchecked Sendable {
         pinned.withLock { $0 = values }
     }
 
-    /// Installs a version's read view: pinned when the bundle is an immutable
-    /// text version, and unpinned (`nil`) for a manual baseline so live
-    /// UserDefaults drive reads again after a rollback to manual mode.
-    func install(pins: Bool, values: [String: RuntimePreferenceValue]) {
-        install(pins ? values : nil)
-    }
-
     func snapshot(keys: [String]) -> [String: RuntimePreferenceValue] {
         let version = RuntimePreferenceContext.capture?.values.withLock { $0 } ?? pinned.withLock { $0 }
         return Dictionary(uniqueKeysWithValues: keys.map { key in

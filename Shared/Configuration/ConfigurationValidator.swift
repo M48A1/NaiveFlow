@@ -33,7 +33,6 @@ nonisolated enum ConfigurationValidator {
         let maxRuleCount: Int
 
         /// Native documents use the ordered matcher and explicit local geo data.
-        /// The preserved manual baseline continues using its original matcher.
         static let current = Capabilities(
             ruleKinds: [.domain, .domainSuffix, .domainKeyword, .domainWildcard, .domainRegex, .urlRegex,
                         .ipCIDR, .sourceIP, .sourcePort, .destinationPort, .protocolType,
@@ -45,7 +44,7 @@ nonisolated enum ConfigurationValidator {
             supportsFinal: true,
             supportsLogicalRules: true,
             supportsGeoDatabases: true,
-            maxRuleCount: CustomRoutingRuleSet.maxRuleCount
+            maxRuleCount: 100_000
         )
     }
 
@@ -157,8 +156,6 @@ nonisolated enum ConfigurationValidator {
             return "needs a value"
         case .enumeration(let values):
             return "must be one of \(values.joined(separator: ", "))"
-        case .countryCode:
-            return "must be a two-letter country code"
         case .list:
             return "expects a comma-separated list"
         case .plainServer:
@@ -688,9 +685,7 @@ nonisolated extension ConfigurationValidator {
             )
         }
 
-        // The routing payload stores a rule value in a UInt16 length field and
-        // skips longer values when it writes the file, so an over-long value has
-        // to be an error here: otherwise the rule disappears without a trace.
+        // Bound each rule value independently of the overall document size.
         for rule in configuration.rules {
             let size = rule.value?.utf8.count ?? 0
             guard size > Int(UInt16.max) else { continue }
@@ -700,7 +695,7 @@ nonisolated extension ConfigurationValidator {
                     code: .ruleValueTooLong,
                     line: rule.line,
                     section: ConfigurationDocument.SectionKind.rule.displayName,
-                    message: "The rule value is \(size) UTF-8 bytes; the routing payload accepts at most \(UInt16.max)."
+                    message: "The rule value is \(size) UTF-8 bytes; each rule accepts at most \(UInt16.max)."
                 )
             )
         }

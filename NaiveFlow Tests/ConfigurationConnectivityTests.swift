@@ -13,10 +13,6 @@ import Foundation
 struct ConfigurationConnectivityTests {
     static let requestTimeout: Double = 25
 
-    init() {
-        TestEnvironment.applyInsecureOverrideIfNeeded()
-    }
-
     private func uniqueToken(_ tag: String) -> String {
         "\(tag)-\(UInt64.random(in: 0...UInt64.max))"
     }
@@ -53,7 +49,6 @@ struct ConfigurationConnectivityTests {
     // MARK: - HTTP/1.1 over TLS (ALPN http/1.1) over the proxy
 
     @Test func http11OverTLSRoundTrips() async throws {
-        TestEnvironment.applyInsecureOverrideIfNeeded()
         let config = try TestEnvironment.proxyConfiguration()
         let host = try TestEnvironment.requireTargetHost()
         let port = TestEnvironment.httpsPort
@@ -85,7 +80,6 @@ struct ConfigurationConnectivityTests {
     // MARK: - HTTP/2 over TLS (ALPN h2) over the proxy
 
     @Test func http2RoundTrips() async throws {
-        TestEnvironment.applyInsecureOverrideIfNeeded()
         let config = try TestEnvironment.proxyConfiguration()
         let host = try TestEnvironment.requireTargetHost()
         let port = TestEnvironment.httpsPort
@@ -141,7 +135,6 @@ struct ConfigurationConnectivityTests {
     }
 
     @Test func http2LargePayloadIsByteExact() async throws {
-        TestEnvironment.applyInsecureOverrideIfNeeded()
         let config = try TestEnvironment.proxyConfiguration()
         let host = try TestEnvironment.requireTargetHost()
         let port = TestEnvironment.httpsPort

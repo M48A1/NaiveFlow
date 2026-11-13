@@ -30,6 +30,11 @@ nonisolated enum XrayTransportLayer: Hashable, Sendable {
 // MARK: - Xray Security Layer Configuration
 
 nonisolated enum XraySecurityLayer: Hashable, Sendable {
+    var tlsConfiguration: TLSConfiguration? {
+        if case .tls(let tls) = self { return tls }
+        return nil
+    }
+
     case none
     case tls(TLSConfiguration)
     case reality(RealityConfiguration)

@@ -1,6 +1,6 @@
 # 第一步：工程基线检查
 
-最新构建与测试记录见文末「2026-11-13 DNS 缓存清理优化」。以下早期记录保留当时状态。
+最新构建与测试记录见文末「2026-11-13 节点级 TLS 证书设置」。以下早期记录保留当时状态。
 
 检查日期：2026-11-03（静态检查）、2026-11-04（依赖收敛与构建）。状态：iOS 与 tvOS 无签名构建通过；签名、真机与单元测试验收未完成。
 
@@ -59,7 +59,6 @@ Xcode 27.2 已安装并启用，许可阻塞已解除。本次删除 Watch 目�
 - 删除 StoreKit 内购层：`NaiveFlow/Stores/VoyagerStore.swift`（商品加载、购买、恢复、交易监听、会员凭证）以及空目录 `NaiveFlow/Stores`。
 - 删除付费墙 UI：`Views/Components/VoyagerNotice.swift`、`Views/Components/JoinVoyagerButton.swift`。
 - 删除依赖会员身份的公开测试页：`Views/Pages/About/AdvancedSettings/JoinBetaView.swift`，并从 `AdvancedSettingsView` 移除 “Public Beta” 入口，保留 “Experimental Features”。
-- 移除 `PersonalizationView` 的 “Voyager Member Card” 开关、`ToolboxView`/`HomeView` 的会员卡片块，以及 `CustomizeAppIconView`、`CustomizeThemeView` 的 `isMember` 门禁（原先是未购买即禁用）。
 - `NaiveFlowApp` 不再创建/注入 `VoyagerStore`。
 - `Shared/AWCore.swift` 移除 `voyagerMembership`、`showVoyagerCard` 两个 UserDefaults 键及其读写方法；`AppSettings` 移除 `showVoyagerCard`。
 - `AboutView` 删除 Telegram 群组 `Link` 段，并删除仅为该链接存在的 `TextWithColorfulIconAndCustomImage` 组件；`AcknowledgementsView` 商标列表移除 Telegram 条目。
@@ -368,3 +367,30 @@ swift test --package-path Packages/NaiveFlowIP --scratch-path /tmp/NaiveFlow-IP-
 | 1,024 | 745.190 ms | 31.231 ms |
 
 程序位于 `/tmp/NaiveFlowDNSBenchmark.swift`，最终样本为 `/tmp/NaiveFlow-dns-before-final.txt` 和 `/tmp/NaiveFlow-dns-after-final.txt`。独立程序使用 `systemUptime` 作为单调时钟及睡眠适配器；基准路径未设置等待超时，因此不执行睡眠适配器。结果只说明合成场景的缓存管理开销，受调度影响，不代表真实 DNS 延迟、VPN 吞吐或所有缓存写入场景的收益。临时目录中的日志和程序可能被系统清理。
+
+
+### 2026-11-13 节点级 TLS 证书设置
+
+- 参考 Surge 的节点 TLS 参数，将验证开关与可选证书 SHA-256 指纹移到节点编辑表单。默认开启验证；填写指纹后必须匹配叶证书，即使该节点关闭系统验证也不能跳过指纹匹配。不影响 MITM 根证书管理。
+- 覆盖 Nowhere、VLESS TLS、Trojan、AnyTLS 和 Hysteria；REALITY 沿用自身验证协议，不显示普通 TLS 证书例外。XHTTP 下载端点单独配置。WebSocket、gRPC、XHTTP 各传输分支重建 TLS 配置时保留验证设置。
+- 支持节点 `skip-cert-verify` 和 `server-cert-fingerprint-sha256`；节点 JSON、Clash 导入、AJSON 导入、分享链接及配置导出保留设置。错误指纹在表单保存、JSON 解码及导入校验中被拒绝；不支持普通 TLS 的 Clash 节点不得静默吞掉此类参数。
+- 连接池包含信任策略，避免复用不同策略的连接。QUIC 对指定指纹或关闭验证的自定义策略禁用会话票据复用，重新交换并验证证书；默认系统验证仍保留原有会话复用。
+- 全局 Trusted Certificates 页面及 tvOS 对应入口移除。旧全局数据保留用于提示，但不再影响连接、订阅下载或脚本 HTTP 的默认信任。脚本显式请求的 `insecure` 选项仍按单次请求处理。旧 `[General] allow-insecure`、`trusted-certificate` 被识别为不再支持的配置并阻止激活；用户需为相关节点重新配置例外，未将旧指纹列表自动复制给所有节点。旧节点 JSON 缺少新字段时默认使用系统验证；运行版本保留旧偏好键的结构兼容性。
+- TLS 1.2/1.3 和 QUIC 始终保留服务器握手签名验证；跳过 PKI 信任检查不再跳过密钥持有证明。
+- 新增 `NodeCertificatePolicyTests` 14 项，包含自签名匹配/不匹配、节点间隔离、关闭验证时的强制指纹、格式校验、旧 JSON 默认值、存储与分享链接回读、Surge 参数编译、Clash 导入、QUIC 验证及连接池隔离、旧全局参数拒绝。14 项全部通过。
+
+| 检查 | 最终结果 | 本机日志 / 结果 |
+| --- | --- | --- |
+| iPhone 17 / iOS 27.2 全量回归 | TEST SUCCEEDED；413 项通过、0 失败、8 项跳过，共 421 项 | `/tmp/NaiveFlow-node-tls-regression.log`；`/tmp/NaiveFlow-node-tls-regression.xcresult` |
+| 最终 iOS 应用、扩展、Widget 无签名构建 | BUILD SUCCEEDED | `/tmp/NaiveFlow-node-tls-final-ios.log` |
+| 最终 macOS 无签名构建 | BUILD SUCCEEDED | `/tmp/NaiveFlow-node-tls-final-macos.log` |
+| 最终 tvOS 无签名构建 | BUILD SUCCEEDED | `/tmp/NaiveFlow-node-tls-final-tvos.log` |
+| 差异检查 | `git diff --check` 通过 | — |
+
+测试数量按 xcresult summary 的测试定义口径，参数化展开后为 423 次通过、8 次跳过；摘要 `/tmp/NaiveFlow-node-tls-summary.json`。8 项跳过仍为缺少受控代理或外部脚本素材的测试。
+
+首次编译发现两处 TLS 字段被错误带入 REALITY 构造器，已修正；新增测试样例随后补齐 VLESS 构造参数。首轮实际测试中 14 项新测试全部通过，但原有回调超时测试断言耗时必须小于 2 秒，实测约 2.706 秒，导致 412 项通过、1 项失败。未修改其断言或生产回调实现；并行构建及模拟器安装结束后重新执行全量测试，该项约 0.310 秒通过，全量 0 失败。首次实际测试结果保留于 `/tmp/NaiveFlow-node-tls-final.xcresult`，摘要 `/tmp/NaiveFlow-node-tls-first-summary.json`。
+
+全量通过后，额外将扩展中脚本 HTTP 的旧全局默认值改为 `false`，并对最终代码完成三平台构建；应用测试源码与其余网络逻辑未再改动。未进行真实代理 TLS/QUIC 握手、证书更换压力测试或真机 VPN 验收，合成证书测试不替代真实流量验证。改动留在本地，尚未提交或推送。
+
+最终 UI 检查：已将最终 iOS 构建安装到 iPhone 17 模拟器，通过 Device Hub 打开手动添加节点表单，确认 `TLS Certificate` 分组、默认开启的 `Verify Server Certificate` 和可选 SHA-256 指纹输入框可见。未保存测试节点、未发起连接。

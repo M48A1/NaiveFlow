@@ -456,7 +456,7 @@ nonisolated struct XHTTPConfiguration: Codable, Equatable, Hashable {
         }
         let fingerprint = (json?["fingerprint"] as? String).flatMap { TLSFingerprint(importValue: $0) } ?? .default
         let ech = (json?["ech"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        return TLSConfiguration(serverName: serverName, alpn: alpn, echConfig: ech, fingerprint: fingerprint)
+        return TLSConfiguration(serverName: serverName, alpn: alpn, echConfig: ech, fingerprint: fingerprint, insecureSkipVerify: json?["allowInsecure"] as? Bool ?? false, serverCertificateFingerprint: json?["server-cert-fingerprint-sha256"] as? String)
     }
     
     private static func mapDownloadReality(_ json: [String: Any]?, serverAddress: String) -> RealityConfiguration? {

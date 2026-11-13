@@ -93,6 +93,7 @@ nonisolated final class QUICTLSHandler: QUICTLSProvider {
 
     // MARK: - Properties
 
+    private let certificatePolicy: TLSCertificatePolicy
     private let serverName: String
     private let alpn: [String]
     private var phase: Phase = .initial
@@ -147,7 +148,8 @@ nonisolated final class QUICTLSHandler: QUICTLSProvider {
 
     // MARK: - Initialization
 
-    init(serverName: String, alpn: [String]) {
+    init(serverName: String, alpn: [String], certificatePolicy: TLSCertificatePolicy = .init()) {
+        self.certificatePolicy = certificatePolicy
         self.serverName = serverName
         self.alpn = alpn
 
@@ -198,11 +200,11 @@ nonisolated final class QUICTLSHandler: QUICTLSProvider {
         var candidatePSK: Data?
         var candidateCipherSuite: UInt16 = TLSCipherSuite.TLS_AES_128_GCM_SHA256
 
-        let cachedTicket = QUICSessionTicketCache.lookup(serverName: serverName, alpn: alpn)
+        let cachedTicket = certificatePolicy == .init() ? QUICSessionTicketCache.lookup(serverName: serverName, alpn: alpn) : nil
 
         if let ticket = cachedTicket,
            CFAbsoluteTimeGetCurrent() - ticket.issued < Double(ticket.lifetime),
-           !ticket.issuedInsecure || CertificatePolicy.allowInsecure {
+           !ticket.issuedInsecure {
             let (extData, binderLen) = buildPSKExtension(ticket: ticket)
             pskExtData = extData
             pskBinderLength = binderLen
@@ -574,10 +576,10 @@ nonisolated final class QUICTLSHandler: QUICTLSProvider {
             return fail("internal: handshake secrets unavailable at server Finished")
         }
 
-        let allowInsecure = CertificatePolicy.allowInsecure
+        let allowInsecure = certificatePolicy.insecureSkipVerify && certificatePolicy.certificateSHA256 == nil
         authenticatedInsecurely = pskAccepted ? offeredTicketInsecure : allowInsecure
 
-        if !pskAccepted, !allowInsecure {
+        if !pskAccepted {
             if let error = TLS13CertificateVerifier.verify(
                 transcriptBeforeCertVerify: transcriptBeforeCertVerify,
                 algorithm: certificateVerifyAlgorithm,
@@ -706,7 +708,7 @@ nonisolated final class QUICTLSHandler: QUICTLSProvider {
             lifetime: lifetime, ticketAgeAdd: ticketAgeAdd,
             issuedInsecure: authenticatedInsecurely
         )
-        QUICSessionTicketCache.store(cached, serverName: serverName, alpn: alpn)
+        if certificatePolicy == .init() { QUICSessionTicketCache.store(cached, serverName: serverName, alpn: alpn) }
 
         return .success
     }
@@ -845,9 +847,9 @@ nonisolated final class QUICTLSHandler: QUICTLSProvider {
 
     // MARK: - Certificate Validation
 
-    static func verifyPeer(certificates: [Data], serverName: String) async -> Error? {
+    static func verifyPeer(certificates: [Data], serverName: String, policy: TLSCertificatePolicy = .init()) async -> Error? {
         let chain = certificates.compactMap { SecCertificateCreateWithData(nil, $0 as CFData) }
-        switch await CertificatePolicy.verify(chain: chain, serverName: serverName) {
+        switch await CertificatePolicy.verify(chain: chain, serverName: serverName, policy: policy) {
         case .trusted:
             return nil
         case .rejected(let reason):

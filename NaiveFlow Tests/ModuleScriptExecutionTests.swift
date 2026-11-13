@@ -35,7 +35,7 @@ struct ModuleScriptExecutionTests {
     }
 
     @Test func importedSurgeScriptEditsJSONAndHeadersWithDefaultArguments() async throws {
-        let made = try await ModuleOperations.makeModule(from: """
+        let made = try await ModuleImporter.makeModule(from: """
             #!name = JSON example
             #!arguments = RemoveAds:true
             [Script]
@@ -66,7 +66,7 @@ struct ModuleScriptExecutionTests {
         case .quantumultX:
             ". url script-response-header https://example.com/header.js\nhostname = example.com"
         }
-        let made = try await ModuleOperations.makeModule(from: config, fallbackName: "Headers", format: format,
+        let made = try await ModuleImporter.makeModule(from: config, fallbackName: "Headers", format: format,
             fetchResource: { _ in "$done({headers:{'X-Test':'yes'}});" })
         let rule = try #require(made.module.mitmRuleSets.first?.rules.first)
         guard case .script(let encoded, _) = rule.operation else {
@@ -121,7 +121,7 @@ struct ModuleScriptExecutionTests {
     @Test func repeatedScriptDownloadsAreCachedAndPersistWithoutDuplication() async throws {
         var calls = 0
         let body = "[Script]\na=type=http-response,pattern=/a,script-path=https://example.com/shared.js,requires-body=true\nb=type=http-response,pattern=/b,script-path=https://example.com/shared.js,requires-body=true\n[MITM]\nhostname=example.com"
-        let made = try await ModuleOperations.makeModule(from: body, fallbackName: "Cache", format: .surge, fetchResource: { _ in
+        let made = try await ModuleImporter.makeModule(from: body, fallbackName: "Cache", format: .surge, fetchResource: { _ in
             calls += 1
             return String(repeating: "// shared script\n", count: 5000) + "$done({body:'ok'});"
         })
@@ -136,15 +136,15 @@ struct ModuleScriptExecutionTests {
 
     @Test func unsupportedOrBrokenScriptsFailTheWholeImport() async throws {
         await #expect(throws: (any Error).self) {
-            try await ModuleOperations.makeModule(from: "[Script]\na=type=cron,script-path=https://example.com/a.js", fallbackName: "Invalid", format: .surge)
+            try await ModuleImporter.makeModule(from: "[Script]\na=type=cron,script-path=https://example.com/a.js", fallbackName: "Invalid", format: .surge)
         }
         await #expect(throws: (any Error).self) {
-            try await ModuleOperations.makeModule(from: "[Script]\na=type=http-response,pattern=.,script-path=https://example.com/a.js\n[MITM]\nhostname=example.com", fallbackName: "Invalid", format: .surge, fetchResource: { _ in "$done({" })
+            try await ModuleImporter.makeModule(from: "[Script]\na=type=http-response,pattern=.,script-path=https://example.com/a.js\n[MITM]\nhostname=example.com", fallbackName: "Invalid", format: .surge, fetchResource: { _ in "$done({" })
         }
     }
 
     @Test func mapLocalAndJQDeleteAreImported() async throws {
-        let made = try await ModuleOperations.makeModule(from: #"""
+        let made = try await ModuleImporter.makeModule(from: #"""
             [Map Local]
             ^https://example.com/rpc data-type=base64 data="AAAAAAA=" status-code=200 header="Content-Type:application/grpc|grpc-status:0"
             [Body Rewrite]
@@ -163,7 +163,7 @@ struct ModuleScriptExecutionTests {
     }
 
     @Test func quantumultEchoResponseAndRejectDictionaryPreserveHeadersAndBinary() async throws {
-        let made = try await ModuleOperations.makeModule(from: #"""
+        let made = try await ModuleImporter.makeModule(from: #"""
             ^https://example.com/empty url echo-response application/grpc\r\ngrpc-status: 0 echo-response https://example.com/empty.grpc
             ^https://example.com/ad url reject-dict
             hostname = example.com
@@ -192,7 +192,7 @@ struct ModuleScriptExecutionTests {
     func bilibiliReleaseImportsAndExecutesItsActualScripts(format: ModuleFormat) async throws {
         let body = try String(contentsOfFile: "/private/tmp/BiliBili.ADBlock.\(format.fileExtension)", encoding: .utf8)
         var fetched: [String] = []
-        let made = try await ModuleOperations.makeModule(from: body, fallbackName: "BiliBili", subscriptionURL: URL(string: "https://github.com/Biliverse/ADBlock/releases/latest/download/BiliBili.ADBlock.\(format.fileExtension)"), format: format, fetchResource: { url in
+        let made = try await ModuleImporter.makeModule(from: body, fallbackName: "BiliBili", subscriptionURL: URL(string: "https://github.com/Biliverse/ADBlock/releases/latest/download/BiliBili.ADBlock.\(format.fileExtension)"), format: format, fetchResource: { url in
             fetched.append(url.lastPathComponent)
             let path = ["js", "grpc"].contains(url.pathExtension) ? "/private/tmp/BiliBili-\(url.lastPathComponent)" : "/private/tmp/\(url.lastPathComponent)"
             return try String(contentsOfFile: path, encoding: .utf8)
@@ -245,9 +245,9 @@ struct ModuleScriptExecutionTests {
         }
 
         let node = ProxyConfiguration(name: "Direct", serverAddress: "", serverPort: 0, outbound: .direct(DirectConfiguration()))
-        let bundle = RuntimeConfigurationBundle(id: UUID(), snapshotID: nil, parentID: nil,
+        let bundle = RuntimeConfigurationBundle(id: UUID(), snapshotID: UUID(), parentID: nil,
             preferences: Dictionary(uniqueKeysWithValues: AWCore.runtimePreferenceKeys.map { ($0, RuntimePreferenceValue.absent) }), nodes: [node], selectedNodeID: node.id, rules: [], finalAction: .direct,
-            mitmRuleSets: made.module.mitmRuleSets.map { $0.asMITMRuleSet() }, legacyRouting: nil, legacyMITM: nil)
+            mitmRuleSets: made.module.mitmRuleSets.map { $0.asMITMRuleSet() })
         try bundle.validate()
     }
 }

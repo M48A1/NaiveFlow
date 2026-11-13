@@ -45,32 +45,8 @@ struct SubscriptionRefreshRaceTests {
     }
 
     private func makeReaction(sync: SyncStore, configurationStore: ConfigurationStore) -> StoreMutationReaction {
-        let chainStore = ChainStore(syncStore: sync)
-        let routingStore = RoutingRuleSetStore(syncStore: sync)
-        let moduleStore = ModuleStore(syncStore: sync)
-        let mitmStore = MITMRuleSetStore(syncStore: sync)
-        // A near-infinite debounce keeps the export work from running inside the test.
-        return StoreMutationReaction(
-            configurationStore: configurationStore,
-            chainStore: chainStore,
-            routingRuleSetStore: routingStore,
-            moduleStore: moduleStore,
-            selection: ProxySelection(),
-            latency: LatencyCenter(),
-            appState: AppState(),
-            routingExportScheduler: RoutingExportScheduler(
-                debouncer: Debouncer(interval: .seconds(3600)),
-                ruleSetStore: routingStore,
-                moduleStore: moduleStore,
-                configurationStore: configurationStore,
-                chainStore: chainStore
-            ),
-            mitmExportScheduler: MITMExportScheduler(
-                debouncer: Debouncer(interval: .seconds(3600)),
-                ruleSetStore: mitmStore,
-                moduleStore: moduleStore
-            )
-        )
+        StoreMutationReaction(configurationStore: configurationStore,
+            chainStore: ChainStore(syncStore: sync), selection: ProxySelection(), latency: LatencyCenter())
     }
 
     private func node(_ name: String, subscriptionId: UUID) -> ProxyConfiguration {

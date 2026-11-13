@@ -7,40 +7,19 @@
 
 import Foundation
 
-/// One editable text document that sits on top of the app's stores, in both
-/// directions:
-///
-/// - **out** — `exportCurrent()` renders the current stores as a document, so
-///   editing starts from what the app already runs instead of a blank file;
-/// - **in** — `apply(_:)` compiles the text and writes it into the stores
-///   through `ConfigurationPublisher`, refusing anything with errors.
-///
-/// The document itself lives in the App Group container
-/// (`configurations/draft.txt`), so it survives a relaunch and the extension can
-/// read what the host activated. Nothing here keeps its own copy of the text:
-/// the editor owns the buffer, this type owns the two crossings.
+/// Reads, previews and publishes the single text configuration document.
 @MainActor
 struct ConfigurationDocumentOperations {
-    let configurationStore: ConfigurationStore
-    let chainStore: ChainStore
-    let groupStore: GroupStore
-    let routingRuleSetStore: RoutingRuleSetStore
-    let mitmRuleSetStore: MITMRuleSetStore
-    let moduleStore: ModuleStore
     let activation: ConfigurationActivation
     var tunnel: TunnelController? = nil
     var selection: ProxySelection? = nil
     private var publisher: ConfigurationPublisher {
-        ConfigurationPublisher(activation: activation, tunnel: tunnel, stateSink: { selection?.showRuntimeVersion($0) })
+        ConfigurationPublisher(activation: activation, tunnel: tunnel, clearStateSink: { selection?.clearRuntimeVersion() }, stateSink: { selection?.showRuntimeVersion($0) })
     }
 
     var ruleManager: RuleManager { RuleManager(activation: activation) }
 
-    // MARK: - Stores to text
-
-    /// Renders the stores as a document. Whatever the text format cannot carry
-    /// (chains, module rule sets, unassigned rule sets) comes back in
-    /// `Result.notes` instead of being dropped silently.
+    /// Returns the applied document, or the starter template.
     func exportCurrent(
         options: ConfigurationExporter.Options = ConfigurationExporter.Options()
     ) -> ConfigurationExporter.Result {
@@ -50,15 +29,7 @@ struct ConfigurationDocumentOperations {
                 rules: active.compiled.orderedRules.count, hosts: active.compiled.hosts.count
             ))
         }
-        return         ConfigurationExporter.exportCurrentConfiguration(
-            configurationStore: configurationStore,
-            chainStore: chainStore,
-            groupStore: groupStore,
-            routingRuleSetStore: routingRuleSetStore,
-            mitmRuleSetStore: mitmRuleSetStore,
-            moduleStore: moduleStore,
-            options: options
-        )
+        return ConfigurationExporter.Result(text: TextConfigurationPipeline.template, notes: [], counts: .init(proxies: 0, groups: 0, rules: 0, hosts: 0))
     }
 
     // MARK: - Draft
@@ -81,16 +52,14 @@ struct ConfigurationDocumentOperations {
         try ruleManager.saveDraft(text)
     }
 
-    // MARK: - Text to stores
+    // MARK: - Publication
 
     /// Compiles without writing anything, for the editor's live feedback.
     func preview(_ text: String) -> TextConfigurationPipeline.Result {
         ruleManager.preview(text)
     }
 
-    /// Compiles and installs. A document with errors is refused before the
-    /// stores are touched, and if installation fails halfway the manifest is
-    /// rolled back and the previous snapshot installed again.
+    /// Compiles and publishes one complete runtime version.
     func apply(_ text: String) async throws -> ConfigurationInstaller.Outcome {
         try await publisher.publish(text: text).1
     }

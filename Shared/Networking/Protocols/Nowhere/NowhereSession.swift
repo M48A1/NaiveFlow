@@ -175,6 +175,7 @@ nonisolated final class NowhereSession: Sendable {
             port: configuration.proxyPort,
             serverName: configuration.proxyHost,
             alpn: [NowhereProtocol.applicationProtocol],
+            certificatePolicy: configuration.certificatePolicy,
             datagramsEnabled: true,
             tuning: .nowhere,
             obfuscator: morphObfuscator,
