@@ -6,6 +6,4 @@ iPhone、iPad 和 macOS 的配置页都提供 **iCloud Drive**。首次用 **Sav
 
 载入前会在本机备份当前草稿，可用 **Restore Draft Before iCloud Load** 恢复。载入后按 **Apply Configuration** 才会应用到本机 VPN。保存只写入配置文本，云盘同步进度由系统负责。配置使用 UTF-8，单文件上限 16 MiB。
 
-旧版 CloudKit 副本仍可通过 **Previous iCloud Backups** 手动取回。载入后用 **Save as New Configuration** 迁移。节点等资料仍通过原有 CloudKit 开关同步。
-
 构建 iOS 和 macOS 时，签名描述文件需要允许 `iCloud.com.argsment.NaiveFlow` 的 iCloud Documents 服务。首次保存文档后，系统会显示 NaiveFlow 的 iCloud Drive 文件夹。

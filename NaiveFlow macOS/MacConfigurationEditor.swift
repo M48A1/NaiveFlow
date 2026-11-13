@@ -2,10 +2,8 @@ import SwiftUI
 
 struct MacConfigurationEditor: View {
     @State private var model: ProfileEditorModel
-    let operations: Operations
 
     init(operations: Operations) {
-        self.operations = operations
         _model = State(initialValue: ProfileEditorModel(document: operations.configurationDocument))
     }
 
@@ -23,7 +21,7 @@ struct MacConfigurationEditor: View {
                     Text(entry.element.message)
                 }
             }
-            ConfigurationDriveSection(model: model, legacy: operations.configurationCloud)
+            ConfigurationDriveSection(model: model)
         }
         .formStyle(.grouped)
         .task { model.load() }

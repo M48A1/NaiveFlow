@@ -252,10 +252,6 @@ final class ProfileEditorModel {
 
     /// Receiving cloud content never applies it or overwrites this buffer.
     /// Loading is an explicit editor action; keep the old buffer recoverable.
-    func loadCloudDocument(_ document: CloudConfigurationDocument) {
-        _ = loadCloudText(document.text, name: document.deviceName)
-    }
-
     @discardableResult
     func loadCloudText(_ value: String, name: String) -> Bool {
         guard !isApplying else { return false }

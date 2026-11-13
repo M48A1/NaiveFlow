@@ -15,8 +15,6 @@ struct ConfigurationDriveSection: View {
     @State private var status: String?
 
     let model: ProfileEditorModel
-    var legacy: ConfigurationCloudStore? = nil
-    @State private var legacyDocument: CloudConfigurationDocument?
 
     var body: some View {
         Section("iCloud Drive") {
@@ -91,37 +89,6 @@ struct ConfigurationDriveSection: View {
             catch { self.error = error.localizedDescription }
         }
 
-        if let legacy {
-            Section("Previous iCloud Backups") {
-                Button("Find Previous Backups") { Task { await legacy.download() } }
-                    .disabled(legacy.isTransferring)
-                ForEach(legacy.documents) { item in
-                    Button {
-                        legacyDocument = item
-                    } label: {
-                        LabeledContent(item.deviceName, value: item.updatedAt.formatted())
-                    }
-                }
-                if let error = legacy.errorMessage { Text(error).font(.footnote).foregroundStyle(.red) }
-            }
-            .disabled(model.isApplying || !model.isLoaded)
-            .confirmationDialog("Load Previous iCloud Backup?", isPresented: Binding(
-                get: { legacyDocument != nil }, set: { if !$0 { legacyDocument = nil } }
-            ), presenting: legacyDocument) { item in
-                Button("Load into Editor") {
-                    if model.loadCloudText(item.text, name: item.deviceName) {
-                        selectedName = ""
-                        selectedDigest = ""
-                        changed = false
-                    }
-                    legacyDocument = nil
-                }
-                Button("Cancel", role: .cancel) { legacyDocument = nil }
-            } message: { _ in
-                Text("After loading, use Save as New Configuration to move this backup to iCloud Drive.")
-            }
-            .onAppear { legacy.reload() }
-        }
     }
 
     private func refresh() async throws {

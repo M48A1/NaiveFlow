@@ -292,10 +292,10 @@ struct ProfileEditorModelTests {
         model.load()
         model.edit("# local edits\n[Rule]\nFINAL,DIRECT")
         let previous = model.text
-        let cloud = CloudConfigurationDocument(id: UUID(), deviceName: "Other device", updatedAt: .now, text: "[Rule]\nFINAL,REJECT")
-        model.loadCloudDocument(cloud)
+        let cloudText = "[Rule]\nFINAL,REJECT"
+        #expect(model.loadCloudText(cloudText, name: "Home.conf"))
         #expect(document.cloudBackup == previous)
-        #expect(model.text == cloud.text)
+        #expect(model.text == cloudText)
         #expect(model.isDirty)
         #expect(model.lastOutcome == nil)
         model.restoreDraftBeforeCloudLoad()
@@ -311,7 +311,7 @@ struct ProfileEditorModelTests {
         let model = ProfileEditorModel(document: document, previewDelay: .zero)
         model.load()
         let previous = model.text
-        model.loadCloudDocument(.init(id: UUID(), deviceName: "Other", updatedAt: .now, text: "new"))
+        #expect(!model.loadCloudText("new", name: "Home.conf"))
         #expect(model.text == previous)
         #expect(model.errorMessage != nil)
     }

@@ -29,7 +29,6 @@ final class AppContainer {
     let mitmRuleSetStore: MITMRuleSetStore
     let moduleStore: ModuleStore
     let certificateStore: CertificateStore
-    let configurationCloud: ConfigurationCloudStore
     let subscriptionRefreshCoordinator = SubscriptionRefreshCoordinator()
     let moduleRefreshCoordinator = RefreshTicketCoordinator<UUID>()
     let mitmRefreshCoordinator = RefreshTicketCoordinator<UUID>()
@@ -51,7 +50,6 @@ final class AppContainer {
         mitmRuleSetStore = MITMRuleSetStore(syncStore: syncStore)
         moduleStore = ModuleStore(syncStore: syncStore)
         certificateStore = CertificateStore()
-        configurationCloud = ConfigurationCloudStore()
         do {
             let publisher = ConfigurationPublisher(activation: ConfigurationActivation(), tunnel: tunnel,
                 stateSink: { [selection] in selection.showRuntimeVersion($0) })
@@ -104,7 +102,6 @@ final class AppContainer {
     func start() {
         guard !started else { return }
         started = true
-        configurationCloud.reload()
 
         Task { await LoadOperation(configurationStore: configurationStore, reaction: mutationReaction).run() }
         observeTunnelStatus()

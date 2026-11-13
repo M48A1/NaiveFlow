@@ -53,15 +53,12 @@ nonisolated final class SyncStore: Sendable {
 
     enum Key: String, CaseIterable {
         case configurations
-        case configurationDocuments
         case chains
         case groups
         case subscriptions
         case customRuleSets
         case mitm
         case modules
-
-        var automaticallySyncs: Bool { self != .configurationDocuments }
     }
 
     struct ItemSnapshot: Sendable {

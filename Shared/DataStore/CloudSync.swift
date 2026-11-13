@@ -70,7 +70,7 @@ actor CloudSync {
             delegate: self
         )
         let engine = CKSyncEngine(configuration)
-        // Discard legacy queued configuration transfers restored from disk.
+        // Discard queued transfers for unknown collections or other zones.
         let blocked = engine.state.pendingRecordZoneChanges.filter { change in
             switch change {
             case .saveRecord(let id), .deleteRecord(let id): return !Self.isAutomaticRecord(id)
@@ -89,7 +89,7 @@ actor CloudSync {
                 }
             }
         } else {
-            let refs = store.refsNeedingUpload().filter { $0.key.automaticallySyncs }
+            let refs = store.refsNeedingUpload()
             if !refs.isEmpty {
                 engine.state.add(pendingRecordZoneChanges: refs.map { .saveRecord(Self.recordID(for: $0)) })
             }
@@ -104,15 +104,10 @@ actor CloudSync {
     private func requeueAllItems() {
         guard let engine else { return }
         engine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: Self.zoneID))])
-        engine.state.add(pendingRecordZoneChanges: store.allItemRefs().filter { $0.key.automaticallySyncs }.map { .saveRecord(Self.recordID(for: $0)) })
+        engine.state.add(pendingRecordZoneChanges: store.allItemRefs().map { .saveRecord(Self.recordID(for: $0)) })
     }
 
     private func noteLocalChanges(_ changes: [SyncChange]) {
-        let changes = changes.filter { change in
-            switch change {
-            case .save(let ref), .delete(let ref): return ref.key.automaticallySyncs
-            }
-        }
         guard !changes.isEmpty else { return }
         guard let engine else {
             if AWCore.getICloudSyncEnabled() { deferredChanges += changes }
@@ -247,7 +242,7 @@ actor CloudSync {
     // MARK: - Record mapping
 
     private static func isAutomaticRecord(_ id: CKRecord.ID) -> Bool {
-        id.zoneID == zoneID && itemRef(for: id)?.key.automaticallySyncs == true
+        id.zoneID == zoneID && itemRef(for: id) != nil
     }
 
     private static func recordID(for ref: SyncItemRef) -> CKRecord.ID {

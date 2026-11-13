@@ -38,7 +38,7 @@ struct ProfileView: View {
                 resultSection
                 reloadSection
                 actionSection
-                ConfigurationDriveSection(model: model, legacy: operations.configurationCloud)
+                ConfigurationDriveSection(model: model)
                 historySection
             }
             .navigationTitle("Configuration")

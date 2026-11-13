@@ -100,7 +100,6 @@ final class Operations {
         )
     }
     
-    var configurationCloud: ConfigurationCloudStore { container.configurationCloud }
 
     func reload(_ keys: Set<SyncStore.Key>) async {
         let stores: [(SyncStore.Key, any Reloadable)] = [
