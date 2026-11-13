@@ -206,17 +206,9 @@ actor MITMHTTP2UpstreamLeg {
         let originatingRequest: MITMRequestLog.Record?
         let neverIndexed: Set<String>
     }
-    private struct StreamingResponse {
-        let status: Int
-        let headers: [(name: String, value: String)]
-        let originatingRequest: MITMRequestLog.Record?
-        var frameIndex: Int = 0
-        let cursor: MITMScriptTransform.FrameCursor
-    }
     private enum ResponseStream {
         case passthrough
         case buffering(BufferedResponse)
-        case streaming(StreamingResponse)
     }
     private var responseStreams: [UInt32: ResponseStream] = [:]
 
@@ -228,7 +220,6 @@ actor MITMHTTP2UpstreamLeg {
     private var unannouncedStreamCredit: [UInt32: Int] = [:]
 
     private static let maxBufferedRewriteGrowthBytes = 65_535
-    private static let maxStreamingRewriteGrowthBytes = 65_535
 
     private static let maxUpstreamBufferedBytes = 8 * 1024 * 1024
 
@@ -815,15 +806,6 @@ actor MITMHTTP2UpstreamLeg {
             return false
         }
 
-        if rewriter.hasStreamScriptRule(phase: .httpResponse, verdicts: verdicts) {
-            sink?.deliverResponseHead(streamID: clientID, status: status, headers: MITMBridgeHeaders.droppingContentLength(regular), endStream: false, neverIndexed: head.neverIndexed)
-            responseStreams[clientID] = .streaming(StreamingResponse(
-                status: status, headers: rewritten, originatingRequest: head.originatingRequest,
-                cursor: rewriter.makeResponseFrameCursor(verdicts: verdicts)
-            ))
-            return false
-        }
-
         if rewriter.hasBufferedBodyRule(phase: .httpResponse, verdicts: verdicts) {
             let codec = MITMBodyCodec.plan(for: HTTPHeader.firstValue(in: rewritten, named: "content-encoding"))
             responseStreams[clientID] = .buffering(BufferedResponse(
@@ -901,10 +883,6 @@ actor MITMHTTP2UpstreamLeg {
             ackUpstream(upstreamStreamID: upstreamStreamID, length: onWireLength)
             return appendBufferedResponse(clientID: clientID, body: body, endStream: endStream)
 
-        case .streaming:
-            ackUpstream(upstreamStreamID: upstreamStreamID, length: onWireLength)
-            return handleStreamingData(streamID: clientID, body: body, endStream: endStream)
-
         case nil:
             ackUpstream(upstreamStreamID: upstreamStreamID, length: onWireLength)
             return false
@@ -964,8 +942,6 @@ actor MITMHTTP2UpstreamLeg {
             return false
         case .buffering:
             return runResponseScripts(streamID, trailers: trailers)
-        case .streaming:
-            return handleStreamingData(streamID: streamID, body: Data(), endStream: true, trailers: trailers)
         case nil:
             return false
         }
@@ -989,22 +965,6 @@ actor MITMHTTP2UpstreamLeg {
         )
         if !body.isEmpty { sink?.deliverResponseData(streamID: streamID, body, endStream: trailers.isEmpty) }
         if !trailers.isEmpty { sink?.deliverResponseTrailers(streamID: streamID, trailers) }
-    }
-
-    private func deliverStreamingFrame(
-        streamID: UInt32,
-        body: Data,
-        endStream: Bool,
-        trailers: [(name: String, value: String)]
-    ) {
-        if endStream, !trailers.isEmpty {
-            if !body.isEmpty { sink?.deliverResponseData(streamID: streamID, body, endStream: false) }
-            sink?.deliverResponseTrailers(streamID: streamID, trailers)
-            finalizeResponseHalf(clientID: streamID, originEnded: true)
-        } else {
-            sink?.deliverResponseData(streamID: streamID, body, endStream: endStream)
-            if endStream { finalizeResponseHalf(clientID: streamID, originEnded: true) }
-        }
     }
 
     // MARK: Buffered response rewrite
@@ -1096,52 +1056,5 @@ actor MITMHTTP2UpstreamLeg {
             }
         }
         return false
-    }
-
-    // MARK: Streaming-script response rewrite
-
-    private func handleStreamingData(streamID: UInt32, body: Data, endStream: Bool, trailers: [(name: String, value: String)] = []) -> Bool {
-        guard case .streaming(let streamingResponse)? = responseStreams[streamID] else { return false }
-        if streamingResponse.cursor.mutable.withLock({ $0.isBypassed }) {
-            advanceStreaming(streamID)
-            deliverStreamingFrame(streamID: streamID, body: body, endStream: endStream, trailers: trailers)
-            return false
-        }
-        let context = MITMScriptEngine.FrameContext(
-            phase: .httpResponse,
-            method: streamingResponse.originatingRequest?.method,
-            url: streamingResponse.originatingRequest?.url,
-            originalURL: streamingResponse.originatingRequest?.originalURL,
-            status: streamingResponse.status,
-            headers: streamingResponse.headers.filter { !$0.name.hasPrefix(":") },
-            frameIndex: streamingResponse.frameIndex,
-            isLast: endStream,
-            ruleSetID: rewriter.ruleSetID
-        )
-        let cursor = streamingResponse.cursor
-        Task { [weak self] in
-            let result = await MITMScriptTransform.applyFrame(
-                body,
-                frameContext: context,
-                cursor: cursor
-            )
-            guard let self else { return }
-            self.sessionContext.enqueue {
-                self.assumeIsolated { leg in
-                    guard leg.phase != .torn else { return }
-                    leg.advanceStreaming(streamID, growth: result.body.count - body.count)
-                    leg.deliverStreamingFrame(streamID: streamID, body: result.body, endStream: endStream, trailers: trailers)
-                    leg.resumeAfterScript()
-                }
-            }
-        }
-        return true
-    }
-
-    private func advanceStreaming(_ streamID: UInt32, growth: Int = 0) {
-        guard case .streaming(var streamingResponse)? = responseStreams[streamID] else { return }
-        streamingResponse.frameIndex += 1
-        if growth > Self.maxStreamingRewriteGrowthBytes { streamingResponse.cursor.mutable.withLock { $0.isBypassed = true } }
-        responseStreams[streamID] = .streaming(streamingResponse)
     }
 }

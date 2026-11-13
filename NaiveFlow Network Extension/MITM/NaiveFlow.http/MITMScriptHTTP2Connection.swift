@@ -600,7 +600,7 @@ nonisolated final class MITMScriptHTTP2Connection: Multiplexer, Sendable {
     private func handleGoaway(_ frame: HTTP2Frame) {
         let parsed = HTTP2Framer.parseGoaway(payload: frame.payload)
         if let parsed, parsed.errorCode != 0 {
-            logger.warning("[Script] NaiveFlow.http: HTTP/2 GOAWAY: error \(parsed.errorCode)")
+            logger.warning("[Script] script HTTP: HTTP/2 GOAWAY: error \(parsed.errorCode)")
         }
 
         var shouldFailReadiness = false
@@ -788,7 +788,7 @@ nonisolated final class MITMScriptHTTP2Connection: Multiplexer, Sendable {
     // MARK: - Errors / teardown
 
     private func connectionError(_ message: String) {
-        logger.warning("[Script] NaiveFlow.http: HTTP/2: \(message)")
+        logger.warning("[Script] script HTTP: HTTP/2: \(message)")
         handleSessionError(NaiveFlowError.proxy(.http2, .protocolViolation(detail: message)))
     }
 

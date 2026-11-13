@@ -123,10 +123,6 @@ nonisolated final class MITMHTTP2Rewriter: Sendable {
 
     // MARK: - Script preflight + application
 
-    func hasStreamScriptRule(phase: MITMPhase, verdicts: MITMGateVerdictTable) -> Bool {
-        MITMScriptTransform.hasStreamScriptRule(in: rules(phase: phase), verdicts: verdicts)
-    }
-
     func hasBufferedBodyRule(phase: MITMPhase, verdicts: MITMGateVerdictTable) -> Bool {
         MITMScriptTransform.hasBufferedBodyRule(in: rules(phase: phase), verdicts: verdicts)
     }
@@ -146,10 +142,6 @@ nonisolated final class MITMHTTP2Rewriter: Sendable {
         phase: MITMPhase
     ) async -> MITMScriptTransform.Outcome {
         await MITMScriptTransform.apply(message, rules: rules(phase: phase))
-    }
-
-    func makeResponseFrameCursor(verdicts: MITMGateVerdictTable) -> MITMScriptTransform.FrameCursor {
-        MITMScriptTransform.makeFrameCursor(rules: responseRules, verdicts: verdicts)
     }
 
     // MARK: - Authority rewrite
@@ -223,7 +215,7 @@ nonisolated final class MITMHTTP2Rewriter: Sendable {
                 current = current.map { entry in
                     ASCII.equalsIgnoringCase(entry.name, name) ? (name: name, value: value) : entry
                 }
-            case .script, .streamScript, .bodyReplace, .bodyJSON:
+            case .script, .bodyReplace, .bodyJSON:
                 continue
             }
         }
@@ -251,7 +243,7 @@ nonisolated final class MITMHTTP2Rewriter: Sendable {
                 current = current.map { entry in
                     ASCII.equalsIgnoringCase(entry.name, name) ? (name: name, value: value) : entry
                 }
-            case .rewrite, .script, .streamScript, .bodyReplace, .bodyJSON:
+            case .rewrite, .script, .bodyReplace, .bodyJSON:
                 continue
             }
         }

@@ -555,10 +555,6 @@ actor MITMBridgeClientLeg: MITMResponseSink {
             rewritten = MITMBridgeHeaders.clampingAcceptEncoding(rewritten)
         }
 
-        if rewriter.hasStreamScriptRule(phase: .httpRequest, verdicts: gates.post) {
-            logger.warning("[MITM] \(host): streamScript unsupported on bridged request")
-        }
-
         let hasBufferedRule = rewriter.hasBufferedBodyRule(phase: .httpRequest, verdicts: gates.post)
         let method = head.method
         let willBufferBody = hasBufferedRule && (endStream || shouldBuffer(headers: rewritten))
@@ -969,11 +965,11 @@ actor MITMBridgeClientLeg: MITMResponseSink {
     private func answerWithSynthesizedResponse(streamID: UInt32, response: MITMScriptEngine.SynthesizedResponse) {
         requestStreams[streamID] = .answeredWithSynthesizedResponse
         let sanitized = response.sanitizedHeaders(lowercaseNames: true) { name in
-            logger.warning("[Script] NaiveFlow.respond: Invalid header: \(name)")
+            logger.warning("[Script] $done response: Invalid header: \(name)")
         }
         let headers = response.withDateStamp(sanitized, lowercaseName: true)
         let body = response.truncatedBody(cap: MITMBodyCodec.maxBufferedBodyBytes) {
-            logger.warning("[Script] NaiveFlow.respond: Body too large")
+            logger.warning("[Script] $done response: Body too large")
         }
         deliverResponseHead(streamID: streamID, status: response.status, headers: headers, endStream: body.isEmpty)
         if !body.isEmpty { deliverResponseData(streamID: streamID, body, endStream: true) }

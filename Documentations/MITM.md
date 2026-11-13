@@ -407,9 +407,8 @@ $done({body: JSON.stringify(data)});
 Anywhere's `process(ctx)`, `Anywhere.*`, `NaiveFlow.*` helpers and operation
 `101` (`stream-script`) have been removed. Import/activation rejects legacy
 scripts and streaming operations. Stored legacy records remain decodable for
-clear diagnostics; they are not automatically converted. Replace their source
-with a Surge or Quantumult X script. Runtime loading also refuses unsupported
-legacy scripts.
+clear diagnostics. Only Surge and Quantumult X scripts can enter the HTTP/1.1
+and HTTP/2 script execution paths.
 
 Script dialect is explicit metadata, fixed into the published runtime version.
 The default is **Surge**. Choose Quantumult X with `dialect=quantumult-x`:

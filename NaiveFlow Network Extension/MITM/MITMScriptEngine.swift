@@ -34,25 +34,11 @@ actor MITMScriptEngine {
     enum Outcome {
         case modified(Message)
         case done(Message)
-        case exit
         case respond(SynthesizedResponse)
-    }
-
-    struct FrameContext {
-        let phase: MITMPhase
-        let method: String?
-        let url: String?
-        let originalURL: String?
-        let status: Int?
-        let headers: [(name: String, value: String)]
-        let frameIndex: Int
-        let isLast: Bool
-        let ruleSetID: UUID?
     }
 
     fileprivate enum Directive: Sendable {
         case done
-        case exit
         case respond(SynthesizedResponse)
     }
 
@@ -145,7 +131,7 @@ actor MITMScriptEngine {
 
     private static let maxLiveRuns = 32
 
-    // MARK: NaiveFlow.http caps
+    // MARK: script HTTP caps
 
     private static let httpDefaultTimeout: TimeInterval = 10
     private static let httpMaxTimeout: TimeInterval = 30
@@ -289,7 +275,6 @@ actor MITMScriptEngine {
     private func outcome(forDirective directive: Directive, original: Message, updated: Message) -> Outcome {
         switch directive {
         case .done: return .done(updated)
-        case .exit: return .exit
         case .respond(let response):
             if original.phase == .httpRequest {
                 return .respond(response)
@@ -691,7 +676,7 @@ actor MITMScriptEngine {
 
     /// Surge-style `$httpClient` with callback signatures
     /// `get(url, cb)` / `post(url, body, cb)`, where `cb(error, response, data)`.
-    /// It rides the existing `NaiveFlow.http` Promise and adapts it to callbacks.
+    /// Adapts the internal HTTP Promise to Surge callbacks.
     nonisolated private func makeSurgeHTTPClient(in context: JSContext, for run: ScriptRun) -> JSValue {
         let client = JSValue(newObjectIn: context)!
 
@@ -837,7 +822,7 @@ actor MITMScriptEngine {
         return SynthesizedResponse(status: status, headers: headers, body: body)
     }
 
-    // MARK: - NaiveFlow.http
+    // MARK: - script HTTP
 
     private func startHTTP(run: ScriptRun, defaultMethod: String, urlValue: JSValue, optionsValue: JSValue) -> JSValue {
         let context = run.context
@@ -853,16 +838,16 @@ actor MITMScriptEngine {
               let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
               let host = url.host, !host.isEmpty
         else {
-            return Self.rejected("NaiveFlow.http: expected an absolute http(s) URL", in: context)
+            return Self.rejected("script HTTP: expected an absolute http(s) URL", in: context)
         }
         if run.totalFetches >= Self.httpMaxTotalPerInvocation {
-            return Self.rejected("NaiveFlow.http: per-invocation request cap (\(Self.httpMaxTotalPerInvocation)) reached", in: context)
+            return Self.rejected("script HTTP: per-invocation request cap (\(Self.httpMaxTotalPerInvocation)) reached", in: context)
         }
         if run.inFlightFetches >= Self.httpMaxConcurrentPerInvocation {
-            return Self.rejected("NaiveFlow.http: too many concurrent requests in this invocation (max \(Self.httpMaxConcurrentPerInvocation))", in: context)
+            return Self.rejected("script HTTP: too many concurrent requests in this invocation (max \(Self.httpMaxConcurrentPerInvocation))", in: context)
         }
         if Self.globalFetchCount() >= Self.httpMaxConcurrentGlobal {
-            return Self.rejected("NaiveFlow.http: global concurrent request cap (\(Self.httpMaxConcurrentGlobal)) reached", in: context)
+            return Self.rejected("script HTTP: global concurrent request cap (\(Self.httpMaxConcurrentGlobal)) reached", in: context)
         }
 
         let options: JSValue? = optionsValue.isObject ? optionsValue : nil
@@ -871,7 +856,7 @@ actor MITMScriptEngine {
             .flatMap { $0.isString ? $0.toString() : nil }?
             .uppercased() ?? defaultMethod
         guard HTTPHeader.isValidName(method) else {
-            return Self.rejected("NaiveFlow.http: invalid method token", in: context)
+            return Self.rejected("script HTTP: invalid method token", in: context)
         }
         request.httpMethod = method
         if let headersValue = options?.objectForKeyedSubscript("headers"), !headersValue.isUndefined, !headersValue.isNull {
@@ -901,7 +886,7 @@ actor MITMScriptEngine {
 
         let promise = JSValue(newPromiseIn: context, fromExecutor: { [weak self, weak run] resolve, reject in
             guard let self, let run else {
-                reject?.call(withArguments: [Self.error("NaiveFlow.http: invocation released", in: context)])
+                reject?.call(withArguments: [Self.error("script HTTP: invocation released", in: context)])
                 return
             }
             self.assumeIsolated { engine in
@@ -929,7 +914,7 @@ actor MITMScriptEngine {
                 run.pendingFetches[fetchID] = PendingFetch(resolve: resolve, reject: reject, task: task)
             }
         })
-        return promise ?? Self.rejected("NaiveFlow.http: could not create Promise", in: context)
+        return promise ?? Self.rejected("script HTTP: could not create Promise", in: context)
     }
 
     private func completeFetch(
@@ -964,17 +949,17 @@ actor MITMScriptEngine {
             case .success(let response):
                 // JS can retain every fetch result until the invocation ends.
                 guard run.memoryReservation.add(response.body.count * 3) else {
-                    reject?.call(withArguments: [Self.error("NaiveFlow.http: shared memory budget exceeded", in: context)])
+                    reject?.call(withArguments: [Self.error("script HTTP: shared memory budget exceeded", in: context)])
                     return
                 }
                 resolve?.call(withArguments: [Self.makeHTTPResponse(response, in: context)])
             case .failure(let error):
-                reject?.call(withArguments: [Self.error("NaiveFlow.http: \(NaiveFlowError.describe(error))", in: context)])
+                reject?.call(withArguments: [Self.error("script HTTP: \(NaiveFlowError.describe(error))", in: context)])
             }
         }
     }
 
-    // MARK: NaiveFlow.http helpers
+    // MARK: script HTTP helpers
 
     private static func error(_ message: String, in context: JSContext) -> JSValue {
         JSValue(newErrorFromMessage: message, in: context) ?? JSValue(newObjectIn: context)!
@@ -998,7 +983,7 @@ actor MITMScriptEngine {
         if value.isArray {
             return (headersFromValue(value) ?? []).filter { entry in
                 guard !Self.forbiddenRequestHeaders.contains(entry.name.lowercased()) else {
-                    logger.warning("[Script] NaiveFlow.http: Forbidden header: \(entry.name)")
+                    logger.warning("[Script] script HTTP: Forbidden header: \(entry.name)")
                     return false
                 }
                 return true
@@ -1017,15 +1002,15 @@ actor MITMScriptEngine {
                   let value = valueElement.toString()
             else { continue }
             guard HTTPHeader.isValidName(name) else {
-                logger.warning("[Script] NaiveFlow.http: Invalid header name: \(name)")
+                logger.warning("[Script] script HTTP: Invalid header name: \(name)")
                 continue
             }
             guard HTTPHeader.isValidValue(value) else {
-                logger.warning("[Script] NaiveFlow.http: Invalid header value: \(name)")
+                logger.warning("[Script] script HTTP: Invalid header value: \(name)")
                 continue
             }
             guard !Self.forbiddenRequestHeaders.contains(name.lowercased()) else {
-                logger.warning("[Script] NaiveFlow.http: Forbidden header: \(name)")
+                logger.warning("[Script] script HTTP: Forbidden header: \(name)")
                 continue
             }
             out.append((name: name, value: value))
@@ -1038,7 +1023,7 @@ actor MITMScriptEngine {
         "upgrade", "keep-alive", "te", "trailer", "expect", "proxy-connection",
     ]
 
-    // MARK: Global NaiveFlow.http in-flight counter
+    // MARK: Global script HTTP in-flight counter
 
     private static func reserveGlobalFetchSlot() {
         mitmScriptGlobalFetchCount.wrappingAdd(1, ordering: .relaxed)

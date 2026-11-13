@@ -173,7 +173,6 @@ nonisolated enum CompiledMITMOperation {
     case bodyReplace(MITMBodyReplace.CompiledOperation)
     case bodyJSON(MITMJSONPatch.CompiledOperation)
     case script(source: String, preamble: String, dialect: MITMScriptDialect)
-    case streamScript(source: String)
 }
 
 nonisolated struct CompiledMITMRuleSet {

@@ -24,7 +24,7 @@ nonisolated enum MITMScriptTransform {
         let hasScriptRule = scopedRules.contains { entry in
             entry.rules.contains { rule in
                 switch rule.operation {
-                case .script, .streamScript: return true
+                case .script: return true
                 case .rewrite, .headerAdd, .headerDelete, .headerReplace, .bodyReplace, .bodyJSON: return false
                 }
             }
@@ -45,20 +45,6 @@ nonisolated enum MITMScriptTransform {
         return false
     }
 
-    static func hasStreamScriptRule(in rules: [CompiledMITMRule], verdicts: MITMGateVerdictTable) -> Bool {
-        for (index, rule) in rules.enumerated() {
-            if case .streamScript = rule.operation, verdicts.matches(at: index) { return true }
-        }
-        return false
-    }
-
-    static func hasBodyJSONRule(in rules: [CompiledMITMRule], verdicts: MITMGateVerdictTable) -> Bool {
-        for (index, rule) in rules.enumerated() {
-            if case .bodyJSON = rule.operation, verdicts.matches(at: index) { return true }
-        }
-        return false
-    }
-
     static func hasBodyReplaceRule(in rules: [CompiledMITMRule], verdicts: MITMGateVerdictTable) -> Bool {
         for (index, rule) in rules.enumerated() {
             if case .bodyReplace = rule.operation, verdicts.matches(at: index) { return true }
@@ -74,7 +60,6 @@ nonisolated enum MITMScriptTransform {
 
     static func hasBodyAccessingRule(in rules: [CompiledMITMRule], verdicts: MITMGateVerdictTable) -> Bool {
         hasBufferedBodyRule(in: rules, verdicts: verdicts)
-            || hasStreamScriptRule(in: rules, verdicts: verdicts)
     }
 
     static func isStreamingMediaType(_ contentType: String?) -> Bool {
@@ -169,7 +154,7 @@ nonisolated enum MITMScriptTransform {
         let bodyRules = rules.filter { rule in
             switch rule.operation {
             case .script, .bodyReplace, .bodyJSON: return true
-            case .rewrite, .headerAdd, .headerDelete, .headerReplace, .streamScript: return false
+            case .rewrite, .headerAdd, .headerDelete, .headerReplace: return false
             }
         }
         let verdicts = await MITMGateVerdictTable.resolve(rules: bodyRules, url: message.url)
@@ -189,34 +174,7 @@ nonisolated enum MITMScriptTransform {
         switch outcome {
         case .modified(let updated):  return .message(updated)
         case .done(let updated):      return .message(updated)
-        case .exit:                   return .message(edited)
         case .respond(let response):  return .synthesizedResponse(response)
         }
-    }
-
-    // Legacy stream-script payloads remain decodable for a clear rejection at
-    // activation. They can no longer create an Anywhere process(ctx) runtime.
-    final class FrameCursor: Sendable {
-        struct Mutable { var isBypassed = true }
-        let mutable = Mutex(Mutable())
-    }
-
-    static func makeFrameCursor(rules: [CompiledMITMRule], verdicts: MITMGateVerdictTable) -> FrameCursor {
-        FrameCursor()
-    }
-
-    struct StreamFrameResult {
-        let body: Data
-        let isBypassed: Bool
-    }
-
-    static func applyFrame(_ frame: Data, frameContext: MITMScriptEngine.FrameContext,
-                           cursor: FrameCursor) -> StreamFrameResult {
-        StreamFrameResult(body: frame, isBypassed: true)
-    }
-
-    static func applyFrame(_ frame: Data, frameContext: MITMScriptEngine.FrameContext,
-                           cursor: FrameCursor) async -> StreamFrameResult {
-        StreamFrameResult(body: frame, isBypassed: true)
     }
 }

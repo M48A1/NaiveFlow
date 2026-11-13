@@ -97,29 +97,6 @@ actor MITMHTTP1Stream {
         let originatingRequest: MITMRequestLog.Record?
     }
 
-    private struct StreamingState: Sendable {
-        let headers: [Header]
-        let originatingRequest: MITMRequestLog.Record?
-        let startLine: String
-        var frameIndex: Int = 0
-        var pendingChunk: Data? = nil
-        var lineScanCursor: Int = 0
-        let cursor: MITMScriptTransform.FrameCursor
-    }
-
-    private enum StreamingPostFrame {
-        case hold(nextPending: Data?, inner: StreamingChunkedInner)
-        case finalThenTrailer
-        case bypassRemainder(left: Int)
-    }
-
-    private enum StreamingChunkedInner {
-        case sizeLine
-        case chunkData(remaining: Int)
-        case dataCRLF
-        case trailerOrEnd
-    }
-
     private enum Mode {
         case awaitingHead
         case forwardingLength(remaining: Int)
@@ -131,7 +108,6 @@ actor MITMHTTP1Stream {
         case discardingChunked(reader: ChunkedReader)
         case discardingLength(remaining: Int)
         case draining
-        case streamingChunked(streaming: StreamingState, inner: StreamingChunkedInner)
         case passthrough
         case awaitingScript
         case awaitingGates
@@ -455,10 +431,6 @@ actor MITMHTTP1Stream {
         case .draining:
             receiveBuffer.removeAll(keepingCapacity: false)
             return false
-
-        case .streamingChunked(var streaming, let inner):
-            mode = .streamingChunked(streaming: streaming, inner: inner)
-            return driveStreamingChunked(streaming: &streaming, inner: inner, into: &output)
         }
     }
 
@@ -581,8 +553,7 @@ actor MITMHTTP1Stream {
 
         switch framing {
         case .switchingProtocols, .readUntilClose:
-            if case .readUntilClose = framing, buffersBody,
-               !MITMScriptTransform.hasStreamScriptRule(in: rules, verdicts: gates.ruleTable) {
+            if case .readUntilClose = framing, buffersBody {
                 let codec = MITMBodyCodec.plan(for: combinedHeaderValue(rewrittenHeaders, name: "content-encoding"))
                 let hasContentCodedTransferEncoding = Self.transferEncodingHasContentCoding(combinedHeaderValue(rewrittenHeaders, name: "transfer-encoding"))
                 if codec.isSupported, !codec.requiresDecompression, !hasContentCodedTransferEncoding,
@@ -690,7 +661,6 @@ actor MITMHTTP1Stream {
                 rewrittenHeaders: rewrittenHeaders,
                 length: length,
                 buffersBody: buffersBody,
-                verdicts: gates.ruleTable,
                 originatingRequest: originatingRequest,
                 into: &output
             )
@@ -699,7 +669,6 @@ actor MITMHTTP1Stream {
                 rewrittenStartLine: rewrittenStartLine,
                 rewrittenHeaders: rewrittenHeaders,
                 buffersBody: buffersBody,
-                verdicts: gates.ruleTable,
                 originatingRequest: originatingRequest,
                 into: &output
             )
@@ -793,15 +762,10 @@ actor MITMHTTP1Stream {
         rewrittenHeaders: [Header],
         length: Int,
         buffersBody: Bool,
-        verdicts: MITMGateVerdictTable,
         originatingRequest: MITMRequestLog.Record?,
         into output: inout Data
     ) -> Bool {
         let rewrittenHeaders = rewrittenHeaders.filter { !ASCII.equalsIgnoringCase($0.name, "transfer-encoding") }
-        if MITMScriptTransform.hasStreamScriptRule(in: rules, verdicts: verdicts) {
-            logger.warning("[MITM] \(host): streamScript unsupported for Content-Length body")
-        }
-
         let codec = MITMBodyCodec.plan(for: combinedHeaderValue(rewrittenHeaders, name: "content-encoding"))
         let canRewrite = buffersBody && codec.isSupported && length <= MITMBodyCodec.maxBufferedBodyBytes
             && reserveBodyMemory(codec.requiresDecompression ? MITMBodyCodec.maxBufferedBodyBytes : length)
@@ -835,35 +799,10 @@ actor MITMHTTP1Stream {
         rewrittenStartLine: String,
         rewrittenHeaders: [Header],
         buffersBody: Bool,
-        verdicts: MITMGateVerdictTable,
         originatingRequest: MITMRequestLog.Record?,
         into output: inout Data
     ) -> Bool {
         let rewrittenHeaders = rewrittenHeaders.filter { !ASCII.equalsIgnoringCase($0.name, "content-length") }
-        if MITMScriptTransform.hasStreamScriptRule(in: rules, verdicts: verdicts) {
-            if responseIRSink != nil {
-                logger.warning("[MITM] \(host): streamScript unsupported on bridged response")
-                emitResponseHead(startLine: rewrittenStartLine, headers: rewrittenHeaders, bodyFollows: true, into: &output)
-                mode = .forwardingChunked(reader: ChunkedReader())
-                return true
-            }
-            if buffersBody {
-                logger.warning("[MITM] \(host): Body rule conflicts with streamScript")
-            }
-            if direction == .httpRequest {
-                logRequest(startLine: rewrittenStartLine)
-            }
-            output.append(serializeHead(startLine: rewrittenStartLine, headers: rewrittenHeaders))
-            let streaming = StreamingState(
-                headers: rewrittenHeaders,
-                originatingRequest: originatingRequest,
-                startLine: rewrittenStartLine,
-                cursor: MITMScriptTransform.makeFrameCursor(rules: rules, verdicts: verdicts)
-            )
-            mode = .streamingChunked(streaming: streaming, inner: .sizeLine)
-            return true
-        }
-
         let codec = MITMBodyCodec.plan(for: combinedHeaderValue(rewrittenHeaders, name: "content-encoding"))
         let hasContentCodedTransferEncoding = Self.transferEncodingHasContentCoding(combinedHeaderValue(rewrittenHeaders, name: "transfer-encoding"))
         if buffersBody, codec.isSupported, !hasContentCodedTransferEncoding,
@@ -1073,252 +1012,6 @@ actor MITMHTTP1Stream {
             return true
         }
         return false
-    }
-
-    private func driveStreamingChunked(
-        streaming: inout StreamingState,
-        inner startInner: StreamingChunkedInner,
-        into output: inout Data
-    ) -> Bool {
-        var currentInner = startInner
-        while true {
-            switch currentInner {
-            case .sizeLine:
-                guard let lineEnd = receiveBuffer.firstCRLF(from: streaming.lineScanCursor) else {
-                    if receiveBuffer.count > Self.maxChunkLineBytes {
-                        logger.warning("\(logPrefix): Malformed chunked body")
-                        receiveBuffer.removeAll(keepingCapacity: false)
-                        mode = .draining
-                        delegate?.http1StreamHardClose(self)
-                        return true
-                    }
-                    streaming.lineScanCursor = max(0, receiveBuffer.count - 1)
-                    mode = .streamingChunked(streaming: streaming, inner: .sizeLine)
-                    return false
-                }
-                let parsedSize = receiveBuffer.withUnsafeBytes(in: 0..<lineEnd, Self.parseHexSize)
-                receiveBuffer.removeFirst(lineEnd + 2)
-                streaming.lineScanCursor = 0
-                guard let size = parsedSize else {
-                    logger.warning("\(logPrefix): Malformed chunked body")
-                    receiveBuffer.removeAll(keepingCapacity: false)
-                    mode = .draining
-                    delegate?.http1StreamHardClose(self)
-                    return true
-                }
-                if size == 0 {
-                    let finalChunk = streaming.pendingChunk ?? Data()
-                    streaming.pendingChunk = nil
-                    if emitOrParkStreamingFrame(
-                        streaming: &streaming,
-                        chunk: finalChunk,
-                        isLast: true,
-                        postFrame: .finalThenTrailer,
-                        into: &output
-                    ) {
-                        return false
-                    }
-                    output.append(contentsOf: "0\r\n".utf8)
-                    currentInner = .trailerOrEnd
-                } else {
-                    chunkAccumulator = Data()
-                    currentInner = .chunkData(remaining: size)
-                }
-            case .chunkData(let remaining):
-                guard !receiveBuffer.isEmpty else {
-                    mode = .streamingChunked(streaming: streaming, inner: .chunkData(remaining: remaining))
-                    return false
-                }
-                let take = min(remaining, receiveBuffer.count)
-                receiveBuffer.appendPrefix(take, to: &chunkAccumulator)
-                receiveBuffer.removeFirst(take)
-                let left = remaining - take
-                if left != 0, chunkAccumulator.count > MITMBodyCodec.maxBufferedBodyBytes {
-                    logger.warning("[MITM] \(host): Chunk too large for rewrite")
-                    if let held = streaming.pendingChunk {
-                        streaming.pendingChunk = nil
-                        if emitOrParkStreamingFrame(
-                            streaming: &streaming,
-                            chunk: held,
-                            isLast: false,
-                            postFrame: .bypassRemainder(left: left),
-                            into: &output
-                        ) {
-                            return false
-                        }
-                    }
-                    streaming.cursor.mutable.withLock { $0.isBypassed = true }
-                    appendChunk(takeChunkAccumulator(), into: &output)
-                    mode = .streamingChunked(streaming: streaming, inner: .chunkData(remaining: left))
-                    return false
-                }
-                if left == 0 {
-                    let completed = takeChunkAccumulator()
-                    if let held = streaming.pendingChunk {
-                        if emitOrParkStreamingFrame(
-                            streaming: &streaming,
-                            chunk: held,
-                            isLast: false,
-                            postFrame: .hold(nextPending: completed, inner: .dataCRLF),
-                            into: &output
-                        ) {
-                            return false
-                        }
-                    }
-                    streaming.pendingChunk = completed
-                    currentInner = .dataCRLF
-                } else {
-                    mode = .streamingChunked(streaming: streaming, inner: .chunkData(remaining: left))
-                    return false
-                }
-            case .dataCRLF:
-                guard receiveBuffer.count >= 2 else {
-                    mode = .streamingChunked(streaming: streaming, inner: .dataCRLF)
-                    return false
-                }
-                guard receiveBuffer[0] == 0x0D,
-                      receiveBuffer[1] == 0x0A
-                else {
-                    logger.warning("\(logPrefix): Malformed chunked body")
-                    receiveBuffer.removeAll(keepingCapacity: false)
-                    mode = .draining
-                    delegate?.http1StreamHardClose(self)
-                    return true
-                }
-                receiveBuffer.removeFirst(2)
-                currentInner = .sizeLine
-            case .trailerOrEnd:
-                guard let lineEnd = receiveBuffer.firstCRLF(from: streaming.lineScanCursor) else {
-                    if receiveBuffer.count > Self.maxChunkLineBytes {
-                        logger.warning("\(logPrefix): Malformed chunked body")
-                        receiveBuffer.removeAll(keepingCapacity: false)
-                        mode = .draining
-                        delegate?.http1StreamHardClose(self)
-                        return true
-                    }
-                    streaming.lineScanCursor = max(0, receiveBuffer.count - 1)
-                    mode = .streamingChunked(streaming: streaming, inner: .trailerOrEnd)
-                    return false
-                }
-                receiveBuffer.appendPrefix(lineEnd + 2, to: &output)
-                receiveBuffer.removeFirst(lineEnd + 2)
-                streaming.lineScanCursor = 0
-                if lineEnd == 0 {
-                    flushSynthesizedAfterResponse(into: &output)
-                    mode = .awaitingHead
-                    return true
-                }
-            }
-        }
-    }
-
-    private func emitOrParkStreamingFrame(
-        streaming: inout StreamingState,
-        chunk: Data,
-        isLast: Bool,
-        postFrame: StreamingPostFrame,
-        into output: inout Data
-    ) -> Bool {
-        if streaming.cursor.mutable.withLock({ $0.isBypassed }) {
-            streaming.frameIndex += 1
-            if !chunk.isEmpty {
-                appendChunk(chunk, into: &output)
-            }
-            return false
-        }
-        let frameContext = MITMScriptEngine.FrameContext(
-            phase: direction,
-            method: streamingMethod(streaming),
-            url: streamingURL(streaming),
-            originalURL: streamingOriginalURL(streaming),
-            status: streamingStatus(streaming),
-            headers: streaming.headers,
-            frameIndex: streaming.frameIndex,
-            isLast: isLast,
-            ruleSetID: ruleSetID
-        )
-        let captured = streaming
-        mode = .awaitingScript
-        let cursor = streaming.cursor
-        pendingHop = Task { [weak self] in
-            let result = await MITMScriptTransform.applyFrame(
-                chunk,
-                frameContext: frameContext,
-                cursor: cursor
-            )
-            guard let self else { return }
-            self.sessionContext.enqueue {
-                self.assumeIsolated { $0.resumeStreamingFrame(result: result, streaming: captured, postFrame: postFrame) }
-            }
-        }
-        return true
-    }
-
-    private func resumeStreamingFrame(
-        result: MITMScriptTransform.StreamFrameResult,
-        streaming: StreamingState,
-        postFrame: StreamingPostFrame
-    ) {
-        guard phase != .torn else { return }
-        if resumeIntoForcedPassthroughIfNeeded() { return }
-        var resumed = pendingPreParkOutput
-        pendingPreParkOutput = Data()
-        var streaming = streaming
-        streaming.frameIndex += 1
-        if !result.body.isEmpty {
-            appendChunk(result.body, into: &resumed)
-        }
-        switch postFrame {
-        case .hold(let nextPending, let inner):
-            streaming.pendingChunk = nextPending
-            mode = .streamingChunked(streaming: streaming, inner: inner)
-        case .finalThenTrailer:
-            resumed.append(contentsOf: "0\r\n".utf8)
-            mode = .streamingChunked(streaming: streaming, inner: .trailerOrEnd)
-        case .bypassRemainder(let left):
-            streaming.cursor.mutable.withLock { $0.isBypassed = true }
-            appendChunk(takeChunkAccumulator(), into: &resumed)
-            mode = .streamingChunked(streaming: streaming, inner: .chunkData(remaining: left))
-        }
-        while drive(into: &resumed) { }
-        finishDrivePass(resumed)
-    }
-
-    private func streamingMethod(_ streaming: StreamingState) -> String? {
-        switch direction {
-        case .httpRequest:
-            let parts = streaming.startLine.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: false)
-            return parts.first.map(String.init)
-        case .httpResponse:
-            return streaming.originatingRequest?.method
-        }
-    }
-
-    private func streamingURL(_ streaming: StreamingState) -> String? {
-        switch direction {
-        case .httpRequest:
-            let parts = streaming.startLine.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: false)
-            guard parts.count >= 2 else { return nil }
-            return "\(scheme)://\(host)\(String(parts[1]))"
-        case .httpResponse:
-            return streaming.originatingRequest?.url
-        }
-    }
-
-    private func streamingOriginalURL(_ streaming: StreamingState) -> String? {
-        switch direction {
-        case .httpRequest:
-            return currentRequestOriginalURL
-        case .httpResponse:
-            return streaming.originatingRequest?.originalURL
-        }
-    }
-
-    private func streamingStatus(_ streaming: StreamingState) -> Int? {
-        guard direction == .httpResponse else { return nil }
-        let parts = streaming.startLine.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: false)
-        guard parts.count >= 2 else { return nil }
-        return HTTPHeader.parseStatusCode(parts[1])
     }
 
     fileprivate static func parseHexSize(_ line: UnsafeRawBufferPointer) -> Int? {
@@ -1907,10 +1600,10 @@ actor MITMHTTP1Stream {
         let reason = canonicalReasonPhrase(for: response.status)
         let startLine = "HTTP/1.1 \(response.status) \(reason)"
         var headers = response.sanitizedHeaders(lowercaseNames: false) { name in
-            logger.warning("[Script] NaiveFlow.respond: Invalid header: \(name)")
+            logger.warning("[Script] $done response: Invalid header: \(name)")
         }
         let body = response.truncatedBody(cap: Self.maxSynthesizedResponseBodyBytes) {
-            logger.warning("[Script] NaiveFlow.respond: Body too large")
+            logger.warning("[Script] $done response: Body too large")
         }
         headers = response.withDateStamp(headers, lowercaseName: false)
         headers.append((name: "Content-Length", value: String(body.count)))
@@ -2086,7 +1779,7 @@ actor MITMHTTP1Stream {
                 current = current.map { entry in
                     ASCII.equalsIgnoringCase(entry.name, name) ? (name: name, value: value) : entry
                 }
-            case .rewrite, .script, .streamScript, .bodyReplace, .bodyJSON:
+            case .rewrite, .script, .bodyReplace, .bodyJSON:
                 continue
             }
         }
