@@ -14,6 +14,7 @@ struct NaiveFlowMacApp: App {
     var body: some Scene {
         WindowGroup("NaiveFlow") {
             MacHomeView()
+                .environment(Operations(container: container))
                 .environment(container.appState)
                 .environment(container.tunnel)
                 .environment(container.selection)

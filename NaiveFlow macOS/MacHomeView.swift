@@ -4,12 +4,13 @@ import Charts
 import NetworkExtension
 
 private enum MacPage: String, CaseIterable, Identifiable {
-    case overview = "概览", policies = "策略", requests = "请求", logs = "日志"
+    case overview = "概览", policies = "策略", profile = "配置文件", requests = "请求", logs = "日志"
     var id: Self { self }
     var symbol: String {
         switch self {
         case .overview: "square.grid.2x2"
         case .policies: "arrow.triangle.branch"
+        case .profile: "doc.text"
         case .requests: "list.bullet.rectangle"
         case .logs: "text.alignleft"
         }
@@ -18,6 +19,7 @@ private enum MacPage: String, CaseIterable, Identifiable {
 
 struct MacHomeView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(Operations.self) private var operations
     @Environment(TunnelController.self) private var tunnel
     @Environment(ConfigurationStore.self) private var configurationStore
     @Environment(ProxySelection.self) private var selection
@@ -94,6 +96,7 @@ struct MacHomeView: View {
                 switch currentPage {
                 case .overview: overview
                 case .policies: policies
+                case .profile: MacConfigurationEditor(operations: operations)
                 case .requests: requestList
                 case .logs: logList
                 }
@@ -135,7 +138,7 @@ struct MacHomeView: View {
                     if paused { requests.pruneExpired() }
                     else { await requests.poll(using: tunnel) }
                 case .logs: await logs.poll(using: tunnel)
-                case .policies: break
+                case .policies, .profile: break
                 }
                 do { try await Task.sleep(for: .seconds(1)) }
                 catch { break }

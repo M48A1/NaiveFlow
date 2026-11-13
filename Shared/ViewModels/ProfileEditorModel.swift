@@ -253,12 +253,18 @@ final class ProfileEditorModel {
     /// Receiving cloud content never applies it or overwrites this buffer.
     /// Loading is an explicit editor action; keep the old buffer recoverable.
     func loadCloudDocument(_ document: CloudConfigurationDocument) {
-        guard !isApplying else { return }
-        do { try self.document.backupBeforeCloudLoad(text) }
-        catch { errorMessage = error.localizedDescription; return }
+        _ = loadCloudText(document.text, name: document.deviceName)
+    }
+
+    @discardableResult
+    func loadCloudText(_ value: String, name: String) -> Bool {
+        guard !isApplying else { return false }
+        do { try document.backupBeforeCloudLoad(text) }
+        catch { errorMessage = error.localizedDescription; return false }
         cloudDraftBackup = text
-        replaceText(with: document.text)
-        statusMessage = "Loaded the configuration from \(document.deviceName). Review it, then press Apply."
+        replaceText(with: value)
+        statusMessage = "Loaded \(name). Review it, then press Apply."
+        return true
     }
 
     func restoreDraftBeforeCloudLoad() {

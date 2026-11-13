@@ -24,7 +24,6 @@ struct ProfileView: View {
 
     @State private var modelBox = ViewScoped<ProfileEditorModel>()
     @State private var showImporter = false
-    @State private var pendingCloudDocument: CloudConfigurationDocument?
 
     private var model: ProfileEditorModel {
         modelBox {
@@ -39,11 +38,11 @@ struct ProfileView: View {
                 resultSection
                 reloadSection
                 actionSection
-                cloudSection
+                ConfigurationDriveSection(model: model, legacy: operations.configurationCloud)
                 historySection
             }
             .navigationTitle("Configuration")
-            .task { model.load(); operations.configurationCloud.reload() }
+            .task { model.load() }
             .onDisappear { model.dismissMessages() }
             .fileImporter(
                 isPresented: $showImporter,
@@ -55,15 +54,6 @@ struct ProfileView: View {
                 case .failure(let error):
                     model.report(error)
                 }
-            }
-            .confirmationDialog("Load iCloud Configuration?", isPresented: Binding(
-                get: { pendingCloudDocument != nil },
-                set: { if !$0 { pendingCloudDocument = nil } }
-            ), presenting: pendingCloudDocument) { item in
-                Button("Load into Editor") { model.loadCloudDocument(item); pendingCloudDocument = nil }
-                Button("Cancel", role: .cancel) { pendingCloudDocument = nil }
-            } message: { _ in
-                Text("Your current draft will be backed up. Loading does not apply the configuration to this device.")
             }
             .alert("Configuration Not Applied", isPresented: errorBinding) {
                 Button("OK", role: .cancel) { model.dismissError() }
@@ -206,46 +196,6 @@ private extension ProfileView {
             Text("Actions")
         } footer: {
             Text("Apply writes the document into the app's stores, which is what the tunnel reads. Import only loads a file into the editor; nothing is applied until you press Apply.")
-        }
-    }
-
-    var cloudSection: some View {
-        Section {
-            Button("Upload New Copy to iCloud") {
-                let text = model.text
-                Task { await operations.configurationCloud.upload(text) }
-            }
-            .disabled(model.isApplying || operations.configurationCloud.isTransferring)
-            Button("Download iCloud Configurations") {
-                Task { await operations.configurationCloud.download() }
-            }
-            .disabled(operations.configurationCloud.isTransferring)
-            ForEach(operations.configurationCloud.documents) { item in
-                Button {
-                    pendingCloudDocument = item
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.deviceName)
-                        Text(item.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                .disabled(model.isApplying)
-            }
-            if model.cloudDraftBackup != nil {
-                Button("Restore Draft Before iCloud Load") { model.restoreDraftBeforeCloudLoad() }
-                    .disabled(model.isApplying)
-            }
-            if let message = operations.configurationCloud.statusMessage {
-                Text(message).font(.footnote).foregroundStyle(.secondary)
-            }
-            if let error = operations.configurationCloud.errorMessage {
-                Text(error).font(.footnote).foregroundStyle(.red)
-            }
-        } header: {
-            Text("iCloud Configurations")
-        } footer: {
-            Text("Uploads and downloads are manual. Editing, applying and opening the app never transfer configurations. Upload creates a new cloud copy. Downloaded copies only enter the editor after you select and confirm them.")
         }
     }
 

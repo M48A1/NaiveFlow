@@ -1,30 +1,11 @@
-# 配置文件的手动 iCloud 传输
+# 使用 iCloud Drive 共享配置
 
-配置页的 **iCloud Configurations** 提供两个手动入口：
+iPhone、iPad 和 macOS 的配置页都提供 **iCloud Drive**。首次用 **Save as New Configuration** 给当前草稿命名。保存后的 `.conf` 位于 iCloud Drive 的 **NaiveFlow** 文件夹。其他设备用同一个 Apple 账户，在配置页选 **Open iCloud Configuration**，打开同名文件。系统负责设备间的文件同步。
 
-- **Upload New Copy to iCloud**：上传当前编辑器文本，每次生成独立的新副本，保留已有云端文件。分块全部上传成功后才写入清单；显示成功代表本次 CloudKit 请求已确认。
-- **Download iCloud Configurations**：主动下载云端副本列表并保存在本机。选择副本、确认后载入编辑器；启用仍需单独按 Apply。
+用 **Save to iCloud Drive** 更新当前关联的文件。关联会在重新打开配置页后保留。打开配置页或回到前台时检查云端文件，也可以点 **Refresh iCloud Drive**。云端版本变化时，编辑器保留本机草稿，需确认载入。保存前会在协调写入中再次比较内容和检查文件版本冲突。检测到变化时，可先载入最新版本，或用新名称保存当前草稿。
 
-编辑、草稿保存、应用、回滚、打开页面、App 启动和全局 iCloud Sync 开关均不会发起配置上传或下载。启动只读本机缓存。传输失败会显示错误，没有持久后台重试队列；需要再次点击按钮。全局 iCloud Sync 开关继续服务节点等原有资料，配置传输独立于该开关，仍要求系统登录 iCloud、App 有正确的 CloudKit 签名及容器权限。
+载入前会在本机备份当前草稿，可用 **Restore Draft Before iCloud Load** 恢复。载入后按 **Apply Configuration** 才会应用到本机 VPN。保存只写入配置文本，云盘同步进度由系统负责。配置使用 UTF-8，单文件上限 16 MiB。
 
-这不是 iCloud Drive 中可浏览的普通文件。仍可使用现有文件导入/导出功能。手动传输不会改变活动版本、VPN 连接、内核回执或 CA 私钥；规则/脚本 URL 仅随原文保存，另一设备应用时重新读取，file URL 权限不会迁移。
+旧版 CloudKit 副本仍可通过 **Previous iCloud Backups** 手动取回。载入后用 **Save as New Configuration** 迁移。节点等资料仍通过原有 CloudKit 开关同步。
 
-## 避免覆盖与恢复
-
-新上传使用随机副本 ID，不依赖设备 ID，也不覆盖旧副本。云端文本不会自动替换编辑器。载入之前原子备份当前草稿到本机 `before-cloud-load.txt`；备份失败则拒绝替换。**Restore Draft Before iCloud Load** 可恢复最近一次备份，重启后仍可读取。
-
-本机缓存显示上一次手动传输得到的结果，可能不是云端最新状态；需要点击下载刷新。失败保留旧缓存和本地草稿。新上传只添加本次副本，不顺便下载其他设备文件。第一版不提供云端删除和自动清理，历史副本会占用 iCloud 空间。
-
-## 隔离自动通道与旧版数据
-
-手动配置使用独立私有 zone `NaiveFlowConfigurationFiles`，不使用 CKSyncEngine、后台订阅或自动排队。原有自动引擎限制为 `NaiveFlowSync` zone，并在恢复状态、全量排队、变更通知、发送批次和接收保存处排除 `configurationDocuments`，阻止旧的待上传配置在重启后续传。
-
-升级时不删除旧云端资料、不自动上传本地文件。只有点击下载时，才额外读取旧 `NaiveFlowSync` 中的配置副本，便于继续载入。旧混合 zone 仍承载其他资料，系统拉取其中其他资料时可能返回旧配置记录，但这些记录会被丢弃，不更新配置列表或本地编辑器。若另一设备继续运行旧版 App，它仍可能按旧版逻辑同步；请更新相关设备。
-
-## 大文件与完整性
-
-单份文本最多 16 MiB，以 256,000 字节分块；保留逐块 SHA-256、整文摘要、总长度及 UTF-8 校验。缺块、混合版本或损坏文件不会展示。上传每批最多四块，全部确认后才发布清单；失败可能留下不展示的孤立分块，不影响已有副本。每次下载最多接受 128 MiB 的配置记录，超限报错并保留旧缓存。
-
-## 验证
-
-测试覆盖无网络副作用的打开/重载、手动上传只发送且新增副本、手动下载不上传、失败保留缓存、失败不排队重试、自动同步集合隔离，以及原有分块/编辑器备份测试。当前环境只有静态检查，未运行 Swift/Xcode 测试及真实 iCloud 双设备验收。
+构建 iOS 和 macOS 时，签名描述文件需要允许 `iCloud.com.argsment.NaiveFlow` 的 iCloud Documents 服务。首次保存文档后，系统会显示 NaiveFlow 的 iCloud Drive 文件夹。
