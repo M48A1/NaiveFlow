@@ -30,6 +30,10 @@ nonisolated enum MITMScriptTransform {
             }
         }
         guard hasScriptRule else { return }
+        guard MITMScriptWatchdog.isAvailable else {
+            logger.error("[Script] MITM scripts are unavailable: JavaScriptCore execution limit could not be loaded")
+            return
+        }
         MITMScriptEngine.warmVirtualMachine()
     }
 
@@ -52,14 +56,36 @@ nonisolated enum MITMScriptTransform {
         return false
     }
 
+    static func hasHeaderOnlyScript(in rules: [CompiledMITMRule], verdicts: MITMGateVerdictTable) -> Bool {
+        for index in rules.indices.reversed() where verdicts.matches(at: index) {
+            if case .script(_, let preamble, _) = rules[index].operation {
+                let target = rules[index].phase == .httpRequest ? "$request" : "$response"
+                return preamble.split(separator: "\n").contains { line in
+                    line == ForeignScriptContext.headerOnlyMarker
+                        || line == "delete \(target).body; delete \(target).bodyBytes;"
+                }
+            }
+        }
+        return false
+    }
+
     static func hasBufferedBodyRule(in rules: [CompiledMITMRule], verdicts: MITMGateVerdictTable) -> Bool {
-        hasScriptRule(in: rules, verdicts: verdicts)
+        (hasScriptRule(in: rules, verdicts: verdicts) && !hasHeaderOnlyScript(in: rules, verdicts: verdicts))
             || hasBodyReplaceRule(in: rules, verdicts: verdicts)
             || hasBodyJSONRule(in: rules, verdicts: verdicts)
     }
 
     static func hasBodyAccessingRule(in rules: [CompiledMITMRule], verdicts: MITMGateVerdictTable) -> Bool {
         hasBufferedBodyRule(in: rules, verdicts: verdicts)
+    }
+
+    static func preservingBodyHeaders(
+        _ updated: [(name: String, value: String)],
+        from original: [(name: String, value: String)]
+    ) -> [(name: String, value: String)] {
+        let bodyHeaders: Set<String> = ["content-length", "transfer-encoding", "content-encoding", "trailer", "connection", "upgrade"]
+        return updated.filter { !bodyHeaders.contains($0.name.lowercased()) }
+            + original.filter { bodyHeaders.contains($0.name.lowercased()) }
     }
 
     static func isStreamingMediaType(_ contentType: String?) -> Bool {

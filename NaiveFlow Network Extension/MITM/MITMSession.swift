@@ -1227,7 +1227,7 @@ extension MITMSession: MITMBridgeClientLegDelegate, MITMUpstreamLegDelegate {
         switch upstreamProtocol {
         case .h2:
             if failStreamIfOffBoundH2Upstream(head) { return }
-            h2Rewriter.requestLog.recordHTTP2(streamID: head.clientStreamID, method: head.method, url: url, originalURL: head.originalURL)
+            h2Rewriter.requestLog.recordHTTP2(streamID: head.clientStreamID, method: head.method, url: url, originalURL: head.originalURL, headers: head.headers)
             h2Upstream?.assumeIsolated { $0.sendRequestHead(head, endStream: endStream) }
         case .h1:
             openH1Stream(head, url: url)
@@ -1478,7 +1478,7 @@ extension MITMSession: MITMBridgeClientLegDelegate, MITMUpstreamLegDelegate {
             for event in events {
                 switch event {
                 case .head(let head, let url, let endStream):
-                    rewriter.requestLog.recordHTTP2(streamID: head.clientStreamID, method: head.method, url: url, originalURL: head.originalURL)
+                    rewriter.requestLog.recordHTTP2(streamID: head.clientStreamID, method: head.method, url: url, originalURL: head.originalURL, headers: head.headers)
                     upstream.sendRequestHead(head, endStream: endStream)
                 case .data(let streamID, let data, let endStream):
                     upstream.sendRequestData(streamID: streamID, data, endStream: endStream)
@@ -1580,7 +1580,7 @@ extension MITMSession: MITMBridgeClientLegDelegate, MITMUpstreamLegDelegate {
             return
         }
         let responseLog = MITMRequestLog()
-        responseLog.recordHTTP1(method: head.method, url: url, originalURL: head.originalURL)
+        responseLog.recordHTTP1(method: head.method, url: url, originalURL: head.originalURL, headers: head.headers)
         let responseStream = MITMHTTP1Stream(
             host: dstHost, direction: .httpResponse, policy: policy, effectiveAuthority: nil,
             requestLog: responseLog, sessionContext: sessionContext,

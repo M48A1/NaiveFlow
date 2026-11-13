@@ -189,6 +189,7 @@ struct ModuleOperations {
                 }
                 var prefix = "globalThis.$script = {name: \(try json(name)), startTime: Date.now()/1000, binaryBodyMode: \(binary)};\n"
                 if let timeout { prefix = ForeignScriptContext.timeoutPrefix + String(timeout) + "\n" + prefix }
+                if !requiresBody, !binary { prefix += ForeignScriptContext.headerOnlyMarker + "\n" }
                 if let argument { prefix += "globalThis.$argument = \(try json(argument));\n" }
                 let target = rule.phase == .httpRequest ? "$request" : "$response"
                 if let maxSize, maxSize >= 0 {

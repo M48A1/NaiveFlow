@@ -96,6 +96,10 @@ Import rewrite rules through a Surge module or Quantumult X rewrite snippet.
 The importers support a subset of the two formats, including URL redirects,
 selected rejects and header rewrites, and Surge `http-response-jq` deletion.
 Module imports resolve script and response resources before activation.
+Surge scripts imported without body access and Quantumult X header scripts
+run before forwarding a message body. A simultaneous matching body rewrite
+still requires buffering. For messages with a body, header-only scripts leave
+the body and its framing headers intact.
 The app shows the resulting rules in the module preview.
 
 A rule set limits interception to its configured hostname suffixes. The
@@ -121,6 +125,10 @@ const data = JSON.parse($response.body);
 data.example = true;
 $done({body: JSON.stringify(data)});
 ```
+
+For HTTP/2, a request script can change the HTTPS authority through
+`$done({url: ...})`. A connection already bound to a different HTTP/2 upstream
+returns 502 for that stream.
 
 Script dialect is explicit metadata, fixed into the published runtime version.
 The default is **Surge**. Choose Quantumult X with `dialect=quantumult-x`:

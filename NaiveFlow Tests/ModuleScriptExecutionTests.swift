@@ -58,6 +58,26 @@ struct ModuleScriptExecutionTests {
         #expect(made.module.name == "JSON example")
     }
 
+    @Test(arguments: ModuleFormat.allCases)
+    func importedHeaderScriptsCarryHeaderOnlyMetadata(format: ModuleFormat) async throws {
+        let config = switch format {
+        case .surge:
+            "[Script]\nheader = type=http-response, pattern=., script-path=https://example.com/header.js\n[MITM]\nhostname = example.com"
+        case .quantumultX:
+            ". url script-response-header https://example.com/header.js\nhostname = example.com"
+        }
+        let made = try await ModuleOperations.makeModule(from: config, fallbackName: "Headers", format: format,
+            fetchResource: { _ in "$done({headers:{'X-Test':'yes'}});" })
+        let rule = try #require(made.module.mitmRuleSets.first?.rules.first)
+        guard case .script(let encoded, _) = rule.operation else {
+            Issue.record("Missing imported header script")
+            return
+        }
+        let source = try #require(Data(base64Encoded: encoded).flatMap { String(data: $0, encoding: .utf8) })
+        let marker = try #require(source.range(of: ForeignScriptContext.sourceMarker))
+        #expect(source[..<marker.lowerBound].contains(ForeignScriptContext.headerOnlyMarker))
+    }
+
     @Test func binaryBodiesAndQuantumultStringDoneRoundTrip() throws {
         let (ctx, result) = try execute("$done($response.bodyBytes.subarray(1,3));", dialect: .quantumultX, response: true, url: "https://example.com/", body: Data([0, 255, 128, 0]))
         #expect(ForeignScriptContext.bytes(result, in: ctx) == Data([255, 128]))

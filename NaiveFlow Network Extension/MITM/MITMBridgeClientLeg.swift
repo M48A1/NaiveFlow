@@ -537,9 +537,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
 
     private func applyRequestHead(_ head: PendingRequestHead, gates: MITMHTTP2Rewriter.RequestHeadGates) -> Bool {
         let streamID = head.streamID
-        let endStream = head.endStream
         let requestURL = head.requestURL
-        let indexing = head.indexing
 
         if let synthesized = rewriter.requestSynthesizedResponse(gates: gates) {
             answerWithSynthesizedResponse(streamID: streamID, response: synthesized)
@@ -549,15 +547,60 @@ actor MITMBridgeClientLeg: MITMResponseSink {
         var rewritten: [(name: String, value: String)]
         let resolvedUpstream: (host: String, port: UInt16?)?
         (rewritten, resolvedUpstream) = rewriter.transformRequestHeaders(head.decoded, gates: gates)
-        let gateURL = MITMHTTP2Rewriter.requestPath(in: rewritten).map { "https://\(host)\($0)" } ?? requestURL
+        let gateURL = gates.post.url ?? requestURL
 
         if rewriter.hasBodyAccessingRule(phase: .httpResponse, verdicts: gates.responseGates) {
             rewritten = MITMBridgeHeaders.clampingAcceptEncoding(rewritten)
         }
 
-        let hasBufferedRule = rewriter.hasBufferedBodyRule(phase: .httpRequest, verdicts: gates.post)
-        let method = head.method
-        let willBufferBody = hasBufferedRule && (endStream || shouldBuffer(headers: rewritten))
+        let rules = rewriter.rules(phase: .httpRequest)
+        let hasBufferedRule = MITMScriptTransform.hasBufferedBodyRule(in: rules, verdicts: gates.post)
+        if !hasBufferedRule, MITMScriptTransform.hasHeaderOnlyScript(in: rules, verdicts: gates.post) {
+            let message = HTTPMessage(phase: .httpRequest, method: head.method, url: gateURL,
+                originalURL: requestURL, status: nil, headers: rewritten.filter { !$0.name.hasPrefix(":") },
+                body: Data(), ruleSetID: rewriter.ruleSetID)
+            let originalHeaders = rewritten
+            Task { [weak self] in
+                let outcome = await MITMScriptTransform.apply(message, rules: rules)
+                guard let self else { return }
+                self.sessionContext.enqueue {
+                    self.assumeIsolated { leg in
+                        if leg.phase != .torn, leg.phase != .failed, leg.streamMethods[streamID] != nil {
+                            switch outcome {
+                            case .message(let updated):
+                                let headers = MITMScriptTransform.preservingBodyHeaders(updated.headers, from: message.headers)
+                                let (finalHeaders, upstream) = leg.applyScriptRequestHead(updated, original: message,
+                                    regularHeaders: headers, wireHeaders: originalHeaders, upstream: resolvedUpstream)
+                                _ = leg.forwardRequestHead(head, headers: finalHeaders, resolvedUpstream: upstream,
+                                    buffersBody: false)
+                            case .synthesizedResponse(let response):
+                                leg.answerWithSynthesizedResponse(streamID: streamID, response: response)
+                            }
+                        }
+                        let parked = leg.phase != .torn && leg.phase != .failed && leg.pump()
+                        leg.finishPass(parked: parked)
+                    }
+                }
+            }
+            return true
+        }
+        return forwardRequestHead(head, headers: rewritten, resolvedUpstream: resolvedUpstream, buffersBody: hasBufferedRule)
+    }
+
+    private func forwardRequestHead(
+        _ head: PendingRequestHead,
+        headers: [(name: String, value: String)],
+        resolvedUpstream: (host: String, port: UInt16?)?,
+        buffersBody: Bool
+    ) -> Bool {
+        let streamID = head.streamID
+        let endStream = head.endStream
+        let requestURL = head.requestURL
+        let indexing = head.indexing
+        var rewritten = headers
+        let gateURL = wireRequestURL(rewritten) ?? requestURL
+        let method = HTTPHeader.firstValue(in: rewritten, named: ":method") ?? head.method
+        let willBufferBody = buffersBody && (endStream || shouldBuffer(headers: rewritten))
 
         if willBufferBody, !endStream, Self.expectsContinue(rewritten) {
             sendInterimContinue(streamID)
@@ -629,6 +672,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
         case .contentLength(let length): remaining = length
         case .chunked: remaining = nil
         }
+        streamMethods[streamID] = head.method.uppercased()
         requestStreams[streamID] = .streaming(remaining: remaining)
         if isUploadDrainCoupled, !endStream { streamDeferredUpload.insert(streamID) }
         delegate?.clientLegSendRequestHead(head, url: gateURL, endStream: endStream)
@@ -649,9 +693,8 @@ actor MITMBridgeClientLeg: MITMResponseSink {
                         continuation?.resume()
                         return
                     }
-                    _ = leg.applyRequestHead(head, gates: gates)
-                    let parked = leg.pump()
-                    leg.finishPass(parked: parked)
+                    let parked = leg.applyRequestHead(head, gates: gates)
+                    leg.finishPass(parked: parked || leg.pump())
                 }
             }
         }
@@ -816,7 +859,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
             rstToClient(streamID, errorCode: Codec.ErrorCode.protocolError, abortUpstream: true)
             return false
         }
-        let url = HTTPHeader.firstValue(in: buffer.rewrittenHeaders, named: ":path").map { "https://\(host)\($0)" }
+        let url = wireRequestURL(buffer.rewrittenHeaders)
         requestStreams[streamID] = .streaming(remaining: nil)
         delegate?.clientLegSendRequestHead(head, url: url, endStream: false)
         if !buffer.data.isEmpty { delegate?.clientLegSendRequestData(streamID: streamID, buffer.data, endStream: false) }
@@ -878,7 +921,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
         let scriptedHeaders = buffer.codec.requiresDecompression
             ? buffer.rewrittenHeaders.filter { !ASCII.equalsIgnoringCase($0.name, "content-encoding") }
             : buffer.rewrittenHeaders
-        let url = HTTPHeader.firstValue(in: buffer.rewrittenHeaders, named: ":path").map { "https://\(host)\($0)" }
+        let url = wireRequestURL(buffer.rewrittenHeaders)
         let message = HTTPMessage(
             phase: .httpRequest,
             method: HTTPHeader.firstValue(in: scriptedHeaders, named: ":method"),
@@ -907,24 +950,14 @@ actor MITMBridgeClientLeg: MITMResponseSink {
                                 headers += buffer.rewrittenHeaders.filter { ASCII.equalsIgnoringCase($0.name, "content-encoding") }
                             }
                         }
-                        var pseudoHeaders = buffer.rewrittenHeaders.filter { $0.name.hasPrefix(":") }
-                        if let method = updated.method, HTTPHeader.isValidName(method) {
-                            pseudoHeaders.removeAll { $0.name == ":method" }
-                            pseudoHeaders.append((name: ":method", value: method))
-                            leg.streamMethods[streamID] = method.uppercased()
-                        }
-                        if let url = updated.url, url != message.url,
-                           let target = MITMRewritePolicy.parseReplacementURL(url),
-                           HTTPHeader.isValidValue(target.requestTarget), !target.requestTarget.utf8.contains(0x20) {
-                            pseudoHeaders.removeAll { $0.name == ":path" }
-                            pseudoHeaders.append((name: ":path", value: target.requestTarget))
-                        }
+                        let (finalHeaders, upstream) = leg.applyScriptRequestHead(updated, original: message,
+                            regularHeaders: headers, wireHeaders: buffer.rewrittenHeaders, upstream: buffer.resolvedUpstream)
                         leg.emitBufferedRequest(
                             streamID: streamID,
-                            headers: pseudoHeaders + headers,
+                            headers: finalHeaders,
                             body: keepWireBody ? buffer.data : updated.body,
                             indexing: buffer.indexing,
-                            resolvedUpstream: buffer.resolvedUpstream,
+                            resolvedUpstream: upstream,
                             originalURL: buffer.originalURL
                         )
                     case .synthesizedResponse(let response):
@@ -934,6 +967,42 @@ actor MITMBridgeClientLeg: MITMResponseSink {
             }
         }
         return false
+    }
+
+    private func wireRequestURL(_ headers: [(name: String, value: String)]) -> String? {
+        guard let path = HTTPHeader.firstValue(in: headers, named: ":path") else { return nil }
+        let authority = HTTPHeader.firstValue(in: headers, named: ":authority") ?? host
+        return "https://\(authority)\(path)"
+    }
+
+    private func applyScriptRequestHead(
+        _ updated: HTTPMessage,
+        original: HTTPMessage,
+        regularHeaders: [(name: String, value: String)],
+        wireHeaders: [(name: String, value: String)],
+        upstream: (host: String, port: UInt16?)?
+    ) -> ([(name: String, value: String)], (host: String, port: UInt16?)?) {
+        var pseudo = wireHeaders.filter { $0.name.hasPrefix(":") }
+        if let method = updated.method, HTTPHeader.isValidName(method), method.uppercased() != "CONNECT" {
+            pseudo.removeAll { $0.name == ":method" }
+            pseudo.append((name: ":method", value: method))
+        }
+        guard let url = updated.url, url != original.url,
+              let components = URLComponents(string: url), components.scheme?.lowercased() == "https",
+              components.user == nil, components.password == nil,
+              let target = MITMRewritePolicy.parseReplacementURL(url),
+              HTTPHeader.isValidValue(target.authority), HTTPHeader.isValidValue(target.requestTarget),
+              !target.requestTarget.utf8.contains(0x20) else { return (pseudo + regularHeaders, upstream) }
+
+        pseudo.removeAll { $0.name == ":path" || $0.name == ":authority" }
+        pseudo.append((name: ":path", value: target.requestTarget))
+        pseudo.append((name: ":authority", value: target.authority))
+        let regular = regularHeaders.filter { !ASCII.equalsIgnoringCase($0.name, "host") }
+        let originalTarget = wireRequestURL(wireHeaders).flatMap(MITMRewritePolicy.parseReplacementURL)
+        let sameAuthority = originalTarget.map {
+            ASCII.equalsIgnoringCase($0.host, target.host) && $0.port == target.port
+        } ?? false
+        return (pseudo + regular, sameAuthority ? upstream : (host: target.host, port: target.port ?? 443))
     }
 
     private func emitBufferedRequest(
@@ -955,7 +1024,8 @@ actor MITMBridgeClientLeg: MITMResponseSink {
             rstToClient(streamID, errorCode: Codec.ErrorCode.protocolError, abortUpstream: true)
             return
         }
-        let url = HTTPHeader.firstValue(in: headers, named: ":path").map { "https://\(host)\($0)" }
+        let url = wireRequestURL(headers)
+        streamMethods[streamID] = head.method.uppercased()
         delegate?.clientLegSendRequestHead(head, url: url, endStream: body.isEmpty)
         if !body.isEmpty { delegate?.clientLegSendRequestData(streamID: streamID, body, endStream: true) }
     }

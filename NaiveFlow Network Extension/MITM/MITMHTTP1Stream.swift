@@ -547,10 +547,62 @@ actor MITMHTTP1Stream {
         )
 
         let scriptsApply = MITMScriptTransform.hasScriptRule(in: rules, verdicts: gates.ruleTable)
-        let buffersBody = scriptsApply
-            || MITMScriptTransform.hasBodyReplaceRule(in: rules, verdicts: gates.ruleTable)
-            || MITMScriptTransform.hasBodyJSONRule(in: rules, verdicts: gates.ruleTable)
+        let buffersBody = MITMScriptTransform.hasBufferedBodyRule(in: rules, verdicts: gates.ruleTable)
+        let headerOnly = scriptsApply && !buffersBody
+        if headerOnly, !isInterimResponseStartLine(rewrittenStartLine) {
+            switch framing {
+            case .contentLength, .chunked, .readUntilClose:
+                let message = buildMessage(startLine: rewrittenStartLine, headers: rewrittenHeaders,
+                    body: Data(), originatingRequest: originatingRequest)
+                mode = .awaitingScript
+                let rules = self.rules
+                let originalHeaders = rewrittenHeaders
+                pendingHop = Task { [weak self] in
+                    let outcome = await MITMScriptTransform.apply(message, rules: rules)
+                    guard let self else { return }
+                    self.sessionContext.enqueue {
+                        self.assumeIsolated { stream in
+                            guard stream.phase != .torn, !stream.resumeIntoForcedPassthroughIfNeeded() else { return }
+                            var resumed = stream.pendingPreParkOutput
+                            stream.pendingPreParkOutput = Data()
+                            switch outcome {
+                            case .message(var updated):
+                                if stream.direction == .httpResponse, let status = updated.status,
+                                   status < 200 || stream.isNoBodyStatus(status) {
+                                    updated.status = message.status
+                                }
+                                if stream.direction == .httpRequest, updated.method?.uppercased() == "CONNECT" {
+                                    updated.method = message.method
+                                }
+                                let startLine = stream.rebuildStartLine(from: updated, fallback: rewrittenStartLine)
+                                let headers = MITMScriptTransform.preservingBodyHeaders(updated.headers, from: originalHeaders)
+                                _ = stream.forwardHead(startLine: startLine, headers: headers, framing: framing,
+                                    scriptsApply: false, buffersBody: false, originatingRequest: originatingRequest, into: &resumed)
+                            case .synthesizedResponse(let response):
+                                _ = stream.synthesizeRequestResponse(response, requestHeaders: originalHeaders, into: &resumed)
+                            }
+                            while stream.drive(into: &resumed) { }
+                            stream.finishDrivePass(resumed)
+                        }
+                    }
+                }
+                return false
+            case .none, .switchingProtocols: break
+            }
+        }
+        return forwardHead(startLine: rewrittenStartLine, headers: rewrittenHeaders, framing: framing,
+            scriptsApply: scriptsApply, buffersBody: buffersBody, originatingRequest: originatingRequest, into: &output)
+    }
 
+    private func forwardHead(
+        startLine rewrittenStartLine: String,
+        headers rewrittenHeaders: [Header],
+        framing: Framing,
+        scriptsApply: Bool,
+        buffersBody: Bool,
+        originatingRequest: MITMRequestLog.Record?,
+        into output: inout Data
+    ) -> Bool {
         switch framing {
         case .switchingProtocols, .readUntilClose:
             if case .readUntilClose = framing, buffersBody {
@@ -579,7 +631,7 @@ actor MITMHTTP1Stream {
                 }
             }
             if direction == .httpRequest {
-                logRequest(startLine: rewrittenStartLine)
+                logRequest(startLine: rewrittenStartLine, headers: rewrittenHeaders)
             }
             let finalHeaders: [Header]
             if case .readUntilClose = framing {
@@ -641,7 +693,7 @@ actor MITMHTTP1Stream {
                 return false
             }
             if direction == .httpRequest {
-                logRequest(startLine: rewrittenStartLine)
+                logRequest(startLine: rewrittenStartLine, headers: rewrittenHeaders)
             }
             if let sink = responseIRSink, isInterimResponseStartLine(rewrittenStartLine) {
                 sink.http1ResponseInterim(
@@ -788,7 +840,7 @@ actor MITMHTTP1Stream {
             logger.warning("[MITM] \(host): Body too large for rewrite")
         }
         if direction == .httpRequest {
-            logRequest(startLine: rewrittenStartLine)
+            logRequest(startLine: rewrittenStartLine, headers: rewrittenHeaders)
         }
         emitResponseHead(startLine: rewrittenStartLine, headers: rewrittenHeaders, bodyFollows: true, into: &output)
         mode = .forwardingLength(remaining: length)
@@ -825,7 +877,7 @@ actor MITMHTTP1Stream {
             logger.warning("\(logPrefix): Unsupported Transfer-Encoding for rewrite")
         }
         if direction == .httpRequest {
-            logRequest(startLine: rewrittenStartLine)
+            logRequest(startLine: rewrittenStartLine, headers: rewrittenHeaders)
         }
         emitResponseHead(startLine: rewrittenStartLine, headers: rewrittenHeaders, bodyFollows: true, into: &output)
         mode = .forwardingChunked(reader: ChunkedReader())
@@ -1080,7 +1132,7 @@ actor MITMHTTP1Stream {
                     return false
                 }
                 if direction == .httpRequest {
-                    logRequest(startLine: pending.startLine)
+                    logRequest(startLine: pending.startLine, headers: pending.headers)
                 }
                 output.append(serializeHead(startLine: pending.startLine, headers: pending.headers))
                 if let originalSizes {
@@ -1144,7 +1196,7 @@ actor MITMHTTP1Stream {
             )
             finalHeaders.append((name: "Content-Length", value: String(body.count)))
             if direction == .httpRequest {
-                logRequest(startLine: finalStartLine)
+                logRequest(startLine: finalStartLine, headers: finalHeaders)
             }
             if responseIRSink != nil {
                 emitResponseHead(startLine: finalStartLine, headers: finalHeaders, bodyFollows: !body.isEmpty, into: &resumed)
@@ -1228,7 +1280,7 @@ actor MITMHTTP1Stream {
         }
 
         if direction == .httpRequest {
-            logRequest(startLine: finalStartLine)
+            logRequest(startLine: finalStartLine, headers: finalHeaders)
         }
         let hasBody = !result.body.isEmpty && !isHeadResponse
         if responseIRSink != nil {
@@ -1634,7 +1686,7 @@ actor MITMHTTP1Stream {
 
     // MARK: - Framing decision
 
-    private enum Framing {
+    private enum Framing: Sendable {
         case none
         case contentLength(Int)
         case chunked
@@ -1838,7 +1890,8 @@ actor MITMHTTP1Stream {
             status: status,
             headers: headers,
             body: body,
-            ruleSetID: ruleSetID
+            ruleSetID: ruleSetID,
+            requestHeaders: originatingRequest?.headers ?? []
         )
     }
 
@@ -1920,7 +1973,7 @@ actor MITMHTTP1Stream {
 
     // MARK: - Request log helpers
 
-    private func logRequest(startLine: String) {
+    private func logRequest(startLine: String, headers: [Header]) {
         guard direction == .httpRequest else { return }
         let parts = startLine.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: false)
         guard parts.count >= 2 else {
@@ -1930,7 +1983,7 @@ actor MITMHTTP1Stream {
         let method = String(parts[0])
         let target = String(parts[1])
         let url = "\(scheme)://\(host)\(target)"
-        requestLog.recordHTTP1(method: method, url: url, originalURL: currentRequestOriginalURL)
+        requestLog.recordHTTP1(method: method, url: url, originalURL: currentRequestOriginalURL, headers: headers)
     }
 }
 

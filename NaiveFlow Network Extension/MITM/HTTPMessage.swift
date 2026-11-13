@@ -7,7 +7,6 @@
 
 import Foundation
 
-/// Scripts may only write back `body`; all other fields are read-only to them.
 nonisolated struct HTTPMessage {
     let phase: MITMPhase
     var method: String?
@@ -17,4 +16,5 @@ nonisolated struct HTTPMessage {
     var headers: [(name: String, value: String)]
     var body: Data
     let ruleSetID: UUID?
+    var requestHeaders: [(name: String, value: String)] = []
 }

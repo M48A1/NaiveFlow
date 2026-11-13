@@ -123,10 +123,6 @@ nonisolated final class MITMHTTP2Rewriter: Sendable {
 
     // MARK: - Script preflight + application
 
-    func hasBufferedBodyRule(phase: MITMPhase, verdicts: MITMGateVerdictTable) -> Bool {
-        MITMScriptTransform.hasBufferedBodyRule(in: rules(phase: phase), verdicts: verdicts)
-    }
-
     func hasBodyAccessingRule(phase: MITMPhase, verdicts: MITMGateVerdictTable) -> Bool {
         MITMScriptTransform.hasBodyAccessingRule(in: rules(phase: phase), verdicts: verdicts)
     }

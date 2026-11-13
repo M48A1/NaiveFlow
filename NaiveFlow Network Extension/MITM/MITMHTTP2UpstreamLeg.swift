@@ -791,9 +791,12 @@ actor MITMHTTP2UpstreamLeg {
         let rewritten = rewriter.transformResponseHeaders(head.decoded, verdicts: verdicts)
         let regular = rewritten.filter { !$0.name.hasPrefix(":") }
 
+        let rules = rewriter.rules(phase: .httpResponse)
+        let buffersBody = MITMScriptTransform.hasBufferedBodyRule(in: rules, verdicts: verdicts)
+        let headerOnlyScript = MITMScriptTransform.hasHeaderOnlyScript(in: rules, verdicts: verdicts)
         let isHead = head.originatingRequest?.method?.uppercased() == "HEAD"
         if head.endStream || isHead || status == 204 || status == 304 {
-            if rewriter.hasBufferedBodyRule(phase: .httpResponse, verdicts: verdicts) {
+            if buffersBody || headerOnlyScript {
                 responseStreams[clientID] = .buffering(BufferedResponse(
                     data: Data(), codec: MITMBodyCodec.plan(for: nil), status: status,
                     headers: rewritten, originatingRequest: head.originatingRequest, neverIndexed: head.neverIndexed
@@ -806,7 +809,40 @@ actor MITMHTTP2UpstreamLeg {
             return false
         }
 
-        if rewriter.hasBufferedBodyRule(phase: .httpResponse, verdicts: verdicts) {
+        if headerOnlyScript, !buffersBody {
+            let message = HTTPMessage(phase: .httpResponse, method: head.originatingRequest?.method,
+                url: head.responseURL, originalURL: head.originatingRequest?.originalURL,
+                status: status, headers: regular, body: Data(), ruleSetID: rewriter.ruleSetID,
+                requestHeaders: head.originatingRequest?.headers ?? [])
+            Task { [weak self] in
+                let outcome = await MITMScriptTransform.apply(message, rules: rules)
+                guard let self else { return }
+                self.sessionContext.enqueue {
+                    self.assumeIsolated { leg in
+                        if leg.phase != .torn, leg.phase != .failed,
+                           leg.upstreamStreamIDByClient[clientID] != nil {
+                            var finalStatus = status
+                            var finalHeaders = regular
+                            if case .message(let updated) = outcome {
+                                if let code = updated.status, (200...599).contains(code), code != 204, code != 304 {
+                                    finalStatus = code
+                                }
+                                finalHeaders = MITMScriptTransform.preservingBodyHeaders(updated.headers, from: regular)
+                            }
+                            leg.responseStreams[clientID] = .passthrough
+                            leg.drainCoupledStreams.insert(clientID)
+                            leg.sink?.deliverResponseHead(streamID: clientID, status: finalStatus,
+                                headers: finalHeaders, endStream: false, neverIndexed: head.neverIndexed)
+                        }
+                        let parked = leg.phase != .torn && leg.phase != .failed && leg.pump()
+                        leg.finishPass(parked: parked)
+                    }
+                }
+            }
+            return true
+        }
+
+        if buffersBody {
             let codec = MITMBodyCodec.plan(for: HTTPHeader.firstValue(in: rewritten, named: "content-encoding"))
             responseStreams[clientID] = .buffering(BufferedResponse(
                 data: Data(), codec: codec, status: status,
@@ -835,9 +871,8 @@ actor MITMHTTP2UpstreamLeg {
                         continuation?.resume()
                         return
                     }
-                    _ = leg.applyResponseHead(head, verdicts: verdicts)
-                    let parked = leg.pump()
-                    leg.finishPass(parked: parked)
+                    let parked = leg.applyResponseHead(head, verdicts: verdicts)
+                    leg.finishPass(parked: parked || leg.pump())
                 }
             }
         }
@@ -1005,7 +1040,8 @@ actor MITMHTTP2UpstreamLeg {
             status: buffer.status,
             headers: scriptedHeaders.filter { !$0.name.hasPrefix(":") },
             body: plaintext,
-            ruleSetID: rewriter.ruleSetID
+            ruleSetID: rewriter.ruleSetID,
+            requestHeaders: buffer.originatingRequest?.headers ?? []
         )
         let rewriter = self.rewriter
         Task { [weak self] in

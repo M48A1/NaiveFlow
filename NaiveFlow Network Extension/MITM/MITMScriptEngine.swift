@@ -326,7 +326,6 @@ actor MITMScriptEngine {
         cancelHandle: CancelHandle
     ) {
         guard MITMScriptWatchdog.isAvailable else {
-            logger.warning("[Script] JavaScriptCore execution limit unavailable")
             continuation.resume(returning: .modified(message))
             return
         }
@@ -778,7 +777,7 @@ actor MITMScriptEngine {
         object.setObject(message.url as Any, forKeyedSubscript: "url" as NSString)
         object.setObject(message.method as Any, forKeyedSubscript: "method" as NSString)
         let headers = JSValue(newObjectIn: context)!
-        for header in message.headers {
+        for header in message.phase == .httpRequest ? message.headers : message.requestHeaders {
             headers.setObject(header.value, forKeyedSubscript: header.name as NSString)
         }
         object.setObject(headers, forKeyedSubscript: "headers" as NSString)

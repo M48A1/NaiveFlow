@@ -15,6 +15,7 @@ nonisolated final class MITMRequestLog: Sendable {
         let method: String?
         let url: String?
         let originalURL: String?
+        var headers: [(name: String, value: String)] = []
         var synthesizedAfter: Data = Data()
     }
 
@@ -34,12 +35,12 @@ nonisolated final class MITMRequestLog: Sendable {
 
     // MARK: - HTTP/1
 
-    func recordHTTP1(method: String?, url: String?, originalURL: String?) {
+    func recordHTTP1(method: String?, url: String?, originalURL: String?, headers: [(name: String, value: String)] = []) {
         state.withLock { state in
             if state.http1Queue.count >= Self.maxHTTP1Queue {
                 state.http1Queue.removeFirst()
             }
-            state.http1Queue.append(Record(method: method, url: url, originalURL: originalURL))
+            state.http1Queue.append(Record(method: method, url: url, originalURL: originalURL, headers: headers))
         }
     }
 
@@ -96,13 +97,13 @@ nonisolated final class MITMRequestLog: Sendable {
 
     // MARK: - HTTP/2
 
-    func recordHTTP2(streamID: UInt32, method: String?, url: String?, originalURL: String?) {
+    func recordHTTP2(streamID: UInt32, method: String?, url: String?, originalURL: String?, headers: [(name: String, value: String)] = []) {
         state.withLock { state in
             if state.http2Streams[streamID] == nil, state.http2Streams.count >= Self.maxHTTP2Streams,
                let oldest = state.http2Streams.keys.min() {
                 state.http2Streams.removeValue(forKey: oldest)
             }
-            state.http2Streams[streamID] = Record(method: method, url: url, originalURL: originalURL)
+            state.http2Streams[streamID] = Record(method: method, url: url, originalURL: originalURL, headers: headers)
         }
     }
 
