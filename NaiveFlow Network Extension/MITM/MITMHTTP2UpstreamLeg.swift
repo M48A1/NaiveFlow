@@ -203,6 +203,7 @@ actor MITMHTTP2UpstreamLeg {
         let codec: MITMBodyCodec.Plan
         let status: Int
         var headers: [(name: String, value: String)]
+        let scriptVerdicts: MITMGateVerdictTable
         let originatingRequest: MITMRequestLog.Record?
         let neverIndexed: Set<String>
     }
@@ -800,7 +801,7 @@ actor MITMHTTP2UpstreamLeg {
             if buffersBody || headerOnlyScript {
                 responseStreams[clientID] = .buffering(BufferedResponse(
                     data: Data(), codec: MITMBodyCodec.plan(for: nil), status: status,
-                    headers: rewritten, originatingRequest: head.originatingRequest, neverIndexed: head.neverIndexed
+                    headers: rewritten, scriptVerdicts: verdicts, originatingRequest: head.originatingRequest, neverIndexed: head.neverIndexed
                 ))
                 return runResponseScripts(clientID, originEnded: head.endStream,
                     headerOnly: isHead || status == 204 || status == 304)
@@ -818,7 +819,7 @@ actor MITMHTTP2UpstreamLeg {
             let pending = MITMPendingHeaderScript(ended: false)
             responseStreams[clientID] = .awaitingHeaderScript(pending)
             pending.task = Task { [weak self] in
-                let outcome = await MITMScriptTransform.apply(message, rules: rules)
+                let outcome = await MITMScriptTransform.apply(message, rules: rules, verdicts: verdicts)
                 guard let self else { return }
                 self.sessionContext.enqueue {
                     self.assumeIsolated { leg in
@@ -858,7 +859,7 @@ actor MITMHTTP2UpstreamLeg {
             let codec = MITMBodyCodec.plan(for: HTTPHeader.firstValue(in: rewritten, named: "content-encoding"))
             responseStreams[clientID] = .buffering(BufferedResponse(
                 data: Data(), codec: codec, status: status,
-                headers: rewritten, originatingRequest: head.originatingRequest, neverIndexed: head.neverIndexed
+                headers: rewritten, scriptVerdicts: verdicts, originatingRequest: head.originatingRequest, neverIndexed: head.neverIndexed
             ))
             return false
         }
@@ -1075,7 +1076,7 @@ actor MITMHTTP2UpstreamLeg {
         )
         let rewriter = self.rewriter
         Task { [weak self] in
-            let outcome = await rewriter.applyScripts(message, phase: .httpResponse)
+            let outcome = await rewriter.applyScripts(message, phase: .httpResponse, verdicts: buffer.scriptVerdicts)
             guard let self else { return }
             self.sessionContext.enqueue {
                 self.assumeIsolated { leg in

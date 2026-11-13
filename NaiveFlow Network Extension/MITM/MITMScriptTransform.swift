@@ -58,12 +58,8 @@ nonisolated enum MITMScriptTransform {
 
     static func hasHeaderOnlyScript(in rules: [CompiledMITMRule], verdicts: MITMGateVerdictTable) -> Bool {
         for index in rules.indices.reversed() where verdicts.matches(at: index) {
-            if case .script(_, let preamble, _) = rules[index].operation {
-                let target = rules[index].phase == .httpRequest ? "$request" : "$response"
-                return preamble.split(separator: "\n").contains { line in
-                    line == ForeignScriptContext.headerOnlyMarker
-                        || line == "delete \(target).body; delete \(target).bodyBytes;"
-                }
+            if case .script(_, _, _, let headerOnly) = rules[index].operation {
+                return headerOnly
             }
         }
         return false
@@ -174,22 +170,23 @@ nonisolated enum MITMScriptTransform {
 
     static func apply(
         _ message: HTTPMessage,
-        rules: [CompiledMITMRule]
+        rules: [CompiledMITMRule],
+        verdicts: MITMGateVerdictTable? = nil
     ) async -> Outcome {
         if Task.isCancelled { return .message(message) }
-        let bodyRules = rules.filter { rule in
-            switch rule.operation {
-            case .script, .bodyReplace, .bodyJSON: return true
-            case .rewrite, .headerAdd, .headerDelete, .headerReplace: return false
-            }
+        let matched: [CompiledMITMOperation]
+        if let verdicts, verdicts.url == message.url {
+            matched = Self.matchingBodyOperations(rules: rules, verdicts: verdicts)
+        } else {
+            let bodyRules = rules.filter { Self.isBodyOperation($0.operation) }
+            let resolved = await MITMGateVerdictTable.resolve(rules: bodyRules, url: message.url)
+            matched = Self.matchingBodyOperations(rules: bodyRules, verdicts: resolved)
         }
-        let verdicts = await MITMGateVerdictTable.resolve(rules: bodyRules, url: message.url)
-        let matched = bodyRules.indices.filter { verdicts.matches(at: $0) }.map { bodyRules[$0].operation }
         let edited = await applyNativeBodyEdits(message, operations: matched)
         if Task.isCancelled { return .message(edited) }
         var selectedScript: (source: String, preamble: String, dialect: MITMScriptDialect)?
         for operation in matched.reversed() {
-            if case .script(let source, let preamble, let dialect) = operation {
+            if case .script(let source, let preamble, let dialect, _) = operation {
                 selectedScript = (source, preamble, dialect)
                 break
             }
@@ -201,6 +198,24 @@ nonisolated enum MITMScriptTransform {
         case .modified(let updated):  return .message(updated)
         case .done(let updated):      return .message(updated)
         case .respond(let response):  return .synthesizedResponse(response)
+        }
+    }
+
+    private static func matchingBodyOperations(
+        rules: [CompiledMITMRule], verdicts: MITMGateVerdictTable
+    ) -> [CompiledMITMOperation] {
+        var operations: [CompiledMITMOperation] = []
+        for (index, rule) in rules.enumerated()
+            where isBodyOperation(rule.operation) && verdicts.matches(at: index) {
+            operations.append(rule.operation)
+        }
+        return operations
+    }
+
+    private static func isBodyOperation(_ operation: CompiledMITMOperation) -> Bool {
+        switch operation {
+        case .script, .bodyReplace, .bodyJSON: true
+        case .rewrite, .headerAdd, .headerDelete, .headerReplace: false
         }
     }
 }

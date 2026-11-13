@@ -100,7 +100,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
         var data: Data
         var memory: TransientMemoryReservation? = nil
         let indexing: HPACKIndexingHints
-        let isScripted: Bool
+        let scriptVerdicts: MITMGateVerdictTable?
         let resolvedUpstream: (host: String, port: UInt16?)?
         let originalURL: String?
     }
@@ -555,6 +555,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
         }
 
         let rules = rewriter.rules(phase: .httpRequest)
+        let scriptVerdicts = gates.post
         let hasBufferedRule = MITMScriptTransform.hasBufferedBodyRule(in: rules, verdicts: gates.post)
         if !hasBufferedRule, MITMScriptTransform.hasHeaderOnlyScript(in: rules, verdicts: gates.post) {
             let message = HTTPMessage(phase: .httpRequest, method: head.method, url: gateURL,
@@ -564,7 +565,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
             let pending = MITMPendingHeaderScript(ended: head.endStream)
             requestStreams[streamID] = .awaitingHeaderScript(pending)
             pending.task = Task { [weak self] in
-                let outcome = await MITMScriptTransform.apply(message, rules: rules)
+                let outcome = await MITMScriptTransform.apply(message, rules: rules, verdicts: scriptVerdicts)
                 guard let self else { return }
                 self.sessionContext.enqueue {
                     self.assumeIsolated { leg in
@@ -603,7 +604,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
             }
             return false
         }
-        return forwardRequestHead(head, headers: rewritten, resolvedUpstream: resolvedUpstream, buffersBody: hasBufferedRule)
+        return forwardRequestHead(head, headers: rewritten, resolvedUpstream: resolvedUpstream, buffersBody: hasBufferedRule, scriptVerdicts: scriptVerdicts)
     }
 
     private func forwardRequestHead(
@@ -611,6 +612,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
         headers: [(name: String, value: String)],
         resolvedUpstream: (host: String, port: UInt16?)?,
         buffersBody: Bool,
+        scriptVerdicts: MITMGateVerdictTable? = nil,
         forceStreaming: Bool = false
     ) -> Bool {
         let streamID = head.streamID
@@ -641,7 +643,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
                     data: Data(),
                     memory: bodyMemory,
                     indexing: indexing,
-                    isScripted: true,
+                    scriptVerdicts: scriptVerdicts,
                     resolvedUpstream: resolvedUpstream,
                     originalURL: requestURL
                 )
@@ -666,7 +668,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
                     data: Data(),
                     memory: bodyMemory,
                     indexing: indexing,
-                    isScripted: false,
+                    scriptVerdicts: nil,
                     resolvedUpstream: resolvedUpstream,
                     originalURL: requestURL
                 )
@@ -922,7 +924,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
 
     private func finishBufferedRequest(_ streamID: UInt32) -> Bool {
         guard case .buffering(let buffer)? = requestStreams[streamID] else { return false }
-        guard buffer.isScripted else {
+        guard buffer.scriptVerdicts != nil else {
             requestStreams.removeValue(forKey: streamID)
             emitBufferedRequest(
                 streamID: streamID,
@@ -974,7 +976,7 @@ actor MITMBridgeClientLeg: MITMResponseSink {
         )
         let rewriter = self.rewriter
         Task { [weak self] in
-            let outcome = await rewriter.applyScripts(message, phase: .httpRequest)
+            let outcome = await rewriter.applyScripts(message, phase: .httpRequest, verdicts: buffer.scriptVerdicts)
             guard let self else { return }
             self.sessionContext.enqueue {
                 self.assumeIsolated { leg in

@@ -135,9 +135,10 @@ nonisolated final class MITMHTTP2Rewriter: Sendable {
 
     func applyScripts(
         _ message: HTTPMessage,
-        phase: MITMPhase
+        phase: MITMPhase,
+        verdicts: MITMGateVerdictTable?
     ) async -> MITMScriptTransform.Outcome {
-        await MITMScriptTransform.apply(message, rules: rules(phase: phase))
+        await MITMScriptTransform.apply(message, rules: rules(phase: phase), verdicts: verdicts)
     }
 
     // MARK: - Authority rewrite

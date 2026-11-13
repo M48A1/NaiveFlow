@@ -94,6 +94,7 @@ actor MITMHTTP1Stream {
         let startLine: String
         let headers: [Header]
         let codec: MITMBodyCodec.Plan
+        let scriptVerdicts: MITMGateVerdictTable?
         let originatingRequest: MITMRequestLog.Record?
     }
 
@@ -546,6 +547,7 @@ actor MITMHTTP1Stream {
             originatingMethod: originatingRequest?.method
         )
 
+        let scriptVerdicts = gates.ruleTable
         let scriptsApply = MITMScriptTransform.hasScriptRule(in: rules, verdicts: gates.ruleTable)
         let buffersBody = MITMScriptTransform.hasBufferedBodyRule(in: rules, verdicts: gates.ruleTable)
         let headerOnly = scriptsApply && !buffersBody
@@ -558,7 +560,7 @@ actor MITMHTTP1Stream {
                 let rules = self.rules
                 let originalHeaders = rewrittenHeaders
                 pendingHop = Task { [weak self] in
-                    let outcome = await MITMScriptTransform.apply(message, rules: rules)
+                    let outcome = await MITMScriptTransform.apply(message, rules: rules, verdicts: scriptVerdicts)
                     guard let self else { return }
                     self.sessionContext.enqueue {
                         self.assumeIsolated { stream in
@@ -591,7 +593,7 @@ actor MITMHTTP1Stream {
             }
         }
         return forwardHead(startLine: rewrittenStartLine, headers: rewrittenHeaders, framing: framing,
-            scriptsApply: scriptsApply, buffersBody: buffersBody, originatingRequest: originatingRequest, into: &output)
+            scriptsApply: scriptsApply, buffersBody: buffersBody, scriptVerdicts: scriptVerdicts, originatingRequest: originatingRequest, into: &output)
     }
 
     private func forwardHead(
@@ -600,6 +602,7 @@ actor MITMHTTP1Stream {
         framing: Framing,
         scriptsApply: Bool,
         buffersBody: Bool,
+        scriptVerdicts: MITMGateVerdictTable? = nil,
         originatingRequest: MITMRequestLog.Record?,
         into output: inout Data
     ) -> Bool {
@@ -621,6 +624,7 @@ actor MITMHTTP1Stream {
                             startLine: rewrittenStartLine,
                             headers: headers,
                             codec: codec,
+                            scriptVerdicts: scriptVerdicts,
                             originatingRequest: originatingRequest
                         )
                     )
@@ -678,7 +682,7 @@ actor MITMHTTP1Stream {
                 mode = .awaitingScript
                 let rules = self.rules
                 pendingHop = Task { [weak self] in
-                    let outcome = await MITMScriptTransform.apply(message, rules: rules)
+                    let outcome = await MITMScriptTransform.apply(message, rules: rules, verdicts: scriptVerdicts)
                     guard let self else { return }
                     self.sessionContext.enqueue {
                         self.assumeIsolated {
@@ -713,6 +717,7 @@ actor MITMHTTP1Stream {
                 rewrittenHeaders: rewrittenHeaders,
                 length: length,
                 buffersBody: buffersBody,
+                scriptVerdicts: scriptVerdicts,
                 originatingRequest: originatingRequest,
                 into: &output
             )
@@ -721,6 +726,7 @@ actor MITMHTTP1Stream {
                 rewrittenStartLine: rewrittenStartLine,
                 rewrittenHeaders: rewrittenHeaders,
                 buffersBody: buffersBody,
+                scriptVerdicts: scriptVerdicts,
                 originatingRequest: originatingRequest,
                 into: &output
             )
@@ -814,6 +820,7 @@ actor MITMHTTP1Stream {
         rewrittenHeaders: [Header],
         length: Int,
         buffersBody: Bool,
+        scriptVerdicts: MITMGateVerdictTable? = nil,
         originatingRequest: MITMRequestLog.Record?,
         into output: inout Data
     ) -> Bool {
@@ -830,6 +837,7 @@ actor MITMHTTP1Stream {
                     startLine: rewrittenStartLine,
                     headers: headers,
                     codec: codec,
+                    scriptVerdicts: scriptVerdicts,
                     originatingRequest: originatingRequest
                 ),
                 expected: length
@@ -851,6 +859,7 @@ actor MITMHTTP1Stream {
         rewrittenStartLine: String,
         rewrittenHeaders: [Header],
         buffersBody: Bool,
+        scriptVerdicts: MITMGateVerdictTable? = nil,
         originatingRequest: MITMRequestLog.Record?,
         into output: inout Data
     ) -> Bool {
@@ -867,6 +876,7 @@ actor MITMHTTP1Stream {
                     startLine: rewrittenStartLine,
                     headers: headers,
                     codec: codec,
+                    scriptVerdicts: scriptVerdicts,
                     originatingRequest: originatingRequest
                 ),
                 reader: ChunkedReader()
@@ -1159,7 +1169,7 @@ actor MITMHTTP1Stream {
         mode = .awaitingScript
         let rules = self.rules
         pendingHop = Task { [weak self] in
-            let outcome = await MITMScriptTransform.apply(message, rules: rules)
+            let outcome = await MITMScriptTransform.apply(message, rules: rules, verdicts: pending.scriptVerdicts)
             guard let self else { return }
             self.sessionContext.enqueue {
                 self.assumeIsolated {

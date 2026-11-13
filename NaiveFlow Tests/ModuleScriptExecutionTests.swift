@@ -94,6 +94,23 @@ struct ModuleScriptExecutionTests {
         #expect(ForeignScriptContext.preservingRepeatedHeaders([], from: original).isEmpty)
     }
 
+    @Test func lazyBodyPropertiesSupportReadsWritesAndDeletion() throws {
+        let context = try #require(JSContext())
+        let message = try #require(JSValue(newObjectIn: context))
+        ForeignScriptContext.installBody(Data("hello".utf8), on: message, in: context)
+        context.setObject(message, forKeyedSubscript: "message")
+        let result = try #require(context.evaluateScript("""
+            Object.keys(message).join(',') === 'body,bodyBytes' &&
+            message.body === 'hello' &&
+            message.bodyBytes[0] === 104 &&
+            message.bodyBytes === message.bodyBytes &&
+            (message.body = 'changed', message.body === 'changed') &&
+            (delete message.bodyBytes, !('bodyBytes' in message))
+            """))
+        #expect(result.toBool())
+        #expect(context.exception == nil)
+    }
+
     @Test func binaryBodiesAndQuantumultStringDoneRoundTrip() throws {
         let (ctx, result) = try execute("$done($response.bodyBytes.subarray(1,3));", dialect: .quantumultX, response: true, url: "https://example.com/", body: Data([0, 255, 128, 0]))
         #expect(ForeignScriptContext.bytes(result, in: ctx) == Data([255, 128]))

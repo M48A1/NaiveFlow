@@ -51,6 +51,49 @@ nonisolated enum ForeignScriptContext {
         return JSValue(jsValueRef: object, in: context)
     }
 
+    static func installBody(_ body: Data, on object: JSValue, in context: JSContext) {
+        if body.isEmpty {
+            object.setObject("", forKeyedSubscript: "body")
+            object.setObject(uint8Array(body, in: context), forKeyedSubscript: "bodyBytes")
+            return
+        }
+        let text: @convention(block) () -> String = {
+            String(data: body, encoding: .utf8) ?? ""
+        }
+        let bytes: @convention(block) () -> JSValue = {
+            uint8Array(body, in: JSContext.current()!)
+        }
+        let loadText = JSValue(object: text, in: context)!
+        let loadBytes = JSValue(object: bytes, in: context)!
+        context.evaluateScript(bodyProperties)?.call(withArguments: [object, loadText, loadBytes])
+    }
+
+    private static let bodyProperties = """
+        (function(message, text, bytes) {
+            function define(name, load) {
+                let loaded = false;
+                let value;
+                Object.defineProperty(message, name, {
+                    enumerable: true,
+                    configurable: true,
+                    get() {
+                        if (!loaded) {
+                            value = load();
+                            loaded = true;
+                        }
+                        return value;
+                    },
+                    set(next) {
+                        value = next;
+                        loaded = true;
+                    }
+                });
+            }
+            define("body", text);
+            define("bodyBytes", bytes);
+        })
+        """
+
     static func headers(_ value: JSValue) -> [(name: String, value: String)]? {
         guard value.isObject, !value.isNull, !value.isUndefined else { return nil }
         if value.isArray, let array = value.toArray() {

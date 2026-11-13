@@ -64,7 +64,7 @@ actor MITMScriptEngine {
         fileprivate var isEvaluating = false
         fileprivate var isClosed = false
         fileprivate var pinnedBodyBytes = 0
-        fileprivate let memoryReservation = TransientMemoryReservation()
+        fileprivate let memoryReservation: TransientMemoryReservation
         fileprivate var timeout: TimeInterval?
         fileprivate var watchdogDisarm: AsyncInbox<Void>?
 
@@ -86,12 +86,14 @@ actor MITMScriptEngine {
             return "[Script] \(name)"
         }
 
-        fileprivate init(scope: UUID?, allowsHTTP: Bool, context: JSContext, original: Message?, dialect: MITMScriptDialect) {
+        fileprivate init(scope: UUID?, allowsHTTP: Bool, context: JSContext, original: Message?, dialect: MITMScriptDialect,
+                         memoryReservation: TransientMemoryReservation) {
             self.scope = scope
             self.allowsHTTP = allowsHTTP
             self.context = context
             self.original = original
             self.dialect = dialect
+            self.memoryReservation = memoryReservation
         }
 
         fileprivate func teardown() {
@@ -162,9 +164,12 @@ actor MITMScriptEngine {
 
     // MARK: - Run construction
 
-    nonisolated private func makeRun(scope: UUID?, allowsHTTP: Bool, original: Message?, dialect: MITMScriptDialect = .surge) -> ScriptRun {
+    nonisolated private func makeRun(scope: UUID?, allowsHTTP: Bool, original: Message?,
+                                        dialect: MITMScriptDialect = .surge,
+                                        memoryReservation: TransientMemoryReservation = TransientMemoryReservation()) -> ScriptRun {
         let context = JSContext(virtualMachine: Self.sharedVirtualMachine)!
-        let run = ScriptRun(scope: scope, allowsHTTP: allowsHTTP, context: context, original: original, dialect: dialect)
+        let run = ScriptRun(scope: scope, allowsHTTP: allowsHTTP, context: context, original: original, dialect: dialect,
+                            memoryReservation: memoryReservation)
         configureContext(context, for: run)
         return run
     }
@@ -342,7 +347,16 @@ actor MITMScriptEngine {
             return
         }
 
-        let run = makeRun(scope: message.ruleSetID, allowsHTTP: true, original: message, dialect: dialect)
+        // Admit the worst-case body copies before allocating a JavaScript context.
+        let memoryReservation = TransientMemoryReservation()
+        guard memoryReservation.resize(bodyBytes * 4 + 256 * 1024) else {
+            logger.warning("[Script] Shared MITM memory budget exceeded")
+            continuation.resume(returning: .modified(message))
+            return
+        }
+
+        let run = makeRun(scope: message.ruleSetID, allowsHTTP: true, original: message, dialect: dialect,
+                          memoryReservation: memoryReservation)
         run.continuation = continuation
         if let line = preamble.split(separator: "\n", maxSplits: 1).first,
            line.hasPrefix(ForeignScriptContext.timeoutPrefix),
@@ -350,13 +364,6 @@ actor MITMScriptEngine {
            timeout.isFinite, timeout > 0 {
             run.timeout = min(timeout, Self.invocationAbsoluteTimeout)
         }
-        // Account for native/JS body copies before creating JS representations.
-        guard run.memoryReservation.resize(bodyBytes * 4 + 256 * 1024) else {
-            logger.warning("[Script] Shared MITM memory budget exceeded")
-            deliver(.modified(message), for: run)
-            return
-        }
-
         liveRuns[run.id] = run
         run.pinnedBodyBytes = bodyBytes
         Self.addSuspendedBodyBytes(bodyBytes)
@@ -783,8 +790,7 @@ actor MITMScriptEngine {
         }
         object.setObject(headers, forKeyedSubscript: "headers" as NSString)
         if message.phase == .httpRequest {
-            object.setObject(String(data: message.body, encoding: .utf8) ?? "", forKeyedSubscript: "body" as NSString)
-            object.setObject(Self.makeUint8Array(in: context, from: message.body), forKeyedSubscript: "bodyBytes" as NSString)
+            ForeignScriptContext.installBody(message.body, on: object, in: context)
         }
         if let url = message.url.flatMap(URL.init(string:)) {
             object.setObject(url.scheme ?? "", forKeyedSubscript: "scheme" as NSString)
@@ -802,8 +808,7 @@ actor MITMScriptEngine {
             headers.setObject(header.value, forKeyedSubscript: header.name as NSString)
         }
         object.setObject(headers, forKeyedSubscript: "headers" as NSString)
-        object.setObject(String(data: message.body, encoding: .utf8) ?? "", forKeyedSubscript: "body" as NSString)
-        object.setObject(Self.makeUint8Array(in: context, from: message.body), forKeyedSubscript: "bodyBytes" as NSString)
+        ForeignScriptContext.installBody(message.body, on: object, in: context)
         return object
     }
 

@@ -172,7 +172,7 @@ nonisolated enum CompiledMITMOperation {
     case headerReplace(name: String, value: String)
     case bodyReplace(MITMBodyReplace.CompiledOperation)
     case bodyJSON(MITMJSONPatch.CompiledOperation)
-    case script(source: String, preamble: String, dialect: MITMScriptDialect)
+    case script(source: String, preamble: String, dialect: MITMScriptDialect, headerOnly: Bool)
 }
 
 nonisolated struct CompiledMITMRuleSet {
@@ -358,7 +358,12 @@ nonisolated final class MITMRewritePolicy: Sendable {
             } else { preamble = ""; body = source }
             let sharedBody = scriptSources[body] ?? body
             scriptSources[body] = sharedBody
-            return .script(source: sharedBody, preamble: preamble, dialect: dialect)
+            let headerOnly = preamble.split(separator: "\n").contains { line in
+                line == ForeignScriptContext.headerOnlyMarker
+                    || line == "delete $request.body; delete $request.bodyBytes;"
+                    || line == "delete $response.body; delete $response.bodyBytes;"
+            }
+            return .script(source: sharedBody, preamble: preamble, dialect: dialect, headerOnly: headerOnly)
         case .bodyReplace(let search, let replacement):
             guard let compiled = MITMBodyReplace.compile(search: search, replacement: replacement) else {
                 logger.warning("[MITM] \(ruleSet): bodyReplace: Invalid regex: \(search)")
