@@ -20,7 +20,7 @@ struct ContentView: View {
     @State private var showingImportRuleSetSheet = false
     @State private var pendingRuleSetLink: URL?
     @State private var showingImportModuleSheet = false
-    @State private var pendingModuleLink: URL?
+    @State private var pendingModuleImport: DeepLinkManager.ModuleImport?
     
     private var showOrphanedAlert: Binding<Bool> {
         Binding(
@@ -30,66 +30,68 @@ struct ContentView: View {
     }
     
     var body: some View {
-        if onboardingCompleted {
-            HomeView()
-                .sheet(isPresented: $showingDeepLinkAddSheet, onDismiss: { pendingDeepLinkURL = nil }) {
-                    DynamicSheet(animation: .snappy(duration: 0.3, extraBounce: 0)) {
-                        AddProxyView(showingManualAddSheet: $showingManualAddSheet, deepLinkURL: pendingDeepLinkURL)
-                            .environment(operations)
+        Group {
+            if onboardingCompleted {
+                HomeView()
+                    .sheet(isPresented: $showingDeepLinkAddSheet, onDismiss: { pendingDeepLinkURL = nil }) {
+                        DynamicSheet(animation: .snappy(duration: 0.3, extraBounce: 0)) {
+                            AddProxyView(showingManualAddSheet: $showingManualAddSheet, deepLinkURL: pendingDeepLinkURL)
+                                .environment(operations)
+                        }
                     }
-                }
-                .sheet(isPresented: $showingManualAddSheet) {
-                    ProxyEditorView { configuration in
-                        operations.configurations.add(configuration)
-                        operations.selection.selectIfNone(configuration)
+                    .sheet(isPresented: $showingManualAddSheet) {
+                        ProxyEditorView { configuration in
+                            operations.configurations.add(configuration)
+                            operations.selection.selectIfNone(configuration)
+                        }
                     }
-                }
-                .sheet(isPresented: $showingImportRuleSetSheet, onDismiss: { pendingRuleSetLink = nil }) {
-                    if let link = pendingRuleSetLink {
-                        ImportRuleSetView(link: link)
-                            .environment(operations)
-                            .environment(mitmRuleSetStore)
+                    .sheet(isPresented: $showingImportRuleSetSheet, onDismiss: { pendingRuleSetLink = nil }) {
+                        if let link = pendingRuleSetLink {
+                            ImportRuleSetView(link: link)
+                                .environment(operations)
+                                .environment(mitmRuleSetStore)
+                        }
                     }
-                }
-                .sheet(isPresented: $showingImportModuleSheet, onDismiss: { pendingModuleLink = nil }) {
-                    if let link = pendingModuleLink {
-                        ImportModuleView(link: link)
-                            .environment(operations)
-                            .environment(mitmRuleSetStore)
+                    .sheet(isPresented: $showingImportModuleSheet, onDismiss: { pendingModuleImport = nil }) {
+                        if let request = pendingModuleImport {
+                            ImportModuleView(link: request.link, format: request.format)
+                                .environment(operations)
+                                .environment(mitmRuleSetStore)
+                        }
                     }
-                }
-                .alert(String(localized: "Routing Rules Updated"), isPresented: showOrphanedAlert) {
-                    Button(String(localized: "OK")) {}
-                } message: {
-                    let names = appState.orphanedRuleSetNames.joined(separator: ", ")
-                    Text("The proxy used by the following routing rules was deleted. They have been reset to Default: \(names)")
-                }
-                .onOpenURL { url in
-                    deepLinkManager.handle(url: url)
-                }
-                .onChange(of: deepLinkManager.url) { _, newValue in
-                    if let url = newValue {
-                        pendingDeepLinkURL = url
-                        deepLinkManager.url = nil
-                        showingDeepLinkAddSheet = true
+                    .alert(String(localized: "Routing Rules Updated"), isPresented: showOrphanedAlert) {
+                        Button(String(localized: "OK")) {}
+                    } message: {
+                        let names = appState.orphanedRuleSetNames.joined(separator: ", ")
+                        Text("The proxy used by the following routing rules was deleted. They have been reset to Default: \(names)")
                     }
-                }
-                .onChange(of: deepLinkManager.ruleSetLink) { _, newValue in
-                    if let link = newValue {
-                        pendingRuleSetLink = link
-                        deepLinkManager.ruleSetLink = nil
-                        showingImportRuleSetSheet = true
+                    .onChange(of: deepLinkManager.url) { _, newValue in
+                        if let url = newValue {
+                            pendingDeepLinkURL = url
+                            deepLinkManager.url = nil
+                            showingDeepLinkAddSheet = true
+                        }
                     }
-                }
-                .onChange(of: deepLinkManager.moduleLink) { _, newValue in
-                    if let link = newValue {
-                        pendingModuleLink = link
-                        deepLinkManager.moduleLink = nil
-                        showingImportModuleSheet = true
+                    .onChange(of: deepLinkManager.ruleSetLink) { _, newValue in
+                        if let link = newValue {
+                            pendingRuleSetLink = link
+                            deepLinkManager.ruleSetLink = nil
+                            showingImportRuleSetSheet = true
+                        }
                     }
-                }
-        } else {
-            OnboardingView(onboardingCompleted: $onboardingCompleted)
+                    .onChange(of: deepLinkManager.moduleImport, initial: true) { _, newValue in
+                        if let request = newValue {
+                            pendingModuleImport = request
+                            deepLinkManager.moduleImport = nil
+                            showingImportModuleSheet = true
+                        }
+                    }
+            } else {
+                OnboardingView(onboardingCompleted: $onboardingCompleted)
+            }
+        }
+        .onOpenURL { url in
+            deepLinkManager.handle(url: url)
         }
     }
 }

@@ -110,6 +110,25 @@ struct OverallReviewRegressionTests {
         #expect(manager.ruleSetLink?.absoluteString == inner)
     }
 
+    @Test func foreignInstallLinksOpenTheModuleImporterWithTheCorrectFormat() throws {
+        let manager = DeepLinkManager()
+        let inner = "https://example.com/a%2Fb?token=x%252Fy&other=1"
+        let surge = try #require(inner.addingPercentEncoding(withAllowedCharacters: .alphanumerics))
+        manager.handle(url: try #require(URL(string: "surge:///install-module?url=" + surge)))
+        #expect(manager.moduleImport?.link.absoluteString == inner)
+        #expect(manager.moduleImport?.format == .surge)
+
+        let payload = #"{"rewrite_remote":["https://example.com/module"]}"#
+        let quantumult = try #require(payload.addingPercentEncoding(withAllowedCharacters: .alphanumerics))
+        manager.handle(url: try #require(URL(string: "quantumult-x:///add-resource?remote-resource=" + quantumult)))
+        #expect(manager.moduleImport?.link.absoluteString == "https://example.com/module")
+        #expect(manager.moduleImport?.format == .quantumultX)
+
+        manager.moduleImport = nil
+        manager.handle(url: try #require(URL(string: "surge:///install-module?url=file%3A%2F%2F%2Ftmp%2Fa")))
+        #expect(manager.moduleImport == nil)
+    }
+
     @Test func profileRequestsAreIncrementalBoundedAndPathRestricted() {
         let request = Data("GET /NaiveFlowMITMRoot.mobileconfig HTTP/1.1\r\nHost: localhost\r\n\r\n".utf8)
         for split in 1..<request.count {

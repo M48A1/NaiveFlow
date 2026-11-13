@@ -16,8 +16,8 @@ struct ImportModuleView: View {
 
     @State private var model: ImportModuleModel
 
-    init(link: URL) {
-        _model = State(initialValue: ImportModuleModel(link: link))
+    init(link: URL, format: ModuleFormat? = nil) {
+        _model = State(initialValue: ImportModuleModel(link: link, format: format))
     }
 
     var body: some View {
@@ -178,9 +178,9 @@ final class ImportModuleModel {
     private(set) var warnings: [String] = []
     private(set) var status: Status = .loading
 
-    init(link: URL) {
+    init(link: URL, format: ModuleFormat? = nil) {
         self.link = link
-        format = link.pathExtension.lowercased() == "snippet" ? .quantumultX : .surge
+        self.format = format ?? (link.pathExtension.lowercased() == "snippet" ? .quantumultX : .surge)
     }
 
     var isReady: Bool {
