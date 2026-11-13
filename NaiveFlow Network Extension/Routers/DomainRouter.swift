@@ -146,6 +146,21 @@ nonisolated final class DomainRouter: Sendable {
         }
     }
 
+    func policyStatus() -> [PolicyGroupsResponse.Group] {
+        routingState.withLock { state in
+            state.policyGroups.values.map { group in
+                var selection = state.selections[group.id] ?? ProxyGroupSelection()
+                let latencies = state.latencies[group.id] ?? [:]
+                let member = selection.select(group: group, latencies: latencies, consuming: false)
+                let named = Dictionary(latencies.compactMap { id, ms in
+                    state.configurationMap[id].map { ($0.name, ms) }
+                }, uniquingKeysWith: { first, _ in first })
+                return PolicyGroupsResponse.Group(name: group.name,
+                    nextMember: member.flatMap { state.configurationMap[$0]?.name }, latencies: named)
+            }.sorted { $0.name < $1.name }
+        }
+    }
+
     /// Publishes one group's probe results, leaving every other group's results
     /// intact. Groups probe on independent schedules, so a whole-table replace
     /// would let one group's pass erase another's still-fresh measurements.

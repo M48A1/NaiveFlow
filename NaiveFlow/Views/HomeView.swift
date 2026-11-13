@@ -1,108 +1,28 @@
-//
-//  HomeView.swift
-//  NaiveFlow
-//
-//  Created by NodePassProject on 3/1/26.
-//
-
 import SwiftUI
-import NetworkExtension
 
 struct HomeView: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
-    @State private var selectedTab: Page = .launchpad
-    @State private var toolboxPath: [Page] = []
-    @State private var preferredColumn = NavigationSplitViewColumn.detail
-
-    // Keep the same view hierarchy across folds. Sidebar destinations share the
-    // Toolbox navigation stack, so they remain reachable when the sidebar collapses.
-    private var sidebarSelection: Binding<Page?> {
-        Binding {
-            selectedTab == .toolbox ? (toolboxPath.first ?? .toolbox) : selectedTab
-        } set: { page in
-            guard let page else { return }
-            switch page {
-            case .launchpad, .proxies:
-                selectedTab = page
-            case .toolbox:
-                toolboxPath = []
-                selectedTab = .toolbox
-            default:
-                if toolboxPath.first != page {
-                    toolboxPath = [page]
-                }
-                selectedTab = .toolbox
-            }
-            preferredColumn = .detail
-        }
-    }
+    @Environment(ClientModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var tab = 0
 
     var body: some View {
-        NavigationSplitView(preferredCompactColumn: $preferredColumn) {
-            List(selection: sidebarSelection) {
-                Section {
-                    sidebarRow(.launchpad)
-                    sidebarRow(.proxies)
-                    sidebarRow(.toolbox)
-                }
-                Section("App") {
-                    sidebarRow(.data)
-                }
-                Section("VPN") {
-                    sidebarRow(.configuration)
-                }
-                Section("More") {
-                    sidebarRow(.diagnosis)
-                    sidebarRow(.about)
-                }
+        TabView(selection: $tab) {
+            Tab("首页", systemImage: "house.fill", value: 0) {
+                NavigationStack { ClientHomeView() }
             }
-        } detail: {
-            TabView(selection: $selectedTab) {
-                Tab(Page.launchpad.name, systemImage: Page.launchpad.symbol, value: Page.launchpad) {
-                    LaunchpadView()
-                }
-                Tab(Page.proxies.name, systemImage: Page.proxies.symbol, value: Page.proxies) {
-                    ProxiesView(isPresentedAsSheet: false)
-                }
-                Tab(Page.toolbox.name, systemImage: Page.toolbox.symbol, value: Page.toolbox) {
-                    ToolboxView(path: $toolboxPath)
-                }
+            Tab("策略组", systemImage: "square.grid.2x2.fill", value: 1) {
+                NavigationStack { ClientGroupsView() }
             }
-            .toolbar(horizontalSizeClass == .regular ? .hidden : .visible, for: .tabBar)
+            Tab("设置", systemImage: "gearshape.fill", value: 2) {
+                NavigationStack { ClientSettingsView() }
+            }
         }
-        .navigationSplitViewStyle(.balanced)
-    }
-
-    private func sidebarRow(_ page: Page) -> some View {
-        Label(page.name, systemImage: page.symbol)
-            .tag(page)
+        .tabViewStyle(.tabBarOnly)
+        .tint(.blue)
+        .environment(model)
+        .alert("操作未完成", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
+            Button("好") { model.error = nil }
+        } message: { Text(model.error ?? "") }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { model.refresh() } }
     }
 }
-
-// MARK: - Previews
-
-#if DEBUG
-#Preview("Connected") {
-    let container = AppContainer.preview()
-    container.selection.select(ProxyConfiguration(
-        name: "🇺🇸 Los Angeles",
-        serverAddress: "203.0.113.10",
-        serverPort: 443,
-        outbound: .socks5(SOCKS5Configuration())
-    ))
-    container.tunnel.setStatusForPreview(.connected)
-
-    return HomeView()
-        .environment(AppSettings())
-        .environment(Operations(container: container))
-        .environment(container.tunnel)
-        .environment(container.selection)
-        .environment(container.latency)
-        .environment(container.configurationStore)
-        .environment(container.chainStore)
-        .environment(container.groupStore)
-        .environment(container.subscriptionStore)
-        .environment(ConnectionStats.previewSeeded())
-}
-#endif

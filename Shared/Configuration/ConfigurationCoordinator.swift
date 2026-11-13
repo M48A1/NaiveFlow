@@ -88,6 +88,7 @@ nonisolated extension ConfigurationModule {
         // Outbound: nodes, groups, mode, and everything shaping the interface.
         "lan-proxy-enabled": .outbound,
         "proxy-mode": .outbound,
+        "default-node": .outbound,
         "quic-policy": .outbound,
         "block-udp": .outbound,
         "block-webrtc": .outbound,

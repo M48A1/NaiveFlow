@@ -4433,58 +4433,6 @@
         }
       }
     },
-    "Data" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "البيانات"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Data"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Datos"
-          }
-        },
-        "fa" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "داده‌ها"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Данные"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Veri"
-          }
-        },
-        "vi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dữ liệu"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "数据"
-          }
-        }
-      }
-    },
     "Data (Base64)" : {
       "localizations" : {
         "ar" : {
@@ -7555,58 +7503,6 @@
     },
     "Hysteria" : {
       "shouldTranslate" : false
-    },
-    "iCloud Sync" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "مزامنة iCloud"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iCloud Sync"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sincronización de iCloud"
-          }
-        },
-        "fa" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "همگام‌سازی iCloud"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Синхронизация iCloud"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iCloud Eşitleme"
-          }
-        },
-        "vi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Đồng bộ iCloud"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iCloud 同步"
-          }
-        }
-      }
     },
     "Import Failed" : {
       "localizations" : {
@@ -13602,58 +13498,6 @@
         }
       }
     },
-    "Sync your data across your devices with iCloud." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "زامِن بياناتك عبر أجهزتك باستخدام iCloud."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sync your data across your devices with iCloud."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sincroniza tus datos entre tus dispositivos con iCloud."
-          }
-        },
-        "fa" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "داده‌های خود را با iCloud بین دستگاه‌های خود همگام‌سازی کنید."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Синхронизируйте данные на всех ваших устройствах с помощью iCloud."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verilerinizi iCloud ile cihazlarınız arasında eşitleyin."
-          }
-        },
-        "vi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Đồng bộ dữ liệu trên các thiết bị của bạn bằng iCloud."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用 iCloud 在你的设备间同步数据。"
-          }
-        }
-      }
-    },
     "Syncing with iPhone" : {
       "localizations" : {
         "ar" : {
@@ -14859,58 +14703,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新"
-          }
-        }
-      }
-    },
-    "Update All Subscriptions" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "تحديث جميع الاشتراكات"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Update All Subscriptions"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Actualizar todas las suscripciones"
-          }
-        },
-        "fa" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "به‌روزرسانی همه اشتراک‌ها"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Обновить все подписки"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tüm Abonelikleri Güncelle"
-          }
-        },
-        "vi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cập nhật tất cả đăng ký"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更新全部订阅"
           }
         }
       }

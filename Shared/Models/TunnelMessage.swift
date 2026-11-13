@@ -10,9 +10,11 @@ import Foundation
 nonisolated enum TunnelMessage: Codable, Sendable {
     case testLatency(ProxyConfiguration)
     case applyRuntimeVersion(UUID)
+    case fetchPolicyGroups
     case fetchRuntimeStatus
     case fetchStats
     case resetStats
+    case clearLogs
     case fetchLogs
     case fetchRequests
     case fetchActivity(TunnelActivityProtocol)
@@ -236,4 +238,15 @@ nonisolated enum TunnelActivityState: String, Codable, Sendable, Hashable {
 nonisolated enum TunnelActivityProtocol: String, Codable, Sendable, Hashable {
     case tcp
     case udp
+}
+
+/// Read-only status for the policy UI; names bridge compiler-local node IDs.
+nonisolated struct PolicyGroupsResponse: Codable, Sendable {
+    struct Group: Codable, Sendable {
+        let name: String
+        let nextMember: String?
+        let latencies: [String: Int]
+    }
+    let versionID: UUID?
+    let groups: [Group]
 }

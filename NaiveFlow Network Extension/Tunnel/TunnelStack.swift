@@ -332,6 +332,8 @@ actor TunnelStack {
         }
     }
 
+    nonisolated func clearLogs() { logEntries.withLock { $0.removeAll(keepingCapacity: true) } }
+
     nonisolated func fetchLogs() -> [TunnelLogEntry] {
         let now = CFAbsoluteTimeGetCurrent()
         return logEntries.withLock { entries in

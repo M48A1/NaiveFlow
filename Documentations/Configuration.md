@@ -201,6 +201,10 @@ added when the engine can honor it. The tests stop the flag from being flipped
 without a binding.
 
 
+### 默认出站节点
+
+`[General] default-node = Name` 指定 PROXY 和全局模式使用的节点或代理链；名称必须能解析。首页节点选择会更新此字段并发布完整配置。新的 iOS 导航、配置文件管理与策略组交互见 [ClientInterface.md](ClientInterface.md)。
+
 ## `[Proxy]`
 
 Two forms are accepted, both keyed by the node name:

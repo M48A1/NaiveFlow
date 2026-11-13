@@ -149,6 +149,11 @@ nonisolated enum ConfigurationSettings {
         // MARK: Routing mode
 
         ConfigurationSettingKey(
+            name: "default-node", kind: .text, scope: .stackRestart, applies: true,
+            summary: "The named node or chain used by PROXY and global mode."
+        ),
+
+        ConfigurationSettingKey(
             name: "proxy-mode",
             kind: .enumeration(["rule", "global", "direct"]),
             scope: .stackRestart,
@@ -580,6 +585,12 @@ nonisolated struct ConfigurationSettingBinding: Sendable {
 nonisolated enum ConfigurationSettingsBindings {
 
     static let all: [ConfigurationSettingBinding] = [
+
+        // The publisher resolves this reference after compiling nodes/chains.
+        // There is no independent mutable preference for this document field.
+        bind("default-node", read: {
+            (try? ActiveConfiguration.load()).map { .text($0.name) }
+        }, write: { _ in }),
 
         // MARK: Routing mode
 

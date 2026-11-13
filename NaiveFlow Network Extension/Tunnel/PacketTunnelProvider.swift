@@ -379,6 +379,13 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
             statsRecorder.reset()
             return encodeReply(statsRecorder.snapshot())
 
+        case .fetchPolicyGroups:
+            return encodeReply(await tunnelStack.policyGroupsResponse())
+
+        case .clearLogs:
+            tunnelStack.clearLogs()
+            return encodeReply(LogsResponse(logs: []))
+
         case .fetchLogs:
             return encodeReply(LogsResponse(logs: tunnelStack.fetchLogs()))
 

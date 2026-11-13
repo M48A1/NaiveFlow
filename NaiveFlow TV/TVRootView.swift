@@ -19,10 +19,6 @@ struct TVRootView: View {
             Tab("Configuration", systemImage: "doc.text") {
                 TVConfigurationView(container: container)
             }
-            Tab("Data", systemImage: "cylinder.split.1x2.fill") {
-                TVPageHost { TVDataViewController(container: container) }
-                    .ignoresSafeArea()
-            }
         }
         .tabViewStyle(.sidebarAdaptable)
     }

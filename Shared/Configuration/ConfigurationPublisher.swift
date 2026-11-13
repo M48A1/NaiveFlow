@@ -76,7 +76,9 @@ struct ConfigurationPublisher {
         // dialable at runtime but are not counted as user proxies.
         nodes.append(contentsOf: compiled.syntheticProxies)
         if nodes.isEmpty { nodes = [directNode()] }
-        let selected = nodes.first { $0.id == previous?.selectedNodeID }
+        let preferred = result.parsed.general["default-node"]
+        let selected = nodes.first { $0.name == preferred }
+            ?? nodes.first { $0.id == previous?.selectedNodeID }
             ?? nodes.first { $0.name == previous?.selectedNode?.name } ?? nodes[0]
         let preferences = try AWCore.captureRuntimePreferences(
             base: AWCore.defaultRuntimePreferences()

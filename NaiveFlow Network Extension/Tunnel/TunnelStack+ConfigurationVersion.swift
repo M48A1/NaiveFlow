@@ -2,6 +2,10 @@ import Foundation
 import Synchronization
 
 extension TunnelStack {
+    func policyGroupsResponse() -> PolicyGroupsResponse {
+        PolicyGroupsResponse(versionID: nativeBundle?.id, groups: domainRouter.policyStatus())
+    }
+
     private func validateVersion(_ bundle: RuntimeConfigurationBundle) throws {
         try bundle.validate()
         try MITMRewritePolicy.validate(ruleSets: bundle.mitmRuleSets)

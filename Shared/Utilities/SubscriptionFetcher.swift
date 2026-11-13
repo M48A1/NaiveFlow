@@ -65,6 +65,15 @@ nonisolated struct SubscriptionFetcher {
             throw NaiveFlowError.subscription(.invalidStatusCode(httpResponse.statusCode))
         }
 
+        return try parsePayload(data: data, response: httpResponse)
+    }
+
+    /// Local files and pasted node lists have no HTTP transport to validate.
+    static func parseLocal(data: Data) throws -> Result {
+        try parsePayload(data: data, response: nil)
+    }
+
+    private static func parsePayload(data: Data, response httpResponse: HTTPURLResponse?) throws -> Result {
         let profileTitle = parseProfileTitle(from: httpResponse)
         let userInfo = parseSubscriptionUserInfo(from: httpResponse)
         let iconLight = parseIcon(from: httpResponse, field: "aw-icon-light")

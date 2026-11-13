@@ -117,6 +117,12 @@ nonisolated enum ConfigurationValidator {
                     message: "Set \(mode) explicitly when both plain DNS and DoH addresses are configured."))
             }
         }
+        if let name = configuration.general["default-node"],
+           !configuration.proxies.contains(where: { $0.name == name }),
+           !configuration.chains.contains(where: { $0.name == name }) {
+            diagnostics.append(.init(severity: .error, code: .unresolvedPolicy, section: "General",
+                message: "default-node references an unknown node or chain: \(name)."))
+        }
         for key in configuration.general.keys {
             guard let definition = ConfigurationSettings.key(named: key) else {
                 diagnostics.append(
