@@ -22,36 +22,11 @@ nonisolated final class MITMCertificateStore: Sendable {
     private static let certificateAccount = "\(service).caCertificate"
     private static let serialAccount = "\(service).caSerial"
 
-    private static let caSubjectCN = "NaiveFlow Root Certificate"
-    private static let caOrganization = "NaiveFlow"
-
     typealias CA = (privateKey: SecKey, certificateDER: Data)
 
     private let cachedCA = Mutex<CA?>(nil)
 
     // MARK: - CA Lifecycle
-
-    func loadOrCreateCA() throws -> CA {
-        try cachedCA.withLock { cache in
-            if let existing = try? loadCACachedUnlocked(&cache) {
-                return existing
-            }
-            do {
-                return try generateCAUnlocked(&cache)
-            } catch {
-                // The App Group keychain is shared with the extension (the lock is
-                // intra-process): either the other process won the race (re-read), or
-                // an orphaned key from a failed cert write hit errSecDuplicateItem (drop it).
-                if let existing = try? loadCACachedUnlocked(&cache) {
-                    return existing
-                }
-                // Non-duplicate failures leave no key, so surface the real error.
-                guard (try? readPrivateKeyUnlocked()) != nil else { throw error }
-                deletePrivateKey()
-                return try generateCAUnlocked(&cache)
-            }
-        }
-    }
 
     func loadCA() -> CA? {
         cachedCA.withLock { cache in try? loadCACachedUnlocked(&cache) }
@@ -65,22 +40,16 @@ nonisolated final class MITMCertificateStore: Sendable {
         }
     }
 
-    @discardableResult
-    func regenerate() throws -> CA {
-        try cachedCA.withLock { cache in
-            deleteUnlocked(&cache)
-            return try generateCAUnlocked(&cache)
-        }
-    }
-
     func delete() {
         cachedCA.withLock { cache in deleteUnlocked(&cache) }
     }
 
     // MARK: - Trust State
 
-    func isCATrusted() -> Bool {
-        guard let (caPrivateKey, caCertificateDER) = loadCA() else {
+    func isCATrusted() -> Bool { isCATrusted(loadCA()) }
+
+    func isCATrusted(_ identity: CA?) -> Bool {
+        guard let (caPrivateKey, caCertificateDER) = identity else {
             return false
         }
 
@@ -119,14 +88,11 @@ nonisolated final class MITMCertificateStore: Sendable {
 
     // MARK: - Export
 
-    func exportCertificateDER() -> Data? {
-        loadCA()?.certificateDER
-    }
+    func exportMobileConfig(for identity: CA?) -> Data? {
+        guard let (caPrivateKey, certificateDER) = identity else { return nil }
 
-    func exportMobileConfig() -> Data? {
-        guard let (caPrivateKey, certificateDER) = loadCA() else { return nil }
-
-        let identifier = "com.argsment.NaiveFlow.mitm.root"
+        let fingerprint = SHA256.hash(data: certificateDER).map { String(format: "%02x", $0) }.joined()
+        let identifier = "com.argsment.NaiveFlow.mitm.root.\(fingerprint)"
         let payloadIdentifier = "\(identifier).payload"
         let payloadUUID = UUID().uuidString
         let outerUUID = UUID().uuidString
@@ -224,33 +190,6 @@ nonisolated final class MITMCertificateStore: Sendable {
         return (key, certificate)
     }
 
-    private func generateCAUnlocked(_ cache: inout CA?) throws -> CA {
-        let privateKey = try generatePrivateKey()
-        let now = Date()
-        let notAfter = Calendar(identifier: .gregorian).date(byAdding: .year, value: 10, to: now) ?? now.addingTimeInterval(60 * 60 * 24 * 365 * 10)
-        let serial = randomSerial()
-
-        do {
-            let certificateDER = try X509Builder.buildCACertificate(
-                privateKey: privateKey,
-                subjectCN: Self.caSubjectCN,
-                organization: Self.caOrganization,
-                serial: serial,
-                notBefore: now.addingTimeInterval(-60 * 60),
-                notAfter: notAfter
-            )
-            try writeCertificateUnlocked(certificateDER)
-            let ca: CA = (privateKey: privateKey, certificateDER: certificateDER)
-            cache = ca
-            return ca
-        } catch {
-            // The key was already persisted (kSecAttrIsPermanent); delete it or
-            // the next call hits errSecDuplicateItem on the same tag.
-            deletePrivateKey()
-            throw NaiveFlowError.certificate(.buildFailed(underlying: error))
-        }
-    }
-
     private func deleteUnlocked(_ cache: inout CA?) {
         cache = nil
         deletePrivateKey()
@@ -259,65 +198,6 @@ nonisolated final class MITMCertificateStore: Sendable {
     }
 
     // MARK: - Private — Keychain (Private Key)
-
-    private func generatePrivateKey() throws -> SecKey {
-        if let key = tryGenerateSecureEnclaveKey() {
-            return key
-        }
-        return try generateSoftwareKey()
-    }
-
-    private func tryGenerateSecureEnclaveKey() -> SecKey? {
-        var error: Unmanaged<CFError>?
-        guard let access = SecAccessControlCreateWithFlags(
-            nil,
-            kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-            .privateKeyUsage,
-            &error
-        ) else {
-            _ = error?.takeRetainedValue()
-            return nil
-        }
-        let attributes: [String: Any] = [
-            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
-            kSecAttrKeySizeInBits as String: 256,
-            kSecAttrTokenID as String: kSecAttrTokenIDSecureEnclave,
-            kSecPrivateKeyAttrs as String: [
-                kSecAttrIsPermanent as String: true,
-                kSecAttrAccessControl as String: access,
-                kSecAttrApplicationTag as String: Self.privateKeyTag,
-                kSecAttrAccessGroup as String: Self.accessGroup,
-            ]
-        ]
-        var keyError: Unmanaged<CFError>?
-        let key = SecKeyCreateRandomKey(attributes as CFDictionary, &keyError)
-        if key == nil { _ = keyError?.takeRetainedValue() }
-        return key
-    }
-
-    private func generateSoftwareKey() throws -> SecKey {
-        // Fallback when the Secure Enclave is unavailable (simulator, older devices).
-        // Non-extractable, non-synchronizable, ThisDeviceOnly: the CA key signs every
-        // MITM leaf, so it must never leave the device.
-        let attributes: [String: Any] = [
-            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
-            kSecAttrKeySizeInBits as String: 256,
-            kSecPrivateKeyAttrs as String: [
-                kSecAttrIsPermanent as String: true,
-                kSecAttrIsExtractable as String: false,
-                kSecAttrSynchronizable as String: false,
-                kSecAttrApplicationTag as String: Self.privateKeyTag,
-                kSecAttrAccessGroup as String: Self.accessGroup,
-                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-            ]
-        ]
-        var error: Unmanaged<CFError>?
-        guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else {
-            let message = (error?.takeRetainedValue()).flatMap { CFErrorCopyDescription($0) as String? } ?? "unknown"
-            throw NaiveFlowError.certificate(.keyGenerationFailed(detail: message))
-        }
-        return key
-    }
 
     private func readPrivateKeyUnlocked() throws -> SecKey {
         let query: [String: Any] = [
@@ -345,22 +225,6 @@ nonisolated final class MITMCertificateStore: Sendable {
     }
 
     // MARK: - Private — Keychain (Certificate)
-
-    private func writeCertificateUnlocked(_ data: Data) throws {
-        deleteCertificate()
-        let attributes: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.service,
-            kSecAttrAccount as String: Self.certificateAccount,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-            kSecAttrAccessGroup as String: Self.accessGroup,
-        ]
-        let status = SecItemAdd(attributes as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw NaiveFlowError.certificate(.keychainWriteFailed(status: status))
-        }
-    }
 
     private func readCertificateUnlocked() throws -> Data {
         let query: [String: Any] = [

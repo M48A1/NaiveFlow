@@ -17,10 +17,20 @@ struct MITMCertificateView: View {
     @Environment(ClientModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
 
-    @Environment(MITMCertificateController.self) private var controller
+    @State private var controller = MITMCertificateController()
+    var editor: ProfileEditorModel? = nil
+
+    private var certificatePKCS12: String? {
+        if let editor {
+            return editor.preview?.parsed.mitm[MITMPKCS12.configurationKey]
+        }
+        return model.parsed.mitm[MITMPKCS12.configurationKey]
+    }
+
+    private var isBusy: Bool { model.isBusy || (editor?.isApplying ?? false) }
 
 #if os(iOS)
-    @State private var isExportingCertificate = false
+    @State private var exportedFile: URL?
 #endif
     @State private var showRegenerateConfirm = false
     @State private var showDeleteConfirm = false
@@ -28,12 +38,6 @@ struct MITMCertificateView: View {
 
     var body: some View {
         ClientForm {
-            Section {
-                Toggle("Enable MITM", isOn: Binding(
-                    get: { model.parsed.mitm.bool("enable") ?? model.parsed.general.bool("mitm") ?? false },
-                    set: { value in Task { await model.setSetting("enable", value: value ? "true" : "false", section: .mitm) } }
-                )).tint(DesignSystem.Colors.accent).disabled(model.isBusy)
-            }
             Section {
                 HStack {
                     Image("certificate")
@@ -50,6 +54,11 @@ struct MITMCertificateView: View {
                                 .designText(.contentTitle)
                                 .animation(.default, value: badgeTitle)
                         }
+                        if let fingerprint = controller.fingerprint {
+                            Text(fingerprint)
+                                .designText(.micro, design: .monospaced)
+                                .textSelection(.enabled)
+                        }
                         Text(badgeSubtitle)
                             .designText(.caption)
                             .foregroundStyle(DesignSystem.Colors.secondaryText)
@@ -59,6 +68,15 @@ struct MITMCertificateView: View {
                 .frame(minHeight: 80)
             }
 
+            Section {
+                Toggle("Enable MITM", isOn: Binding(
+                    get: {
+                        let parsed = editor?.preview?.parsed ?? model.parsed
+                        return parsed.mitm.bool("enable") ?? parsed.general.bool("mitm") ?? false
+                    },
+                    set: { enabled in Task { await updateMITM("enable", value: enabled ? "true" : "false") } }
+                )).tint(DesignSystem.Colors.accent)
+            }
             if controller.hasCA {
                 Section {
                     Button { installProfile() } label: {
@@ -71,9 +89,13 @@ struct MITMCertificateView: View {
 
                 Section {
                     Button {
-                        prepareCerExport()
+                        if let der = controller.certificateData() { export(der, fileExtension: "cer") }
                     } label: {
-                        Text("Export Certificate")
+                        Text("Export Certificate (.cer)")
+                    }
+
+                    if let value = certificatePKCS12, let data = Data(base64Encoded: value) {
+                        Button("Export Certificate and Private Key (.p12)") { export(data, fileExtension: "p12") }
                     }
 
                     Button {
@@ -82,35 +104,30 @@ struct MITMCertificateView: View {
                         Text("Regenerate Certificate")
                     }
 
-                    Button(role: .destructive) {
-                        showDeleteConfirm = true
-                    } label: {
-                        Text("Delete Certificate")
+                    if editor == nil || certificatePKCS12 != nil {
+                        Button(role: .destructive) {
+                            showDeleteConfirm = true
+                        } label: {
+                            Text("Delete Certificate")
+                        }
                     }
                 }
             } else {
                 Section {
                     Button {
-                        do {
-                            try controller.ensureCA()
-                        } catch {
-                            errorMessage = String(describing: error)
-                        }
+                        Task { await generateCertificate() }
                     } label: {
                         Label("Generate Certificate", systemImage: "plus")
                     }
                 }
             }
         }
+        .disabled(isBusy)
         .navigationTitle("MITM")
         .clientInlineTitle()
         .alert("Regenerate Certificate", isPresented: $showRegenerateConfirm) {
             Button("Regenerate", role: .destructive) {
-                do {
-                    try controller.regenerate()
-                } catch {
-                    errorMessage = String(describing: error)
-                }
+                Task { await generateCertificate() }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -118,7 +135,12 @@ struct MITMCertificateView: View {
         }
         .alert("Delete Certificate", isPresented: $showDeleteConfirm) {
             Button("Delete", role: .destructive) {
-                controller.delete()
+                Task {
+                    let hadEmbeddedCertificate = certificatePKCS12 != nil
+                    let updated = await updateMITM(MITMPKCS12.configurationKey, value: nil, disableMITM: true)
+                    if updated && !hadEmbeddedCertificate && editor == nil { controller.deleteLegacyCertificate() }
+                    controller.refresh(certificatePKCS12)
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -133,14 +155,15 @@ struct MITMCertificateView: View {
             Text(errorMessage ?? "")
         }
 #if os(iOS)
-        .sheet(isPresented: $isExportingCertificate) {
-            if let url = certificateURL() {
-                ShareSheet(items: [url])
-            }
+        .sheet(isPresented: Binding(get: { exportedFile != nil }, set: { if !$0 {
+            if let exportedFile { try? FileManager.default.removeItem(at: exportedFile.deletingLastPathComponent()) }
+            exportedFile = nil
+        } })) {
+            if let exportedFile { ShareSheet(items: [exportedFile]) }
         }
 #endif
-        .onAppear {
-            controller.refresh()
+        .onChange(of: certificatePKCS12, initial: true) { _, value in
+            controller.refresh(value)
         }
 #if os(iOS)
         .onDisappear {
@@ -149,7 +172,7 @@ struct MITMCertificateView: View {
 #endif
         .onChange(of: scenePhase) { _, newValue in
             if newValue == .active {
-                controller.refresh()
+                controller.refresh(certificatePKCS12)
             }
         }
     }
@@ -168,14 +191,15 @@ struct MITMCertificateView: View {
 
     private var badgeTitle: String {
         if !controller.hasCA { return String(localized: "No Certificate") }
-        return controller.isTrusted ? String(localized: "Trusted") : String(localized: "Not Trusted")
+        return controller.certificateName ?? String(localized: "Root Certificate")
     }
 
     private var badgeSubtitle: String {
         if !controller.hasCA {
-            return String(localized: "Generate a certificate to begin.")
+            return controller.isInvalid ? String(localized: "The configuration contains an invalid CA identity.")
+                : String(localized: "Generate a certificate to begin.")
         }
-        if controller.isTrusted { return String(localized: "NaiveFlow Root Certificate is installed and trusted.") }
+        if controller.isTrusted { return String(localized: "System Trusted") }
 #if os(macOS)
         return String(localized: "Open the certificate in Keychain Access, then set its trust for SSL.")
 #else
@@ -183,25 +207,48 @@ struct MITMCertificateView: View {
 #endif
     }
 
-    // MARK: - Export
-
-    private func prepareCerExport() {
-#if os(macOS)
-        guard let der = controller.certificateData() else {
-            errorMessage = String(localized: "Failed to export certificate.")
-            return
+    private func generateCertificate() async {
+        do {
+            let value = try MITMPKCS12.create().base64EncodedString()
+            _ = await updateMITM(MITMPKCS12.configurationKey, value: value)
+        } catch {
+            errorMessage = error.localizedDescription
         }
+    }
+
+    @discardableResult
+    private func updateMITM(_ key: String, value: String?, disableMITM: Bool = false) async -> Bool {
+        let current = editor?.text ?? model.operatingText
+        var text = ClientDocumentEditing.set(current, section: .mitm, key: key, value: value)
+        if disableMITM { text = ClientDocumentEditing.set(text, section: .mitm, key: "enable", value: "false") }
+        if let editor {
+            do { try editor.saveEditedDraft(text) }
+            catch { errorMessage = error.localizedDescription; return false }
+            return true
+        }
+        let committed = await model.commit(text)
+        if !committed { errorMessage = model.error }
+        return committed
+    }
+
+    private func export(_ data: Data, fileExtension: String) {
+#if os(macOS)
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "NaiveFlowMITMRoot.cer"
+        panel.nameFieldStringValue = "NaiveFlowMITMRoot.\(fileExtension)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try der.write(to: url, options: .atomic) }
+        do { try data.write(to: url, options: .atomic) }
         catch { errorMessage = error.localizedDescription }
 #else
-        guard certificateURL() != nil else {
-            errorMessage = String(localized: "Failed to export certificate.")
-            return
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let url = folder.appendingPathComponent("NaiveFlowMITMRoot.\(fileExtension)")
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try data.write(to: url, options: [.atomic, .completeFileProtection])
+            exportedFile = url
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            errorMessage = error.localizedDescription
         }
-        isExportingCertificate = true
 #endif
     }
 

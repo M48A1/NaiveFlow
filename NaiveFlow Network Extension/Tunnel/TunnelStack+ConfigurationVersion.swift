@@ -9,7 +9,10 @@ extension TunnelStack {
     private func validateVersion(_ bundle: RuntimeConfigurationBundle) throws {
         try bundle.validate()
         try MITMRewritePolicy.validate(ruleSets: bundle.mitmRuleSets)
-        if bundle.preferences["mitmEnabled"] == .boolean(true), !mitmCertificateStore.isCATrusted() {
+        // A synchronized CA can be installed after its profile is activated.
+        // loadMITMSetting keeps HTTPS interception gated on local system trust.
+        if bundle.mitmCertificatePKCS12 == nil,
+           bundle.preferences["mitmEnabled"] == .boolean(true), !mitmCertificateStore.isCATrusted() {
             throw RuntimeConfigurationFailure.rejected("Install and trust the MITM CA before enabling interception.")
         }
     }
@@ -67,6 +70,10 @@ extension TunnelStack {
         let store = RuntimeBundleStore()
         guard phase == .running else { throw RuntimeConfigurationFailure.unavailable }
         if nativeBundle?.id == bundle.id {
+            if applyingVersion == nil {
+                loadMITMSetting()
+                publishUDPConfig()
+            }
             let receipt = RuntimeConfigurationReceipt(versionID: bundle.id, activeVersionID: bundle.id,
                 snapshotID: bundle.snapshotID, status: .applied, message: nil)
             try store.record(receipt)

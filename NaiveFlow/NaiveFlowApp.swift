@@ -16,7 +16,6 @@ struct NaiveFlowApp: App {
     @State private var container: AppContainer
     @State private var operations: Operations
     @State private var client: ClientModel
-    @State private var mitmCertificateController = MITMCertificateController()
     @State private var deepLinkManager = DeepLinkManager()
 
     init() {
@@ -46,7 +45,6 @@ struct NaiveFlowApp: App {
                 .environment(container.tunnel)
                 .environment(container.selection)
                 .environment(container.latency)
-                .environment(mitmCertificateController)
                 .environment(deepLinkManager)
         }
 #if os(macOS)

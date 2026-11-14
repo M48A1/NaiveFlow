@@ -50,6 +50,10 @@ struct ConfigurationDriveSection: View {
             }
             if let status { Text(status).font(.footnote).foregroundStyle(.secondary) }
             if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+            if model.preview?.parsed.mitm.contains(MITMPKCS12.configurationKey) == true {
+                Text("The iCloud configuration includes this MITM certificate and private key.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
         }
         .disabled(model.isApplying || busy || !model.isLoaded)
         .alert("Save iCloud Configuration", isPresented: $showSaveAs) {

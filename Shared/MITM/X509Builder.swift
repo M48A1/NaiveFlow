@@ -537,6 +537,43 @@ nonisolated enum X509Builder {
         return signature
     }
 
+    fileprivate static func validateRootCA(_ der: Data, publicKey: SecKey) throws {
+        var outer = ASN1Parser(data: der)
+        var certificate = ASN1Parser(data: try outer.readSequence())
+        let signed = try certificate.readNextWithHeader(expectedTag: 0x30)
+        let algorithm = try certificate.readNextWithHeader(expectedTag: 0x30)
+        let signature = try ASN1Parser.contentOf(certificate.readNextWithHeader(expectedTag: 0x03))
+        guard outer.isAtEnd, certificate.isAtEnd, algorithm == algorithmECDSAWithSHA256, signature.first == 0,
+              SecKeyVerifySignature(publicKey, .ecdsaSignatureMessageX962SHA256,
+                  Data(signed) as CFData, Data(signature.dropFirst()) as CFData, nil) else {
+            throw MITMPKCS12.Failure.invalidIdentity
+        }
+
+        var tbs = ASN1Parser(data: try ASN1Parser.contentOf(signed))
+        try tbs.skipExplicitContextSpecific(tag: 0)
+        try tbs.skipNext()
+        try tbs.skipNext()
+        let issuer = try tbs.readNextWithHeader(expectedTag: 0x30)
+        try tbs.skipNext()
+        let subject = try tbs.readNextWithHeader(expectedTag: 0x30)
+        try tbs.skipNext()
+        var wrapper = ASN1Parser(data: try tbs.readExplicitContextSpecific(tag: 3))
+        var extensions = ASN1Parser(data: try wrapper.readSequence())
+        guard issuer == subject else { throw MITMPKCS12.Failure.invalidIdentity }
+        while !extensions.isAtEnd {
+            var entry = ASN1Parser(data: try extensions.readSequence())
+            guard try entry.readNextWithHeader(expectedTag: 0x06) == ASN1OID.basicConstraints else { continue }
+            if try entry.peekTag() == 0x01 { try entry.skipNext() }
+            let value = try ASN1Parser.contentOf(entry.readNextWithHeader(expectedTag: 0x04))
+            var bounds = ASN1Parser(data: value)
+            var constraints = ASN1Parser(data: try bounds.readSequence())
+            guard try constraints.readNextWithHeader(expectedTag: 0x01) == ASN1.boolean(true) else { break }
+            _ = try parseCAComponents(certificateDER: der)
+            return
+        }
+        throw MITMPKCS12.Failure.invalidIdentity
+    }
+
     // MARK: - CA Component Reuse
 
     private struct CAComponents {
@@ -619,6 +656,121 @@ nonisolated enum X509Builder {
 
     private static func sha1(_ data: Data) -> Data {
         Data(Insecure.SHA1.hash(data: data))
+    }
+}
+
+// MARK: - PKCS #12
+
+/// Password-free PKCS #12 containing one P-256 private key and one root CA.
+nonisolated enum MITMPKCS12 {
+    static let configurationKey = "ca-p12"
+    static let maximumEncodedBytes = 24 * 1024
+
+    enum Failure: LocalizedError {
+        case invalidIdentity
+
+        var errorDescription: String? {
+            "Expected a NaiveFlow PKCS #12 root CA and its matching P-256 private key."
+        }
+    }
+
+    private static let keyBag = Data([0x06, 0x0B, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x0C, 0x0A, 0x01, 0x01])
+    private static let certBag = Data([0x06, 0x0B, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x0C, 0x0A, 0x01, 0x03])
+    private static let x509 = Data([0x06, 0x0A, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x16, 0x01])
+    private static let ecAlgorithm = ASN1.sequence(ASN1OID.ecPublicKey + ASN1OID.prime256v1)
+
+    static func create() throws -> Data {
+        let key = P256.Signing.PrivateKey()
+        let privateKey = try securityKey(key)
+        let now = Date()
+        let serial = Data(SHA256.hash(data: key.publicKey.x963Representation).prefix(16))
+        let expiry = Calendar(identifier: .gregorian).date(byAdding: .year, value: 10, to: now)
+            ?? now.addingTimeInterval(10 * 365 * 24 * 60 * 60)
+        let certificate = try X509Builder.buildCACertificate(
+            privateKey: privateKey, subjectCN: "NaiveFlow Root Certificate", organization: "NaiveFlow",
+            serial: serial, notBefore: now.addingTimeInterval(-3600), notAfter: expiry
+        )
+        let ecKey = ASN1.sequence(ASN1.integer(1) + ASN1.octetString(key.rawRepresentation))
+        let privateKeyInfo = ASN1.sequence(ASN1.integer(0) + ecAlgorithm + ASN1.octetString(ecKey))
+        let certificateBag = ASN1.sequence(x509 + explicit(ASN1.octetString(certificate)))
+        // A shared localKeyID pairs the certificate with its key in external PKCS #12 readers.
+        let localKeyID = Data([0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x15])
+        let attributes = ASN1.set(ASN1.sequence(localKeyID + ASN1.set(ASN1.octetString(serial))))
+        let bags = ASN1.sequence(keyBag + explicit(privateKeyInfo) + attributes)
+            + ASN1.sequence(certBag + explicit(certificateBag) + attributes)
+        return ASN1.sequence(ASN1.integer(3) + contentInfo(ASN1.sequence(contentInfo(ASN1.sequence(bags)))))
+    }
+
+    static func decode(_ value: String) throws -> MITMCertificateStore.CA {
+        guard value.utf8.count <= maximumEncodedBytes, let data = Data(base64Encoded: value) else {
+            throw Failure.invalidIdentity
+        }
+        var pfx = try sequence(data)
+        guard try pfx.readNextWithHeader(expectedTag: 0x02) == ASN1.integer(3) else { throw Failure.invalidIdentity }
+        var safe = try sequence(readContentInfo(&pfx))
+        var bags = try sequence(readContentInfo(&safe))
+        guard pfx.isAtEnd, safe.isAtEnd else { throw Failure.invalidIdentity }
+
+        var keyBag = ASN1Parser(data: try bags.readSequence())
+        guard try keyBag.readNextWithHeader(expectedTag: 0x06) == Self.keyBag else { throw Failure.invalidIdentity }
+        var keyInfo = try sequence(keyBag.readExplicitContextSpecific(tag: 0))
+        guard try keyInfo.readNextWithHeader(expectedTag: 0x02) == ASN1.integer(0),
+              try keyInfo.readNextWithHeader(expectedTag: 0x30) == ecAlgorithm else { throw Failure.invalidIdentity }
+        var ec = try sequence(ASN1Parser.contentOf(keyInfo.readNextWithHeader(expectedTag: 0x04)))
+        guard try ec.readNextWithHeader(expectedTag: 0x02) == ASN1.integer(1) else { throw Failure.invalidIdentity }
+        let scalar = try ASN1Parser.contentOf(ec.readNextWithHeader(expectedTag: 0x04))
+        guard scalar.count == 32 else { throw Failure.invalidIdentity }
+        let key = try P256.Signing.PrivateKey(rawRepresentation: Data(scalar))
+
+        var certBag = ASN1Parser(data: try bags.readSequence())
+        guard bags.isAtEnd,
+              try certBag.readNextWithHeader(expectedTag: 0x06) == Self.certBag else { throw Failure.invalidIdentity }
+        var cert = try sequence(certBag.readExplicitContextSpecific(tag: 0))
+        guard try cert.readNextWithHeader(expectedTag: 0x06) == x509 else { throw Failure.invalidIdentity }
+        var octets = ASN1Parser(data: try cert.readExplicitContextSpecific(tag: 0))
+        let der = Data(try ASN1Parser.contentOf(octets.readNextWithHeader(expectedTag: 0x04)))
+        guard let certificate = SecCertificateCreateWithData(nil, der as CFData),
+              let publicKey = SecCertificateCopyKey(certificate),
+              let publicBytes = SecKeyCopyExternalRepresentation(publicKey, nil) as Data?,
+              publicBytes == key.publicKey.x963Representation else { throw Failure.invalidIdentity }
+        try X509Builder.validateRootCA(der, publicKey: publicKey)
+        return (try securityKey(key), der)
+    }
+
+    private static func securityKey(_ key: P256.Signing.PrivateKey) throws -> SecKey {
+        let attributes: [String: Any] = [
+            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrKeyClass as String: kSecAttrKeyClassPrivate,
+            kSecAttrKeySizeInBits as String: 256,
+        ]
+        guard let result = SecKeyCreateWithData(key.x963Representation as CFData, attributes as CFDictionary, nil) else {
+            throw Failure.invalidIdentity
+        }
+        return result
+    }
+
+    private static func explicit(_ data: Data) -> Data {
+        ASN1.contextSpecific(tag: 0, constructed: true, content: data)
+    }
+
+    private static func contentInfo(_ data: Data) -> Data {
+        ASN1.sequence(ASN1OID.data + explicit(ASN1.octetString(data)))
+    }
+
+    private static func sequence(_ data: Data) throws -> ASN1Parser {
+        var outer = ASN1Parser(data: data)
+        let inner = try outer.readSequence()
+        guard outer.isAtEnd else { throw Failure.invalidIdentity }
+        return ASN1Parser(data: inner)
+    }
+
+    private static func readContentInfo(_ source: inout ASN1Parser) throws -> Data {
+        var info = ASN1Parser(data: try source.readSequence())
+        guard try info.readNextWithHeader(expectedTag: 0x06) == ASN1OID.data else { throw Failure.invalidIdentity }
+        var content = ASN1Parser(data: try info.readExplicitContextSpecific(tag: 0))
+        let data = try ASN1Parser.contentOf(content.readNextWithHeader(expectedTag: 0x04))
+        guard info.isAtEnd, content.isAtEnd else { throw Failure.invalidIdentity }
+        return data
     }
 }
 

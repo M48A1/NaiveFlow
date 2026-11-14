@@ -22,6 +22,7 @@ nonisolated final class MITMLeafCertificateCache: Sendable {
     // MARK: - Init
 
     private let store: MITMCertificateStore
+    private let identity: MITMCertificateStore.CA
     private let leafPrivateKey: P256.Signing.PrivateKey
 
     private static let maxEntries = 256
@@ -47,8 +48,9 @@ nonisolated final class MITMLeafCertificateCache: Sendable {
         case mint
     }
 
-    init(store: MITMCertificateStore) throws(NaiveFlowError) {
+    init(store: MITMCertificateStore, identity: MITMCertificateStore.CA) {
         self.store = store
+        self.identity = identity
         self.leafPrivateKey = P256.Signing.PrivateKey()
     }
 
@@ -105,9 +107,7 @@ nonisolated final class MITMLeafCertificateCache: Sendable {
     }
 
     private func mintLeaf(for hostname: String) throws -> Leaf {
-        guard let (caPrivateKey, caCertificateDER) = store.loadCA() else {
-            throw NaiveFlowError.certificate(.missingCAComponents)
-        }
+        let (caPrivateKey, caCertificateDER) = identity
 
         let now = Date()
         let serial = store.nextSerial()

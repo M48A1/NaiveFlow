@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 /// Text configuration editor with version history and iCloud Drive support.
 struct ProfileView: View {
     @Environment(Operations.self) private var operations
+    @Environment(ClientModel.self) private var client
 
     @State private var modelBox = ViewScoped<ProfileEditorModel>()
     @State private var showImporter = false
@@ -28,7 +29,7 @@ struct ProfileView: View {
                 resultSection
                 reloadSection
                 actionSection
-                NavigationLink("MITM") { MITMCertificateView() }
+                NavigationLink("MITM") { MITMCertificateView(editor: model) }
                 ConfigurationDriveSection(model: model)
                 historySection
             }
@@ -147,14 +148,20 @@ private extension ProfileView {
     var actionSection: some View {
         Section {
             Button {
-                Task { await model.apply() }
+                Task {
+                    await model.apply()
+                    if model.errorMessage == nil { client.adoptAppliedConfiguration() }
+                }
             } label: {
                 Label("Apply Configuration", systemImage: "checkmark.circle")
             }
             .disabled(!model.canApply)
 
             Button {
-                Task { await model.rollbackRuntimeVersion() }
+                Task {
+                    await model.rollbackRuntimeVersion()
+                    if model.errorMessage == nil { client.adoptAppliedConfiguration() }
+                }
             } label: {
                 Label("Restore Previous Runtime Version", systemImage: "arrow.uturn.backward")
             }
@@ -280,7 +287,9 @@ private extension ProfileView {
 #if DEBUG
 #Preview {
     let container = AppContainer.preview()
+    let operations = Operations(container: container)
     return ProfileView()
-        .environment(Operations(container: container))
+        .environment(operations)
+        .environment(ClientModel(operations: operations))
 }
 #endif

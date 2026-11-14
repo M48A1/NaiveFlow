@@ -33,10 +33,11 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
     /// UI metadata for every group, including select groups flattened by the engine.
     var displayGroups: [RuntimeGroupDisplay] = []
     var geo = NativeGeoDatabase()
+    var mitmCertificatePKCS12: String? = nil
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, id, snapshotID, parentID, preferences, nodes, selectedNodeID
-        case rules, finalAction, mitmRuleSets, policyGroups, displayGroups, geo
+        case rules, finalAction, mitmRuleSets, policyGroups, displayGroups, geo, mitmCertificatePKCS12
     }
 
     var selectedNode: ProxyConfiguration? { nodes.first { $0.id == selectedNodeID } }
@@ -79,6 +80,9 @@ nonisolated struct RuntimeConfigurationBundle: Codable, Sendable {
 
         if case .proxy(let id) = finalAction, !ids.contains(id) { throw RuntimeConfigurationFailure.invalidBundle }
         guard Set(mitmRuleSets.map(\.id)).count == mitmRuleSets.count else { throw RuntimeConfigurationFailure.invalidBundle }
+        if let value = mitmCertificatePKCS12, (try? MITMPKCS12.decode(value)) == nil {
+            throw RuntimeConfigurationFailure.invalidBundle
+        }
         var scopes: Set<String> = []
         for set in mitmRuleSets {
             for suffix in set.domainSuffixes {

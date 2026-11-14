@@ -170,6 +170,16 @@ final class ProfileEditorModel {
         schedulePreview()
     }
 
+    /// Certificate controls edit the same draft that iCloud Drive saves.
+    func saveEditedDraft(_ value: String) throws {
+        try document.persistDraft(value)
+        pendingPreview?.cancel()
+        pendingPreview = nil
+        text = value
+        preview = document.previewDocument(value)
+        statusMessage = nil
+    }
+
     /// Recompiles immediately and drops any debounced work in flight.
     func refreshPreview() {
         pendingPreview?.cancel()

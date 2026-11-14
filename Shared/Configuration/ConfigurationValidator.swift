@@ -53,7 +53,7 @@ nonisolated enum ConfigurationValidator {
         "hostname",
         "tcp-connection",
         "skip-server-cert-verify",
-        "ca-passphrase",
+        MITMPKCS12.configurationKey,
         "auto-quic-block",
         "use-default-ca",
         "client-source-address",
@@ -921,7 +921,7 @@ nonisolated extension ConfigurationValidator {
 nonisolated extension ConfigurationValidator {
 
     static func validateMITM(_ configuration: ParsedConfiguration, diagnostics: inout [ConfigurationDiagnostic]) {
-        for key in configuration.mitm.keys where !["enable", "hostname"].contains(key) {
+        for key in configuration.mitm.keys where !["enable", "hostname", MITMPKCS12.configurationKey].contains(key) {
             diagnostics.append(ConfigurationDiagnostic(severity: .error, code: .notApplied,
                 section: "MITM", message: "Unsupported native MITM field '\(key)'."))
         }

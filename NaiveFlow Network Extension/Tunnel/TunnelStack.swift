@@ -114,14 +114,19 @@ actor TunnelStack {
     nonisolated var mitmEnabled: Bool { _mitmEnabled.load(ordering: .relaxed) }
     nonisolated let mitmPolicy = MITMRewritePolicy()
     nonisolated let mitmUpstreamALPNCache = MITMUpstreamALPNCache()
-    private let _mitmLeafCache = Mutex<MITMLeafCertificateCache?>(nil)
+    private struct MITMIdentityState {
+        var identity: MITMCertificateStore.CA?
+        var cache: MITMLeafCertificateCache?
+    }
+    private let mitmIdentityState = Mutex(MITMIdentityState())
     nonisolated let mitmCertificateStore = MITMCertificateStore()
 
     nonisolated func mitmLeafCacheCreatingIfNeeded() throws(NaiveFlowError) -> MITMLeafCertificateCache {
-        try _mitmLeafCache.withLock { (cache) throws(NaiveFlowError) in
-            if let cache { return cache }
-            let made = try MITMLeafCertificateCache(store: mitmCertificateStore)
-            cache = made
+        try mitmIdentityState.withLock { (state) throws(NaiveFlowError) in
+            if let cache = state.cache { return cache }
+            guard let identity = state.identity else { throw .certificate(.missingCAComponents) }
+            let made = MITMLeafCertificateCache(store: mitmCertificateStore, identity: identity)
+            state.cache = made
             return made
         }
     }
@@ -445,21 +450,30 @@ actor TunnelStack {
     }
 
     func loadMITMSetting() {
-        guard let nativeBundle, AWCore.getMITMEnabled() else {
-            _mitmEnabled.store(false, ordering: .relaxed)
+        let identity: MITMCertificateStore.CA?
+        if let nativeBundle, AWCore.getMITMEnabled() {
+            if let value = nativeBundle.mitmCertificatePKCS12 {
+                identity = try? MITMPKCS12.decode(value)
+            } else {
+                _ = mitmCertificateStore.reloadCA()
+                identity = mitmCertificateStore.loadCA()
+            }
+        } else {
+            identity = nil
+        }
+        let trusted = mitmCertificateStore.isCATrusted(identity)
+        if !trusted { _mitmEnabled.store(false, ordering: .relaxed) }
+        mitmIdentityState.withLock { state in
+            let activeIdentity = trusted ? identity : nil
+            if state.identity?.certificateDER != activeIdentity?.certificateDER { state.cache = nil }
+            state.identity = activeIdentity
+        }
+        guard let nativeBundle, trusted else {
+            if identity != nil { logger.error("[MITM] Root certificate not trusted") }
             mitmPolicy.reset()
             return
         }
-        if mitmCertificateStore.reloadCA() {
-            _mitmLeafCache.withLock { $0 = nil }
-        }
-        guard mitmCertificateStore.isCATrusted() else {
-            logger.error("[MITM] Root certificate not trusted")
-            _mitmEnabled.store(false, ordering: .relaxed)
-            mitmPolicy.reset()
-            return
-        }
-        _mitmEnabled.store(true, ordering: .relaxed)
         mitmPolicy.load(ruleSets: nativeBundle.mitmRuleSets)
+        _mitmEnabled.store(true, ordering: .relaxed)
     }
 }

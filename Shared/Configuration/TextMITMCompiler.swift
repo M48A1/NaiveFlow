@@ -10,6 +10,7 @@ nonisolated struct CompiledTextMITM: Sendable {
         let argument: String?
         let dialect: MITMScriptDialect
     }
+    var certificatePKCS12: String?
     var embeddedSets: [MITMRuleSet] = []
     var embeddedSignature: Data? {
         let encoder = JSONEncoder()
@@ -79,6 +80,15 @@ nonisolated struct CompiledTextMITM: Sendable {
 nonisolated enum TextMITMCompiler {
     static func compile(_ parsed: ParsedConfiguration, diagnostics: inout [ConfigurationDiagnostic]) -> CompiledTextMITM {
         var result = CompiledTextMITM()
+        if let value = parsed.mitm[MITMPKCS12.configurationKey] {
+            do {
+                _ = try MITMPKCS12.decode(value)
+                result.certificatePKCS12 = value
+            } catch {
+                diagnostics.append(.init(severity: .error, code: .invalidValue, section: "MITM",
+                    message: "ca-p12 must contain a valid NaiveFlow root CA and its matching private key."))
+            }
+        }
         result.suffixes = (parsed.mitm.list("hostname") ?? []).compactMap(DNSName.normalizedHost)
         for (name, encoded) in parsed.mitmSets.pairs {
             do {

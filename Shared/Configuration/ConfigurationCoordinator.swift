@@ -459,7 +459,7 @@ nonisolated extension ConfigurationCoordinator {
                 case .rule: payloadChanged = !next.orderedRules.isEmpty || next.geo.entryCount > 0
                 case .dns: payloadChanged = !next.hosts.isEmpty
                 case .outbound: payloadChanged = !next.proxies.isEmpty || !next.proxyGroups.isEmpty
-                case .mitm: payloadChanged = !next.textMITM.suffixes.isEmpty || !next.textMITM.embeddedSets.isEmpty
+                case .mitm: payloadChanged = next.textMITM.certificatePKCS12 != nil || !next.textMITM.suffixes.isEmpty || !next.textMITM.embeddedSets.isEmpty
                 }
             }
 
@@ -554,9 +554,8 @@ nonisolated extension ConfigurationCoordinator {
             return nodeSignatures(previous) != nodeSignatures(next)
                 || groupSignatures(previous) != groupSignatures(next)
         case .mitm:
-            // A document carries no MITM rules: they live in the MITM rule sets
-            // the app manages, so only `[General]` keys can change here.
-            return previous.textMITM.embeddedSignature != next.textMITM.embeddedSignature
+            return previous.textMITM.certificatePKCS12 != next.textMITM.certificatePKCS12
+                || previous.textMITM.embeddedSignature != next.textMITM.embeddedSignature
                 || previous.textMITM.suffixes != next.textMITM.suffixes
                 || previous.textMITM.rules.map { $0.operation } != next.textMITM.rules.map { $0.operation }
                 || previous.textMITM.rules.map { $0.urlPattern } != next.textMITM.rules.map { $0.urlPattern }

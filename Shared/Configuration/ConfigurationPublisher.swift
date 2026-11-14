@@ -102,7 +102,7 @@ struct ConfigurationPublisher {
             displayGroups: compiled.proxyGroups.map {
                 RuntimeGroupDisplay(id: $0.id, name: $0.name, memberCount: $0.memberIds.count, iconURL: $0.iconURL)
             },
-            geo: compiled.geo)
+            geo: compiled.geo, mitmCertificatePKCS12: compiled.textMITM.certificatePKCS12)
         let previousCompiled = activation.active?.compiled
         let plan = ConfigurationCoordinator().plan(from: previousCompiled, to: compiled)
         try activation.store.save(snapshot)

@@ -63,6 +63,24 @@ final class ClientModel {
         rebuild()
     }
 
+    /// The iCloud editor publishes outside the profile library. Keep the selected
+    /// profile in step so later edits start from the newly applied configuration.
+    func adoptAppliedConfiguration() {
+        guard !isBusy, let active = activeSnapshot,
+              let index = library.profiles.firstIndex(where: { $0.id == library.selectedID }) else {
+            refresh()
+            return
+        }
+        var next = library
+        if next.profiles[index].text != active.text {
+            next.profiles[index].text = active.text
+            next.profiles[index].updatedAt = .now
+            do { try next.save(to: directory); library = next }
+            catch { report(error) }
+        }
+        refresh()
+    }
+
     var operatingText: String { hasApplied ? lastActiveText ?? profile?.text ?? "" : profile?.text ?? "" }
 
     private func rebuild() {
