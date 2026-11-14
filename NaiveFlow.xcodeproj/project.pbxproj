@@ -377,7 +377,7 @@
 				Info.plist,
 				NaiveFlowApp.swift,
 				"Views/Client/ClientComponents.swift",
-				"Views/Client/ClientDiagnosticsView.swift",
+
 				"Views/Client/ClientGeoSettingsView.swift",
 				"Views/Client/ClientGroupViews.swift",
 				"Views/Client/ClientHomeView.swift",

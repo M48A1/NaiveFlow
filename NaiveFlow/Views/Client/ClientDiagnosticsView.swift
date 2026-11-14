@@ -10,8 +10,11 @@ struct ClientDiagnosticsView: View {
         Form {
             Section {
                 Picker("Node", selection: $nodeName) { ForEach(model.nodes) { Text($0.name).tag($0.name) } }
-                TextField("HTTP or HTTPS Test URL", text: $target).clientKeyboardType(.URL)
-                    .clientNoAutocapitalization().autocorrectionDisabled()
+                TextField("HTTP or HTTPS Test URL", text: $target)
+#if !os(tvOS)
+                    .clientKeyboardType(.URL).clientNoAutocapitalization()
+#endif
+                    .autocorrectionDisabled()
                 Button("Run Diagnostics") {
                     guard let node = model.nodes.first(where: { $0.name == nodeName }), let endpoint = LatencyTarget(url: target) else {
                         inputError = "Select a node and enter a valid HTTP or HTTPS URL."; return
@@ -26,12 +29,18 @@ struct ClientDiagnosticsView: View {
                     HStack {
                         if step.state == .running { ProgressView() }
                         else { Image(systemName: icon(step.state)).foregroundStyle(color(step.state)) }
-                        Text(step.detail.isEmpty ? "Waiting" : step.detail).textSelection(.enabled)
+                        Text(step.detail.isEmpty ? "Waiting" : step.detail)
+#if !os(tvOS)
+                            .textSelection(.enabled)
+#endif
                     }
                 }
             }
         }
-        .navigationTitle("Connection Diagnostics").clientInlineTitle()
+        .navigationTitle("Connection Diagnostics")
+#if !os(tvOS)
+        .clientInlineTitle()
+#endif
         .onAppear { if nodeName.isEmpty { nodeName = model.nodes.first { $0.name == model.selectedNodeName }?.name ?? model.nodes.first?.name ?? "" } }
         .onDisappear { diagnostics.cancel() }
     }

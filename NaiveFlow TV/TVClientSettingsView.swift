@@ -24,6 +24,7 @@ struct TVClientSettingsView: View {
                 }
                 NavigationLink("Rules") { TVClientRulesView() }
                 NavigationLink("Modules") { TVClientModulesView() }
+                NavigationLink("MITM") { TVClientMITMView() }
             }
             Section("Resources") {
                 NavigationLink("Subscriptions") { TVClientSubscriptionsView() }
@@ -39,6 +40,7 @@ struct TVClientSettingsView: View {
                     .disabled(model.isBusy || model.modules.isEmpty)
             }
             Section("Diagnostics") {
+                NavigationLink("Connection Diagnostics") { ClientDiagnosticsView() }
                 NavigationLink("Requests") { TVClientActivityView(tunnel: container.tunnel, selection: container.selection, showsLogs: false) }
                 NavigationLink("Logs") { TVClientActivityView(tunnel: container.tunnel, selection: container.selection, showsLogs: true) }
             }
