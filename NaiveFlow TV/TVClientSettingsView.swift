@@ -4,8 +4,6 @@ import UIKit
 struct TVClientSettingsView: View {
     @Environment(ClientModel.self) private var model
     let container: AppContainer
-    @State private var showingLegacyProxies = false
-    @State private var showingLegacyImport = false
 
     var body: some View {
         List {
@@ -36,36 +34,14 @@ struct TVClientSettingsView: View {
                     .disabled(model.isBusy)
                 Button("Update Modules") { Task { _ = await model.refreshAllModules() } }
                     .disabled(model.isBusy || model.modules.isEmpty)
-                Button("Legacy Servers and Chains") { showingLegacyProxies = true }
-                Button("Add Legacy Proxy") { showingLegacyImport = true }
             }
             Section("Diagnostics") {
                 NavigationLink("Requests") { TVClientActivityView(tunnel: container.tunnel, showsLogs: false) }
                 NavigationLink("Logs") { TVClientActivityView(tunnel: container.tunnel, showsLogs: true) }
             }
         }
-        .sheet(isPresented: $showingLegacyProxies) {
-            TVLegacyProxyHost(container: container, adding: false)
-        }
-        .sheet(isPresented: $showingLegacyImport) {
-            TVLegacyProxyHost(container: container, adding: true)
-        }
         .navigationTitle("Settings")
     }
-}
-
-private struct TVLegacyProxyHost: UIViewControllerRepresentable {
-    let container: AppContainer
-    let adding: Bool
-
-    func makeUIViewController(context: Context) -> UINavigationController {
-        let root: UIViewController = adding
-            ? TVAddProxyViewController(container: container)
-            : TVProxiesPageViewController(container: container)
-        return UINavigationController(rootViewController: root)
-    }
-
-    func updateUIViewController(_ controller: UINavigationController, context: Context) {}
 }
 
 struct TVClientRulesView: View {
@@ -189,6 +165,13 @@ struct TVClientNodesView: View {
     let latency: LatencyCenter
     let tunnel: TunnelController
     @State private var source = ""
+    @State private var nodeEditor: NodeEditor?
+    @State private var pendingDelete: ProxyConfiguration?
+
+    private struct NodeEditor: Identifiable {
+        let id = UUID()
+        var node: ProxyConfiguration?
+    }
 
     var body: some View {
         List {
@@ -206,11 +189,18 @@ struct TVClientNodesView: View {
                         }
                     }
                     .disabled(model.isBusy)
+                    .contextMenu {
+                        Button("Edit") { nodeEditor = NodeEditor(node: node) }
+                        Button("Test Latency") { latency.testLatency(for: node, transport: tunnel) }
+                        Button("Delete", role: .destructive) { pendingDelete = node }
+                    }
                 }
                 Button("Latency Test") { latency.testLatencies(for: model.nodes, transport: tunnel) }
                     .disabled(model.nodes.isEmpty)
             }
             Section("Import Nodes") {
+                Button("Add Node") { nodeEditor = NodeEditor() }.disabled(model.isBusy)
+                NavigationLink("Subscription Groups") { TVClientSubscriptionsView() }
                 TextField("Node Link", text: $source).autocorrectionDisabled()
                 Button("Import into Current Profile") {
                     Task {
@@ -223,7 +213,33 @@ struct TVClientNodesView: View {
             }
         }
         .navigationTitle("Proxies")
+        .sheet(item: $nodeEditor) { editor in
+            TVClientNodeEditorHost(node: editor.node) { node in
+                Task { await model.saveNode(node, replacing: editor.node?.name) }
+            }
+        }
+        .confirmationDialog("Delete Node?", isPresented: Binding(
+            get: { pendingDelete != nil },
+            set: { if !$0 { pendingDelete = nil } }
+        ), presenting: pendingDelete) { node in
+            Button("Delete", role: .destructive) {
+                Task { _ = await model.removeNodes([node.name]) }
+            }
+        } message: { node in
+            Text(node.name)
+        }
     }
+}
+
+private struct TVClientNodeEditorHost: UIViewControllerRepresentable {
+    let node: ProxyConfiguration?
+    let onSave: (ProxyConfiguration) -> Void
+
+    func makeUIViewController(context: Context) -> UINavigationController {
+        UINavigationController(rootViewController: TVProxyEditorViewController(configuration: node, onSave: onSave))
+    }
+
+    func updateUIViewController(_ controller: UINavigationController, context: Context) {}
 }
 
 private struct TVClientSubscriptionsView: View {

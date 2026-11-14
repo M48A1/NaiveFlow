@@ -6,7 +6,6 @@ struct TVClientHomeView: View {
     let tunnel: TunnelController
     let stats: ConnectionStats
     let latency: LatencyCenter
-    let selection: ProxySelection
 
     var body: some View {
         ScrollView {
@@ -17,11 +16,11 @@ struct TVClientHomeView: View {
                         model.operations.tunnel.toggle()
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!tunnel.isManagerReady || tunnel.rawStatus.isTransitioning || (!tunnel.hasRunningTunnel && !model.hasApplied && selection.effectiveConfiguration == nil))
+                    .disabled(!tunnel.isManagerReady || tunnel.rawStatus.isTransitioning || (!tunnel.hasRunningTunnel && !model.hasApplied))
 
                     VStack(alignment: .leading) {
                         Text(tunnel.status.localizedText).font(.title2)
-                        Text(model.hasApplied ? model.activeName : selection.effectiveConfiguration?.name ?? "Select and apply a profile to connect.")
+                        Text(model.hasApplied ? model.activeName : "Select and apply a profile to connect.")
                             .foregroundStyle(.secondary)
                     }
                     Spacer()

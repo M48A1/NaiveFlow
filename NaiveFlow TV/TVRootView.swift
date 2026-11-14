@@ -15,7 +15,7 @@ struct TVRootView: View {
             Tab("Home", systemImage: "house.fill") {
                 NavigationStack {
                     TVClientHomeView(tunnel: container.tunnel, stats: container.stats,
-                                     latency: container.latency, selection: container.selection)
+                                     latency: container.latency)
                 }
             }
             Tab("Groups", systemImage: "square.grid.2x2.fill") {
