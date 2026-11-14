@@ -5,42 +5,40 @@ struct ClientProfileEditorView: View {
     @Environment(ClientModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State var profile: ClientProfile
-    @State private var preview: TextConfigurationPipeline.Result?
+    @State private var errors: [ConfigurationDiagnostic] = []
+    @State private var errorFocus = UUID()
     @State private var showDiscard = false
     @State private var initialText: String?
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Profile") {
-                    TextField("Profile Name", text: Binding(get: { profile.displayName }, set: { profile.name = $0 }))
-                    TextField("Remote URL (Optional, HTTPS)", text: Binding(get: { profile.sourceURL ?? "" }, set: { profile.sourceURL = $0.isEmpty ? nil : $0 }))
-                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                }
-                Section("Profile Content") {
-                    TextEditor(text: $profile.text)
-                        .font(.system(size: 12, design: .monospaced))
-                        .frame(minHeight: 340).autocorrectionDisabled().textInputAutocapitalization(.never)
-                        .accessibilityLabel("Profile Content")
-                }
-                if let preview {
-                    Section("Validation") {
-                        LabeledContent("Nodes", value: "\(preview.compiled.proxies.count)")
-                        LabeledContent("Groups", value: "\(preview.parsed.proxyGroups.count)")
-                        LabeledContent("Rules", value: "\(preview.compiled.orderedRules.count)")
-                        ForEach(Array(preview.diagnostics.enumerated()), id: \.offset) { _, diagnostic in
-                            Text(diagnostic.message).font(.caption).foregroundStyle(diagnostic.severity == .error ? Color.red : .orange)
-                        }
+            ScrollViewReader { scroll in
+                Form {
+                    Section("Profile") {
+                        TextField("Profile Name", text: Binding(get: { profile.displayName }, set: { profile.name = $0 }))
+                        TextField("Remote URL (Optional, HTTPS)", text: Binding(get: { profile.sourceURL ?? "" }, set: { profile.sourceURL = $0.isEmpty ? nil : $0 }))
+                            .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    }
+                    Section("Profile Content") {
+                        ProfileSourceEditor(text: Binding(get: { profile.text }, set: {
+                            profile.text = $0
+                            errors = []
+                        }), errors: errors, focus: errorFocus)
+                            .frame(height: 380)
+                            .id("profile-source")
+                    }
+                    Section {
+                        Button("Save and Apply") { Task { await save(apply: true) } }
+                            .disabled(model.isBusy || profile.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                        Button("Save Only") { Task { await save(apply: false) } }
+                            .disabled(model.isBusy || profile.name.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
-                Section {
-                    Button("Save and Apply") { Task { if await model.saveProfile(profile, apply: true) { dismiss() } } }
-                        .disabled(model.isBusy || preview?.isActivatable != true || profile.name.trimmingCharacters(in: .whitespaces).isEmpty)
-                    Button("Save Only") { Task { if await model.saveProfile(profile, apply: false) { dismiss() } } }
-                        .disabled(model.isBusy || profile.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: errorFocus) { _, _ in
+                    if !errors.isEmpty { scroll.scrollTo("profile-source", anchor: .top) }
                 }
             }
-            .scrollDismissesKeyboard(.interactively)
             .clientKeyboardDone()
             .navigationTitle("Edit Profile").navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -48,17 +46,12 @@ struct ClientProfileEditorView: View {
                     if profile.text != initialText { showDiscard = true } else { dismiss() }
                 } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Apply") { Task { if await model.saveProfile(profile, apply: true) { dismiss() } } }
-                        .disabled(model.isBusy || preview?.isActivatable != true || profile.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("Apply") { Task { await save(apply: true) } }
+                        .disabled(model.isBusy || profile.name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 ToolbarItem(placement: .primaryAction) { if model.isBusy { ProgressView() } }
             }
-            .task { initialText = profile.text; preview = TextConfigurationPipeline.process(text: profile.text) }
-            .task(id: profile.text) {
-                try? await Task.sleep(for: .milliseconds(250))
-                guard !Task.isCancelled else { return }
-                preview = TextConfigurationPipeline.process(text: profile.text)
-            }
+            .task { initialText = profile.text }
             .confirmationDialog("Discard Unsaved Changes?", isPresented: $showDiscard, titleVisibility: .visible) {
                 Button("Discard Changes", role: .destructive) { dismiss() }
             }
@@ -67,6 +60,19 @@ struct ClientProfileEditorView: View {
                 Button("OK") { model.error = nil }
             } message: { Text(model.error ?? "") }
         }
+    }
+
+    private func save(apply: Bool) async {
+        // Preserve even invalid drafts, but never send them to the running tunnel.
+        guard await model.saveProfile(profile, apply: false) else { return }
+        initialText = profile.text
+        errors = TextConfigurationPipeline.process(text: profile.text).diagnostics.errors.sorted
+        errorFocus = UUID()
+        guard errors.isEmpty else { return }
+        if apply {
+            guard await model.saveProfile(profile, apply: true) else { return }
+        }
+        dismiss()
     }
 }
 

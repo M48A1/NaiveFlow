@@ -426,6 +426,22 @@ struct ClientInterfaceTests {
         #expect(model.error != nil)
     }
 
+    @Test func invalidDraftCanBeSavedWithoutReplacingRunningConfiguration() async throws {
+        let (root, model) = workspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        await model.activate(model.createProfile(name: "Test", text: text))
+        let runningText = model.operatingText
+        var draft = try #require(model.profile)
+        draft.text = text.replacingOccurrences(of: "Video = select, First, Second, selected=First", with: "Video = select, Missing")
+        #expect(TextConfigurationPipeline.process(text: draft.text).diagnostics.hasErrors)
+        #expect(await model.saveProfile(draft, apply: false))
+        #expect(model.profile?.text == draft.text)
+        #expect(model.operatingText == runningText)
+        #expect(!(await model.saveProfile(draft, apply: true)))
+        #expect(model.operatingText == runningText)
+        #expect(model.profile?.text == draft.text)
+    }
+
     @Test func groupKeysWithSpacesAndCommaRoundTrip() {
         let updated = ClientDocumentEditing.set(text, section: .proxyGroup, key: "Media, US", value: ClientDocumentEditing.groupValue(kind: "select", members: ["First", "Second"], parameters: [("selected", "Second")]))
         let parsed = TextConfigurationPipeline.process(text: updated)
