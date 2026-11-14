@@ -116,7 +116,6 @@ struct ClientPolicyCard: View {
                 HStack(spacing: 4) {
                     Text(selected).font(.system(size: 12, weight: .medium)).lineLimit(1)
                     Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
                 }.padding(.top, 4).foregroundStyle(.white.opacity(0.88))
             }.padding(18)
         }

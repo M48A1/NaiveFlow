@@ -38,7 +38,7 @@ struct ProfileView: View {
                 resultSection
                 reloadSection
                 actionSection
-                NavigationLink("MITM Certificate") { MITMCertificateView() }
+                NavigationLink("MITM") { MITMCertificateView() }
                 ConfigurationDriveSection(model: model)
                 historySection
             }

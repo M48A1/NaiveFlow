@@ -61,6 +61,7 @@ final class MITMCertificateController {
 }
 
 struct MITMCertificateView: View {
+    @Environment(ClientModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
 
     @Environment(MITMCertificateController.self) private var controller
@@ -72,6 +73,12 @@ struct MITMCertificateView: View {
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Enable MITM", isOn: Binding(
+                    get: { model.parsed.mitm.bool("enable") ?? model.parsed.general.bool("mitm") ?? false },
+                    set: { value in Task { await model.setSetting("enable", value: value ? "true" : "false", section: .mitm) } }
+                )).tint(.blue).disabled(model.isBusy)
+            }
             Section {
                 HStack {
                     Image("certificate")
@@ -99,17 +106,12 @@ struct MITMCertificateView: View {
 
             if controller.hasCA {
                 Section {
-                    HStack {
-                        TextWithColorfulIcon(title: "Install Certificate", systemName: "square.and.arrow.down", foregroundStyle: .white, backgroundStyle: .blue.gradient)
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.bold())
-                            .foregroundStyle(.tertiary)
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        installProfile()
-                    }
+                    Button { installProfile() } label: {
+                        HStack {
+                            TextWithColorfulIcon(title: "Install Certificate", systemName: "square.and.arrow.down", foregroundStyle: .white, backgroundStyle: .blue.gradient)
+                            Spacer()
+                        }.contentShape(Rectangle())
+                    }.buttonStyle(.plain)
                 }
 
                 Section {
@@ -145,7 +147,8 @@ struct MITMCertificateView: View {
                 }
             }
         }
-        .navigationTitle("Root Certificate")
+        .navigationTitle("MITM")
+        .navigationBarTitleDisplayMode(.inline)
         .alert("Regenerate Certificate", isPresented: $showRegenerateConfirm) {
             Button("Regenerate", role: .destructive) {
                 do {

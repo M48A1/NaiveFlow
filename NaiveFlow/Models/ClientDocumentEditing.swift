@@ -2,6 +2,34 @@ import Foundation
 
 /// Structured UI edits always produce the same document consumed by the compiler.
 nonisolated enum ClientDocumentEditing {
+    static func setHostMappings(_ text: String, mappings: [HostMapping]) throws -> String {
+        let lines = try mappings.map { mapping -> String in
+            guard let host = ConfigurationCompiler.normalizeHostMappingPattern(mapping.host),
+                  let address = HostMapping.canonicalAddress(mapping.address) else {
+                throw ClientFailure("Enter a valid domain (or *.example.com) and IPv4 address for each DNS mapping.")
+            }
+            return "\(host) = \(address)"
+        }
+        var document = ConfigurationDocument.parse(text: text)
+        let entries = document.entries(.host)
+        for (index, entry) in entries.enumerated().reversed() {
+            if index < lines.count {
+                let comment = entry.comment.map { "  # " + $0 } ?? ""
+                document = document.replacingLine(entry.line, with: lines[index] + comment)
+            } else {
+                document = document.removingLine(entry.line)
+            }
+        }
+        for line in lines.dropFirst(entries.count) {
+            if let section = document.section(.host) {
+                document = document.insertingLine(line, after: section.entries.last?.line ?? section.headerLine)
+            } else {
+                document = document.appendingLine("\n[Host]\n" + line)
+            }
+        }
+        return document.text
+    }
+
     static func token(_ value: String) -> String {
         "\"" + value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }

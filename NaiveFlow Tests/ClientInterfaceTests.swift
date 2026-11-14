@@ -27,6 +27,46 @@ struct ClientInterfaceTests {
         return (root, model)
     }
 
+    @Test func dnsMappingEditorPreservesConfigurationAndCompilesMultipleAddresses() throws {
+        let source = text + "\n[DNS]\ndns-mode = default\n[Host]\n# local services\nold.example = 192.0.2.1  # office\n[MITM]\nenable = false\n"
+        let mappings = [
+            HostMapping(host: " Example.COM ", address: " 192.0.2.10 "),
+            HostMapping(host: "example.com", address: "192.0.2.11"),
+            HostMapping(host: "*.internal.example", address: "10.0.0.1")
+        ]
+        let updated = try ClientDocumentEditing.setHostMappings(source, mappings: mappings)
+        let result = TextConfigurationPipeline.process(text: updated)
+        #expect(result.compiled.isActivatable)
+        #expect(result.compiled.hosts == [
+            HostMapping(host: "example.com", address: "192.0.2.10"),
+            HostMapping(host: "example.com", address: "192.0.2.11"),
+            HostMapping(host: "*.internal.example", address: "10.0.0.1")
+        ])
+        #expect(updated.contains("# local services"))
+        #expect(updated.contains("# office"))
+        #expect(updated.contains("[DNS]\ndns-mode = default"))
+        #expect(updated.contains("[MITM]\nenable = false"))
+        #expect(updated.hasPrefix(text))
+        let deleted = try ClientDocumentEditing.setHostMappings(updated, mappings: [])
+        #expect(NaiveFlowConfigurationParser.parse(text: deleted).configuration.hosts.isEmpty)
+        let added = try ClientDocumentEditing.setHostMappings(text, mappings: [mappings[2]])
+        #expect(TextConfigurationPipeline.process(text: added).compiled.hosts == [mappings[2]])
+    }
+
+    @Test func dnsMappingEditorRejectsInvalidOrIncompleteMappings() {
+        for mapping in [
+            HostMapping(host: "", address: "192.0.2.1"),
+            HostMapping(host: "example.com", address: ""),
+            HostMapping(host: "example.com", address: "256.1.1.1"),
+            HostMapping(host: "example.com", address: "::1"),
+            HostMapping(host: "bad\nhost", address: "192.0.2.1")
+        ] {
+            #expect(throws: (any Error).self) {
+                try ClientDocumentEditing.setHostMappings(text, mappings: [mapping])
+            }
+        }
+    }
+
     @Test func geoSourceEditorPreservesInlineDataAndRejectsInvalidEdits() throws {
         let original = "[GeoIP]\nCN = 192.0.2.0/24 # local data\n[GeoSite]\ninternal = example.com\n"
         var draft = ClientGeoSourceDraft(site: true)

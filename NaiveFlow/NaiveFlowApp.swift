@@ -37,6 +37,7 @@ struct NaiveFlowApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .navigationLinkIndicatorVisibility(.hidden)
                 .environment(\.locale, Locale(identifier: "en"))
                 .environment(operations)
                 .environment(client)

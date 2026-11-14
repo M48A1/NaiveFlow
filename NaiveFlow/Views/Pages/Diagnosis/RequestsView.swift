@@ -12,6 +12,7 @@ struct RequestsView: View {
     @State private var editMode: EditMode = .inactive
     @State private var paused = false
     @State private var followLatest = true
+    @State private var showingDisplaySettings = false
     @State private var query = ""
     @State private var filter: RequestsModel.Filter = .all
     @State private var selectedProtocol: RequestsModel.Entry.Transport?
@@ -80,7 +81,7 @@ struct RequestsView: View {
                            systemImage: paused ? "play.fill" : "pause.fill") { paused.toggle() }
                     Menu {
                         Button("Select", systemImage: "checkmark.circle") { editMode = .active }
-                        Toggle("Follow Latest", isOn: $followLatest)
+                        Button("Display Settings", systemImage: "slider.horizontal.3") { showingDisplaySettings = true }
                         Button {
                             exportText = model.export(visible)
                             showingExport = true
@@ -98,6 +99,12 @@ struct RequestsView: View {
                     .accessibilityLabel("Request Actions")
                 }
             }
+        }
+        .navigationDestination(isPresented: $showingDisplaySettings) {
+            Form {
+                Toggle("Follow Latest", isOn: $followLatest).tint(.blue)
+            }
+            .navigationTitle("Display Settings").navigationBarTitleDisplayMode(.inline)
         }
         .sheet(item: $selectedRequest) { selected in
             NavigationStack {

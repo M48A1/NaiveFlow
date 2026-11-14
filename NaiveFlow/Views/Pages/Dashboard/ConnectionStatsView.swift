@@ -143,7 +143,7 @@ struct ConnectionStatsView: View {
             NavigationLink {
                 TCPConnectionListView()
             } label: {
-                StatCard("TCP", systemImage: "arrow.left.arrow.right", hasChevron: true) {
+                StatCard("TCP", systemImage: "arrow.left.arrow.right") {
                     StatValue("\(connectionStats.tcpConnectionCount)")
                     Spacer()
                     PressureGauge(
@@ -157,7 +157,7 @@ struct ConnectionStatsView: View {
             NavigationLink {
                 UDPFlowListView()
             } label: {
-                StatCard("UDP", systemImage: "arrow.left.and.right", hasChevron: true) {
+                StatCard("UDP", systemImage: "arrow.left.and.right") {
                     StatValue("\(connectionStats.udpConnectionCount)")
                     Spacer()
                     PressureGauge(
@@ -246,20 +246,17 @@ struct StatCard<Content: View>: View {
     private let titleKey: LocalizedStringKey
     private let systemImage: String
     private let size: StatCardSize
-    private let hasChevron: Bool
     private let content: Content
 
     init(
         _ titleKey: LocalizedStringKey,
         systemImage: String,
         size: StatCardSize = .small,
-        hasChevron: Bool = false,
         @ViewBuilder content: () -> Content
     ) {
         self.titleKey = titleKey
         self.systemImage = systemImage
         self.size = size
-        self.hasChevron = hasChevron
         self.content = content()
     }
 
@@ -269,12 +266,6 @@ struct StatCard<Content: View>: View {
                 Label(titleKey, systemImage: systemImage)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                if hasChevron {
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
             }
             content
         }

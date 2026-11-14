@@ -2,73 +2,87 @@ import SwiftUI
 import UserNotifications
 
 struct ClientSettingsView: View {
-    @Environment(ClientModel.self) private var model
-    @Environment(MITMCertificateController.self) private var certificate
     @State private var showClearCache = false
-    private var mitmEnabled: Bool { model.parsed.mitm.bool("enable") ?? model.parsed.general.bool("mitm") ?? false }
 
     var body: some View {
         List {
-            Section("Proxy Core") {
-                NavigationLink { ClientDNSView() } label: { row("DNS", symbol: "safari", detail: dnsSummary) }
-                NavigationLink { ClientGeoSettingsView(site: false) } label: { row("GeoIP", symbol: "globe.europe.africa") }
-                NavigationLink { ClientGeoSettingsView(site: true) } label: { row("GeoSite", symbol: "globe") }
-                Toggle(isOn: Binding(get: { model.parsed.general.bool("always-on") ?? false }, set: { value in
-                    Task { await model.setSetting("always-on", value: value ? "true" : "false") }
-                })) { row("Always Connected", symbol: "arrow.triangle.2.circlepath") }
-                    .tint(.blue).disabled(model.isBusy)
-                NavigationLink { LANProxySettingsView() } label: { row("LAN Sharing", symbol: "wifi") }
-                NavigationLink { ClientLogsView() } label: { row("Logs", symbol: "doc.text.fill") }
-                NavigationLink { RequestsView() } label: { row("Requests", symbol: "list.bullet.rectangle") }
-            }
-            Section("MITM and Modules") {
-                Toggle(isOn: Binding(get: { mitmEnabled }, set: { value in Task { await model.setSetting("enable", value: value ? "true" : "false", section: .mitm) } })) {
-                    HStack(spacing: 15) { ClientSectionIcon(symbol: "shield.lefthalf.filled"); Text("MITM") }
-                }.tint(.blue).disabled(model.isBusy)
-                NavigationLink { ClientModulesView() } label: { row("Modules", symbol: "puzzlepiece.extension.fill", detail: model.modules.isEmpty ? nil : "\(model.modules.filter(\.enabled).count) enabled") }
-                NavigationLink { MITMCertificateView() } label: { row("Certificates", symbol: "lock.square.fill", detail: certificate.isTrusted ? "Trusted" : certificate.hasCA ? "Not Trusted" : "Not Created") }
-                NavigationLink { ClientHostnamesView() } label: { row("Hostname", symbol: "house.fill", detail: "\(model.parsed.mitm.list("hostname")?.count ?? 0)") }
-            }
-            Section("General") {
-                NavigationLink { ClientGeneralView() } label: { row("General", symbol: "gearshape.fill") }
-                NavigationLink { AboutView() } label: { row("About", symbol: "info.circle") }
-                Button(role: .destructive) { showClearCache = true } label: {
-                    HStack(spacing: 15) { ClientSectionIcon(symbol: "trash", color: .red); Text("Clear Cache") }
-                }
+            NavigationLink { ClientDNSView() } label: { row("DNS", symbol: "safari") }
+            NavigationLink { ClientGeoSettingsView(site: false) } label: { row("GeoIP", symbol: "globe.europe.africa") }
+            NavigationLink { ClientGeoSettingsView(site: true) } label: { row("GeoSite", symbol: "globe") }
+            NavigationLink { ClientAlwaysConnectedSettingsView() } label: { row("Always Connected", symbol: "arrow.triangle.2.circlepath") }
+            NavigationLink { LANProxySettingsView() } label: { row("LAN Sharing", symbol: "wifi") }
+            NavigationLink { ClientLogsView() } label: { row("Logs", symbol: "doc.text.fill") }
+            NavigationLink { RequestsView() } label: { row("Requests", symbol: "list.bullet.rectangle") }
+            NavigationLink { MITMCertificateView() } label: { row("MITM", symbol: "shield.lefthalf.filled") }
+            NavigationLink { ClientModulesView() } label: { row("Modules", symbol: "puzzlepiece.extension.fill") }
+            NavigationLink { ClientHostnamesView() } label: { row("Hostname", symbol: "house.fill") }
+            NavigationLink { ClientNotificationSettingsView() } label: { row("Notification Settings", symbol: "bell.fill") }
+            NavigationLink { ClientSubscriptionRequestSettingsView() } label: { row("Subscription Requests", symbol: "person.crop.rectangle") }
+            NavigationLink { AboutView() } label: { row("About", symbol: "info.circle") }
+            Button(role: .destructive) { showClearCache = true } label: {
+                HStack(spacing: 15) { ClientSectionIcon(symbol: "trash", color: .red); Text("Clear Cache") }
             }
         }
         .listStyle(.insetGrouped).listRowSpacing(0)
         .navigationTitle("Settings")
-        .task { certificate.refresh() }
         .confirmationDialog("Clear App Cache?", isPresented: $showClearCache, titleVisibility: .visible) {
             Button("Clear Cache", role: .destructive) { URLCache.shared.removeAllCachedResponses(); cacheMessage = true }
         } message: { Text("Clear network caches while keeping profiles, nodes, and certificates.") }
         .alert("Cache Cleared", isPresented: $cacheMessage) { Button("OK", role: .cancel) {} }
     }
     @State private var cacheMessage = false
-    private var dnsSummary: String {
-        switch model.parsed.general["dns-mode"] { case "plain": return "Plain DNS"; case "doh": return "DNS over HTTPS"; default: return "System DNS" }
-    }
-    private func row(_ title: String, symbol: String, detail: String? = nil) -> some View {
+    private func row(_ title: String, symbol: String) -> some View {
         HStack(spacing: 15) {
             ClientSectionIcon(symbol: symbol)
             Text(title)
             Spacer(minLength: 6)
-            if let detail { Text(detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
         }.padding(.vertical, 4)
     }
 }
 
+struct ClientAlwaysConnectedSettingsView: View {
+    @Environment(ClientModel.self) private var model
+
+    var body: some View {
+        Form {
+            Toggle("Always Connected", isOn: Binding(get: { model.parsed.general.bool("always-on") ?? false }, set: { value in
+                Task { await model.setSetting("always-on", value: value ? "true" : "false") }
+            })).tint(.blue).disabled(model.isBusy)
+        }
+        .navigationTitle("Always Connected").navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct ClientSubscriptionRequestSettingsView: View {
+    @Environment(AppSettings.self) private var settings
+
+    var body: some View {
+        @Bindable var settings = settings
+        Form {
+            Toggle("Remnawave HWID", isOn: $settings.remnawaveHWIDEnabled).tint(.blue)
+        }
+        .navigationTitle("Subscription Requests").navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 struct ClientDNSView: View {
+    private struct MappingDraft: Identifiable {
+        let id = UUID()
+        var host = ""
+        var address = ""
+    }
     @Environment(ClientModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var values: [String:String] = [:]
-    private let resolvers: [(String,String)] = [("", "Local DNS"), ("proxy-", "Proxy DNS"), ("subscription-", "Subscription DNS"), ("ech-", "ECH DNS")]
+    @State private var mappings: [MappingDraft] = []
+    @State private var useSystemBootstrap = true
+    @State private var customBootstrap = "223.5.5.5"
+    private let resolvers: [(String,String)] = [("", "Local DNS"), ("proxy-", "Proxy Server DNS"), ("subscription-", "Subscription DNS"), ("ech-", "ECH DNS")]
 
     var body: some View {
         Form {
             ForEach(resolvers, id: \.0) { prefix, title in
-                Section(title) {
+                Section {
                     Picker("Resolver Type", selection: binding(prefix + "dns-mode", fallback: "default")) {
                         Text("System Default").tag("default")
                         Text("Plain DNS").tag("plain")
@@ -79,24 +93,64 @@ struct ClientDNSView: View {
                     } else if values[prefix + "dns-mode"] == "doh" {
                         TextField("https://…/dns-query", text: binding(prefix + "encrypted-dns-server", fallback: DNSUpstream.defaultDoHURL)).keyboardType(.URL)
                     }
+                } header: { Text(title) } footer: {
+                    if prefix == "proxy-" {
+                        Text("Resolves proxy server domain names when connecting and testing latency.")
+                    }
                 }
             }
-            Section("Bootstrap DNS") {
-                TextField("system or IPv4 DNS Servers", text: binding("bootstrap-dns", fallback: "system")).keyboardType(.URL)
+            Section {
+                Picker("Resolver Type", selection: $useSystemBootstrap) {
+                    Text("System Default").tag(true)
+                    Text("Custom").tag(false)
+                }
+                if !useSystemBootstrap {
+                    TextField("223.5.5.5", text: $customBootstrap)
+                        .keyboardType(.numbersAndPunctuation).accessibilityLabel("Bootstrap DNS Servers")
+                }
+            } header: { Text("Bootstrap DNS") } footer: {
+                Text("Resolves DNS over HTTPS server domain names. Use the system resolver or enter up to 8 IPv4 addresses separated by commas, e.g. 223.5.5.5, 1.1.1.1.")
+            }
+            Section {
+                ForEach($mappings) { $mapping in
+                    VStack(alignment: .leading, spacing: 10) {
+                        TextField("Domain, e.g. example.com", text: $mapping.host)
+                            .keyboardType(.URL).accessibilityLabel("Mapping Domain")
+                        HStack {
+                            TextField("IPv4 Address, e.g. 192.168.1.10", text: $mapping.address)
+                                .keyboardType(.decimalPad).accessibilityLabel("Mapping IPv4 Address")
+                            Button(role: .destructive) { mappings.removeAll { $0.id == mapping.id } } label: {
+                                Image(systemName: "minus.circle.fill")
+                            }.buttonStyle(.borderless).accessibilityLabel("Delete DNS Mapping")
+                        }
+                    }.padding(.vertical, 4)
+                }
+                Button("Add Mapping", systemImage: "plus") { mappings.append(MappingDraft()) }
+            } header: { Text("Local DNS Mapping") } footer: {
+                Text("Resolve domains to the specified IPv4 addresses before querying DNS. Supports *.example.com. Add multiple mappings for multiple addresses. Saved in the current profile.")
             }
             Section {
                 Button("Save and Apply") { Task {
-                    var text = model.operatingText
-                    for (key,value) in values {
-                        text = ClientDocumentEditing.set(text, section: .dns, key: key, value: value.isEmpty ? nil : value)
+                    do {
+                        guard let bootstrap = DNSBootstrapPolicy.parse(useSystemBootstrap ? "system" : customBootstrap) else {
+                            throw ClientFailure("Enter 1 to 8 IPv4 addresses separated by commas, e.g. 223.5.5.5, 1.1.1.1.")
+                        }
+                        var text = try ClientDocumentEditing.setHostMappings(model.operatingText, mappings: mappings.map { HostMapping(host: $0.host, address: $0.address) })
+                        text = ClientDocumentEditing.set(text, section: .dns, key: "bootstrap-dns", value: bootstrap.rendered)
+                        for (key,value) in values {
+                            text = ClientDocumentEditing.set(text, section: .dns, key: key, value: value.isEmpty ? nil : value)
+                        }
+                        if await model.commit(text) { dismiss() }
+                    } catch {
+                        model.report(error)
                     }
-                    if await model.commit(text) { dismiss() }
                 } }.disabled(model.isBusy)
             } footer: { Text("Changes apply to the current profile and update DNS settings while connected.") }
         }
-        .textInputAutocapitalization(.never).autocorrectionDisabled()
+        .textInputAutocapitalization(.never).autocorrectionDisabled().clientKeyboardDone()
         .navigationTitle("DNS").navigationBarTitleDisplayMode(.inline)
         .task {
+            mappings = model.parsed.hosts.map { MappingDraft(host: $0.host, address: $0.address) }
             for (prefix,_) in resolvers {
                 for suffix in ["dns-mode", "dns-server", "encrypted-dns-server"] {
                     let key = prefix + suffix
@@ -104,7 +158,9 @@ struct ClientDNSView: View {
                 }
                 if values[prefix + "dns-mode"] == nil { values[prefix + "dns-mode"] = "default" }
             }
-            values["bootstrap-dns"] = model.parsed.general["bootstrap-dns"] ?? "system"
+            let bootstrap = model.parsed.general["bootstrap-dns"] ?? "system"
+            useSystemBootstrap = bootstrap.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "system"
+            customBootstrap = useSystemBootstrap ? "223.5.5.5" : bootstrap
         }
     }
     private func binding(_ key: String, fallback: String) -> Binding<String> {
@@ -138,17 +194,6 @@ struct ClientHostnamesView: View {
             } }.disabled(model.isBusy) }
         }.clientKeyboardDone().navigationTitle("Hostname").navigationBarTitleDisplayMode(.inline)
         .task { hostnames = (model.parsed.mitm.list("hostname") ?? []).joined(separator: "\n") }
-    }
-}
-
-struct ClientGeneralView: View {
-    @Environment(AppSettings.self) private var settings
-    var body: some View {
-        @Bindable var settings = settings
-        Form {
-            Section("Notifications") { NavigationLink("Notification Settings") { ClientNotificationSettingsView() } }
-            Section("Subscription Requests") { Toggle("Remnawave HWID", isOn: $settings.remnawaveHWIDEnabled) }
-        }.navigationTitle("General").navigationBarTitleDisplayMode(.inline)
     }
 }
 

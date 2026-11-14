@@ -9,19 +9,16 @@ struct ClientModulesView: View {
         List {
             Section {
                 ForEach(model.modules) { module in
-                    HStack(spacing: 12) {
-                        Button { editing = module } label: {
-                            HStack(spacing: 12) {
-                                ClientSectionIcon(symbol: "puzzlepiece.extension.fill")
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text(module.name).font(.body.weight(.medium)).foregroundStyle(.primary)
-                                    Text(module.summary.isEmpty ? module.format.displayName : module.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                                }
-                                Spacer(minLength: 0)
-                            }.contentShape(Rectangle())
-                        }.buttonStyle(.plain)
-                        Toggle(module.name, isOn: Binding(get: { module.enabled }, set: { value in Task { await model.toggleModule(module, enabled: value) } })).labelsHidden().tint(.blue)
-                    }.padding(.vertical, 5)
+                    Button { editing = module } label: {
+                        HStack(spacing: 12) {
+                            ClientSectionIcon(symbol: "puzzlepiece.extension.fill")
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(module.name).font(.body.weight(.medium)).foregroundStyle(.primary)
+                                Text(module.summary.isEmpty ? module.format.displayName : module.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            }
+                            Spacer(minLength: 0)
+                        }.contentShape(Rectangle())
+                    }.buttonStyle(.plain).padding(.vertical, 5)
                     .contextMenu {
                         Button("Edit", systemImage: "pencil") { editing = module }
                         if module.sourceURL != nil { Button("Update", systemImage: "arrow.clockwise") { Task { await model.refreshModule(module) } } }
@@ -37,6 +34,13 @@ struct ClientModulesView: View {
             }
         }
         .navigationTitle("Modules").navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Add Module", systemImage: "plus") {
+                    editing = ClientModule(name: "New Module", summary: "", source: "", format: .surge)
+                }
+            }
+        }
         .sheet(item: $editing) { ClientModuleEditorView(module: $0) }
         .confirmationDialog("Delete Module and Its Rules?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
             Button("Delete", role: .destructive) { if let pendingDelete { Task { await model.deleteModule(pendingDelete) } }; pendingDelete = nil }
