@@ -30,6 +30,7 @@ struct TVClientMITMView: View {
                 }
                 Button("Refresh Trust Status") { certificate.refresh() }
             }
+            .disabled(model.isBusy)
         }
         .navigationTitle("MITM")
         .alert("Regenerate Certificate?", isPresented: $confirmRegenerate) {

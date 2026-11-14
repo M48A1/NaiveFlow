@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 #if os(iOS)
+import Vision
 import VisionKit
 import AVFoundation
 #else

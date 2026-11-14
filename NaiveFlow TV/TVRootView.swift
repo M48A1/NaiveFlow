@@ -48,7 +48,7 @@ struct TVRootView: View {
                 }
                 .padding(.horizontal, 36)
                 .padding(.vertical, 12)
-                .background(.bar)
+                .background(.regularMaterial)
             }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in

@@ -321,9 +321,6 @@ nonisolated struct MITMRule: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
-extension MITMRule {
-}
-
 nonisolated enum MITMRewriteAction: Equatable, Sendable {
     case transparent(url: String)
     case redirect302(url: String)
@@ -422,6 +419,51 @@ nonisolated struct MITMParameter: Codable, Equatable, Identifiable, Sendable {
         case .picker: return options.contains(value)
         case .input:  return true
         }
+    }
+
+}
+
+nonisolated struct MITMRuleSet: Codable, Equatable, Identifiable, SoftDeletable, Sendable {
+    static let maxRuleCount = 10000
+    static let maxParameterCount = 256
+
+    var id = UUID()
+    var name: String
+    var enabled: Bool
+    var domainSuffixes: [String]
+    var rules: [MITMRule]
+    var parameters: [MITMParameter]
+    var parameterValues: [String: String]
+    var subscriptionURL: URL?
+    var iconLight: Data?
+    var iconDark: Data?
+    var updatedAt: Date
+    var deletedAt: Date? = nil
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        enabled: Bool = true,
+        domainSuffixes: [String] = [],
+        rules: [MITMRule] = [],
+        parameters: [MITMParameter] = [],
+        parameterValues: [String: String] = [:],
+        subscriptionURL: URL? = nil,
+        iconLight: Data? = nil,
+        iconDark: Data? = nil,
+        updatedAt: Date = .now
+    ) {
+        self.id = id
+        self.name = name
+        self.enabled = enabled
+        self.domainSuffixes = domainSuffixes
+        self.rules = rules
+        self.parameters = parameters
+        self.parameterValues = parameterValues
+        self.subscriptionURL = subscriptionURL
+        self.iconLight = iconLight
+        self.iconDark = iconDark
+        self.updatedAt = updatedAt
     }
 
     private enum CodingKeys: String, CodingKey {

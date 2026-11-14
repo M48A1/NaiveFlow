@@ -17,7 +17,7 @@ struct ConfirmButton: View {
     }
     
     var body: some View {
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, macOS 26.0, *) {
             Button(titleKey, systemImage: "checkmark", role: .confirm, action: action)
         }
         else {

@@ -122,5 +122,3 @@ struct ClientPolicyCard: View {
         .accessibilityElement(children: .combine)
     }
 }
-
-private struc

@@ -10,6 +10,8 @@ struct TVClientSettingsView: View {
             Section("Configuration") {
                 NavigationLink("Profiles") { TVClientProfilesView() }
                 NavigationLink("DNS") { TVClientDNSView() }
+                NavigationLink("Latency Test") { ClientLatencySettingsView().environment(container.tunnel) }
+                NavigationLink("LAN Sharing") { LANProxySettingsView() }
                 NavigationLink("Always Connected") {
                     Form {
                         Toggle("Always Connected", isOn: Binding(

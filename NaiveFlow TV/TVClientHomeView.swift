@@ -16,7 +16,7 @@ struct TVClientHomeView: View {
                         model.operations.tunnel.toggle()
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!tunnel.isManagerReady || tunnel.rawStatus.isTransitioning || (!tunnel.hasRunningTunnel && !model.hasApplied))
+                    .disabled(model.isBusy || !tunnel.isManagerReady || tunnel.rawStatus.isTransitioning || (!tunnel.hasRunningTunnel && !model.hasApplied))
 
                     VStack(alignment: .leading) {
                         Text(tunnel.status.localizedText).font(.title2)
