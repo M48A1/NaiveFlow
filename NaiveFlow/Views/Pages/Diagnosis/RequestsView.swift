@@ -1,5 +1,7 @@
 import SwiftUI
+#if os(iOS)
 import UIKit
+#endif
 
 struct RequestsView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -9,30 +11,32 @@ struct RequestsView: View {
     @Environment(ChainStore.self) private var chainStore
     @Environment(ProxySelection.self) private var proxySelection: ProxySelection?
     @State private var selection = Set<UUID>()
-    @State private var editMode: EditMode = .inactive
+    @State private var selecting = false
     @State private var paused = false
     @State private var followLatest = true
     @State private var showingDisplaySettings = false
     @State private var query = ""
     @State private var filter: RequestsModel.Filter = .all
     @State private var selectedProtocol: RequestsModel.Entry.Transport?
+#if os(iOS)
     @State private var showingExport = false
     @State private var exportText = ""
+#endif
     @State private var selectedRequest: RequestsModel.Entry?
 
     private var visible: [RequestsModel.Entry] {
         model.visibleRequests(query: query, filter: filter, protocol: selectedProtocol)
     }
-    private var pollingEnabled: Bool { scenePhase == .active && tunnel.isTunnelActive && !paused && editMode == .inactive }
+    private var pollingEnabled: Bool { scenePhase == .active && tunnel.isTunnelActive && !paused && !selecting }
 
     var body: some View {
         ScrollViewReader { proxy in
-            List(selection: $selection) {
+            List(selection: selecting ? $selection : nil) {
                 Color.clear.frame(height: 1).listRowInsets(EdgeInsets()).id("latest")
                     .accessibilityHidden(true)
                 ForEach(visible) { entry in
                     Group {
-                        if editMode == .active {
+                        if selecting {
                             row(entry)
                         } else {
                             Button { selectedRequest = entry } label: { row(entry) }
@@ -42,15 +46,20 @@ struct RequestsView: View {
                     .tag(entry.id)
                     .contextMenu {
                         Button("Copy Host", systemImage: "doc.on.doc") {
-                            UIPasteboard.general.string = entry.host
+                            ClientSystem.copy(entry.host)
                         }
                         Button("Copy Record", systemImage: "doc.on.doc") {
-                            UIPasteboard.general.string = model.export([entry])
+                            ClientSystem.copy(model.export([entry]))
                         }
                     }
                 }
             }
-            .environment(\.editMode, $editMode)
+#if os(iOS)
+            .environment(\.editMode, Binding(
+                get: { selecting ? .active : .inactive },
+                set: { selecting = $0.isEditing }
+            ))
+#endif
             .onScrollPhaseChange { _, phase in
                 if phase == .interacting { followLatest = false }
             }
@@ -66,22 +75,27 @@ struct RequestsView: View {
         .safeAreaInset(edge: .top, spacing: 0) { controls }
         .navigationTitle("Requests")
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                if editMode == .active {
+            ToolbarItemGroup(placement: .clientToolbarTrailing) {
+                if selecting {
                     Button(selection.isEmpty ? "Cancel" : "Copy (\(selection.count))") {
                         if !selection.isEmpty {
-                            UIPasteboard.general.string = visible.filter { selection.contains($0.id) }
-                                .map(\.host).joined(separator: "\n")
+                            ClientSystem.copy(visible.filter { selection.contains($0.id) }.map(\.host).joined(separator: "\n"))
                         }
                         selection.removeAll()
-                        editMode = .inactive
+                        selecting = false
                     }
                 } else {
                     Button(paused ? "Resume Updates" : "Pause Updates",
                            systemImage: paused ? "play.fill" : "pause.fill") { paused.toggle() }
                     Menu {
-                        Button("Select", systemImage: "checkmark.circle") { editMode = .active }
+                        Button("Select", systemImage: "checkmark.circle") { selecting = true }
                         Button("Display Settings", systemImage: "slider.horizontal.3") { showingDisplaySettings = true }
+#if os(macOS)
+                        ShareLink(item: model.export(visible)) {
+                            Label("Export Visible Records", systemImage: "square.and.arrow.up")
+                        }
+                        .disabled(visible.isEmpty)
+#else
                         Button {
                             exportText = model.export(visible)
                             showingExport = true
@@ -89,6 +103,7 @@ struct RequestsView: View {
                             Label("Export Visible Records", systemImage: "square.and.arrow.up")
                         }
                         .disabled(visible.isEmpty)
+#endif
                         Button("Clear Records", systemImage: "trash", role: .destructive) {
                             model.clear()
                             selection.removeAll()
@@ -104,7 +119,7 @@ struct RequestsView: View {
             Form {
                 Toggle("Follow Latest", isOn: $followLatest).tint(.blue)
             }
-            .navigationTitle("Display Settings").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Display Settings").clientInlineTitle()
         }
         .sheet(item: $selectedRequest) { selected in
             NavigationStack {
@@ -115,20 +130,22 @@ struct RequestsView: View {
             }
         }
         .onChange(of: visible.map(\.id)) { _, ids in selection.formIntersection(ids) }
+#if os(iOS)
         .sheet(isPresented: $showingExport, onDismiss: { exportText = "" }) {
             RequestExportSheet(text: exportText)
         }
+#endif
         .onDisappear {
             model.releaseSnapshot()
             selection.removeAll()
-            editMode = .inactive
+            selecting = false
             paused = false
         }
         .onChange(of: tunnel.isTunnelActive) { _, connected in
             if !connected { model.releaseSnapshot() }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active && editMode == .inactive && selectedRequest == nil { model.releaseSnapshot() }
+            if phase != .active && !selecting && selectedRequest == nil { model.releaseSnapshot() }
         }
         .task(id: [scenePhase == .active, pollingEnabled]) {
             guard scenePhase == .active else { return }
@@ -294,13 +311,13 @@ private struct RequestDetailView: View {
                 }
                 Section {
                     ShareLink(item: exportText) { Label("Export Record", systemImage: "square.and.arrow.up") }
-                    Button("Copy Host", systemImage: "doc.on.doc") { UIPasteboard.general.string = entry.host }
+                    Button("Copy Host", systemImage: "doc.on.doc") { ClientSystem.copy(entry.host) }
                 }
             }
             .textSelection(.enabled)
         }
         .navigationTitle("Request Details")
-        .navigationBarTitleDisplayMode(.inline)
+        .clientInlineTitle()
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
     }
 
@@ -360,6 +377,7 @@ private func formatDuration(_ duration: TimeInterval) -> String {
     duration < 1 ? String(format: "%.0f ms", duration * 1000) : String(format: "%.1f s", duration)
 }
 
+#if os(iOS)
 private struct RequestExportSheet: UIViewControllerRepresentable {
     let text: String
     func makeUIViewController(context: Context) -> UIActivityViewController {
@@ -367,3 +385,4 @@ private struct RequestExportSheet: UIViewControllerRepresentable {
     }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
+#endif

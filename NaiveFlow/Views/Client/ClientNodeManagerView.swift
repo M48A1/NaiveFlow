@@ -64,12 +64,23 @@ struct ClientNodeManagerView: View {
                         .contextMenu {
                             Button("Edit", systemImage: "pencil") { editingNode = node; editing = true }
                             Button("Test Latency", systemImage: "bolt") { latency.testLatency(for: node, transport: tunnel) }
+                            if node.chain?.isEmpty != false {
+                                let link = node.toURLString()
+                                if !link.isEmpty {
+                                    Button("Copy Link", systemImage: "doc.on.doc") { ClientSystem.copy(link) }
+                                    ShareLink(item: link, preview: SharePreview(node.name)) {
+                                        Label("Share Link", systemImage: "square.and.arrow.up")
+                                    }
+                                }
+                            }
                             Button("Delete", systemImage: "trash", role: .destructive) { deleting = [node.name]; confirmDelete = true }
                         }
-                        .swipeActions {
+#if os(iOS)
+                        .clientSwipeActions {
                             Button("Delete", role: .destructive) { deleting = [node.name]; confirmDelete = true }
                             Button("Edit") { editingNode = node; editing = true }.tint(.blue)
                         }
+#endif
                     }
                 }
                 .onMove { from, to in
@@ -102,13 +113,15 @@ struct ClientNodeManagerView: View {
             }
         }
         .searchable(text: $query, prompt: "Node name or server address")
-        .navigationTitle("Manage Nodes").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Manage Nodes").clientInlineTitle()
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { if !selecting { EditButton() } }
-            ToolbarItem(placement: .topBarTrailing) {
+#if os(iOS)
+            ToolbarItem(placement: .clientToolbarTrailing) { if !selecting { EditButton() } }
+#endif
+            ToolbarItem(placement: .clientToolbarTrailing) {
                 Button(selecting ? "Done" : "Select") { selecting.toggle(); if !selecting { selected = [] } }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .clientToolbarTrailing) {
                 Menu {
                     Button("Add Node", systemImage: "plus") { editingNode = nil; editing = true }
                     Button("Import Links or Subscription", systemImage: "link") { importingLinks = true }
@@ -118,8 +131,8 @@ struct ClientNodeManagerView: View {
             }
         }
         .sheet(isPresented: $editing) { ProxyEditorView(configuration: editingNode) { node in Task { await model.saveNode(node, replacing: editingNode?.name) } } }
-        .sheet(isPresented: $importingLinks) { ClientNodeImportView(source: "") }
-        .sheet(isPresented: $scanning) { ClientQRImportView() }
+        .sheet(isPresented: $importingLinks) { ClientNodeImportView(source: "").clientEditorWindow() }
+        .sheet(isPresented: $scanning) { ClientQRImportView().clientEditorWindow() }
         .confirmationDialog("Delete \(deleting.count) Node(s)?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete Nodes", role: .destructive) { let names = deleting; Task { if await model.removeNodes(names) { selected.subtract(names) } } }
         } message: { Text("The entire batch is checked first. Rules and proxy-chain references must be removed before deleting their nodes.") }

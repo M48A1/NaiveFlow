@@ -34,7 +34,7 @@ struct ClientIconPacksView: View {
                                 if let date = pack.updatedAt { Text("Updated \(date.formatted(.dateTime.month().day().hour().minute().locale(Locale(identifier: "en"))))").font(.caption2).foregroundStyle(.secondary) }
                             }.padding(.vertical, 5)
                         }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        .clientSwipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button("Update") { Task { await library.update(id: pack.id) } }.tint(.blue)
                                 .disabled(library.updating.contains(pack.id))
                             Button("Edit") { editor = SourceDraft(packID: pack.id, source: pack.source) }.tint(.orange)
@@ -46,10 +46,10 @@ struct ClientIconPacksView: View {
                     Text("Swipe left to edit, update, or delete an icon pack. Open a pack to browse and select an icon.")
                 }
             }
-            .navigationTitle("Icon Packs").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Icon Packs").clientInlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
-                ToolbarItem(placement: .topBarTrailing) { Button { editor = SourceDraft() } label: { Image(systemName: "plus") }.accessibilityLabel("Add Icon Pack") }
+                ToolbarItem(placement: .clientToolbarTrailing) { Button { editor = SourceDraft() } label: { Image(systemName: "plus") }.accessibilityLabel("Add Icon Pack") }
             }
             .sheet(item: $editor) { draft in sourceEditor(draft) }
             .alert("Icon Pack Operation Failed", isPresented: Binding(get: { library.error != nil && editor == nil }, set: { if !$0 { library.error = nil } })) {
@@ -68,7 +68,7 @@ struct ClientIconPacksView: View {
                 saving = false
                 if success { library.error = nil; editor = nil }
             }
-        }.presentationDetents([.medium, .large])
+        }.clientSheetDetents()
     }
 }
 
@@ -83,11 +83,11 @@ private struct ClientIconPackSourceEditor: View {
             Form {
                 Section("Icon Pack JSON URL") {
                     TextField("https://example.com/icons.json", text: $source)
-                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .clientKeyboardType(.URL).clientNoAutocapitalization().autocorrectionDisabled()
                 }
                 if let error { Text(error).font(.footnote).foregroundStyle(.red) }
             }
-            .navigationTitle("Edit Icon Pack").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Edit Icon Pack").clientInlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {
@@ -126,9 +126,9 @@ private struct ClientIconPackBrowser: View {
             if library.updating.contains(packID) { ProgressView("Updating icon pack…").padding() }
             else if icons.isEmpty { ContentUnavailableView("No Matching Icons", systemImage: "photo", description: Text("Update the icon pack or try a different search.")) }
         }
-        .navigationTitle(pack?.name ?? "Icon Pack").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(pack?.name ?? "Icon Pack").clientInlineTitle()
         .searchable(text: $search, prompt: "Search Icons")
-        .toolbar { ToolbarItem(placement: .topBarTrailing) {
+        .toolbar { ToolbarItem(placement: .clientToolbarTrailing) {
             Button("Update") { Task { await library.update(id: packID) } }.disabled(library.updating.contains(packID))
         } }
         .task { if pack?.icons.isEmpty == true { await library.update(id: packID) } }

@@ -15,7 +15,7 @@ struct LANProxySettingsView: View {
             Section {
                 Toggle("Enable LAN Proxy", isOn: $enabled)
                 LabeledContent("Port") {
-                    TextField("8080", text: $port).keyboardType(.numberPad)
+                    TextField("8080", text: $port).clientKeyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                 }
             } footer: {

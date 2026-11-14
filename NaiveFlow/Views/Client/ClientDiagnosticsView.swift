@@ -10,8 +10,8 @@ struct ClientDiagnosticsView: View {
         Form {
             Section {
                 Picker("Node", selection: $nodeName) { ForEach(model.nodes) { Text($0.name).tag($0.name) } }
-                TextField("HTTP or HTTPS Test URL", text: $target).keyboardType(.URL)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                TextField("HTTP or HTTPS Test URL", text: $target).clientKeyboardType(.URL)
+                    .clientNoAutocapitalization().autocorrectionDisabled()
                 Button("Run Diagnostics") {
                     guard let node = model.nodes.first(where: { $0.name == nodeName }), let endpoint = LatencyTarget(url: target) else {
                         inputError = "Select a node and enter a valid HTTP or HTTPS URL."; return
@@ -31,7 +31,7 @@ struct ClientDiagnosticsView: View {
                 }
             }
         }
-        .navigationTitle("Connection Diagnostics").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Connection Diagnostics").clientInlineTitle()
         .onAppear { if nodeName.isEmpty { nodeName = model.nodes.first { $0.name == model.selectedNodeName }?.name ?? model.nodes.first?.name ?? "" } }
         .onDisappear { diagnostics.cancel() }
     }

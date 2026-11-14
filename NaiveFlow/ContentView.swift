@@ -13,7 +13,7 @@ struct ContentView: View {
                 deepLinkManager.url = nil
                 showImport = true
             }
-            .sheet(isPresented: $showImport) { ClientNodeImportView(source: pendingLink ?? "") }
+            .sheet(isPresented: $showImport) { ClientNodeImportView(source: pendingLink ?? "").clientEditorWindow() }
             .onOpenURL { deepLinkManager.handle(url: $0) }
     }
 }
@@ -29,7 +29,7 @@ struct ClientNodeImportView: View {
             Form {
                 Section("Node Links or HTTPS Subscription") {
                     TextEditor(text: $source).frame(minHeight: 150).font(.system(size: 12, design: .monospaced))
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .clientNoAutocapitalization().autocorrectionDisabled()
                 }
                 Button("Import into Current Profile") { Task {
                     loading = true; defer { loading = false }
@@ -44,7 +44,7 @@ struct ClientNodeImportView: View {
                     } catch { model.report(error) }
                 } }.disabled(loading || model.isBusy || source.isEmpty)
             }
-            .navigationTitle("Import Nodes").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Import Nodes").clientInlineTitle()
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .sheet(item: $subscriptionDraft) { subscription in
                 ClientNodeSubscriptionEditorView(subscription: subscription, onSaved: { dismiss() })

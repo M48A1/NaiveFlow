@@ -34,7 +34,10 @@ struct NaiveFlowApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .navigationLinkIndicatorVisibility(.hidden)
+#if os(macOS)
+                .frame(minWidth: 560, minHeight: 500)
+#endif
+                .clientNavigationLinkIndicators()
                 .environment(\.locale, Locale(identifier: "en"))
                 .environment(operations)
                 .environment(client)
@@ -49,6 +52,10 @@ struct NaiveFlowApp: App {
                 .environment(mitmCertificateController)
                 .environment(deepLinkManager)
         }
+#if os(macOS)
+        .defaultSize(width: 800, height: 760)
+        .windowResizability(.contentMinSize)
+#endif
         .onChange(of: container.tunnel.rawStatus) { _, status in
             guard scenePhase != .active, notifyConnectionEvents else { return }
             guard status == .connected || status == .disconnected else { return }

@@ -174,7 +174,7 @@ struct ProxyEditorView: View {
                     LabeledContent {
                         TextField("Name", text: $name)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Name", systemName: "tag.fill", foregroundStyle: .white, backgroundStyle: .gray.gradient)
@@ -227,7 +227,7 @@ struct ProxyEditorView: View {
                 if !isDirect { chainSettings }
             }
             .navigationTitle(configuration != nil ? "Edit Node" : "Add Node")
-            .navigationBarTitleDisplayMode(.inline)
+            .clientInlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     CancelButton("Cancel") { dismiss() }
@@ -246,16 +246,16 @@ struct ProxyEditorView: View {
         Section("Server") {
             LabeledContent {
                 TextField("Address", text: $serverAddress)
-                    .keyboardType(.URL)
+                    .clientKeyboardType(.URL)
                     .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
+                    .clientNoAutocapitalization()
                     .multilineTextAlignment(.trailing)
             } label: {
                 TextWithColorfulIcon(title: "Address", systemName: "network", foregroundStyle: .white, backgroundStyle: .blue.gradient)
             }
             LabeledContent {
                 TextField(String("443"), text: $serverPort)
-                    .keyboardType(.numberPad)
+                    .clientKeyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
             } label: {
                 TextWithColorfulIcon(title: "Port", systemName: "123.rectangle", foregroundStyle: .white, backgroundStyle: .cyan.gradient)
@@ -264,7 +264,7 @@ struct ProxyEditorView: View {
                 LabeledContent {
                     TextField("Key", text: $nowhereKey)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "Key", systemName: "key.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -273,7 +273,7 @@ struct ProxyEditorView: View {
                 LabeledContent {
                     TextField(String(localized: "UUID", comment: "UUID for VLESS protocol"), text: $vlessUUID)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "UUID", comment: "UUID for VLESS protocol", systemName: "key.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -281,7 +281,7 @@ struct ProxyEditorView: View {
                 LabeledContent {
                     TextField(String("none"), text: $vlessEncryption)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "Encryption", comment: "Encryption for VLESS protocol", systemName: "lock.fill", foregroundStyle: .white, backgroundStyle: .red.gradient)
@@ -290,7 +290,7 @@ struct ProxyEditorView: View {
                 LabeledContent {
                     TextField("Password", text: $hysteriaPassword)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "Password", systemName: "key.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -306,7 +306,7 @@ struct ProxyEditorView: View {
                     LabeledContent {
                         TextField("Password", text: $hysteriaObfuscationPassword)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Password", systemName: "key.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -315,14 +315,14 @@ struct ProxyEditorView: View {
                 if hysteriaObfuscationType == "gecko" {
                     LabeledContent {
                         TextField(String(HysteriaObfuscation.geckoMaxPacketSizeDefault), text: $hysteriaObfuscationMaxText)
-                            .keyboardType(.numberPad)
+                            .clientKeyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Maximum Packet Size", comment: "Maximum Packet Size for Hysteria protocol Gecko obfuscation", systemName: "plus.circle.fill", foregroundStyle: .white, backgroundStyle: .orange.gradient)
                     }
                     LabeledContent {
                         TextField(String(HysteriaObfuscation.geckoMinPacketSizeDefault), text: $hysteriaObfuscationMinText)
-                            .keyboardType(.numberPad)
+                            .clientKeyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Minimum Packet Size", comment: "Minimum Packet Size for Hysteria protocol Gecko obfuscation", systemName: "minus.circle.fill", foregroundStyle: .white, backgroundStyle: .orange.gradient)
@@ -332,7 +332,7 @@ struct ProxyEditorView: View {
                 LabeledContent {
                     TextField("Password", text: $trojanPassword)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "Password", systemName: "key.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -341,7 +341,7 @@ struct ProxyEditorView: View {
                 LabeledContent {
                     TextField("Password", text: $anytlsPassword)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "Password", systemName: "key.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -350,7 +350,7 @@ struct ProxyEditorView: View {
                 LabeledContent {
                     TextField("Password", text: $ssPassword)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "Password", systemName: "key.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -366,7 +366,7 @@ struct ProxyEditorView: View {
                 LabeledContent {
                     TextField("Username", text: $socks5Username)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "Username", systemName: "person.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -374,7 +374,7 @@ struct ProxyEditorView: View {
                 LabeledContent {
                     TextField("Password", text: $socks5Password)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "Password", systemName: "key.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -429,9 +429,9 @@ struct ProxyEditorView: View {
                 if vlessTransport == "ws" {
                     LabeledContent {
                         TextField("Host", text: $vlessWebSocketHost)
-                            .keyboardType(.URL)
+                            .clientKeyboardType(.URL)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Host", systemName: "network", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -439,7 +439,7 @@ struct ProxyEditorView: View {
                     LabeledContent {
                         TextField("/", text: $vlessWebSocketPath)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Path", systemName: "point.topleft.down.to.point.bottomright.curvepath", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -448,9 +448,9 @@ struct ProxyEditorView: View {
                 if vlessTransport == "httpupgrade" {
                     LabeledContent {
                         TextField("Host", text: $vlessHTTPUpgradeHost)
-                            .keyboardType(.URL)
+                            .clientKeyboardType(.URL)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Host", systemName: "network", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -458,7 +458,7 @@ struct ProxyEditorView: View {
                     LabeledContent {
                         TextField("/", text: $vlessHTTPUpgradePath)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Path", systemName: "point.topleft.down.to.point.bottomright.curvepath", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -468,16 +468,16 @@ struct ProxyEditorView: View {
                     LabeledContent {
                         TextField("Service Name", text: $vlessGRPCServiceName)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Service Name", comment: "Service Name for VLESS protocol gRPC transport", systemName: "realtimetext", foregroundStyle: .white, backgroundStyle: .mint.gradient)
                     }
                     LabeledContent {
                         TextField("Authority", text: $vlessGRPCAuthority)
-                            .keyboardType(.URL)
+                            .clientKeyboardType(.URL)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Authority", comment: "Authority for VLESS protocol gRPC transport", systemName: "person.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -491,7 +491,7 @@ struct ProxyEditorView: View {
                     LabeledContent {
                         TextField("User Agent", text: $vlessGRPCUserAgent)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "User Agent", systemName: "laptopcomputer", foregroundStyle: .white, backgroundStyle: .orange.gradient)
@@ -500,9 +500,9 @@ struct ProxyEditorView: View {
                 if vlessTransport == "xhttp" {
                     LabeledContent {
                         TextField("Host", text: $vlessXHTTPHost)
-                            .keyboardType(.URL)
+                            .clientKeyboardType(.URL)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Host", systemName: "network", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -510,7 +510,7 @@ struct ProxyEditorView: View {
                     LabeledContent {
                         TextField("/", text: $vlessXHTTPPath)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Path", systemName: "point.topleft.down.to.point.bottomright.curvepath", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -537,14 +537,14 @@ struct ProxyEditorView: View {
                 if hysteriaCC == .brutal {
                     LabeledContent {
                         TextField("Mbps", text: $hysteriaUploadMbpsText)
-                            .keyboardType(.numberPad)
+                            .clientKeyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Upload Speed", comment: "Upload Speed for Hysteria protocol", systemName: "arrow.up.circle.fill", foregroundStyle: .white, backgroundStyle: .blue.gradient)
                     }
                     LabeledContent {
                         TextField("Mbps", text: $hysteriaDownloadMbpsText)
-                            .keyboardType(.numberPad)
+                            .clientKeyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Download Speed", comment: "Download Speed for Hysteria protocol", systemName: "arrow.down.circle.fill", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -567,9 +567,9 @@ struct ProxyEditorView: View {
             if isVLESSTLS {
                 LabeledContent {
                     TextField("SNI", text: $vlessTLSSNI)
-                        .keyboardType(.URL)
+                        .clientKeyboardType(.URL)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "SNI", systemName: "network", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -577,7 +577,7 @@ struct ProxyEditorView: View {
                 LabeledContent {
                     TextField("h2,http/1.1", text: $vlessTLSALPN)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "ALPN", systemName: "list.bullet", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -589,7 +589,7 @@ struct ProxyEditorView: View {
                     LabeledContent {
                         TextField("Base64", text: $vlessTLSECHConfig)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "ECH Config", systemName: "doc.text.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -606,9 +606,9 @@ struct ProxyEditorView: View {
             if isVLESSReality {
                 LabeledContent {
                     TextField("SNI", text: $vlessRealitySNI)
-                        .keyboardType(.URL)
+                        .clientKeyboardType(.URL)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "SNI", systemName: "network", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -616,7 +616,7 @@ struct ProxyEditorView: View {
                 LabeledContent {
                     TextField("Public Key", text: $vlessRealityPublicKey)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "Public Key", comment: "Public Key for Reality security layer", systemName: "key.horizontal.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -624,7 +624,7 @@ struct ProxyEditorView: View {
                 LabeledContent {
                     TextField("Short ID", text: $vlessRealityShortId)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "Short ID", comment: "Short ID for Reality security layer", systemName: "person.crop.square.filled.and.at.rectangle.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -646,9 +646,9 @@ struct ProxyEditorView: View {
             Section("TLS") {
                 LabeledContent {
                     TextField("SNI", text: $hysteriaSNI)
-                        .keyboardType(.URL)
+                        .clientKeyboardType(.URL)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "SNI", systemName: "network", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -658,9 +658,9 @@ struct ProxyEditorView: View {
             Section("TLS") {
                 LabeledContent {
                     TextField("SNI", text: $trojanSNI)
-                        .keyboardType(.URL)
+                        .clientKeyboardType(.URL)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "SNI", systemName: "network", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -668,7 +668,7 @@ struct ProxyEditorView: View {
                 LabeledContent {
                     TextField("h2,http/1.1", text: $trojanALPN)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "ALPN", systemName: "list.bullet", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -680,7 +680,7 @@ struct ProxyEditorView: View {
                     LabeledContent {
                         TextField("Base64", text: $trojanECHConfig)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "ECH Config", systemName: "doc.text.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -698,9 +698,9 @@ struct ProxyEditorView: View {
             Section("TLS") {
                 LabeledContent {
                     TextField("SNI", text: $anytlsSNI)
-                        .keyboardType(.URL)
+                        .clientKeyboardType(.URL)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "SNI", systemName: "network", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -708,7 +708,7 @@ struct ProxyEditorView: View {
                 LabeledContent {
                     TextField("h2,http/1.1", text: $anytlsALPN)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .clientNoAutocapitalization()
                         .multilineTextAlignment(.trailing)
                 } label: {
                     TextWithColorfulIcon(title: "ALPN", systemName: "list.bullet", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -720,7 +720,7 @@ struct ProxyEditorView: View {
                     LabeledContent {
                         TextField("Base64", text: $anytlsECHConfig)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "ECH Config", systemName: "doc.text.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -774,25 +774,25 @@ struct ProxyEditorView: View {
                 if vlessXHTTPDownloadEnabled {
                     LabeledContent {
                         TextField("Address", text: $vlessXHTTPDownloadAddress)
-                            .keyboardType(.URL)
+                            .clientKeyboardType(.URL)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Address", systemName: "server.rack", foregroundStyle: .white, backgroundStyle: .blue.gradient)
                     }
                     LabeledContent {
                         TextField("Port", text: $vlessXHTTPDownloadPort)
-                            .keyboardType(.numberPad)
+                            .clientKeyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Port", systemName: "123.rectangle", foregroundStyle: .white, backgroundStyle: .cyan.gradient)
                     }
                     LabeledContent {
                         TextField("Host", text: $vlessXHTTPDownloadHost)
-                            .keyboardType(.URL)
+                            .clientKeyboardType(.URL)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Host", systemName: "network", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -800,7 +800,7 @@ struct ProxyEditorView: View {
                     LabeledContent {
                         TextField("/", text: $vlessXHTTPDownloadPath)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Path", systemName: "point.topleft.down.to.point.bottomright.curvepath", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -821,9 +821,9 @@ struct ProxyEditorView: View {
                 if vlessXHTTPDownloadSecurity == "tls" {
                     LabeledContent {
                         TextField("SNI", text: $vlessXHTTPDownloadTLSSNI)
-                            .keyboardType(.URL)
+                            .clientKeyboardType(.URL)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "SNI", systemName: "network", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -831,7 +831,7 @@ struct ProxyEditorView: View {
                     LabeledContent {
                         TextField("h2,http/1.1", text: $vlessXHTTPDownloadTLSALPN)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "ALPN", systemName: "list.bullet", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -847,9 +847,9 @@ struct ProxyEditorView: View {
                 if vlessXHTTPDownloadSecurity == "reality" {
                     LabeledContent {
                         TextField("SNI", text: $vlessXHTTPDownloadRealitySNI)
-                            .keyboardType(.URL)
+                            .clientKeyboardType(.URL)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "SNI", systemName: "network", foregroundStyle: .white, backgroundStyle: .blue.gradient)
@@ -857,7 +857,7 @@ struct ProxyEditorView: View {
                     LabeledContent {
                         TextField("Public Key", text: $vlessXHTTPDownloadRealityPublicKey)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Public Key", systemName: "key.horizontal.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -865,7 +865,7 @@ struct ProxyEditorView: View {
                     LabeledContent {
                         TextField("Short ID", text: $vlessXHTTPDownloadRealityShortId)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .clientNoAutocapitalization()
                             .multilineTextAlignment(.trailing)
                     } label: {
                         TextWithColorfulIcon(title: "Short ID", systemName: "person.crop.square.filled.and.at.rectangle.fill", foregroundStyle: .white, backgroundStyle: .green.gradient)
@@ -893,7 +893,7 @@ struct ProxyEditorView: View {
             Toggle("Verify Server Certificate", isOn: verify)
             TextField("Certificate SHA-256 Fingerprint (Optional)", text: fingerprint)
                 .font(.system(.footnote, design: .monospaced))
-                .textInputAutocapitalization(.never)
+                .clientNoAutocapitalization()
                 .autocorrectionDisabled()
             if !TLSCertificatePolicy.isValidFingerprint(fingerprint.wrappedValue) {
                 Text("Enter a SHA-256 fingerprint containing 64 hexadecimal characters.")

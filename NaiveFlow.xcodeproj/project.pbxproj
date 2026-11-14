@@ -397,6 +397,13 @@
 			);
 			target = D1000000000000000000000C /* NaiveFlow macOS */;
 		};
+		D10000000000000000000011 /* Exceptions for "NaiveFlow" folder in "NaiveFlow macOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = D1000000000000000000000C /* NaiveFlow macOS */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -410,6 +417,7 @@
 			exceptions = (
 				CBE5B8662F62E736003CECEF /* Exceptions for "NaiveFlow" folder in "NaiveFlow" target */,
 				CB8632442FB83C1600059EFE /* Exceptions for "NaiveFlow" folder in "NaiveFlow TV" target */,
+				D10000000000000000000011 /* Exceptions for "NaiveFlow" folder in "NaiveFlow macOS" target */,
 			);
 			path = NaiveFlow;
 			sourceTree = "<group>";
@@ -702,6 +710,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				D10000000000000000000001 /* NaiveFlow macOS */,
+				CB1C10672F23B81500B74CD8 /* NaiveFlow */,
 				CB7A00022F65700100C85E4A /* Shared */,
 			);
 			name = "NaiveFlow macOS";

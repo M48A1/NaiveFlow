@@ -40,16 +40,17 @@ struct ClientSettingsView: View {
                     row("About", symbol: "info.circle", color: .teal) { AboutView() }
                 }
             }
+#if os(macOS)
+            .frame(maxWidth: 760)
+#endif
             .padding(.horizontal, 20)
             .padding(.top, 10)
             .padding(.bottom, 24)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(ClientAppearance.background)
         .navigationTitle("Settings")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(Color(uiColor: .systemGroupedBackground), for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
+        .clientInlineTitle()
+        .clientSettingsNavigationBar()
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -101,7 +102,7 @@ struct ClientAlwaysConnectedSettingsView: View {
                 Task { await model.setSetting("always-on", value: value ? "true" : "false") }
             })).tint(.blue).disabled(model.isBusy)
         }
-        .navigationTitle("Always Connected").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Always Connected").clientInlineTitle()
     }
 }
 
@@ -129,9 +130,9 @@ struct ClientDNSView: View {
                         Text("DNS over HTTPS").tag("doh")
                     }
                     if values[prefix + "dns-mode"] == "plain" {
-                        TextField("IPv4 Address, e.g. 1.1.1.1", text: binding(prefix + "dns-server", fallback: DNSUpstream.defaultPlainServer)).keyboardType(.URL)
+                        TextField("IPv4 Address, e.g. 1.1.1.1", text: binding(prefix + "dns-server", fallback: DNSUpstream.defaultPlainServer)).clientKeyboardType(.URL)
                     } else if values[prefix + "dns-mode"] == "doh" {
-                        TextField("https://…/dns-query", text: binding(prefix + "encrypted-dns-server", fallback: DNSUpstream.defaultDoHURL)).keyboardType(.URL)
+                        TextField("https://…/dns-query", text: binding(prefix + "encrypted-dns-server", fallback: DNSUpstream.defaultDoHURL)).clientKeyboardType(.URL)
                     }
                 } header: { Text(title) } footer: {
                     if prefix == "proxy-" {
@@ -146,7 +147,7 @@ struct ClientDNSView: View {
                 }
                 if !useSystemBootstrap {
                     TextField("223.5.5.5", text: $customBootstrap)
-                        .keyboardType(.numbersAndPunctuation).accessibilityLabel("Bootstrap DNS Servers")
+                        .clientKeyboardType(.numbersAndPunctuation).accessibilityLabel("Bootstrap DNS Servers")
                 }
             } header: { Text("Bootstrap DNS") } footer: {
                 Text("Resolves DNS over HTTPS server domain names. Use the system resolver or enter up to 8 IPv4 addresses separated by commas, e.g. 223.5.5.5, 1.1.1.1.")
@@ -155,10 +156,10 @@ struct ClientDNSView: View {
                 ForEach($mappings) { $mapping in
                     VStack(alignment: .leading, spacing: 10) {
                         TextField("Domain, e.g. example.com", text: $mapping.host)
-                            .keyboardType(.URL).accessibilityLabel("Mapping Domain")
+                            .clientKeyboardType(.URL).accessibilityLabel("Mapping Domain")
                         HStack {
                             TextField("IPv4 Address, e.g. 192.168.1.10", text: $mapping.address)
-                                .keyboardType(.decimalPad).accessibilityLabel("Mapping IPv4 Address")
+                                .clientKeyboardType(.decimalPad).accessibilityLabel("Mapping IPv4 Address")
                             Button(role: .destructive) { mappings.removeAll { $0.id == mapping.id } } label: {
                                 Image(systemName: "minus.circle.fill")
                             }.buttonStyle(.borderless).accessibilityLabel("Delete DNS Mapping")
@@ -187,8 +188,8 @@ struct ClientDNSView: View {
                 } }.disabled(model.isBusy)
             } footer: { Text("Changes apply to the current profile and update DNS settings while connected.") }
         }
-        .textInputAutocapitalization(.never).autocorrectionDisabled().clientKeyboardDone()
-        .navigationTitle("DNS").navigationBarTitleDisplayMode(.inline)
+        .clientNoAutocapitalization().autocorrectionDisabled().clientKeyboardDone()
+        .navigationTitle("DNS").clientInlineTitle()
         .task {
             mappings = model.parsed.hosts.map { MappingDraft(host: $0.host, address: $0.address) }
             for (prefix,_) in resolvers {
@@ -236,12 +237,12 @@ struct ClientLogsView: View {
             }
         }
         .overlay { if visibleLogs.isEmpty { ContentUnavailableView("No Logs", systemImage: "doc.text.magnifyingglass", description: Text(tunnel.hasRunningTunnel ? "Waiting for new logs" : "Connect to view logs.")) } }
-        .navigationTitle("Logs").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Logs").clientInlineTitle()
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .clientToolbarTrailing) {
                 ShareLink(item: visibleLogs.map { "[\($0.timestamp.formatted(.dateTime.locale(Locale(identifier: "en"))))] [\($0.level.rawValue)] \($0.message)" }.joined(separator: "\n")) { Image(systemName: "square.and.arrow.up") }.disabled(visibleLogs.isEmpty)
             }
-            ToolbarItem(placement: .topBarTrailing) { Button("Clear", systemImage: "trash") { showClear = true }.disabled(visibleLogs.isEmpty) }
+            ToolbarItem(placement: .clientToolbarTrailing) { Button("Clear", systemImage: "trash") { showClear = true }.disabled(visibleLogs.isEmpty) }
         }
         .confirmationDialog("Clear Visible Logs?", isPresented: $showClear, titleVisibility: .visible) { Button("Clear", role: .destructive) { clearedBefore = .now; logs.clear(); Task { _ = await tunnel.send(.clearLogs) } } }
         .task(id: scenePhase) {
@@ -271,11 +272,11 @@ struct ClientNotificationSettingsView: View {
             Section {
                 LabeledContent("System Notification Permission", value: allowed ? "Allowed" : "Not Allowed")
                 if !allowed {
-                    Button("Open System Settings") { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
+                    Button("Open System Settings") { ClientSystem.openNotificationSettings() }
                 }
             }
         }
-        .navigationTitle("Notifications").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Notifications").clientInlineTitle()
         .task { await refresh() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await refresh() } } }
     }

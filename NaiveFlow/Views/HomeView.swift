@@ -19,7 +19,9 @@ struct HomeView: View {
                 NavigationStack { ClientSettingsView() }
             }
         }
+#if os(iOS)
         .tabViewStyle(.tabBarOnly)
+#endif
         .tint(.blue)
         .environment(model)
         .alert("Operation Failed", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {

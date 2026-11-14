@@ -29,12 +29,14 @@ struct ClientModulesView: View {
                         if module.sourceURL != nil { Button("Update", systemImage: "arrow.clockwise") { Task { await model.manageResource(.update(.modules(ids: [module.id]))) } } }
                         Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = module }
                     }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+#if os(iOS)
+                    .clientSwipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button("Delete", role: .destructive) { pendingDelete = module }
                         Button("Edit", systemImage: "pencil") { editing = module }.tint(.blue)
                         Button("Update", systemImage: "arrow.clockwise") { Task { await model.manageResource(.update(.modules(ids: [module.id]))) } }
                             .tint(.orange).disabled(module.sourceURL?.isEmpty != false)
                     }
+#endif
                 }
             } footer: { Text("Module rules are saved and applied with the current profile. Configure MITM certificate trust and hostnames before enabling modules.") }
             Section {
@@ -53,15 +55,15 @@ struct ClientModulesView: View {
                 Text("Update all modules with remote URLs. Local modules are kept. Changes apply only after every download and validation succeeds.")
             }
         }
-        .navigationTitle("Modules").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Modules").clientInlineTitle()
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .clientToolbarTrailing) {
                 Button("Add Module", systemImage: "plus") {
                     editing = ClientModule(name: "New Module", summary: "", source: "", format: .surge)
                 }
             }
         }
-        .sheet(item: $editing) { ClientModuleEditorView(module: $0) }
+        .sheet(item: $editing) { ClientModuleEditorView(module: $0).clientEditorWindow() }
         .alert("Update Complete", isPresented: $updateComplete) { Button("OK", role: .cancel) {} } message: {
             Text("All remote modules were updated and applied to the current profile.")
         }
@@ -89,7 +91,7 @@ struct ClientModuleEditorView: View {
                 }
                 Section("Import and Update") {
                     TextField("Remote URL (HTTPS)", text: Binding(get: { module.sourceURL ?? "" }, set: { module.sourceURL = $0.isEmpty ? nil : $0 }))
-                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .clientKeyboardType(.URL).clientNoAutocapitalization().autocorrectionDisabled()
                     Button("Load from URL", systemImage: "arrow.down.circle") { Task {
                         downloading = true; defer { downloading = false }
                         do { module.source = try await model.fetchText(module.sourceURL ?? "") } catch { model.report(error) }
@@ -98,7 +100,7 @@ struct ClientModuleEditorView: View {
                 }
                 Section("Module Content") {
                     TextEditor(text: $module.source).font(.system(size: 12, design: .monospaced)).frame(minHeight: 260)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityLabel("Module Content")
+                        .clientNoAutocapitalization().autocorrectionDisabled().accessibilityLabel("Module Content")
                 }
                 Section {
                     Button("Save and Apply") { Task {
@@ -107,11 +109,11 @@ struct ClientModuleEditorView: View {
                     } }.disabled(module.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || module.name.isEmpty)
                 }
             }
-            .scrollDismissesKeyboard(.interactively)
+            .clientInteractiveKeyboardDismissal()
             .clientKeyboardDone()
             .disabled(downloading || model.isBusy)
             .interactiveDismissDisabled(downloading || model.isBusy)
-            .navigationTitle("Edit Module").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Edit Module").clientInlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(downloading || model.isBusy) }
                 ToolbarItem(placement: .primaryAction) { if downloading || model.isBusy { ProgressView() } }

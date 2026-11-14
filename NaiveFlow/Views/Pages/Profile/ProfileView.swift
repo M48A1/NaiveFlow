@@ -83,7 +83,7 @@ private extension ProfileView {
             TextEditor(text: Binding(get: { model.text }, set: { model.edit($0) }))
                 .font(.system(.footnote, design: .monospaced))
                 .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
+                .clientNoAutocapitalization()
                 .frame(minHeight: 300)
         } header: {
             HStack {

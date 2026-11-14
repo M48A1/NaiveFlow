@@ -42,7 +42,7 @@ struct ClientGeoSettingsView: View {
                             }
                         }.padding(.vertical, 5).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                     }.buttonStyle(.plain)
-                        .swipeActions(allowsFullSwipe: false) {
+                        .clientSwipeActions(allowsFullSwipe: false) {
                             Button("Edit") { editor = draft(reference) }.tint(.blue)
                             Button("Delete", role: .destructive) { pendingDelete = draft(reference) }
                         }
@@ -62,8 +62,8 @@ struct ClientGeoSettingsView: View {
                 Text("Download and validate the current profile's external resources before applying. Failed updates preserve the running version.")
             }
         }
-        .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) {
+        .navigationTitle(title).clientInlineTitle()
+        .toolbar { ToolbarItem(placement: .clientToolbarTrailing) {
             Button { editor = ClientGeoSourceDraft(site: site) } label: { Image(systemName: "plus") }
                 .accessibilityLabel("Add \(title) Source").disabled(model.isBusy || updating)
         } }
@@ -122,7 +122,7 @@ private struct ClientGeoSourceEditor: View {
                 Section {
                     TextField(site ? "Tag, e.g. cn or ads" : "Tag, e.g. CN or AS64500", text: $draft.key)
                         .disabled(draft.originalValue != nil)
-                    TextField("HTTPS Update URL", text: $draft.source).keyboardType(.URL)
+                    TextField("HTTPS Update URL", text: $draft.source).clientKeyboardType(.URL)
                     Picker("Format", selection: $draft.format) {
                         Text(site ? "GeoSite DAT" : "GeoIP DAT").tag(site ? "geosite-dat" : "geoip-dat")
                         Text(site ? "Domain Text" : "IPv4 CIDR Text").tag(site ? "domain" : "cidr")
@@ -137,8 +137,8 @@ private struct ClientGeoSourceEditor: View {
                     TextField("SHA-256 (Optional)", text: $draft.checksum).font(.system(.footnote, design: .monospaced))
                 } footer: { Text("When a checksum is set, only matching files are accepted. Update it when the database changes.") }
             }
-            .textInputAutocapitalization(.never).autocorrectionDisabled().clientKeyboardDone()
-            .navigationTitle(draft.originalValue == nil ? "Add Source" : "Edit Source").navigationBarTitleDisplayMode(.inline)
+            .clientNoAutocapitalization().autocorrectionDisabled().clientKeyboardDone()
+            .navigationTitle(draft.originalValue == nil ? "Add Source" : "Edit Source").clientInlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {

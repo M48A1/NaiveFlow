@@ -19,7 +19,7 @@ struct ClientProfileEditorView: View {
                     Section("Profile") {
                         TextField("Profile Name", text: Binding(get: { profile.displayName }, set: { profile.name = $0 }))
                         TextField("Remote URL (Optional, HTTPS)", text: Binding(get: { profile.sourceURL ?? "" }, set: { profile.sourceURL = $0.isEmpty ? nil : $0 }))
-                            .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .clientKeyboardType(.URL).clientNoAutocapitalization().autocorrectionDisabled()
                     }
                     Section("Profile Content") {
                         ProfileSourceEditor(text: Binding(get: { profile.text }, set: {
@@ -29,6 +29,15 @@ struct ClientProfileEditorView: View {
                             .frame(height: 380)
                             .id("profile-source")
                     }
+#if os(macOS)
+                    if !errors.isEmpty {
+                        Section("Configuration Errors") {
+                            ForEach(Array(errors.enumerated()), id: \.offset) { item in
+                                Text(item.element.message).foregroundStyle(.red)
+                            }
+                        }
+                    }
+#endif
                     Section {
                         Button("Save and Apply") { Task { await save(apply: true) } }
                             .disabled(model.isBusy || profile.name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -37,13 +46,13 @@ struct ClientProfileEditorView: View {
                     }
                 }
                 .disabled(model.isBusy)
-                .scrollDismissesKeyboard(.interactively)
+                .clientInteractiveKeyboardDismissal()
                 .onChange(of: errorFocus) { _, _ in
                     if !errors.isEmpty { scroll.scrollTo("profile-source", anchor: .top) }
                 }
             }
             .clientKeyboardDone()
-            .navigationTitle("Edit Profile").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Edit Profile").clientInlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") {
                     if hasUnsavedChanges { showDiscard = true } else { dismiss() }
@@ -124,11 +133,11 @@ struct ClientProfilesView: View {
                 NavigationLink("Backup and Restore") { ClientBackupView() }
             }
         }
-        .navigationTitle("Manage Profiles").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Manage Profiles").clientInlineTitle()
         .disabled(model.isBusy || downloading)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { if downloading { ProgressView() } } }
+        .toolbar { ToolbarItem(placement: .clientToolbarTrailing) { if downloading { ProgressView() } } }
         .alert("Import Profile from URL", isPresented: $showURL) {
-            TextField("https://example.com/config.conf", text: $remoteURL).textInputAutocapitalization(.never).autocorrectionDisabled()
+            TextField("https://example.com/config.conf", text: $remoteURL).clientNoAutocapitalization().autocorrectionDisabled()
             Button("Import") {
                 let source = remoteURL
                 Task {
@@ -182,12 +191,12 @@ struct ClientNodeSubscriptionsView: View {
                 }
             }
         }
-        .navigationTitle("Subscription Groups").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Subscription Groups").clientInlineTitle()
         .safeAreaInset(edge: .bottom, spacing: 0) {
             HStack { ClientSubscriptionUpdateAllButton(); Spacer() }
                 .padding(.horizontal, 20).padding(.vertical, 10).background(.bar)
         }
-        .toolbar { ToolbarItem(placement: .topBarTrailing) {
+        .toolbar { ToolbarItem(placement: .clientToolbarTrailing) {
             Button("Add Subscription", systemImage: "plus") { editing = ClientNodeSubscription(name: "", url: "") }
         } }
         .sheet(item: $editing) { ClientNodeSubscriptionEditorView(subscription: $0) }
@@ -229,12 +238,12 @@ struct ClientNodeSubscriptionDetailView: View {
                 }
             } footer: { Text("Tap a node to edit its name and configuration. Edited nodes are preserved when the subscription updates. All nodes remain in Manage Nodes and PROXY.") }
         }
-        .navigationTitle(subscription?.name ?? "Subscription").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(subscription?.name ?? "Subscription").clientInlineTitle()
         .safeAreaInset(edge: .bottom, spacing: 0) {
             HStack { ClientSubscriptionUpdateAllButton(ids: [id]); Spacer() }
                 .padding(.horizontal, 20).padding(.vertical, 10).background(.bar)
         }
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Edit") { editing = subscription } } }
+        .toolbar { ToolbarItem(placement: .clientToolbarTrailing) { Button("Edit") { editing = subscription } } }
         .sheet(item: $editing) { ClientNodeSubscriptionEditorView(subscription: $0) }
         .sheet(item: $editingNode) { original in
             ProxyEditorView(configuration: original) { node in Task { await model.saveNode(node, replacing: original.name) } }
@@ -281,8 +290,8 @@ struct ClientNodeSubscriptionEditorView: View {
             Form {
                 Section {
                     TextField("Subscription Name", text: $subscription.name)
-                    TextField("HTTPS Subscription URL", text: $subscription.url).keyboardType(.URL)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("HTTPS Subscription URL", text: $subscription.url).clientKeyboardType(.URL)
+                        .clientNoAutocapitalization().autocorrectionDisabled()
                 }
                 Section {
                     Toggle("Remnawave HWID", isOn: $subscription.remnawaveHWIDEnabled).tint(.blue)
@@ -290,7 +299,7 @@ struct ClientNodeSubscriptionEditorView: View {
                     Text("Send this device's HWID when importing or updating this subscription. Enable only if required by its provider.")
                 }
             }
-            .navigationTitle(exists ? "Edit Subscription" : "Add Subscription").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(exists ? "Edit Subscription" : "Add Subscription").clientInlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {

@@ -50,7 +50,7 @@ struct ClientDraftReviewView: View {
                     }
                 } header: { Text("Changed Lines") } footer: { Text("Compares the same line numbers in each version. Up to 400 changed lines are shown; inserting a line can shift later comparisons.") }
             }
-            .navigationTitle("Saved vs Applied").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Saved vs Applied").clientInlineTitle()
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
             .confirmationDialog("Replace Saved Draft?", isPresented: $restore, titleVisibility: .visible) {
                 Button("Restore Applied Content", role: .destructive) { Task { if await model.restoreRunningDraft() { dismiss() } } }
@@ -80,7 +80,7 @@ struct ClientSubscriptionReviewView: View {
                 names("Missing from Subscription", review.missing)
                 names("Manual Edits Preserved", review.preserved)
             }
-            .navigationTitle("Review Subscription Update").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Review Subscription Update").clientInlineTitle()
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { model.discardSubscriptionReview(); dismiss() } } }
             .disabled(model.isBusy)
             .interactiveDismissDisabled(model.isBusy)
@@ -118,7 +118,7 @@ struct ClientResourceCenterView: View {
             }
             if model.resources.isEmpty { ContentUnavailableView("No Remote Resources", systemImage: "arrow.down.circle") }
             if model.activeResourceTitle != nil { Button("Cancel Current Download", role: .destructive) { model.cancelResourceOperation() } }
-        }.navigationTitle("Resource Updates").navigationBarTitleDisplayMode(.inline)
+        }.navigationTitle("Resource Updates").clientInlineTitle()
     }
     private func update(_ resource: ClientResourceDescriptor) async {
         switch resource.kind {
@@ -178,7 +178,7 @@ struct ClientBackupView: View {
             }
             if let notice { Text(notice).foregroundStyle(.secondary) }
         }
-        .navigationTitle("Backup and Restore").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Backup and Restore").clientInlineTitle()
         .disabled(model.isBusy)
         .fileExporter(isPresented: $exporting, document: document, contentType: .json, defaultFilename: "NaiveFlow-backup") { result in
             if case .failure(let failure) = result { error = failure.localizedDescription }
@@ -211,14 +211,14 @@ struct ClientRuleTestView: View {
         Form {
             Section("Target") {
                 TextField("Domain (optional with IPv4)", text: $host)
-                TextField("Resolved IPv4 (optional)", text: $ip).keyboardType(.numbersAndPunctuation)
-                TextField("Destination Port", text: $port).keyboardType(.numberPad)
+                TextField("Resolved IPv4 (optional)", text: $ip).clientKeyboardType(.numbersAndPunctuation)
+                TextField("Destination Port", text: $port).clientKeyboardType(.numberPad)
                 Picker("Protocol", selection: $network) { Text("TCP").tag("TCP"); Text("UDP").tag("UDP") }
                 Toggle("Resolve Domain if Needed", isOn: $resolve)
             }
             Section("Source (Optional)") {
                 TextField("Source IPv4", text: $sourceIP)
-                TextField("Source Port", text: $sourcePort).keyboardType(.numberPad)
+                TextField("Source Port", text: $sourcePort).clientKeyboardType(.numberPad)
             }
             Section {
                 Button("Test Applied Rules") { Task { await test() } }.disabled(testing || (host.isEmpty && ip.isEmpty))
@@ -226,8 +226,8 @@ struct ClientRuleTestView: View {
                 if let result { Text(result).textSelection(.enabled) }
             } footer: { Text("Uses the applied version, including its pinned rule sets and Geo data. Does not send target traffic. DNS runs only when enabled and required; missing source metadata may prevent a decision. Automatic groups choose a member at connection time.") }
         }
-        .textInputAutocapitalization(.never).autocorrectionDisabled().clientKeyboardDone()
-        .navigationTitle("Rule Test").navigationBarTitleDisplayMode(.inline)
+        .clientNoAutocapitalization().autocorrectionDisabled().clientKeyboardDone()
+        .navigationTitle("Rule Test").clientInlineTitle()
     }
     private func test() async {
         testing = true; defer { testing = false }

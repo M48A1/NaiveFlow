@@ -17,7 +17,7 @@ struct ClientLatencySettingsView: View {
                 }
                 if customURL {
                     TextField("https://example.com/generate_204", text: $settings.url)
-                        .keyboardType(.URL)
+                        .clientKeyboardType(.URL)
                         .accessibilityLabel("Latency Test URL")
                 } else {
                     Text(LatencyTestSettings.defaultURL).foregroundStyle(.secondary)
@@ -37,8 +37,8 @@ struct ClientLatencySettingsView: View {
         }
         .navigationTitle("Latency Test")
         .disabled(saving)
-        .navigationBarTitleDisplayMode(.inline)
-        .textInputAutocapitalization(.never)
+        .clientInlineTitle()
+        .clientNoAutocapitalization()
         .autocorrectionDisabled()
         .clientKeyboardDone()
         .task { customURL = settings.url != LatencyTestSettings.defaultURL }

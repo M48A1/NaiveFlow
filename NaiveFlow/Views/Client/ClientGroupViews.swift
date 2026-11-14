@@ -6,7 +6,13 @@ struct ClientGroupsView: View {
     @State private var editing: ClientGroupEditor?
     @State private var deleteGroup: String?
     @State private var managing = false
-    private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+    private var columns: [GridItem] {
+#if os(macOS)
+        [GridItem(.adaptive(minimum: 210, maximum: 320), spacing: 12)]
+#else
+        [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+#endif
+    }
 
     var body: some View {
         ScrollView {
@@ -39,17 +45,17 @@ struct ClientGroupsView: View {
                 try? await Task.sleep(for: .seconds(2))
             }
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(ClientAppearance.background)
         .navigationTitle("Groups")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .clientToolbarTrailing) {
                 Menu {
                     Button("New Group", systemImage: "plus") { editing = ClientGroupEditor() }
                     Button("Manage and Reorder", systemImage: "arrow.up.arrow.down") { managing = true }
                 } label: { Image(systemName: "plus").font(.system(size: 21, weight: .medium)) }
             }
         }
-        .sheet(item: $editing) { ClientGroupEditorView(draft: $0) }
+        .sheet(item: $editing) { ClientGroupEditorView(draft: $0).clientEditorWindow() }
         .sheet(isPresented: $managing) { NavigationStack { ClientGroupManagementView() } }
         .confirmationDialog("Delete Group?", isPresented: Binding(get: { deleteGroup != nil }, set: { if !$0 { deleteGroup = nil } }), titleVisibility: .visible) {
             Button("Delete", role: .destructive) { if let deleteGroup { Task { await model.deleteGroup(deleteGroup) } }; deleteGroup = nil }
@@ -130,8 +136,8 @@ struct ClientGroupDetailView: View {
                 }
             }.padding(20)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
-        .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+        .background(ClientAppearance.background)
+        .navigationTitle(title).clientInlineTitle()
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {
@@ -140,9 +146,9 @@ struct ClientGroupDetailView: View {
             }
         }
         .toolbar {
-            if let group { ToolbarItem(placement: .topBarTrailing) { Button("Edit") { editing = ClientGroupEditor(group: group) } } }
+            if let group { ToolbarItem(placement: .clientToolbarTrailing) { Button("Edit") { editing = ClientGroupEditor(group: group) } } }
         }
-        .sheet(item: $editing) { ClientGroupEditorView(draft: $0) }
+        .sheet(item: $editing) { ClientGroupEditorView(draft: $0).clientEditorWindow() }
         .disabled(model.isBusy)
     }
     private func liveLatency(for node: ProxyConfiguration) -> LatencyResult? {
@@ -238,7 +244,7 @@ struct ClientGroupEditorView: View {
                 }
                 Section {
                     TextField("Regular Expression (Optional)", text: $draft.nameFilter)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .clientNoAutocapitalization().autocorrectionDisabled()
                         .accessibilityLabel("Node Name Regex")
                     if let error = draft.filterError { Text(error).font(.footnote).foregroundStyle(.red) }
                 } header: { Text("Node Name Filter") } footer: {
@@ -261,10 +267,12 @@ struct ClientGroupEditorView: View {
                 }
             }
             .clientKeyboardDone()
-            .navigationTitle(draft.originalName == nil ? "New Group" : "Edit Group").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(draft.originalName == nil ? "New Group" : "Edit Group").clientInlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+#if os(iOS)
                 ToolbarItem(placement: .primaryAction) { EditButton() }
+#endif
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { Task { if await model.saveGroup(original: draft.originalName, name: draft.name, kind: draft.kind, members: draft.members, parameters: draft.parameters, style: style) { dismiss() } } }
                         .disabled(model.isBusy || draft.name.isEmpty || draft.members.isEmpty || draft.filterError != nil || effectiveMembers.isEmpty)
@@ -303,6 +311,11 @@ struct ClientGroupManagementView: View {
                 Button { editing = ClientGroupEditor(group: group) } label: {
                     HStack { Text(group.name).foregroundStyle(.primary); Spacer(); Text(group.kindToken).font(.caption).foregroundStyle(.secondary) }
                 }
+#if os(macOS)
+                .contextMenu {
+                    Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = group.name }
+                }
+#endif
             }
             .onMove { from, to in
                 var names = model.groups.map(\.name); names.move(fromOffsets: from, toOffset: to)
@@ -310,9 +323,14 @@ struct ClientGroupManagementView: View {
             }
             .onDelete { offsets in if let index = offsets.first { pendingDelete = model.groups[index].name } }
         }
-        .navigationTitle("Manage Groups").navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }; ToolbarItem(placement: .primaryAction) { EditButton() } }
-        .sheet(item: $editing) { ClientGroupEditorView(draft: $0) }
+        .navigationTitle("Manage Groups").clientInlineTitle()
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+#if os(iOS)
+            ToolbarItem(placement: .primaryAction) { EditButton() }
+#endif
+        }
+        .sheet(item: $editing) { ClientGroupEditorView(draft: $0).clientEditorWindow() }
         .confirmationDialog("Delete Group?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
             Button("Delete", role: .destructive) { if let pendingDelete { Task { await model.deleteGroup(pendingDelete) } }; pendingDelete = nil }
         }

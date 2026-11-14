@@ -29,11 +29,15 @@ struct ClientHomeView: View {
                 configurationCard
                 proxyCard
                 rulesCard
-            }.padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 24)
+            }
+#if os(macOS)
+            .frame(maxWidth: 760)
+#endif
+            .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 24)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
-        .toolbar(.hidden, for: .navigationBar)
-        .sheet(item: $editor) { ClientProfileEditorView(profile: $0) }
+        .background(ClientAppearance.background)
+        .clientNavigationBar(visible: false)
+        .sheet(item: $editor) { ClientProfileEditorView(profile: $0).clientEditorWindow() }
         .sheet(isPresented: $showNodeEditor) {
             ProxyEditorView(configuration: nodeToEdit) { node in Task { await model.saveNode(node, replacing: nodeToEdit?.name) } }
         }
@@ -237,11 +241,11 @@ struct ClientHomeView: View {
                 Menu {
                     switch menu {
                     case .profiles:
-                        NavigationLink { ClientProfilesView().toolbar(.visible, for: .navigationBar) } label: {
+                        NavigationLink { ClientProfilesView().clientNavigationBar(visible: true) } label: {
                             Label("Manage Profiles", systemImage: "doc.text")
                         }
                     case .proxies:
-                        NavigationLink { ClientNodesView().toolbar(.visible, for: .navigationBar) } label: {
+                        NavigationLink { ClientNodesView().clientNavigationBar(visible: true) } label: {
                             Label("Manage Nodes", systemImage: "network")
                         }
                         Divider()
@@ -251,10 +255,10 @@ struct ClientHomeView: View {
                             autoChoosing = true; latency.testLatencies(for: model.nodes, transport: tunnel)
                         }.disabled(model.nodes.isEmpty || autoChoosing)
                     case .rules:
-                        NavigationLink { ClientRoutingRulesView(ruleSets: true).toolbar(.visible, for: .navigationBar) } label: {
+                        NavigationLink { ClientRoutingRulesView(ruleSets: true).clientNavigationBar(visible: true) } label: {
                             Label("Rule Sets", systemImage: "square.stack.3d.up")
                         }
-                        NavigationLink { ClientRoutingRulesView(ruleSets: false).toolbar(.visible, for: .navigationBar) } label: {
+                        NavigationLink { ClientRoutingRulesView(ruleSets: false).clientNavigationBar(visible: true) } label: {
                             Label("Local Rules", systemImage: "doc.text")
                         }
                     }
@@ -281,7 +285,7 @@ private struct ClientHomeCard<Content: View>: View {
             .background {
                 GeometryReader { geometry in
                     ZStack {
-                        Color(uiColor: .secondarySystemGroupedBackground)
+                        ClientAppearance.card
                         LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
                             .opacity(colorScheme == .dark ? 0.18 : 0.12)
                         Rectangle().fill(.white.opacity(0.10))
@@ -329,7 +333,7 @@ private struct ClientRoutingRulesView: View {
                             }
                         }.padding(.vertical, 5).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                         }.buttonStyle(.plain).disabled(!ruleSets)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        .clientSwipeActions(edge: .trailing, allowsFullSwipe: false) {
                             if ruleSets {
                                 Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = rule }
                                 Button("Edit", systemImage: "pencil") { ruleEditor = ClientRuleSetDraft(rule: rule) }.tint(.blue)
@@ -345,7 +349,7 @@ private struct ClientRoutingRulesView: View {
             }
         }
         .navigationTitle(ruleSets ? "RuleSet" : "Local")
-        .navigationBarTitleDisplayMode(.inline)
+        .clientInlineTitle()
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if ruleSets {
                 HStack {
@@ -359,7 +363,7 @@ private struct ClientRoutingRulesView: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .clientToolbarTrailing) {
                 if ruleSets {
                     Button { ruleEditor = ClientRuleSetDraft() } label: { Image(systemName: "plus") }
                         .accessibilityLabel("New RuleSet")
@@ -378,8 +382,8 @@ private struct ClientRoutingRulesView: View {
         .alert("Update Complete", isPresented: $updateComplete) { Button("OK", role: .cancel) {} }
         .sheet(item: $ruleEditor) { draft in
             ClientRuleSetEditorView(draft: draft)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+                .clientSheetDetents()
+                .clientSheetDragIndicator()
         }
         .disabled(updating || model.isBusy)
     }
@@ -433,7 +437,7 @@ private struct ClientRuleSetEditorView: View {
             Form {
                 Section("Rule Set URL") {
                     TextField("https://example.com/rules.list", text: $draft.source)
-                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .clientKeyboardType(.URL).clientNoAutocapitalization().autocorrectionDisabled()
                         .accessibilityLabel("Rule Set URL")
                 }
                 Section {
@@ -446,7 +450,7 @@ private struct ClientRuleSetEditorView: View {
                 }
             }
             .navigationTitle(draft.original == nil ? "New RuleSet" : "Edit RuleSet")
-            .navigationBarTitleDisplayMode(.inline)
+            .clientInlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {

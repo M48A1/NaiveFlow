@@ -1,11 +1,10 @@
 import SwiftUI
-import UIKit
 
 struct ClientCard<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         VStack(spacing: 0) { content }
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .background(ClientAppearance.card, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 24).stroke(.primary.opacity(0.025), lineWidth: 1))
     }
 }
@@ -30,7 +29,7 @@ struct ClientNodeRow: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22)).foregroundStyle(selected ? Color.blue : Color(uiColor: .tertiaryLabel))
+                    .font(.system(size: 22)).foregroundStyle(selected ? Color.blue : ClientAppearance.tertiaryLabel)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(displayName).font(.system(size: 16, weight: selected ? .semibold : .medium))
                         .foregroundStyle(selected ? Color.blue : .primary).lineLimit(1)
@@ -124,17 +123,4 @@ struct ClientPolicyCard: View {
     }
 }
 
-private struct ClientKeyboardDone: ViewModifier {
-    func body(content: Content) -> some View {
-        content.toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
-            }
-        }
-    }
-}
-
-extension View {
-    func clientKeyboardDone() -> some View { modifier(ClientKeyboardDone()) }
-}
+private struc

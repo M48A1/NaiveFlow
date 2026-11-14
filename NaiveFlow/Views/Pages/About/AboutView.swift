@@ -22,6 +22,6 @@ struct AboutView: View {
                     }
                 }
             }
-        }.navigationTitle("About").navigationBarTitleDisplayMode(.inline)
+        }.navigationTitle("About").clientInlineTitle()
     }
 }

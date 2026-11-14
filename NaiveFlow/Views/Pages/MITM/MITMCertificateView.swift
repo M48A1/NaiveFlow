@@ -7,7 +7,11 @@
 
 import SwiftUI
 import Observation
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 import UniformTypeIdentifiers
 
 @MainActor
@@ -66,7 +70,9 @@ struct MITMCertificateView: View {
 
     @Environment(MITMCertificateController.self) private var controller
 
+#if os(iOS)
     @State private var isExportingCertificate = false
+#endif
     @State private var showRegenerateConfirm = false
     @State private var showDeleteConfirm = false
     @State private var errorMessage: String?
@@ -148,7 +154,7 @@ struct MITMCertificateView: View {
             }
         }
         .navigationTitle("MITM")
-        .navigationBarTitleDisplayMode(.inline)
+        .clientInlineTitle()
         .alert("Regenerate Certificate", isPresented: $showRegenerateConfirm) {
             Button("Regenerate", role: .destructive) {
                 do {
@@ -177,17 +183,21 @@ struct MITMCertificateView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+#if os(iOS)
         .sheet(isPresented: $isExportingCertificate) {
             if let url = certificateURL() {
                 ShareSheet(items: [url])
             }
         }
+#endif
         .onAppear {
             controller.refresh()
         }
+#if os(iOS)
         .onDisappear {
             Task { await MITMProfileServer.shared.stop() }
         }
+#endif
         .onChange(of: scenePhase) { _, newValue in
             if newValue == .active {
                 controller.refresh()
@@ -216,23 +226,44 @@ struct MITMCertificateView: View {
         if !controller.hasCA {
             return String(localized: "Generate a certificate to begin.")
         }
-        return controller.isTrusted
-            ? String(localized: "NaiveFlow Root Certificate is installed and trusted.")
-            : String(localized: "Install the profile and trust in Settings to use MITM.")
+        if controller.isTrusted { return String(localized: "NaiveFlow Root Certificate is installed and trusted.") }
+#if os(macOS)
+        return String(localized: "Open the certificate in Keychain Access, then set its trust for SSL.")
+#else
+        return String(localized: "Install the profile and trust in Settings to use MITM.")
+#endif
     }
 
     // MARK: - Export
 
     private func prepareCerExport() {
+#if os(macOS)
+        guard let der = controller.certificateData() else {
+            errorMessage = String(localized: "Failed to export certificate.")
+            return
+        }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "NaiveFlowMITMRoot.cer"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try der.write(to: url, options: .atomic) }
+        catch { errorMessage = error.localizedDescription }
+#else
         guard certificateURL() != nil else {
             errorMessage = String(localized: "Failed to export certificate.")
             return
         }
         isExportingCertificate = true
+#endif
     }
 
     /// Profile install requires a URL; serve the .mobileconfig over a one-shot 127.0.0.1 HTTP server.
     private func installProfile() {
+#if os(macOS)
+        guard let url = certificateURL(), NSWorkspace.shared.open(url) else {
+            errorMessage = String(localized: "Failed to open certificate.")
+            return
+        }
+#else
         guard let plist = controller.mobileConfigData() else {
             errorMessage = String(localized: "Failed to export profile.")
             return
@@ -251,6 +282,7 @@ struct MITMCertificateView: View {
                 errorMessage = String(describing: error)
             }
         }
+#endif
     }
 
     private func certificateURL() -> URL? {
@@ -266,6 +298,7 @@ struct MITMCertificateView: View {
     }
 }
 
+#if os(iOS)
 private struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
 
@@ -275,3 +308,4 @@ private struct ShareSheet: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
+#endif

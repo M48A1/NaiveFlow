@@ -1,8 +1,11 @@
 import SwiftUI
 import PhotosUI
+#if os(iOS)
 import VisionKit
-import Vision
 import AVFoundation
+#else
+import UniformTypeIdentifiers
+#endif
 import ImageIO
 import CoreImage
 
@@ -46,7 +49,11 @@ nonisolated enum ClientQRPayload {
 
 struct ClientQRImportView: View {
     @Environment(\.dismiss) private var dismiss
+#if os(iOS)
     @State private var camera = false
+#else
+    @State private var choosingFile = false
+#endif
     @State private var photo: PhotosPickerItem?
     @State private var results: [String] = []
     @State private var importSource: QRSource?
@@ -57,8 +64,14 @@ struct ClientQRImportView: View {
         NavigationStack {
             List {
                 Section {
+#if os(iOS)
                     Button("Scan with Camera", systemImage: "camera") { Task { await openCamera() } }
+#else
+                    Button("Choose QR Image File", systemImage: "folder") { choosingFile = true }
+                        .disabled(loading)
+#endif
                     PhotosPicker(selection: $photo, matching: .images) { Label("Choose QR Image", systemImage: "photo") }
+                        .disabled(loading)
                     if loading { ProgressView("Reading QR codes…") }
                 } footer: { Text("Scans node links and HTTPS subscriptions. Nothing is downloaded or imported until you review and confirm the content.") }
                 if !results.isEmpty {
@@ -71,8 +84,9 @@ struct ClientQRImportView: View {
                     }
                 }
             }
-            .navigationTitle("Import QR Code").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Import QR Code").clientInlineTitle()
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+#if os(iOS)
             .sheet(isPresented: $camera) {
                 NavigationStack {
                     ClientCameraScanner { payload in
@@ -80,11 +94,30 @@ struct ClientQRImportView: View {
                         do { results = [try ClientQRPayload.normalize(payload)] }
                         catch { self.error = error.localizedDescription }
                     } failure: { message in camera = false; error = message }
-                    .navigationTitle("Scan QR Code").navigationBarTitleDisplayMode(.inline)
+                    .navigationTitle("Scan QR Code").clientInlineTitle()
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { camera = false } } }
                 }
             }
-            .sheet(item: $importSource) { ClientNodeImportView(source: $0.text) }
+#else
+            .fileImporter(isPresented: $choosingFile, allowedContentTypes: [.image]) { result in
+                Task {
+                    loading = true
+                    defer { loading = false }
+                    do {
+                        let url = try result.get()
+                        results = try await Task.detached(priority: .userInitiated) {
+                            let access = url.startAccessingSecurityScopedResource()
+                            defer { if access { url.stopAccessingSecurityScopedResource() } }
+                            let handle = try FileHandle(forReadingFrom: url)
+                            defer { try? handle.close() }
+                            let data = try handle.read(upToCount: 20 * 1024 * 1024 + 1) ?? Data()
+                            return try ClientQRPayload.readImage(data)
+                        }.value
+                    } catch { self.error = error.localizedDescription }
+                }
+            }
+#endif
+            .sheet(item: $importSource) { ClientNodeImportView(source: $0.text).clientEditorWindow() }
             .onChange(of: photo) { _, item in
                 Task {
                     guard let item else { return }
@@ -98,6 +131,7 @@ struct ClientQRImportView: View {
             .alert("Could Not Read QR Code", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("OK") { error = nil } } message: { Text(error ?? "") }
         }
     }
+#if os(iOS)
     private func openCamera() async {
         guard DataScannerViewController.isSupported else { error = "Live scanning is unavailable on this device. Choose a QR image instead."; return }
         guard await AVCaptureDevice.requestAccess(for: .video), DataScannerViewController.isAvailable else {
@@ -105,8 +139,10 @@ struct ClientQRImportView: View {
         }
         camera = true
     }
+#endif
 }
 
+#if os(iOS)
 private struct ClientCameraScanner: UIViewControllerRepresentable {
     let result: (String) -> Void
     let failure: (String) -> Void
@@ -140,3 +176,4 @@ private struct ClientCameraScanner: UIViewControllerRepresentable {
         func dataScanner(_ scanner: DataScannerViewController, becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable) { failure(error.localizedDescription) }
     }
 }
+#endif

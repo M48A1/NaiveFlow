@@ -1,4 +1,6 @@
 import SwiftUI
+
+#if os(iOS)
 import UIKit
 
 /// Error decoration belongs to the editor, never to the saved configuration text.
@@ -183,3 +185,73 @@ struct ProfileSourceEditor: UIViewRepresentable {
         }
     }
 }
+
+#else
+import AppKit
+
+struct ProfileSourceEditor: NSViewRepresentable {
+    @Binding var text: String
+    let errors: [ConfigurationDiagnostic]
+    let focus: UUID
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSTextView.scrollableTextView()
+        guard let editor = scroll.documentView as? NSTextView else { return scroll }
+        editor.delegate = context.coordinator
+        editor.isRichText = false
+        editor.isAutomaticQuoteSubstitutionEnabled = false
+        editor.isAutomaticDashSubstitutionEnabled = false
+        editor.isAutomaticTextReplacementEnabled = false
+        editor.isAutomaticSpellingCorrectionEnabled = false
+        editor.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        editor.textContainerInset = NSSize(width: 8, height: 8)
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        guard let editor = scroll.documentView as? NSTextView else { return }
+        let coordinator = context.coordinator
+        coordinator.parent = self
+        if editor.string != text { editor.string = text }
+
+        let source = text as NSString
+        let fullRange = NSRange(location: 0, length: source.length)
+        let layout = editor.layoutManager
+        layout?.removeTemporaryAttribute(.backgroundColor, forCharacterRange: fullRange)
+        let errorLines = Set(errors.compactMap(\.line))
+        var firstError: NSRange?
+        var location = 0
+        var line = 1
+        while location < source.length {
+            let range = source.lineRange(for: NSRange(location: location, length: 0))
+            if errorLines.contains(line) {
+                layout?.addTemporaryAttribute(.backgroundColor, value: NSColor.systemRed.withAlphaComponent(0.15), forCharacterRange: range)
+                if firstError == nil { firstError = range }
+            }
+            location = NSMaxRange(range)
+            line += 1
+        }
+        if coordinator.focus != focus {
+            coordinator.focus = focus
+            if let firstError {
+                editor.setSelectedRange(NSRange(location: firstError.location, length: 0))
+                editor.scrollRangeToVisible(firstError)
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: ProfileSourceEditor
+        var focus: UUID?
+
+        init(parent: ProfileSourceEditor) { self.parent = parent }
+
+        func textDidChange(_ notification: Notification) {
+            guard let editor = notification.object as? NSTextView else { return }
+            parent.text = editor.string
+        }
+    }
+}
+#endif
