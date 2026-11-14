@@ -16,7 +16,6 @@ struct NaiveFlowApp: App {
     @State private var container: AppContainer
     @State private var operations: Operations
     @State private var client: ClientModel
-    @State private var settings: AppSettings
     @State private var mitmCertificateController = MITMCertificateController()
     @State private var deepLinkManager = DeepLinkManager()
 
@@ -25,13 +24,11 @@ struct NaiveFlowApp: App {
         container.start()
         let operations = Operations(container: container)
 
-        let settings = AppSettings()
         Task { await CloudSync.shared.start { keys in await operations.reload(keys) } }
 
         _container = State(initialValue: container)
         _operations = State(initialValue: operations)
         _client = State(initialValue: ClientModel(operations: operations))
-        _settings = State(initialValue: settings)
     }
 
     var body: some Scene {
@@ -49,7 +46,6 @@ struct NaiveFlowApp: App {
                 .environment(container.chainStore)
                 .environment(container.groupStore)
                 .environment(container.subscriptionStore)
-                .environment(settings)
                 .environment(mitmCertificateController)
                 .environment(deepLinkManager)
         }

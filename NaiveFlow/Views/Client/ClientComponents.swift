@@ -94,7 +94,6 @@ struct ClientPolicyCard: View {
     var selected: String
     var style: ClientGroupStyle
     var iconURL: String? = nil
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         ZStack(alignment: .leading) {
             LinearGradient(colors: ClientPalette.colors[abs(style.palette) % ClientPalette.colors.count], startPoint: .topLeading, endPoint: .bottomTrailing)

@@ -2,8 +2,6 @@ import SwiftUI
 import UserNotifications
 
 struct ClientSettingsView: View {
-    @State private var showClearCache = false
-
     var body: some View {
         List {
             NavigationLink { ClientDNSView() } label: { row("DNS", symbol: "safari") }
@@ -19,18 +17,10 @@ struct ClientSettingsView: View {
             NavigationLink { ClientHostnamesView() } label: { row("Hostname", symbol: "house.fill") }
             NavigationLink { ClientNotificationSettingsView() } label: { row("Notification Settings", symbol: "bell.fill") }
             NavigationLink { AboutView() } label: { row("About", symbol: "info.circle") }
-            Button(role: .destructive) { showClearCache = true } label: {
-                HStack(spacing: 15) { ClientSectionIcon(symbol: "trash", color: .red); Text("Clear Cache") }
-            }
         }
         .listStyle(.insetGrouped).listRowSpacing(0)
         .navigationTitle("Settings")
-        .confirmationDialog("Clear App Cache?", isPresented: $showClearCache, titleVisibility: .visible) {
-            Button("Clear Cache", role: .destructive) { URLCache.shared.removeAllCachedResponses(); cacheMessage = true }
-        } message: { Text("Clear network caches while keeping profiles, nodes, and certificates.") }
-        .alert("Cache Cleared", isPresented: $cacheMessage) { Button("OK", role: .cancel) {} }
     }
-    @State private var cacheMessage = false
     private func row(_ title: String, symbol: String) -> some View {
         HStack(spacing: 15) {
             ClientSectionIcon(symbol: symbol)

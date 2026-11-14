@@ -107,7 +107,6 @@ nonisolated final class AWCore {
         static let blockUDP = "blockUDP"
         static let blockWebRTC = "blockWebRTC"
         static let chainLatencyResults = "chainLatencyResults"
-        static let detailRevealed = "detailRevealed"
         static let echDNSDoHURL = "echDNSDoHURL"
         static let echDNSMode = "echDNSMode"
         static let echDNSPlainServer = "echDNSPlainServer"
@@ -170,14 +169,6 @@ nonisolated final class AWCore {
     // MARK: - Typed UserDefaults Accessors
     
     // App
-
-    static func getDetailRevealed() -> Bool {
-        userDefaults.bool(forKey: UserDefaultsKey.detailRevealed)
-    }
-
-    static func setDetailRevealed(_ value: Bool) {
-        userDefaults.set(value, forKey: UserDefaultsKey.detailRevealed)
-    }
 
     static func getProxiesPageProxyType() -> String? {
         userDefaults.string(forKey: UserDefaultsKey.proxiesPageProxyType)

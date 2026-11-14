@@ -292,6 +292,5 @@ private extension ProfileView {
     let container = AppContainer.preview()
     return ProfileView()
         .environment(Operations(container: container))
-        .environment(AppSettings())
 }
 #endif

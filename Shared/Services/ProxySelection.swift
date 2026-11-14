@@ -18,7 +18,10 @@ final class ProxySelection {
     var effectiveConfiguration: ProxyConfiguration? { runtimeConfiguration }
 
     func showRuntimeVersion(_ bundle: RuntimeConfigurationBundle) {
-        guard let node = bundle.selectedNode else { return }
+        guard let node = bundle.selectedNode else {
+            clearRuntimeVersion()
+            return
+        }
         runtimeConfiguration = node
         runtimeGroups = bundle.displayGroups.isEmpty ? bundle.policyGroups.map {
             RuntimeGroupDisplay(id: $0.id, name: $0.name, memberCount: $0.memberIDs.count, iconURL: $0.iconURL)

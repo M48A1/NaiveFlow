@@ -19,7 +19,6 @@ nonisolated enum TunnelMessage: Codable, Sendable {
     case clearLogs
     case fetchLogs
     case fetchRequests
-    case fetchActivity(TunnelActivityProtocol)
 }
 
 // MARK: - Active Configuration
@@ -112,10 +111,6 @@ nonisolated struct LogsResponse: Codable, Sendable {
 nonisolated struct RequestsResponse: Codable, Sendable {
     var requests: [TunnelRequestEntry]
     var activities: [TunnelActivityEntry]? = nil
-}
-
-nonisolated struct ActivityResponse: Codable, Sendable {
-    var entries: [TunnelActivityEntry]
 }
 
 nonisolated struct LatencyTestResponse: Codable, Sendable {
@@ -235,11 +230,6 @@ nonisolated enum TunnelActivityState: String, Codable, Sendable, Hashable {
     case connecting
     case established
     case closed
-}
-
-nonisolated enum TunnelActivityProtocol: String, Codable, Sendable, Hashable {
-    case tcp
-    case udp
 }
 
 /// Read-only status for the policy UI; names bridge compiler-local node IDs.

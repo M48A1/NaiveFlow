@@ -404,12 +404,6 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
                 .filter { ids.contains($0.id) }
             return encodeReply(RequestsResponse(requests: requests, activities: activities))
 
-        case .fetchActivity(let proto):
-            let pool = switch proto {
-            case .tcp: tunnelStack.tcpActivity
-            case .udp: tunnelStack.udpActivity
-            }
-            return encodeReply(ActivityResponse(entries: pool.snapshot()))
         }
     }
 
