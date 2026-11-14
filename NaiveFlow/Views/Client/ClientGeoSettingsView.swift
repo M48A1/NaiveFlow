@@ -23,7 +23,7 @@ struct ClientGeoSettingsView: View {
             Section {
                 if let referenceError { Text(referenceError).font(.footnote).foregroundStyle(.red) }
                 if references.isEmpty {
-                    ContentUnavailableView("尚未添加更新地址", systemImage: "globe", description: Text("点击右上角 + 添加 \(title) 数据源。"))
+                    ContentUnavailableView("No Update Sources", systemImage: "globe", description: Text("Tap + to add a \(title) source."))
                 }
                 ForEach(references, id: \.key) { reference in
                     Button { editor = draft(reference) } label: {
@@ -34,38 +34,38 @@ struct ClientGeoSettingsView: View {
                                 Text(reference.format).font(.caption).foregroundStyle(.secondary)
                             }
                             Text(reference.url.absoluteString).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                            Text("来源分类：\(reference.category)").font(.caption).foregroundStyle(.secondary)
+                            Text("Source category: \(reference.category)").font(.caption).foregroundStyle(.secondary)
                             if let date = lastLoaded(reference) {
-                                Text("上次加载：\(date.formatted(.dateTime.month().day().hour().minute()))").font(.caption2).foregroundStyle(.secondary)
+                                Text("Last loaded: \(date.formatted(.dateTime.month().day().hour().minute().locale(Locale(identifier: "en"))))").font(.caption2).foregroundStyle(.secondary)
                             } else {
-                                Text("尚未加载").font(.caption2).foregroundStyle(.secondary)
+                                Text("Not Loaded").font(.caption2).foregroundStyle(.secondary)
                             }
                         }.padding(.vertical, 5).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                     }.buttonStyle(.plain)
                         .swipeActions(allowsFullSwipe: false) {
-                            Button("编辑") { editor = draft(reference) }.tint(.blue)
-                            Button("删除", role: .destructive) { pendingDelete = draft(reference) }
+                            Button("Edit") { editor = draft(reference) }.tint(.blue)
+                            Button("Delete", role: .destructive) { pendingDelete = draft(reference) }
                         }
                 }
-            } header: { Text("更新地址") } footer: {
-                Text("分类标识用于分流规则，来源分类用于选择数据库内容。已有配置内的数据会保留。")
+            } header: { Text("Update Sources") } footer: {
+                Text("Tags are used in routing rules. Source categories select database contents. Existing inline data is preserved.")
             }
             Section {
                 Button { Task { await update() } } label: {
                     HStack {
-                        Label(updating ? "正在更新…" : "手动更新", systemImage: "arrow.clockwise")
+                        Label(updating ? "Updating…" : "Update Now", systemImage: "arrow.clockwise")
                         Spacer()
                         if updating { ProgressView() }
                     }
                 }.disabled(references.isEmpty || model.isBusy || updating)
             } footer: {
-                Text("重新下载并校验当前配置引用的外部资源，成功后应用；失败保留原运行版本。")
+                Text("Download and validate the current profile's external resources before applying. Failed updates preserve the running version.")
             }
         }
         .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) {
             Button { editor = ClientGeoSourceDraft(site: site) } label: { Image(systemName: "plus") }
-                .accessibilityLabel("添加 \(title) 数据源").disabled(model.isBusy || updating)
+                .accessibilityLabel("Add \(title) Source").disabled(model.isBusy || updating)
         } }
         .task(id: model.profile?.updatedAt) {
             let directory = model.document.activation.store.directory.appendingPathComponent("runtime-v2", isDirectory: true)
@@ -73,12 +73,12 @@ struct ClientGeoSettingsView: View {
             if !Task.isCancelled { loadedSources = sources }
         }
         .sheet(item: $editor) { draft in ClientGeoSourceEditor(site: site, draft: draft) }
-        .confirmationDialog("删除这个数据源？", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
-            Button("删除", role: .destructive) { if let draft = pendingDelete { Task { await remove(draft) } }; pendingDelete = nil }
-        } message: { Text("删除后会重新校验并应用配置。仍被规则引用的数据源无法删除。") }
-        .alert("更新完成", isPresented: $success) { Button("好", role: .cancel) {} } message: { Text("数据已通过校验并应用到当前配置。") }
-        .alert("操作未完成", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-            Button("好") { error = nil }
+        .confirmationDialog("Delete This Source?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { if let draft = pendingDelete { Task { await remove(draft) } }; pendingDelete = nil }
+        } message: { Text("Deleting revalidates and applies the profile. Sources still referenced by rules cannot be deleted.") }
+        .alert("Update Complete", isPresented: $success) { Button("OK", role: .cancel) {} } message: { Text("The data was validated and applied to the current profile.") }
+        .alert("Operation Failed", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+            Button("OK") { error = nil }
         } message: { Text(error ?? "") }
         .disabled(model.isBusy && !updating)
     }
@@ -99,12 +99,12 @@ struct ClientGeoSettingsView: View {
         updating = true
         defer { updating = false }
         if await model.commit(model.operatingText) { success = true }
-        else { error = model.error ?? "更新失败，请稍后重试。"; model.error = nil }
+        else { error = model.error ?? "Could not update. Try again later."; model.error = nil }
     }
     @MainActor private func remove(_ draft: ClientGeoSourceDraft) async {
         do {
             let text = try draft.applying(to: model.operatingText, site: site, deleting: true)
-            if !(await model.commit(text)) { error = model.error ?? "删除失败。"; model.error = nil }
+            if !(await model.commit(text)) { error = model.error ?? "Could not delete."; model.error = nil }
         } catch { self.error = error.localizedDescription }
     }
 }
@@ -121,35 +121,35 @@ private struct ClientGeoSourceEditor: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField(site ? "分类标识，如 cn、ads" : "分类标识，如 CN、AS64500", text: $draft.key)
+                    TextField(site ? "Tag, e.g. cn or ads" : "Tag, e.g. CN or AS64500", text: $draft.key)
                         .disabled(draft.originalValue != nil)
-                    TextField("HTTPS 更新地址", text: $draft.source).keyboardType(.URL)
-                    Picker("数据格式", selection: $draft.format) {
+                    TextField("HTTPS Update URL", text: $draft.source).keyboardType(.URL)
+                    Picker("Format", selection: $draft.format) {
                         Text(site ? "GeoSite DAT" : "GeoIP DAT").tag(site ? "geosite-dat" : "geoip-dat")
-                        Text(site ? "域名文本" : "IPv4 CIDR 文本").tag(site ? "domain" : "cidr")
+                        Text(site ? "Domain Text" : "IPv4 CIDR Text").tag(site ? "domain" : "cidr")
                     }
                     if draft.format.hasSuffix("-dat") {
-                        TextField("来源分类，留空使用分类标识", text: $draft.category)
+                        TextField("Source Category (Defaults to Tag)", text: $draft.category)
                     }
-                } header: { Text("数据源") } footer: {
-                    Text("分类标识应与分流规则中的名称一致。DAT 数据库可通过来源分类选择所需内容。")
+                } header: { Text("Source") } footer: {
+                    Text("The tag must match the name in routing rules. Use the source category to select DAT database contents.")
                 }
                 Section {
-                    TextField("SHA-256（可选）", text: $draft.checksum).font(.system(.footnote, design: .monospaced))
-                } footer: { Text("填写摘要后，只接受匹配的文件；更新数据库时需同步修改摘要。") }
+                    TextField("SHA-256 (Optional)", text: $draft.checksum).font(.system(.footnote, design: .monospaced))
+                } footer: { Text("When a checksum is set, only matching files are accepted. Update it when the database changes.") }
             }
             .textInputAutocapitalization(.never).autocorrectionDisabled().clientKeyboardDone()
-            .navigationTitle(draft.originalValue == nil ? "添加数据源" : "编辑数据源").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(draft.originalValue == nil ? "Add Source" : "Edit Source").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(saving) }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button { Task { await save() } } label: { if saving { ProgressView() } else { Text("保存并更新") } }
+                    Button { Task { await save() } } label: { if saving { ProgressView() } else { Text("Save and Update") } }
                         .disabled(saving || model.isBusy || draft.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || draft.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .interactiveDismissDisabled(saving)
-            .alert("无法保存数据源", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-                Button("好") { error = nil }
+            .alert("Could Not Save Source", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+                Button("OK") { error = nil }
             } message: { Text(error ?? "") }
         }
     }
@@ -160,7 +160,7 @@ private struct ClientGeoSourceEditor: View {
         do {
             let text = try draft.applying(to: model.operatingText, site: site)
             if await model.commit(text) { dismiss() }
-            else { error = model.error ?? "保存失败。"; model.error = nil }
+            else { error = model.error ?? "Could not save."; model.error = nil }
         } catch { self.error = error.localizedDescription }
     }
 }

@@ -14,6 +14,7 @@ struct NaiveFlowMacApp: App {
     var body: some Scene {
         WindowGroup("NaiveFlow") {
             MacHomeView()
+                .environment(\.locale, Locale(identifier: "en"))
                 .environment(Operations(container: container))
                 .environment(container.tunnel)
                 .environment(container.selection)

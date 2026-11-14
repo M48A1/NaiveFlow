@@ -209,7 +209,7 @@ private extension ProfileView {
                         model.revert(to: snapshot)
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(snapshot.createdAt.formatted(date: .abbreviated, time: .shortened))
+                            Text(snapshot.createdAt.formatted(.dateTime.year().month(.abbreviated).day().hour().minute().locale(Locale(identifier: "en"))))
                                 .font(.footnote)
                             Text(snapshotDescription(snapshot))
                                 .font(.caption2)
@@ -276,7 +276,7 @@ private extension ProfileView {
 
     var editorFooter: String {
         let applied = model.lastAppliedAt.map {
-            "Last applied \($0.formatted(date: .abbreviated, time: .shortened)) to the app."
+            "Last applied \($0.formatted(.dateTime.year().month(.abbreviated).day().hour().minute().locale(Locale(identifier: "en")))) to the app."
         } ?? "Not applied yet."
         let state = model.isDirty
             ? "These edits are not applied yet."

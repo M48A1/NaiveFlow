@@ -26,11 +26,11 @@ struct ClientNodeImportView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("节点链接或 HTTPS 订阅") {
+                Section("Node Links or HTTPS Subscription") {
                     TextEditor(text: $source).frame(minHeight: 150).font(.system(size: 12, design: .monospaced))
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
-                Button("导入到当前配置") { Task {
+                Button("Import into Current Profile") { Task {
                     loading = true; defer { loading = false }
                     do {
                         let text = source.hasPrefix("https://") ? try await model.fetchText(source) : source
@@ -38,9 +38,9 @@ struct ClientNodeImportView: View {
                     } catch { model.report(error) }
                 } }.disabled(loading || model.isBusy || source.isEmpty)
             }
-            .navigationTitle("导入节点").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
-            .alert("无法导入", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("好") { model.error = nil } } message: { Text(model.error ?? "") }
+            .navigationTitle("Import Nodes").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .alert("Import Failed", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
         }
     }
 }

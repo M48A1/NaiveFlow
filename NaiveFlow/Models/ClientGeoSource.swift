@@ -25,25 +25,25 @@ nonisolated struct ClientGeoSourceDraft: Identifiable {
         let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
         guard !key.isEmpty, key.utf8.count <= 128, key.unicodeScalars.allSatisfy(allowed.contains) else {
-            throw ClientFailure("分类标识只能包含字母、数字、连字符和下划线。")
+            throw ClientFailure("The tag may contain only letters, numbers, hyphens, and underscores.")
         }
         let section: ConfigurationDocument.SectionKind = site ? .geoSite : .geoIP
         let parsed = NaiveFlowConfigurationParser.parse(text: text).configuration
         let existing = (site ? parsed.geoSite : parsed.geoIP)[key]
         if let originalValue {
-            guard existing == originalValue else { throw ClientFailure("数据源已发生变化，请重新打开后编辑。") }
+            guard existing == originalValue else { throw ClientFailure("This source has changed. Reopen it before editing.") }
         } else if existing != nil {
-            throw ClientFailure("这个分类标识已存在，请编辑已有数据源。")
+            throw ClientFailure("This tag already exists. Edit the existing source.")
         }
         if deleting {
-            guard originalValue != nil else { throw ClientFailure("没有可删除的数据源。") }
+            guard originalValue != nil else { throw ClientFailure("There is no source to delete.") }
             return ClientDocumentEditing.set(text, section: section, key: key, value: nil)
         }
         let source = source.trimmingCharacters(in: .whitespacesAndNewlines)
         let category = category.trimmingCharacters(in: .whitespacesAndNewlines)
         let checksum = checksum.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !source.contains(where: { $0.isNewline }), !category.contains(where: { $0.isNewline }) else {
-            throw ClientFailure("地址和来源分类不能包含换行。")
+            throw ClientFailure("The URL and source category cannot contain line breaks.")
         }
         _ = try NativeRuleSet.sourceURL(source)
         var fields = [ClientDocumentEditing.token(source), ClientDocumentEditing.token("format=" + format)]

@@ -30,30 +30,30 @@ struct ClientIconPacksView: View {
                                     Spacer()
                                     if library.updating.contains(pack.id) { ProgressView() }
                                 }
-                                Text(pack.icons.isEmpty ? "点击加载图标" : "\(pack.icons.count) 个图标").font(.caption).foregroundStyle(.secondary)
-                                if let date = pack.updatedAt { Text("更新于 \(date.formatted(.dateTime.month().day().hour().minute()))").font(.caption2).foregroundStyle(.secondary) }
+                                Text(pack.icons.isEmpty ? "Tap to Load Icons" : "Icons: \(pack.icons.count)").font(.caption).foregroundStyle(.secondary)
+                                if let date = pack.updatedAt { Text("Updated \(date.formatted(.dateTime.month().day().hour().minute().locale(Locale(identifier: "en"))))").font(.caption2).foregroundStyle(.secondary) }
                             }.padding(.vertical, 5)
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button("更新") { Task { await library.update(id: pack.id) } }.tint(.blue)
+                            Button("Update") { Task { await library.update(id: pack.id) } }.tint(.blue)
                                 .disabled(library.updating.contains(pack.id))
-                            Button("编辑") { editor = SourceDraft(packID: pack.id, source: pack.source) }.tint(.orange)
+                            Button("Edit") { editor = SourceDraft(packID: pack.id, source: pack.source) }.tint(.orange)
                                 .disabled(library.updating.contains(pack.id))
-                            Button("删除", role: .destructive) { library.remove(pack.id) }.disabled(library.updating.contains(pack.id))
+                            Button("Delete", role: .destructive) { library.remove(pack.id) }.disabled(library.updating.contains(pack.id))
                         }
                     }
                 } footer: {
-                    Text("左滑图标集可编辑地址、更新或删除。点击图标集浏览并选择图标。")
+                    Text("Swipe left to edit, update, or delete an icon pack. Open a pack to browse and select an icon.")
                 }
             }
-            .navigationTitle("外部自定义图标集").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Icon Packs").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }
-                ToolbarItem(placement: .topBarTrailing) { Button { editor = SourceDraft() } label: { Image(systemName: "plus") }.accessibilityLabel("添加图标集") }
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) { Button { editor = SourceDraft() } label: { Image(systemName: "plus") }.accessibilityLabel("Add Icon Pack") }
             }
             .sheet(item: $editor) { draft in sourceEditor(draft) }
-            .alert("图标集操作失败", isPresented: Binding(get: { library.error != nil && editor == nil }, set: { if !$0 { library.error = nil } })) {
-                Button("好") { library.error = nil }
+            .alert("Icon Pack Operation Failed", isPresented: Binding(get: { library.error != nil && editor == nil }, set: { if !$0 { library.error = nil } })) {
+                Button("OK") { library.error = nil }
             } message: { Text(library.error ?? "") }
         }
     }
@@ -81,17 +81,17 @@ private struct ClientIconPackSourceEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("图标集 JSON 地址") {
+                Section("Icon Pack JSON URL") {
                     TextField("https://example.com/icons.json", text: $source)
                         .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
                 if let error { Text(error).font(.footnote).foregroundStyle(.red) }
             }
-            .navigationTitle("编辑图标集").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Edit Icon Pack").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(saving) }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button { save(source) } label: { if saving { ProgressView() } else { Text("保存并更新") } }
+                    Button { save(source) } label: { if saving { ProgressView() } else { Text("Save and Update") } }
                         .disabled(saving || source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -123,13 +123,13 @@ private struct ClientIconPackBrowser: View {
                     }.buttonStyle(.plain)
                 }
             }.padding(16)
-            if library.updating.contains(packID) { ProgressView("正在更新图标集…").padding() }
-            else if icons.isEmpty { ContentUnavailableView("没有匹配的图标", systemImage: "photo", description: Text("尝试更新图标集或更改搜索内容。")) }
+            if library.updating.contains(packID) { ProgressView("Updating icon pack…").padding() }
+            else if icons.isEmpty { ContentUnavailableView("No Matching Icons", systemImage: "photo", description: Text("Update the icon pack or try a different search.")) }
         }
-        .navigationTitle(pack?.name ?? "图标集").navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $search, prompt: "搜索图标名称")
+        .navigationTitle(pack?.name ?? "Icon Pack").navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $search, prompt: "Search Icons")
         .toolbar { ToolbarItem(placement: .topBarTrailing) {
-            Button("更新") { Task { await library.update(id: packID) } }.disabled(library.updating.contains(packID))
+            Button("Update") { Task { await library.update(id: packID) } }.disabled(library.updating.contains(packID))
         } }
         .task { if pack?.icons.isEmpty == true { await library.update(id: packID) } }
     }

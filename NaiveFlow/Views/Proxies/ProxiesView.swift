@@ -111,7 +111,7 @@ struct ProxiesView: View {
                                     ProxyGroupIconView(iconURL: group.iconURL)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(group.name).font(.headline)
-                                        Text("\(group.memberCount) 个成员").font(.caption).foregroundStyle(.secondary)
+                                        Text("\(group.memberCount) members").font(.caption).foregroundStyle(.secondary)
                                     }
                                 }
                                 .padding(12)

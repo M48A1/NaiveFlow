@@ -25,7 +25,7 @@ nonisolated struct ClientIconPack: Codable, Identifiable {
         let payload = try JSONDecoder().decode(Payload.self, from: data)
         guard !payload.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !payload.icons.isEmpty, payload.icons.count <= 10_000 else {
-            throw ClientFailure("图标集名称或图标数量无效。")
+            throw ClientFailure("Invalid icon pack name or icon count.")
         }
         var seen = Set<String>()
         let icons = payload.icons.compactMap { icon -> Icon? in
@@ -33,7 +33,7 @@ nonisolated struct ClientIconPack: Codable, Identifiable {
                   ProxyGroupIconURL.parse(normalized) != nil, seen.insert(normalized).inserted else { return nil }
             return Icon(name: icon.name, url: normalized)
         }
-        guard !icons.isEmpty else { throw ClientFailure("图标集中没有可用的 HTTPS 图标。") }
+        guard !icons.isEmpty else { throw ClientFailure("This icon pack contains no valid HTTPS icons.") }
         return ClientIconPack(id: id, source: source, name: payload.name, description: payload.description ?? "", icons: icons, updatedAt: .now)
     }
 }
@@ -51,7 +51,7 @@ final class ClientIconPackLibrary {
         if let data = defaults.data(forKey: key), let saved = try? JSONDecoder().decode([ClientIconPack].self, from: data) {
             packs = saved
         } else {
-            packs = [ClientIconPack(source: ClientIconPack.defaultSource, name: "离歌图标包")]
+            packs = [ClientIconPack(source: ClientIconPack.defaultSource, name: "Lige Icons")]
         }
     }
 
@@ -70,14 +70,14 @@ final class ClientIconPackLibrary {
 
     private func fetch(id: UUID, source: String) async -> Bool {
         let source = source.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = ProxyGroupIconURL.parse(source) else { error = "请输入有效的 HTTPS 图标集 JSON 地址。"; return false }
-        guard !packs.contains(where: { $0.id != id && $0.source == source }) else { error = "这个图标集已经添加。"; return false }
+        guard let url = ProxyGroupIconURL.parse(source) else { error = "Enter a valid HTTPS icon pack JSON URL."; return false }
+        guard !packs.contains(where: { $0.id != id && $0.source == source }) else { error = "This icon pack has already been added."; return false }
         updating.insert(id)
         defer { updating.remove(id) }
         do {
             let (data, response) = try await BoundedHTTPFetcher.fetch(url, maxBytes: 4 * 1024 * 1024)
             guard (200...299).contains(response.statusCode), response.url?.scheme?.lowercased() == "https" else {
-                throw ClientFailure("图标集下载失败，请检查地址后重试。")
+                throw ClientFailure("Could not download the icon pack. Check the URL and try again.")
             }
             let loaded = try ClientIconPack.decode(data, source: source, id: id)
             if let index = packs.firstIndex(where: { $0.id == id }) { packs[index] = loaded }

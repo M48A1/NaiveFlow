@@ -49,18 +49,18 @@ struct ClientHomeView: View {
                 editor = model.createProfile(name: url.deletingPathExtension().lastPathComponent, text: text)
             } catch { model.report(error) }
         }
-        .alert("从 URL 导入配置", isPresented: $showURL) {
+        .alert("Import Profile from URL", isPresented: $showURL) {
             TextField("https://example.com/config.conf", text: $remoteURL).textInputAutocapitalization(.never).autocorrectionDisabled()
-            Button("导入") { Task {
+            Button("Import") { Task {
                 do {
                     let text = try await model.fetchText(remoteURL)
-                    editor = model.createProfile(name: URL(string: remoteURL)?.deletingPathExtension().lastPathComponent ?? "远程配置", text: text, sourceURL: remoteURL)
+                    editor = model.createProfile(name: URL(string: remoteURL)?.deletingPathExtension().lastPathComponent ?? "Remote Profile", text: text, sourceURL: remoteURL)
                 } catch { model.report(error) }
             } }
-            Button("取消", role: .cancel) {}
+            Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog("删除配置？", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
-            Button("删除", role: .destructive) { if let pendingDelete { model.deleteProfile(pendingDelete.id) }; pendingDelete = nil }
+        .confirmationDialog("Delete Profile?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { if let pendingDelete { model.deleteProfile(pendingDelete.id) }; pendingDelete = nil }
         }
         .onChange(of: latency.latencyResults) { _, results in
             guard autoChoosing else { return }
@@ -71,16 +71,16 @@ struct ClientHomeView: View {
                 if case .success(let ms) = results[node.id] { return (node.name, ms) }; return nil
             }.min { $0.1 < $1.1 }
             if let fastest { Task { await model.selectNode(fastest.0) } }
-            else { model.error = "没有可用的延迟结果，请检查网络后重试。" }
+            else { model.error = "No latency results are available. Check your connection and try again." }
         }
-        .alert("VPN 错误", isPresented: Binding(get: { tunnel.startError != nil }, set: { if !$0 { tunnel.startError = nil } })) {
-            Button("好") { tunnel.startError = nil }
+        .alert("VPN Error", isPresented: Binding(get: { tunnel.startError != nil }, set: { if !$0 { tunnel.startError = nil } })) {
+            Button("OK") { tunnel.startError = nil }
         } message: { Text(tunnel.startError ?? "") }
     }
 
     private var configurationCard: some View {
         ClientHomeCard(colors: [Color(red: 0.43, green: 0.28, blue: 0.77), Color(red: 0.64, green: 0.39, blue: 0.87)]) {
-            cardHeader("我的配置", symbol: "doc.text.fill", summary: model.activeName, expanded: $configurationsExpanded)
+            cardHeader("Profiles", symbol: "doc.text.fill", summary: model.activeName, expanded: $configurationsExpanded)
             if configurationsExpanded {
             ForEach(model.library.profiles) { profile in
                 HStack(spacing: 10) {
@@ -88,8 +88,8 @@ struct ClientHomeView: View {
                         HStack(spacing: 12) {
                             Image(systemName: "doc.text")
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(profile.name).font(.body.weight(.medium))
-                                Text("上次更新：\(profile.updatedAt.formatted(.dateTime.month().day().hour().minute()))")
+                                Text(profile.displayName).font(.body.weight(.medium))
+                                Text("Last updated: \(profile.updatedAt.formatted(.dateTime.month().day().hour().minute().locale(Locale(identifier: "en"))))")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer(minLength: 8)
@@ -97,10 +97,10 @@ struct ClientHomeView: View {
                         }.frame(minHeight: 52).contentShape(Rectangle())
                     }.buttonStyle(.plain).disabled(model.isBusy)
                     Menu {
-                        Button("编辑 / 重命名", systemImage: "pencil") { editor = profile }
-                        if profile.sourceURL != nil { Button("更新远程配置", systemImage: "arrow.clockwise") { Task { await model.updateProfile(profile) } } }
-                        Button("复制配置", systemImage: "doc.on.doc") { editor = model.createProfile(name: profile.name + " 副本", text: profile.text) }
-                        Button("删除", systemImage: "trash", role: .destructive) { pendingDelete = profile }
+                        Button("Edit / Rename", systemImage: "pencil") { editor = profile }
+                        if profile.sourceURL != nil { Button("Update Remote Profile", systemImage: "arrow.clockwise") { Task { await model.updateProfile(profile) } } }
+                        Button("DuplicateProfile", systemImage: "doc.on.doc") { editor = model.createProfile(name: profile.name + " Copy", text: profile.text) }
+                        Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = profile }
                             .disabled(profile.id == model.library.selectedID)
                     } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle()) }
                 }
@@ -114,12 +114,12 @@ struct ClientHomeView: View {
     }
 
     @ViewBuilder private var configurationActions: some View {
-        Button("新建") { editor = model.createProfile() }.frame(maxWidth: .infinity)
+        Button("New") { editor = model.createProfile() }.frame(maxWidth: .infinity)
         Menu {
-            Button("从 URL 导入", systemImage: "link") { showURL = true }
-            Button("从文件导入", systemImage: "folder") { importingFile = true }
-        } label: { Text("导入").frame(maxWidth: .infinity).frame(minHeight: 44).background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12)) }
-        NavigationLink("配置管理") { ClientProfilesView().toolbar(.visible, for: .navigationBar) }.frame(maxWidth: .infinity)
+            Button("Import from URL", systemImage: "link") { showURL = true }
+            Button("Import from File", systemImage: "folder") { importingFile = true }
+        } label: { Text("Import").frame(maxWidth: .infinity).frame(minHeight: 44).background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12)) }
+        NavigationLink("Manage") { ClientProfilesView().toolbar(.visible, for: .navigationBar) }.frame(maxWidth: .infinity)
     }
 
     private var runningCard: some View {
@@ -131,16 +131,16 @@ struct ClientHomeView: View {
                     Text("NaiveFlow")
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(connected ? Color.green : Color.red)
-                        .accessibilityValue(connected ? "运行中" : tunnel.rawStatus.isTransitioning ? "正在切换连接" : "已停止")
+                        .accessibilityValue(connected ? "Connected" : tunnel.rawStatus.isTransitioning ? "Connecting" : "Disconnected")
                     Spacer()
-                    Toggle("代理运行", isOn: Binding(get: { connected }, set: { _ in model.operations.tunnel.toggle() }))
+                    Toggle("Proxy Connection", isOn: Binding(get: { connected }, set: { _ in model.operations.tunnel.toggle() }))
                         .labelsHidden().tint(.teal).disabled(!canToggle || model.isBusy)
                 }
                 HStack(spacing: 30) {
                     traffic(symbol: "arrow.up", total: stats.bytesOut, rate: stats.uploadBytesPerSecond)
                     traffic(symbol: "arrow.down", total: stats.bytesIn, rate: stats.downloadBytesPerSecond)
                 }
-                if !model.hasApplied { Text("选择并应用配置后即可启动").font(.caption).foregroundStyle(.secondary) }
+                if !model.hasApplied { Text("Select and apply a profile to connect.").font(.caption).foregroundStyle(.secondary) }
             }.padding(20)
         }
     }
@@ -157,7 +157,7 @@ struct ClientHomeView: View {
 
     private var modeCard: some View {
         ClientHomeCard(colors: [Color(red: 0.25, green: 0.31, blue: 0.81), Color(red: 0.20, green: 0.56, blue: 0.88)]) {
-            cardHeader("出站模式", symbol: "arrow.triangle.branch", summary: modeTitle(model.mode), expanded: $modeExpanded)
+            cardHeader("Outbound Mode", symbol: "arrow.triangle.branch", summary: modeTitle(model.mode), expanded: $modeExpanded)
             if modeExpanded {
             ForEach([ProxyMode.direct, .global, .rule], id: \.rawValue) { mode in
                 Button { Task { await model.setSetting("proxy-mode", value: mode.rawValue) } } label: {
@@ -167,7 +167,7 @@ struct ClientHomeView: View {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(modeTitle(mode)).font(.body.weight(model.mode == mode ? .semibold : .regular))
                             if model.mode == mode {
-                                Text(mode == .rule ? "使用规则系统决定如何处理请求" : mode == .global ? "所有请求通过代理连接" : "所有请求直接连接")
+                                Text(mode == .rule ? "Use routing rules to handle requests." : mode == .global ? "Route all requests through the proxy." : "Connect all requests directly.")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }
@@ -180,16 +180,16 @@ struct ClientHomeView: View {
             }
         }
     }
-    private func modeTitle(_ mode: ProxyMode) -> String { mode == .rule ? "规则模式" : mode == .global ? "全局代理" : "直接连接" }
+    private func modeTitle(_ mode: ProxyMode) -> String { mode == .rule ? "Rule" : mode == .global ? "Global Proxy" : "Direct" }
 
     private var proxyCard: some View {
         ClientHomeCard(colors: [Color(red: 0.70, green: 0.31, blue: 0.11), Color(red: 0.85, green: 0.48, blue: 0.18)]) {
-            cardHeader("PROXY", symbol: "paperplane.fill", summary: "\(model.selectedNodeName) · \(model.nodes.count) 个节点", expanded: $proxiesExpanded)
+            cardHeader("PROXY", symbol: "paperplane.fill", summary: "\(model.selectedNodeName) · Nodes: \(model.nodes.count)", expanded: $proxiesExpanded)
             if proxiesExpanded {
             if model.nodes.isEmpty {
                 VStack(spacing: 8) {
-                    Text("还没有节点").font(.subheadline.weight(.medium))
-                    Text("添加节点，或导入包含节点的配置").font(.caption).foregroundStyle(.secondary)
+                    Text("No Nodes Yet").font(.subheadline.weight(.medium))
+                    Text("Add a node or import a profile containing nodes.").font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity).padding(20)
             } else {
                 ForEach(model.nodes) { node in
@@ -198,7 +198,7 @@ struct ClientHomeView: View {
                         Task { await model.selectNode(node.name) }
                     }.disabled(model.isBusy)
                     .background(model.selectedNodeName == node.name ? Color.primary.opacity(0.045) : .clear)
-                    .contextMenu { Button("编辑节点", systemImage: "pencil") { nodeToEdit = node; showNodeEditor = true } }
+                    .contextMenu { Button("Edit Node", systemImage: "pencil") { nodeToEdit = node; showNodeEditor = true } }
                 }
             }
             HStack(spacing: 8) { proxyActions }
@@ -209,19 +209,19 @@ struct ClientHomeView: View {
 
     @ViewBuilder private var proxyActions: some View {
         Menu {
-            Button("延迟测试", systemImage: "bolt.fill") { latency.testLatencies(for: model.nodes, transport: tunnel) }
+            Button("Latency Test", systemImage: "bolt.fill") { latency.testLatencies(for: model.nodes, transport: tunnel) }
                 .disabled(model.nodes.isEmpty)
-            Button("测速并自动选择", systemImage: "shuffle") { autoChoosing = true; latency.testLatencies(for: model.nodes, transport: tunnel) }
+            Button("Test and Auto Select", systemImage: "shuffle") { autoChoosing = true; latency.testLatencies(for: model.nodes, transport: tunnel) }
                 .disabled(model.nodes.isEmpty || autoChoosing)
-        } label: { Text(autoChoosing ? "测速中…" : "测速").frame(maxWidth: .infinity).frame(minHeight: 44).background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12)) }
-        NavigationLink("节点管理") { ClientNodesView().toolbar(.visible, for: .navigationBar) }.frame(maxWidth: .infinity)
+        } label: { Text(autoChoosing ? "Testing…" : "Test").frame(maxWidth: .infinity).frame(minHeight: 44).background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12)) }
+        NavigationLink("Manage Nodes") { ClientNodesView().toolbar(.visible, for: .navigationBar) }.frame(maxWidth: .infinity)
     }
     private var ruleSetCount: Int { model.parsed.rules.filter { $0.kind == .ruleSet }.count }
     private var localRuleCount: Int { model.parsed.rules.filter { $0.kind != .ruleSet }.count }
 
     private var rulesCard: some View {
         ClientHomeCard(colors: [Color(red: 0.60, green: 0.30, blue: 0.48), Color(red: 0.79, green: 0.46, blue: 0.56)]) {
-            cardHeader("分流规则", symbol: "line.3.horizontal.decrease.circle", summary: "RuleSet · \(ruleSetCount)   Local · \(localRuleCount)", expanded: $rulesExpanded)
+            cardHeader("Routing Rules", symbol: "line.3.horizontal.decrease.circle", summary: "RuleSet · \(ruleSetCount)   Local · \(localRuleCount)", expanded: $rulesExpanded)
             if rulesExpanded {
                 HStack(spacing: 12) {
                     ruleTile("RuleSet", symbol: "square.stack.3d.up", count: ruleSetCount, color: .indigo, ruleSets: true)
@@ -236,7 +236,7 @@ struct ClientHomeView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Image(systemName: symbol).font(.title2).foregroundStyle(color)
                 Text(title).font(.headline)
-                Text("\(count) \(ruleSets ? "个规则集引用" : "条本地规则")").font(.caption).foregroundStyle(.secondary)
+                Text("\(ruleSets ? "Rule sets" : "Local rules"): \(count)").font(.caption).foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
                 .background(color.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
                 .contentShape(RoundedRectangle(cornerRadius: 16))
@@ -258,11 +258,11 @@ struct ClientHomeView: View {
                     if !expanded.wrappedValue { Text(summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 Spacer(minLength: 0)
-                if title == "我的配置", model.isBusy { ProgressView() }
+                if title == "Profiles", model.isBusy { ProgressView() }
             }.padding(20).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
         }.buttonStyle(.plain)
-            .accessibilityValue(expanded.wrappedValue ? "已展开" : "已折叠")
-            .accessibilityHint("点按展开或收起明细")
+            .accessibilityValue(expanded.wrappedValue ? "Expanded" : "Collapsed")
+            .accessibilityHint("Tap to expand or collapse details.")
     }
 }
 
@@ -312,7 +312,7 @@ private struct ClientRoutingRulesView: View {
         List {
             Section {
                 if rules.isEmpty {
-                    ContentUnavailableView(ruleSets ? "暂无规则集" : "暂无本地规则", systemImage: ruleSets ? "square.stack.3d.up" : "doc.text", description: Text(ruleSets ? "点击右上角 +，添加规则集并选择策略。" : "可在当前配置中添加分流规则。"))
+                    ContentUnavailableView(ruleSets ? "No Rule Sets" : "No Local Rules", systemImage: ruleSets ? "square.stack.3d.up" : "doc.text", description: Text(ruleSets ? "Tap + to add a rule set and choose its policy." : "Add routing rules to the current profile."))
                 } else {
                     ForEach(rules) { rule in
                         Button {
@@ -324,7 +324,7 @@ private struct ClientRoutingRulesView: View {
                                 Spacer()
                                 Text(rule.policy.token).font(.caption.weight(.medium)).foregroundStyle(.blue)
                             }
-                            Text(rule.value ?? "最终匹配").font(.subheadline).textSelection(.enabled)
+                            Text(rule.value ?? "Final Match").font(.subheadline).textSelection(.enabled)
                             if !rule.options.isEmpty {
                                 Text(rule.options.map(\.token).joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                             }
@@ -333,9 +333,9 @@ private struct ClientRoutingRulesView: View {
                     }
                 }
             } header: {
-                Text(ruleSets ? "\(rules.count) 个规则集引用" : "\(rules.count) 条本地规则")
+                Text("\(ruleSets ? "Rule sets" : "Local rules"): \(rules.count)")
             } footer: {
-                Text(ruleSets ? "显示当前配置中的 RULE-SET 引用及其策略；应用配置时读取规则集内容。" : "按配置中的匹配顺序显示，包含最终匹配规则。")
+                Text(ruleSets ? "Rule set references and their policies. Contents are loaded when the profile is applied." : "Shown in matching order, including the final rule.")
             }
         }
         .navigationTitle(ruleSets ? "RuleSet" : "Local")
@@ -344,11 +344,11 @@ private struct ClientRoutingRulesView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 if ruleSets {
                     Button { ruleEditor = ClientRuleSetDraft() } label: { Image(systemName: "plus") }
-                        .accessibilityLabel("新建 RuleSet")
+                        .accessibilityLabel("New RuleSet")
                         .disabled(model.profile == nil || model.isBusy)
                 } else {
                     Button { editing = true } label: { Image(systemName: "plus") }
-                        .accessibilityLabel("添加本地规则")
+                        .accessibilityLabel("Add Local Rule")
                         .disabled(model.profile == nil || model.isBusy)
                 }
             }
@@ -396,33 +396,33 @@ private struct ClientRuleSetEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("规则集地址") {
+                Section("Rule Set URL") {
                     TextField("https://example.com/rules.list", text: $draft.source)
                         .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        .accessibilityLabel("规则集地址")
+                        .accessibilityLabel("Rule Set URL")
                 }
                 Section {
-                    Picker("策略", selection: $draft.policy) {
+                    Picker("Policy", selection: $draft.policy) {
                         ForEach(policies, id: \.self) { policy in Text(policy).tag(policy) }
                     }
-                    Toggle("不主动解析域名", isOn: $draft.noResolve)
+                    Toggle("No Resolve", isOn: $draft.noResolve)
                 } footer: {
-                    Text("选择策略组、DIRECT（直连）或 REJECT（拒绝）。保存时下载并校验规则集，成功后应用到当前配置。")
+                    Text("Choose a group, DIRECT, or REJECT. Saving downloads and validates the rule set before applying it to the current profile.")
                 }
             }
-            .navigationTitle(draft.original == nil ? "新建 RuleSet" : "编辑 RuleSet")
+            .navigationTitle(draft.original == nil ? "New RuleSet" : "Edit RuleSet")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(saving) }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button { Task { await save() } } label: {
-                        if saving { ProgressView() } else { Text("保存") }
+                        if saving { ProgressView() } else { Text("Save") }
                     }.disabled(saving || model.isBusy || draft.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .interactiveDismissDisabled(saving)
-            .alert("无法保存规则集", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-                Button("好") { error = nil }
+            .alert("Could Not Save Rule Set", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+                Button("OK") { error = nil }
             } message: { Text(error ?? "") }
         }
     }
@@ -435,7 +435,7 @@ private struct ClientRuleSetEditorView: View {
                 source: draft.source, policy: draft.policy, noResolve: draft.noResolve)
             if await model.commit(text) { dismiss() }
             else {
-                error = model.error ?? "保存失败，请稍后重试。"
+                error = model.error ?? "Could not save. Try again later."
                 model.error = nil
             }
         } catch { self.error = error.localizedDescription }

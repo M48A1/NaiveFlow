@@ -4,7 +4,7 @@ import Charts
 import NetworkExtension
 
 private enum MacPage: String, CaseIterable, Identifiable {
-    case overview = "概览", policies = "策略", profile = "配置文件", requests = "请求", logs = "日志"
+    case overview = "Overview", policies = "Policy", profile = "Profile", requests = "Requests", logs = "Logs"
     var id: Self { self }
     var symbol: String {
         switch self {
@@ -61,7 +61,7 @@ struct MacHomeView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $page) {
-                Section("工作区") {
+                Section("Workspace") {
                     ForEach(MacPage.allCases) { item in
                         Label(item.rawValue, systemImage: item.symbol).tag(item)
                     }
@@ -72,7 +72,7 @@ struct MacHomeView: View {
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 8) {
                     statusLabel
-                    Text(selection.effectiveConfiguration?.name ?? "尚未选择节点")
+                    Text(selection.effectiveConfiguration?.name ?? "No Node Selected")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -88,7 +88,7 @@ struct MacHomeView: View {
                             .foregroundStyle(.red)
                             .textSelection(.enabled)
                         Spacer()
-                        Button("关闭") { tunnel.startError = nil }
+                        Button("Close") { tunnel.startError = nil }
                     }
                     .padding(12)
                     .background(Color.red.opacity(0.07))
@@ -108,7 +108,7 @@ struct MacHomeView: View {
                     HStack(spacing: 16) {
                         statusLabel
                         Button(action: toggleConnection) {
-                            Label(tunnel.hasRunningTunnel ? "停止" : "启动",
+                            Label(tunnel.hasRunningTunnel ? "Stop" : "Connect",
                                   systemImage: tunnel.hasRunningTunnel ? "stop.fill" : "power")
                         }
                         .buttonStyle(.borderedProminent)
@@ -166,36 +166,36 @@ struct MacHomeView: View {
             VStack(alignment: .leading, spacing: 20) {
                 HStack {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("网络概览").font(.title2.bold())
-                        Text(connected ? "隧道正在运行，流量统计实时更新。" : "启动隧道后，在这里查看网络活动。")
+                        Text("Network Overview").font(.title2.bold())
+                        Text(connected ? "The tunnel is running. Traffic statistics update in real time." : "Connect to view network activity here.")
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
                     if selection.effectiveConfiguration == nil {
-                        Button("导入节点", systemImage: "plus") { showingImport = true }
+                        Button("Import Nodes", systemImage: "plus") { showingImport = true }
                             .buttonStyle(.borderedProminent)
                     } else {
-                        Button("管理策略", systemImage: "arrow.triangle.branch") { page = .policies }
+                        Button("Manage Policies", systemImage: "arrow.triangle.branch") { page = .policies }
                     }
                 }
                 HStack(spacing: 12) {
-                    metric("下载速度", value: rate(stats.downloadBytesPerSecond), symbol: "arrow.down", color: .blue)
-                    metric("上传速度", value: rate(stats.uploadBytesPerSecond), symbol: "arrow.up", color: .orange)
-                    metric("活跃连接", value: connected ? "\(stats.tcpConnectionCount + stats.udpConnectionCount)" : "—", symbol: "waveform.path", color: .green)
+                    metric("Download Speed", value: rate(stats.downloadBytesPerSecond), symbol: "arrow.down", color: .blue)
+                    metric("Upload Speed", value: rate(stats.uploadBytesPerSecond), symbol: "arrow.up", color: .orange)
+                    metric("Active Connections", value: connected ? "\(stats.tcpConnectionCount + stats.udpConnectionCount)" : "—", symbol: "waveform.path", color: .green)
                 }
-                card("实时流量") {
+                card("Live Traffic") {
                     if samples.isEmpty {
-                        ContentUnavailableView(connected ? "正在采集流量" : "尚未连接", systemImage: "chart.xyaxis.line",
-                                               description: Text("连接后显示最近 60 秒的上传与下载速率。"))
+                        ContentUnavailableView(connected ? "Collecting Traffic" : "Not Connected", systemImage: "chart.xyaxis.line",
+                                               description: Text("Upload and download rates for the last 60 seconds appear after connecting."))
                             .frame(height: 190)
                     } else {
                         Chart(samples) { sample in
-                            LineMark(x: .value("时间", sample.date), y: .value("字节/秒", sample.download))
-                                .foregroundStyle(by: .value("方向", "下载"))
-                            LineMark(x: .value("时间", sample.date), y: .value("字节/秒", sample.upload))
-                                .foregroundStyle(by: .value("方向", "上传"))
+                            LineMark(x: .value("Time", sample.date), y: .value("Bytes per Second", sample.download))
+                                .foregroundStyle(by: .value("Direction", "Download"))
+                            LineMark(x: .value("Time", sample.date), y: .value("Bytes per Second", sample.upload))
+                                .foregroundStyle(by: .value("Direction", "Upload"))
                         }
-                        .chartForegroundStyleScale(["下载": Color.blue, "上传": Color.orange])
+                        .chartForegroundStyleScale(["Download": Color.blue, "Upload": Color.orange])
                         .chartYScale(domain: .automatic(includesZero: true))
                         .chartYAxis {
                             AxisMarks(position: .leading) { value in
@@ -209,24 +209,24 @@ struct MacHomeView: View {
                     }
                 }
                 HStack(alignment: .top, spacing: 12) {
-                    card("当前会话") {
-                        info("下载总量", formatBytes(stats.bytesIn))
+                    card("Current Session") {
+                        info("Total Download", formatBytes(stats.bytesIn))
                         Divider()
-                        info("上传总量", formatBytes(stats.bytesOut))
+                        info("Total Upload", formatBytes(stats.bytesOut))
                         Divider()
                         info("TCP / UDP", connected ? "\(stats.tcpConnectionCount) / \(stats.udpConnectionCount)" : "—")
                     }
-                    card("当前策略") {
-                        info("节点", selection.effectiveConfiguration?.name ?? "未选择")
+                    card("Current Policy") {
+                        info("Nodes", selection.effectiveConfiguration?.name ?? "Not Selected")
                         Divider()
-                        info("配置来源", selection.usesRuntimeVersion ? "文本配置" : "手动节点库")
+                        info("Profile Source", selection.usesRuntimeVersion ? "Text Profile" : "Manual Node Library")
                         Divider()
-                        info("节点数量", "\(configurationStore.configurations.count)")
+                        info("Node Count", "\(configurationStore.configurations.count)")
                     }
                 }
-                card("策略流量") {
+                card("Policy Traffic") {
                     if stats.routes.isEmpty {
-                        Text("暂无流量记录").foregroundStyle(.secondary).padding(.vertical, 12)
+                        Text("No Traffic Records").foregroundStyle(.secondary).padding(.vertical, 12)
                     } else {
                         ForEach(routes) { entry in
                             HStack {
@@ -250,19 +250,19 @@ struct MacHomeView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("代理节点").font(.title2.bold())
-                    Text(selection.usesRuntimeVersion ? "当前路由由文本配置控制，节点库仅供查看。" : "选择默认代理节点。运行中的连接沿用原有策略。")
+                    Text("Proxy Nodes").font(.title2.bold())
+                    Text(selection.usesRuntimeVersion ? "Routing is controlled by the active text profile. This node library is read-only." : "Choose the default proxy node. Existing connections keep their original policy.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("导入节点", systemImage: "plus") { showingImport = true }
+                Button("Import Nodes", systemImage: "plus") { showingImport = true }
                     .disabled(selection.usesRuntimeVersion)
             }
             policyGroupIcons
-            TextField("搜索名称、服务器或协议", text: $query)
+            TextField("Search Name, Server, or Protocol", text: $query)
                 .textFieldStyle(.roundedBorder)
             Table(filteredConfigurations) {
-                TableColumn("节点") { node in
+                TableColumn("Nodes") { node in
                     HStack {
                         Image(systemName: node.id == selection.effectiveConfiguration?.id ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(node.id == selection.effectiveConfiguration?.id ? Color.accentColor : Color.secondary)
@@ -270,23 +270,23 @@ struct MacHomeView: View {
                             .buttonStyle(.link)
                     }
                 }
-                TableColumn("协议") { Text($0.outboundProtocol.name) }.width(100)
-                TableColumn("服务器") { Text($0.serverAddress).foregroundStyle(.secondary) }
-                TableColumn("端口") { Text(String($0.serverPort)).monospacedDigit() }.width(60)
-                TableColumn("操作") { node in
+                TableColumn("Protocol") { Text($0.outboundProtocol.name) }.width(100)
+                TableColumn("Server") { Text($0.serverAddress).foregroundStyle(.secondary) }
+                TableColumn("Port") { Text(String($0.serverPort)).monospacedDigit() }.width(60)
+                TableColumn("Actions") { node in
                     HStack {
-                        Button(node.id == selection.effectiveConfiguration?.id ? "已选择" : "选择") { selection.select(node) }
+                        Button(node.id == selection.effectiveConfiguration?.id ? "Selected" : "Select") { selection.select(node) }
                             .disabled(selection.usesRuntimeVersion || node.id == selection.effectiveConfiguration?.id)
-                        Button("分享链接", systemImage: "square.and.arrow.up") { sharingNode = node }
+                        Button("Share Link", systemImage: "square.and.arrow.up") { sharingNode = node }
                             .labelStyle(.iconOnly)
-                            .help("分享节点链接")
+                            .help("Share Node Link")
                     }
                 }.width(110)
             }
             .overlay {
                 if filteredConfigurations.isEmpty {
-                    ContentUnavailableView(query.isEmpty ? "暂无节点" : "没有匹配的节点", systemImage: "network",
-                                           description: Text(query.isEmpty ? "使用右上角的导入按钮添加节点链接。" : "尝试其他名称或服务器地址。"))
+                    ContentUnavailableView(query.isEmpty ? "No Nodes" : "No Matching Nodes", systemImage: "network",
+                                           description: Text(query.isEmpty ? "Use Import in the top-right corner to add node links." : "Try another name or server address."))
                 }
             }
         }.padding(24)
@@ -299,12 +299,12 @@ struct MacHomeView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 180))], alignment: .leading, spacing: 10) {
                     if selection.usesRuntimeVersion {
                         ForEach(runtimeGroups, id: \.id) { group in
-                            groupIconLabel(group.name, iconURL: group.iconURL, subtitle: "\(group.memberCount) 个成员")
+                            groupIconLabel(group.name, iconURL: group.iconURL, subtitle: "\(group.memberCount) members")
                         }
                     } else {
                         ForEach(groupStore.groups) { group in
                             Button { editingGroup = group } label: {
-                                groupIconLabel(group.name, iconURL: group.iconURL, subtitle: "\(group.memberIds.count) 个成员 · 点击修改图标")
+                                groupIconLabel(group.name, iconURL: group.iconURL, subtitle: "\(group.memberIds.count) members · Tap to Change Icon")
                             }.buttonStyle(.plain)
                         }
                     }
@@ -331,21 +331,21 @@ struct MacHomeView: View {
         return VStack(spacing: 12) {
             recordControls
             Table(entries) {
-                TableColumn("时间") { Text($0.timestamp, style: .time).monospacedDigit() }.width(85)
-                TableColumn("主机") { Text($0.host).textSelection(.enabled) }
-                TableColumn("协议") { Text($0.protocol.rawValue.uppercased()) }.width(55)
-                TableColumn("端口") { Text(String($0.port)) }.width(50)
-                TableColumn("规则") { Text($0.ruleSetName ?? "—") }
-                TableColumn("策略") { Text(routeName($0.displayRouteTarget)) }
+                TableColumn("Time") { Text($0.timestamp, style: .time).monospacedDigit() }.width(85)
+                TableColumn("Host") { Text($0.host).textSelection(.enabled) }
+                TableColumn("Protocol") { Text($0.protocol.rawValue.uppercased()) }.width(55)
+                TableColumn("Port") { Text(String($0.port)) }.width(50)
+                TableColumn("Rules") { Text($0.ruleSetName ?? "—") }
+                TableColumn("Policy") { Text(routeName($0.displayRouteTarget)) }
             }
             .overlay {
                 if entries.isEmpty {
-                    ContentUnavailableView(connected ? "暂无匹配请求" : "尚未连接", systemImage: "list.bullet.rectangle",
-                                           description: Text(connected ? "新请求会自动显示，可按主机、规则或出站搜索。" : "启动隧道后查看请求记录。"))
+                    ContentUnavailableView(connected ? "No Matching Requests" : "Not Connected", systemImage: "list.bullet.rectangle",
+                                           description: Text(connected ? "New requests appear automatically. Search by host, rule, or outbound." : "Connect to view requests."))
                 }
             }
             if connected && requests.refreshState == .unavailable {
-                Text("暂时无法读取隧道请求，正在等待下一次更新。")
+                Text("Could not read tunnel requests. Waiting for the next update.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }.padding(24)
@@ -356,17 +356,17 @@ struct MacHomeView: View {
         return VStack(spacing: 12) {
             recordControls
             Table(entries) {
-                TableColumn("时间") { Text($0.timestamp, style: .time).monospacedDigit() }.width(85)
-                TableColumn("级别") { entry in
+                TableColumn("Time") { Text($0.timestamp, style: .time).monospacedDigit() }.width(85)
+                TableColumn("Level") { entry in
                     Text(entry.level.rawValue.uppercased())
                         .foregroundStyle(entry.level == .error ? Color.red : entry.level == .warning ? Color.orange : Color.secondary)
                 }.width(75)
-                TableColumn("消息") { Text($0.message).textSelection(.enabled) }
+                TableColumn("Message") { Text($0.message).textSelection(.enabled) }
             }
             .overlay {
                 if entries.isEmpty {
-                    ContentUnavailableView(query.isEmpty ? "暂无日志" : "没有匹配的日志", systemImage: "text.alignleft",
-                                           description: Text(query.isEmpty ? "连接后自动读取隧道日志。" : "尝试其他关键词。"))
+                    ContentUnavailableView(query.isEmpty ? "No Logs" : "No Matching Logs", systemImage: "text.alignleft",
+                                           description: Text(query.isEmpty ? "Tunnel logs appear automatically after connecting." : "Try different keywords."))
                 }
             }
         }.padding(24)
@@ -374,8 +374,8 @@ struct MacHomeView: View {
 
     private var recordControls: some View {
         HStack {
-            TextField("搜索记录", text: $query).textFieldStyle(.roundedBorder)
-            Button(paused ? "继续更新" : "暂停更新", systemImage: paused ? "play" : "pause") { paused.toggle() }
+            TextField("Search Records", text: $query).textFieldStyle(.roundedBorder)
+            Button(paused ? "Resume Updates" : "Pause Updates", systemImage: paused ? "play" : "pause") { paused.toggle() }
                 .disabled(!connected)
         }
     }
@@ -387,7 +387,7 @@ struct MacHomeView: View {
             Text("\(node.outboundProtocol.name) · \(node.serverAddress):\(node.serverPort)")
                 .foregroundStyle(.secondary).textSelection(.enabled)
             if link.isEmpty || node.chain?.isEmpty == false {
-                Text("此节点暂不支持导出为单个分享链接。")
+                Text("This node cannot be exported as a single share link.")
                     .foregroundStyle(.secondary)
             } else {
                 ScrollView {
@@ -400,18 +400,18 @@ struct MacHomeView: View {
                 .frame(height: 140)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
                 HStack {
-                    Button(copiedLink ? "已复制" : "复制链接", systemImage: copiedLink ? "checkmark" : "doc.on.doc") {
+                    Button(copiedLink ? "Copied" : "Copy Link", systemImage: copiedLink ? "checkmark" : "doc.on.doc") {
                         NSPasteboard.general.clearContents()
                         copiedLink = NSPasteboard.general.setString(link, forType: .string)
                     }
                     ShareLink(item: link, preview: SharePreview(node.name)) {
-                        Label("分享链接", systemImage: "square.and.arrow.up")
+                        Label("Share Link", systemImage: "square.and.arrow.up")
                     }
                 }
             }
             HStack {
                 Spacer()
-                Button("完成") { sharingNode = nil }
+                Button("Done") { sharingNode = nil }
                     .keyboardShortcut(.cancelAction)
             }
         }
@@ -421,17 +421,17 @@ struct MacHomeView: View {
 
     private var importSheet: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("导入代理节点").font(.title2.bold())
-            Text("粘贴 SOCKS5、Shadowsocks、VLESS、Trojan 等节点分享链接。")
+            Text("Import Proxy Nodes").font(.title2.bold())
+            Text("Paste a SOCKS5, Shadowsocks, VLESS, Trojan, or other node share link.")
                 .foregroundStyle(.secondary)
-            TextField("节点链接", text: $importURL).textFieldStyle(.roundedBorder)
+            TextField("Node Link", text: $importURL).textFieldStyle(.roundedBorder)
                 .onSubmit(importNode)
             if let importError { Text(importError).foregroundStyle(.red).textSelection(.enabled) }
             HStack {
                 Spacer()
-                Button("取消") { showingImport = false; importError = nil }
+                Button("Cancel") { showingImport = false; importError = nil }
                     .keyboardShortcut(.cancelAction)
-                Button("导入", action: importNode)
+                Button("Import", action: importNode)
                     .buttonStyle(.borderedProminent)
                     .disabled(importURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .keyboardShortcut(.defaultAction)
@@ -530,13 +530,13 @@ private struct MacGroupIconEditor: View {
                 ProxyGroupIconView(iconURL: trimmedURL, size: 40)
                 TextField("https://example.com/icon.png", text: $iconURL).textFieldStyle(.roundedBorder)
             }
-            Text(valid ? "填写 HTTPS 图片直链，留空使用默认图标。支持 PNG、JPEG 等系统可读取的图片格式。" : "请输入有效的 HTTPS 图片地址。")
+            Text(valid ? "Enter a direct HTTPS image URL, or leave blank for the default icon. Supports PNG, JPEG, and other system image formats." : "Enter a valid HTTPS image URL.")
                 .foregroundStyle(valid ? Color.secondary : Color.red)
                 .font(.callout)
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("保存") {
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Save") {
                     var updated = group
                     updated.iconURL = trimmedURL.isEmpty ? nil : trimmedURL
                     onSave(updated)

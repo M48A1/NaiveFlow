@@ -21,14 +21,14 @@ struct ClientGroupsView: View {
                             style: style(group.name), iconURL: group.parameters["icon-url"])
                     }.buttonStyle(.plain)
                     .contextMenu {
-                        Button("编辑", systemImage: "pencil") { editing = ClientGroupEditor(group: group) }
-                        Button("复制", systemImage: "doc.on.doc") { editing = ClientGroupEditor(group: group, duplicate: true) }
-                        Button("删除", systemImage: "trash", role: .destructive) { deleteGroup = group.name }
+                        Button("Edit", systemImage: "pencil") { editing = ClientGroupEditor(group: group) }
+                        Button("Duplicate", systemImage: "doc.on.doc") { editing = ClientGroupEditor(group: group, duplicate: true) }
+                        Button("Delete", systemImage: "trash", role: .destructive) { deleteGroup = group.name }
                     }
                 }
             }.padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 24)
             if model.groups.isEmpty {
-                Text("把常用节点放入策略组，为不同流量选择出站。")
+                Text("Group your nodes to choose an outbound for different traffic.")
                     .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 32)
             }
         }
@@ -40,19 +40,19 @@ struct ClientGroupsView: View {
             }
         }
         .background(Color(uiColor: .systemGroupedBackground))
-        .navigationTitle("策略组")
+        .navigationTitle("Groups")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("新建策略组", systemImage: "plus") { editing = ClientGroupEditor() }
-                    Button("管理与排序", systemImage: "arrow.up.arrow.down") { managing = true }
+                    Button("New Group", systemImage: "plus") { editing = ClientGroupEditor() }
+                    Button("Manage and Reorder", systemImage: "arrow.up.arrow.down") { managing = true }
                 } label: { Image(systemName: "plus").font(.system(size: 21, weight: .medium)) }
             }
         }
         .sheet(item: $editing) { ClientGroupEditorView(draft: $0) }
         .sheet(isPresented: $managing) { NavigationStack { ClientGroupManagementView() } }
-        .confirmationDialog("删除策略组？", isPresented: Binding(get: { deleteGroup != nil }, set: { if !$0 { deleteGroup = nil } }), titleVisibility: .visible) {
-            Button("删除", role: .destructive) { if let deleteGroup { Task { await model.deleteGroup(deleteGroup) } }; deleteGroup = nil }
+        .confirmationDialog("Delete Group?", isPresented: Binding(get: { deleteGroup != nil }, set: { if !$0 { deleteGroup = nil } }), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { if let deleteGroup { Task { await model.deleteGroup(deleteGroup) } }; deleteGroup = nil }
         }
     }
     private func style(_ name: String) -> ClientGroupStyle { model.profile?.groupStyles[name] ?? ClientGroupStyle(symbol: symbol(name), palette: ClientPalette.index(for: name)) }
@@ -89,16 +89,16 @@ struct ClientGroupDetailView: View {
                             HStack(spacing: 5) {
                                 if testing { ProgressView().tint(.white) }
                                 else { Image(systemName: "bolt.fill") }
-                                Text(testing ? "测速中…" : "延迟测试")
+                                Text(testing ? "Testing…" : "Latency Test")
                             }.font(.caption.weight(.semibold)).foregroundStyle(.white)
                                 .padding(.horizontal, 12).frame(minHeight: 44)
                                 .background(.black.opacity(0.16), in: Capsule())
                         }.buttonStyle(.plain).disabled(candidateNodes.isEmpty || testing)
-                            .accessibilityLabel("测试当前策略组节点延迟")
+                            .accessibilityLabel("Test Latency for This Group's Nodes")
                             .padding(14)
                     }
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("可用节点").font(.footnote.weight(.medium)).foregroundStyle(.secondary).padding(.leading, 4)
+                    Text("Available Nodes").font(.footnote.weight(.medium)).foregroundStyle(.secondary).padding(.leading, 4)
                     ClientCard {
                         ForEach(Array(candidates.enumerated()), id: \.offset) { index, member in
                             if index > 0 { Divider().padding(.leading, 56) }
@@ -113,19 +113,19 @@ struct ClientGroupDetailView: View {
                                 }
                             }
                         }
-                        if candidates.isEmpty { Text("先在首页添加节点").font(.subheadline).foregroundStyle(.secondary).padding(24) }
+                        if candidates.isEmpty { Text("Add nodes on the Home tab first.").font(.subheadline).foregroundStyle(.secondary).padding(24) }
                     }
                 }
                 if let group {
                     ClientCard {
-                        Button("自动选择", systemImage: "shuffle") { Task {
+                        Button("Auto Select", systemImage: "shuffle") { Task {
                             _ = await model.saveGroup(original: group.name, name: group.name, kind: "url-test", members: group.members,
                                 parameters: group.parameters.pairs.filter { $0.0 != "selected" }, style: model.profile?.groupStyles[title] ?? ClientGroupStyle(palette: ClientPalette.index(for: title)))
                         } }.font(.subheadline).frame(maxWidth: .infinity).padding(18)
                     }
                 }
                 if let group, group.kind != .select {
-                    Text("当前由 \(group.kindToken) 自动选择。点击节点会切换为 Select 手动选择。")
+                    Text("Currently selected by \(group.kindToken). Selecting a node switches to manual selection.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }.padding(20)
@@ -140,7 +140,7 @@ struct ClientGroupDetailView: View {
             }
         }
         .toolbar {
-            if let group { ToolbarItem(placement: .topBarTrailing) { Button("编辑") { editing = ClientGroupEditor(group: group) } } }
+            if let group { ToolbarItem(placement: .topBarTrailing) { Button("Edit") { editing = ClientGroupEditor(group: group) } } }
         }
         .sheet(item: $editing) { ClientGroupEditorView(draft: $0) }
         .disabled(model.isBusy)
@@ -171,7 +171,7 @@ struct ClientGroupEditor: Identifiable {
     init() {}
     init(group: ParsedProxyGroup, duplicate: Bool = false) {
         originalName = duplicate ? nil : group.name
-        name = group.name + (duplicate ? " 副本" : "")
+        name = group.name + (duplicate ? " Copy" : "")
         kind = group.kindToken
         members = group.members
         selected = group.parameters["selected"] ?? ""
@@ -193,43 +193,43 @@ struct ClientGroupEditorView: View {
         NavigationStack {
             Form {
                 Section {
-                    ClientPolicyCard(name: draft.name.isEmpty ? "新策略组" : draft.name,
-                        selected: draft.selected.isEmpty ? draft.members.first ?? "选择成员" : draft.selected, style: style, iconURL: draft.iconURL)
+                    ClientPolicyCard(name: draft.name.isEmpty ? "New Group" : draft.name,
+                        selected: draft.selected.isEmpty ? draft.members.first ?? "Select Members" : draft.selected, style: style, iconURL: draft.iconURL)
                         .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
                 }
-                Section("基本信息") {
-                    TextField("策略组名称", text: $draft.name)
-                    Picker("类型", selection: $draft.kind) {
-                        Text("Select · 手动选择").tag("select")
-                        Text("URL Test · 延迟优先").tag("url-test")
-                        Text("Fallback · 故障转移").tag("fallback")
-                        Text("Load Balance · 负载均衡").tag("load-balance")
+                Section("Basic Information") {
+                    TextField("Group Name", text: $draft.name)
+                    Picker("Type", selection: $draft.kind) {
+                        Text("Select · Manual Selection").tag("select")
+                        Text("URL Test · Lowest Latency").tag("url-test")
+                        Text("Fallback · Failover").tag("fallback")
+                        Text("Load Balance · Load Balance").tag("load-balance")
                     }
                     Button { showIconPacks = true } label: {
                         HStack {
-                            Text("图标").foregroundStyle(.primary)
+                            Text("Icon").foregroundStyle(.primary)
                             Spacer()
                             if let url = ProxyGroupIconURL.parse(draft.iconURL) {
                                 AsyncImage(url: url) { image in image.resizable().scaledToFit() }
                                     placeholder: { Image(systemName: "photo").foregroundStyle(.secondary) }
                                     .frame(width: 30, height: 30)
                             } else {
-                                Text("选择图标").foregroundStyle(.secondary)
+                                Text("Choose Icon").foregroundStyle(.secondary)
                             }
                         }.frame(minHeight: 36).contentShape(Rectangle())
-                    }.buttonStyle(.plain).accessibilityHint("打开图标集选择图标")
+                    }.buttonStyle(.plain).accessibilityHint("Open icon packs to select an icon.")
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             ForEach(ClientPalette.colors.indices, id: \.self) { index in
                                 Button { style.palette = index } label: {
                                     Circle().fill(LinearGradient(colors: ClientPalette.colors[index], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 29, height: 29)
                                         .overlay(Circle().stroke(style.palette == index ? Color.primary : .clear, lineWidth: 2).padding(-3))
-                                }.buttonStyle(.plain).accessibilityLabel("配色 \(index + 1)").padding(4)
+                                }.buttonStyle(.plain).accessibilityLabel("Color \(index + 1)").padding(4)
                             }
                         }
                     }
                 }
-                Section("成员顺序") {
+                Section("Member Order") {
                     ForEach(draft.members, id: \.self) { member in
                         HStack {
                             Text(member)
@@ -238,37 +238,37 @@ struct ClientGroupEditorView: View {
                         }
                     }.onMove { draft.members.move(fromOffsets: $0, toOffset: $1) }
                 }
-                Section("添加成员") {
+                Section("Add Members") {
                     ForEach(availableMembers, id: \.self) { member in
                         Button { draft.members.append(member) } label: { Label(member, systemImage: "plus.circle") }
                     }
-                    if availableMembers.isEmpty { Text("所有可用成员已添加").foregroundStyle(.secondary) }
+                    if availableMembers.isEmpty { Text("All available members have been added.").foregroundStyle(.secondary) }
                 }
-                Section("参数") {
+                Section("Parameters") {
                     if draft.kind == "select" {
-                        Picker("默认成员", selection: $draft.selected) {
-                            Text("使用第一个成员").tag("")
+                        Picker("Default Member", selection: $draft.selected) {
+                            Text("Use First Member").tag("")
                             ForEach(draft.members, id: \.self) { Text($0).tag($0) }
                         }
                     } else {
-                        TextField("探测 URL", text: $draft.probeURL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        TextField("探测间隔（秒）", text: $draft.interval).keyboardType(.numberPad)
-                        if draft.kind == "url-test" { TextField("切换容差（ms）", text: $draft.tolerance).keyboardType(.numberPad) }
+                        TextField("Probe URL", text: $draft.probeURL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        TextField("Probe Interval (seconds)", text: $draft.interval).keyboardType(.numberPad)
+                        if draft.kind == "url-test" { TextField("Switching Tolerance (ms)", text: $draft.tolerance).keyboardType(.numberPad) }
                     }
                 }
             }
-            .navigationTitle(draft.originalName == nil ? "新建策略组" : "编辑策略组").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(draft.originalName == nil ? "New Group" : "Edit Group").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .primaryAction) { EditButton() }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("保存") { Task { if await model.saveGroup(original: draft.originalName, name: draft.name, kind: draft.kind, members: draft.members, parameters: parameters, style: style) { dismiss() } } }
+                    Button("Save") { Task { if await model.saveGroup(original: draft.originalName, name: draft.name, kind: draft.kind, members: draft.members, parameters: parameters, style: style) { dismiss() } } }
                         .disabled(model.isBusy || draft.name.isEmpty || draft.members.isEmpty)
                 }
             }
             .sheet(isPresented: $showIconPacks) { ClientIconPacksView(selectedURL: $draft.iconURL) }
             .task { style = model.profile?.groupStyles[draft.originalName ?? draft.name] ?? ClientGroupStyle(palette: ClientPalette.index(for: draft.name)) }
-            .alert("无法保存策略组", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("好") { model.error = nil } } message: { Text(model.error ?? "") }
+            .alert("Could Not Save Group", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
         }
     }
     private var availableMembers: [String] {
@@ -306,11 +306,11 @@ struct ClientGroupManagementView: View {
             }
             .onDelete { offsets in if let index = offsets.first { pendingDelete = model.groups[index].name } }
         }
-        .navigationTitle("管理策略组").navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }; ToolbarItem(placement: .primaryAction) { EditButton() } }
+        .navigationTitle("Manage Groups").navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }; ToolbarItem(placement: .primaryAction) { EditButton() } }
         .sheet(item: $editing) { ClientGroupEditorView(draft: $0) }
-        .confirmationDialog("删除策略组？", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
-            Button("删除", role: .destructive) { if let pendingDelete { Task { await model.deleteGroup(pendingDelete) } }; pendingDelete = nil }
+        .confirmationDialog("Delete Group?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { if let pendingDelete { Task { await model.deleteGroup(pendingDelete) } }; pendingDelete = nil }
         }
     }
 }

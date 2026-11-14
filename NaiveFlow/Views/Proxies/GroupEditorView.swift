@@ -75,9 +75,9 @@ struct GroupEditorView: View {
                             .textInputAutocapitalization(.never)
                     }
                 } header: {
-                    Text("第三方图标")
+                    Text("Custom Icon")
                 } footer: {
-                    Text("填写 HTTPS 图片直链，留空使用默认图标。支持 PNG、JPEG 等系统可读取的图片格式。")
+                    Text("Enter a direct HTTPS image URL, or leave blank for the default icon. Supports PNG, JPEG, and other system image formats.")
                 }
 
                 Section {

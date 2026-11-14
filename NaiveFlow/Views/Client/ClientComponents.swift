@@ -47,7 +47,7 @@ struct ClientNodeRow: View {
             }.frame(minHeight: 52).padding(.horizontal, 20).padding(.vertical, 7)
                 .contentShape(Rectangle())
         }.buttonStyle(.plain)
-            .accessibilityLabel("\(node.name)，\(node.outboundProtocol.name)\(selected ? "，已选中" : "")")
+            .accessibilityLabel("\(node.name), \(node.outboundProtocol.name)\(selected ? ", selected" : "")")
     }
 
     private var displayName: String {
@@ -66,7 +66,7 @@ struct ClientNodeRow: View {
                 .foregroundStyle(ms < 150 ? Color.green : ms < 400 ? .orange : .red)
             Image(systemName: "cellularbars").font(.system(size: 14)).foregroundStyle(ms < 150 ? Color.green : .orange)
         case .testing: ProgressView().controlSize(.small)
-        case .failed: Text("超时").font(.caption).foregroundStyle(.red)
+        case .failed: Text("Timed Out").font(.caption).foregroundStyle(.red)
         case .insecure: Image(systemName: "lock.trianglebadge.exclamationmark").foregroundStyle(.orange)
         case nil: Text("—").font(.caption).foregroundStyle(.tertiary)
         }
@@ -131,7 +131,7 @@ private struct ClientKeyboardDone: ViewModifier {
         content.toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
-                Button("完成") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
+                Button("Done") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
             }
         }
     }

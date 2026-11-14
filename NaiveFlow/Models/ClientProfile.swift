@@ -24,6 +24,9 @@ nonisolated struct ClientProfile: Codable, Identifiable, Equatable {
     var sourceURL: String?
     var modules: [ClientModule] = []
     var groupStyles: [String: ClientGroupStyle] = [:]
+
+    // Display the legacy built-in label in English without renaming stored data.
+    var displayName: String { name == "默认配置" ? "Default Profile" : name }
 }
 
 nonisolated struct ClientProfileLibrary: Codable {

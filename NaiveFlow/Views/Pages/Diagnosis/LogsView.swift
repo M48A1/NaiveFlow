@@ -97,7 +97,7 @@ struct LogsView: View {
 
 extension LogsModel.LogEntry {
     var formatted: String {
-        let time = timestamp.formatted(.dateTime.hour().minute().second())
+        let time = timestamp.formatted(.dateTime.hour().minute().second().locale(Locale(identifier: "en")))
         let level = switch level {
         case .info: "INFO"
         case .warning: "WARN"

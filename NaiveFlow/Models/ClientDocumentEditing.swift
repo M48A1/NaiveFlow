@@ -29,7 +29,7 @@ nonisolated enum ClientDocumentEditing {
     static func saveRuleSet(_ text: String, original: ParsedRule?, source: String, policy: String, noResolve: Bool) throws -> String {
         let source = source.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !source.contains(where: { $0.isNewline }), !policy.contains(where: { $0.isNewline }) else {
-            throw ClientFailure("地址和策略不能包含换行。")
+            throw ClientFailure("The URL and policy cannot contain line breaks.")
         }
         _ = try NativeRuleSet.sourceURL(source)
         let otherOptions = original?.options.filter { $0 != .noResolve }.map(\.token) ?? []
@@ -39,7 +39,7 @@ nonisolated enum ClientDocumentEditing {
         let parsed = NaiveFlowConfigurationParser.parse(text: text).configuration
         if let original {
             guard original.kind == .ruleSet, parsed.rules.contains(original) else {
-                throw ClientFailure("规则已发生变化，请关闭后重新打开编辑。")
+                throw ClientFailure("This rule has changed. Close and reopen the editor.")
             }
             let comment = document.entries(.rule).first { $0.line == original.line }?.comment.map { "  # " + $0 } ?? ""
             return document.replacingLine(original.line, with: line + comment).text

@@ -37,6 +37,7 @@ struct NaiveFlowApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(\.locale, Locale(identifier: "en"))
                 .environment(operations)
                 .environment(client)
                 .environment(container.tunnel)
@@ -56,7 +57,7 @@ struct NaiveFlowApp: App {
             guard status == .connected || status == .disconnected else { return }
             let content = UNMutableNotificationContent()
             content.title = "NaiveFlow"
-            content.body = status == .connected ? "代理已连接" : container.tunnel.startError == nil ? "代理已停止" : "代理连接失败"
+            content.body = status == .connected ? "Proxy connected" : container.tunnel.startError == nil ? "Proxy stopped" : "Proxy connection failed"
             content.sound = .default
             let request = UNNotificationRequest(identifier: "naiveflow.connection", content: content, trigger: nil)
             UNUserNotificationCenter.current().add(request)

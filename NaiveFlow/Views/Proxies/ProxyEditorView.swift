@@ -204,9 +204,9 @@ struct ProxyEditorView: View {
                 
                 if !isDirect {
                     Section {
-                        Toggle("关闭 QUIC", isOn: $blockQUIC)
+                        Toggle("Block QUIC", isOn: $blockQUIC)
                     } footer: {
-                        Text("仅控制经此节点转发的 QUIC 流量，不影响节点自身的 QUIC 传输。")
+                        Text("Applies to QUIC traffic forwarded through this node, not the node's own QUIC transport.")
                     }
                 }
                 networkSettings
@@ -746,20 +746,20 @@ struct ProxyEditorView: View {
 
     private var chainSettings: some View {
         Section {
-            Toggle("通过此节点进行链式代理", isOn: $chainEnabled)
+            Toggle("Use a Proxy Chain", isOn: $chainEnabled)
             if chainEnabled {
-                Picker("选择节点", selection: $underlyingProxy) {
-                    Text("请选择现有节点").tag("")
+                Picker("Upstream Node", selection: $underlyingProxy) {
+                    Text("Select an Existing Node").tag("")
                     ForEach(chainCandidates) { node in Text(node.name).tag(node.name) }
                 }
-                if chainCandidates.isEmpty { Text("请先添加另一个代理节点").font(.caption).foregroundStyle(.secondary) }
+                if chainCandidates.isEmpty { Text("Add another proxy node first.").font(.caption).foregroundStyle(.secondary) }
             }
         } footer: {
             if chainEnabled, let upstream = chainCandidates.first(where: { $0.name == underlyingProxy }) {
-                let hops = (upstream.chain ?? []).map(\.name) + [upstream.name, name.isEmpty ? "当前节点" : name]
-                Text((["本机"] + hops + ["目标"]).joined(separator: " → "))
+                let hops = (upstream.chain ?? []).map(\.name) + [upstream.name, name.isEmpty ? "Current Node" : name]
+                Text((["This Device"] + hops + ["Destination"]).joined(separator: " → "))
             } else {
-                Text("选择一个已有节点作为前置代理，再通过当前节点访问目标。")
+                Text("Use an existing node as the upstream proxy, then connect through the current node to the destination.")
             }
         }
     }

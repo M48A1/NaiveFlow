@@ -15,17 +15,6 @@ private struct OpenSourceLibrary: Identifiable {
 }
 
 struct AcknowledgementsView: View {
-    private static let trademarks: [(name: String, owner: String)] = [
-        ("Google", "Google LLC"),
-        ("X", "X Corp."),
-        ("Netflix", "Netflix, Inc."),
-        ("YouTube", "Google LLC"),
-        ("TikTok", "ByteDance Ltd."),
-        ("Spotify", "Spotify AB"),
-        ("ChatGPT", "OpenAI, Inc."),
-        ("Claude", "Anthropic, PBC"),
-    ]
-
     private static let libraries: [OpenSourceLibrary] = [
         OpenSourceLibrary(
             name: "MaxMind GeoLite2",
@@ -42,30 +31,6 @@ struct AcknowledgementsView: View {
 
     var body: some View {
         List {
-            Section {
-                Text("NaiveFlow is an independent project and is not affiliated with, endorsed by, or sponsored by any of the companies listed below.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                ForEach(Self.trademarks, id: \.name) { item in
-                    HStack(spacing: 12) {
-                        AppIconView(item.name)
-                        VStack(alignment: .leading) {
-                            Text(item.name)
-                            Text(item.owner)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            } header: {
-                Text("Trademarks")
-            } footer: {
-                Text("All trademarks, service marks, and company names are the property of their respective owners.")
-            }
-
             Section("Open Source Libraries") {
                 ForEach(Self.libraries) { library in
                     DisclosureGroup(

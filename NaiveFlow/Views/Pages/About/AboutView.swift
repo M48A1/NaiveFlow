@@ -8,13 +8,20 @@ struct AboutView: View {
                     Image(systemName: "network").font(.system(size: 38, weight: .medium)).foregroundStyle(.white)
                         .frame(width: 76, height: 76).background(.blue.gradient, in: RoundedRectangle(cornerRadius: 21))
                     Text("NaiveFlow").font(.title2.weight(.semibold))
-                    Text("版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")")
+                    Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity).padding(.vertical, 22)
             }
             Section {
-                NavigationLink("开源许可与致谢") { AcknowledgementsView() }
+                NavigationLink("Licenses and Acknowledgements") { AcknowledgementsView() }
+                Link(destination: URL(string: "mailto:hello@cathayepic.com")!) {
+                    HStack {
+                        Label("Feedback", systemImage: "envelope")
+                        Spacer()
+                        Text("hello@cathayepic.com").font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
             }
-        }.navigationTitle("关于").navigationBarTitleDisplayMode(.inline)
+        }.navigationTitle("About").navigationBarTitleDisplayMode(.inline)
     }
 }

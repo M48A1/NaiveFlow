@@ -23,10 +23,10 @@ final class ClientModel {
         self.operations = operations
         self.directory = directory
         do { library = try ClientProfileLibrary.load(from: directory) }
-        catch { self.error = "无法读取配置列表：\(error.localizedDescription)" }
+        catch { self.error = "Could not load profiles: \(error.localizedDescription)" }
         let active = self.document.activation.active
         if library.profiles.isEmpty {
-            let profile = ClientProfile(name: "默认配置", text: active?.text ?? self.document.draft())
+            let profile = ClientProfile(name: "Default Profile", text: active?.text ?? self.document.draft())
             library.profiles = [profile]
             library.selectedID = profile.id
         }
@@ -37,7 +37,7 @@ final class ClientModel {
     var profile: ClientProfile? { library.profiles.first { $0.id == library.selectedID } }
     var groups: [ParsedProxyGroup] { parsed.proxyGroups }
     var mode: ProxyMode { ProxyMode(rawValue: parsed.general["proxy-mode"] ?? "rule") ?? .rule }
-    var selectedNodeName: String { parsed.general["default-node"] ?? self.document.selection?.effectiveConfiguration?.name ?? nodes.first?.name ?? "未选择节点" }
+    var selectedNodeName: String { parsed.general["default-node"] ?? self.document.selection?.effectiveConfiguration?.name ?? nodes.first?.name ?? "No Node Selected" }
     var modules: [ClientModule] {
         (profile?.modules ?? []).map { source in
             var module = source
@@ -50,7 +50,7 @@ final class ClientModel {
             return module
         }
     }
-    var activeName: String { profile?.name ?? "我的配置" }
+    var activeName: String { profile?.displayName ?? "Profiles" }
 
     func refresh() {
         let active = self.document.activation.active
@@ -71,7 +71,7 @@ final class ClientModel {
     private func persist() throws { try library.save(to: directory) }
     func report(_ error: Error) { self.error = error.localizedDescription }
 
-    func createProfile(name: String = "新建配置", text: String? = nil, sourceURL: String? = nil) -> ClientProfile {
+    func createProfile(name: String = "New Profile", text: String? = nil, sourceURL: String? = nil) -> ClientProfile {
         let profile = ClientProfile(name: name, text: text ?? TextConfigurationPipeline.template, sourceURL: sourceURL)
         library.profiles.append(profile)
         do { try persist() } catch { report(error) }
@@ -97,7 +97,7 @@ final class ClientModel {
             else { library.profiles.append(saved) }
             try persist()
             rebuild()
-            message = apply ? "已应用 \(saved.name)" : "配置已保存"
+            message = apply ? "Applied \(saved.name)" : "Profile saved"
             return true
         } catch { report(error); return false }
     }
@@ -105,7 +105,7 @@ final class ClientModel {
     func activate(_ profile: ClientProfile) async { _ = await saveProfile(profile, apply: true) }
 
     func deleteProfile(_ id: UUID) {
-        guard id != library.selectedID else { error = "请先切换到其他配置，再删除当前配置。"; return }
+        guard id != library.selectedID else { error = "Switch to another profile before deleting the current profile."; return }
         library.profiles.removeAll { $0.id == id }
         do { try persist() } catch { report(error) }
     }
@@ -121,11 +121,11 @@ final class ClientModel {
 
     func fetchText(_ source: String) async throws -> String {
         guard let url = URL(string: source), url.scheme?.lowercased() == "https", url.host != nil else {
-            throw ClientFailure("请输入有效的 HTTPS 地址。")
+            throw ClientFailure("Enter a valid HTTPS URL.")
         }
         let (data, response) = try await BoundedHTTPFetcher.fetch(url, maxBytes: ConfigurationImport.maximumBytes)
         guard (200...299).contains(response.statusCode), response.url?.scheme?.lowercased() == "https",
-              let text = String(data: data, encoding: .utf8) else { throw ClientFailure("下载失败或文件不是 UTF-8 文本。") }
+              let text = String(data: data, encoding: .utf8) else { throw ClientFailure("Download failed or the file is not UTF-8 text.") }
         return ConfigurationImport.normalize(text)
     }
 
@@ -157,14 +157,14 @@ final class ClientModel {
 
     func selectedMember(in group: ParsedProxyGroup) -> String {
         if group.kind != .select, let live = liveGroups[group.name]?.nextMember {
-            return group.kind == .loadBalance ? "轮询 · " + live : live
+            return group.kind == .loadBalance ? "Round Robin · " + live : live
         }
-        if group.kind == .select { return group.parameters["selected"] ?? group.members.first ?? "无成员" }
+        if group.kind == .select { return group.parameters["selected"] ?? group.members.first ?? "No Members" }
         switch group.kind {
-        case .urlTest: return "自动选择 · 延迟优先"
-        case .fallback: return "自动选择 · 故障转移"
-        case .loadBalance: return "自动选择 · 负载均衡"
-        default: return group.members.first ?? "无成员"
+        case .urlTest: return "Auto · Lowest Latency"
+        case .fallback: return "Auto · Fallback"
+        case .loadBalance: return "Auto · Load Balance"
+        default: return group.members.first ?? "No Members"
         }
     }
 
@@ -220,7 +220,7 @@ final class ClientModel {
         let result = TextConfigurationPipeline.process(text: source)
         let imported = !result.compiled.proxies.isEmpty ? result.compiled.proxies
             : try SubscriptionFetcher.parseLocal(data: Data(source.utf8)).configurations
-        guard !imported.isEmpty else { throw ClientFailure("没有找到可用节点。") }
+        guard !imported.isEmpty else { throw ClientFailure("No usable nodes found.") }
         var text = operatingText
         for node in imported {
             text = ClientDocumentEditing.set(text, section: .proxy, key: node.name, value: node.toURLString())
@@ -232,7 +232,7 @@ final class ClientModel {
         guard profile != nil else { return }
         var text = operatingText
         if let old, old != node.name {
-            guard !nodes.contains(where: { $0.name == node.name }) else { error = "节点名称已存在。"; return }
+            guard !nodes.contains(where: { $0.name == node.name }) else { error = "A node with this name already exists."; return }
             text = renameReferences(text, from: old, to: node.name)
             text = ClientDocumentEditing.renameKey(text, section: .proxy, from: old, to: node.name)
         }
@@ -244,12 +244,12 @@ final class ClientModel {
         guard profile != nil else { return }
         var text = operatingText
         if nodes.contains(where: { $0.underlyingProxy == name }) || parsed.rules.contains(where: { $0.policy == .named(name) }) || parsed.chains.contains(where: { $0.members.contains(name) }) {
-            error = "这个节点仍被规则或代理链引用，请先在配置中修改这些引用。"; return
+            error = "This node is still referenced by rules or a proxy chain. Update those references first."; return
         }
         text = ClientDocumentEditing.set(text, section: .proxy, key: name, value: nil)
         for group in groups where group.members.contains(name) {
             let members = group.members.filter { $0 != name }
-            guard !members.isEmpty else { error = "\(group.name) 至少需要一个成员。"; return }
+            guard !members.isEmpty else { error = "\(group.name) requires at least one member."; return }
             let parameters = group.parameters.pairs.filter { !($0.0 == "selected" && $0.1 == name) }
             text = ClientDocumentEditing.set(text, section: .proxyGroup, key: group.name,
                 value: ClientDocumentEditing.groupValue(kind: group.kindToken, members: members, parameters: parameters))
@@ -267,8 +267,8 @@ final class ClientModel {
     func saveGroup(original: String?, name: String, kind: String, members: [String], parameters: [(String,String)], style: ClientGroupStyle) async -> Bool {
         guard profile != nil else { return false }
         var text = operatingText
-        guard !name.trimmingCharacters(in: .whitespaces).isEmpty, !members.isEmpty else { error = "请输入名称并选择至少一个成员。"; return false }
-        if original != name, groups.contains(where: { $0.name == name }) { error = "策略组名称已存在。"; return false }
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty, !members.isEmpty else { error = "Enter a name and select at least one member."; return false }
+        if original != name, groups.contains(where: { $0.name == name }) { error = "A group with this name already exists."; return false }
         var styles = profile?.groupStyles ?? [:]
         if let original, original != name {
             text = renameReferences(text, from: original, to: name)
@@ -285,7 +285,7 @@ final class ClientModel {
         guard profile != nil else { return }
         let text = operatingText
         if groups.contains(where: { $0.members.contains(name) }) || parsed.rules.contains(where: { $0.policy == .named(name) }) {
-            error = "策略组仍被规则或其他组引用，请先修改相关引用。"; return
+            error = "This group is still referenced by rules or other groups. Update those references first."; return
         }
         var styles = profile?.groupStyles ?? [:]
         styles.removeValue(forKey: name)
@@ -304,8 +304,8 @@ final class ClientModel {
         do {
             let made = try await ModuleImporter.makeModule(from: candidate.source, fallbackName: candidate.name,
                 subscriptionURL: candidate.sourceURL.flatMap(URL.init(string:)), format: candidate.format)
-            guard !made.module.mitmRuleSets.isEmpty else { throw ClientFailure("模块没有可用的 MITM 规则。") }
-            guard profile?.id == profileID else { throw ClientFailure("当前配置已切换，请在目标配置中重新保存模块。") }
+            guard !made.module.mitmRuleSets.isEmpty else { throw ClientFailure("This module contains no usable MITM rules.") }
+            guard profile?.id == profileID else { throw ClientFailure("The current profile has changed. Save the module again in the intended profile.") }
             var text = operatingText
             var saved = candidate
             saved.summary = candidate.summary.isEmpty ? made.module.description ?? "" : candidate.summary
@@ -331,7 +331,7 @@ final class ClientModel {
         var text = operatingText
         do {
             for key in module.setKeys {
-                guard let encoded = parsed.mitmSets[key], encoded.hasPrefix("base64:"), let data = Data(base64Encoded: String(encoded.dropFirst(7))) else { throw ClientFailure("找不到模块规则，请重新保存模块。") }
+                guard let encoded = parsed.mitmSets[key], encoded.hasPrefix("base64:"), let data = Data(base64Encoded: String(encoded.dropFirst(7))) else { throw ClientFailure("Module rules could not be found. Save the module again.") }
                 var set = try JSONDecoder().decode(MITMRuleSet.self, from: data)
                 set.enabled = enabled
                 text = ClientDocumentEditing.set(text, section: .mitmSet, key: key, value: "base64:" + (try JSONEncoder().encode(set)).base64EncodedString())

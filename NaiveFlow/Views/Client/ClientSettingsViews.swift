@@ -9,45 +9,45 @@ struct ClientSettingsView: View {
 
     var body: some View {
         List {
-            Section("代理核心") {
+            Section("Proxy Core") {
                 NavigationLink { ClientDNSView() } label: { row("DNS", symbol: "safari", detail: dnsSummary) }
                 NavigationLink { ClientGeoSettingsView(site: false) } label: { row("GeoIP", symbol: "globe.europe.africa") }
                 NavigationLink { ClientGeoSettingsView(site: true) } label: { row("GeoSite", symbol: "globe") }
                 Toggle(isOn: Binding(get: { model.parsed.general.bool("always-on") ?? false }, set: { value in
                     Task { await model.setSetting("always-on", value: value ? "true" : "false") }
-                })) { row("始终保持连接", symbol: "arrow.triangle.2.circlepath") }
+                })) { row("Always Connected", symbol: "arrow.triangle.2.circlepath") }
                     .tint(.blue).disabled(model.isBusy)
-                NavigationLink { LANProxySettingsView() } label: { row("局域网共享", symbol: "wifi") }
-                NavigationLink { ClientLogsView() } label: { row("日志", symbol: "doc.text.fill") }
-                NavigationLink { RequestsView() } label: { row("请求记录", symbol: "list.bullet.rectangle") }
+                NavigationLink { LANProxySettingsView() } label: { row("LAN Sharing", symbol: "wifi") }
+                NavigationLink { ClientLogsView() } label: { row("Logs", symbol: "doc.text.fill") }
+                NavigationLink { RequestsView() } label: { row("Requests", symbol: "list.bullet.rectangle") }
             }
-            Section("MITM 与模块") {
+            Section("MITM and Modules") {
                 Toggle(isOn: Binding(get: { mitmEnabled }, set: { value in Task { await model.setSetting("enable", value: value ? "true" : "false", section: .mitm) } })) {
                     HStack(spacing: 15) { ClientSectionIcon(symbol: "shield.lefthalf.filled"); Text("MITM") }
                 }.tint(.blue).disabled(model.isBusy)
-                NavigationLink { ClientModulesView() } label: { row("模块", symbol: "puzzlepiece.extension.fill", detail: model.modules.isEmpty ? nil : "\(model.modules.filter(\.enabled).count) 已启用") }
-                NavigationLink { MITMCertificateView() } label: { row("证书管理", symbol: "lock.square.fill", detail: certificate.isTrusted ? "已信任" : certificate.hasCA ? "未信任" : "未生成") }
-                NavigationLink { ClientHostnamesView() } label: { row("Hostname", symbol: "house.fill", detail: "\(model.parsed.mitm.list("hostname")?.count ?? 0) 个域名") }
+                NavigationLink { ClientModulesView() } label: { row("Modules", symbol: "puzzlepiece.extension.fill", detail: model.modules.isEmpty ? nil : "\(model.modules.filter(\.enabled).count) enabled") }
+                NavigationLink { MITMCertificateView() } label: { row("Certificates", symbol: "lock.square.fill", detail: certificate.isTrusted ? "Trusted" : certificate.hasCA ? "Not Trusted" : "Not Created") }
+                NavigationLink { ClientHostnamesView() } label: { row("Hostname", symbol: "house.fill", detail: "\(model.parsed.mitm.list("hostname")?.count ?? 0)") }
             }
-            Section("通用设置") {
-                NavigationLink { ClientGeneralView() } label: { row("通用设置", symbol: "gearshape.fill") }
-                NavigationLink { AboutView() } label: { row("关于", symbol: "info.circle") }
+            Section("General") {
+                NavigationLink { ClientGeneralView() } label: { row("General", symbol: "gearshape.fill") }
+                NavigationLink { AboutView() } label: { row("About", symbol: "info.circle") }
                 Button(role: .destructive) { showClearCache = true } label: {
-                    HStack(spacing: 15) { ClientSectionIcon(symbol: "trash", color: .red); Text("清除缓存") }
+                    HStack(spacing: 15) { ClientSectionIcon(symbol: "trash", color: .red); Text("Clear Cache") }
                 }
             }
         }
         .listStyle(.insetGrouped).listRowSpacing(0)
-        .navigationTitle("设置")
+        .navigationTitle("Settings")
         .task { certificate.refresh() }
-        .confirmationDialog("清除应用缓存？", isPresented: $showClearCache, titleVisibility: .visible) {
-            Button("清除缓存", role: .destructive) { URLCache.shared.removeAllCachedResponses(); cacheMessage = true }
-        } message: { Text("清除网络请求缓存，保留配置、节点和证书。") }
-        .alert("缓存已清除", isPresented: $cacheMessage) { Button("好", role: .cancel) {} }
+        .confirmationDialog("Clear App Cache?", isPresented: $showClearCache, titleVisibility: .visible) {
+            Button("Clear Cache", role: .destructive) { URLCache.shared.removeAllCachedResponses(); cacheMessage = true }
+        } message: { Text("Clear network caches while keeping profiles, nodes, and certificates.") }
+        .alert("Cache Cleared", isPresented: $cacheMessage) { Button("OK", role: .cancel) {} }
     }
     @State private var cacheMessage = false
     private var dnsSummary: String {
-        switch model.parsed.general["dns-mode"] { case "plain": return "传统 DNS"; case "doh": return "DNS over HTTPS"; default: return "系统 DNS" }
+        switch model.parsed.general["dns-mode"] { case "plain": return "Plain DNS"; case "doh": return "DNS over HTTPS"; default: return "System DNS" }
     }
     private func row(_ title: String, symbol: String, detail: String? = nil) -> some View {
         HStack(spacing: 15) {
@@ -63,36 +63,36 @@ struct ClientDNSView: View {
     @Environment(ClientModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var values: [String:String] = [:]
-    private let resolvers: [(String,String)] = [("", "本机解析"), ("proxy-", "代理解析"), ("subscription-", "订阅解析"), ("ech-", "ECH 解析")]
+    private let resolvers: [(String,String)] = [("", "Local DNS"), ("proxy-", "Proxy DNS"), ("subscription-", "Subscription DNS"), ("ech-", "ECH DNS")]
 
     var body: some View {
         Form {
             ForEach(resolvers, id: \.0) { prefix, title in
                 Section(title) {
-                    Picker("解析方式", selection: binding(prefix + "dns-mode", fallback: "default")) {
-                        Text("系统默认").tag("default")
-                        Text("传统 DNS").tag("plain")
+                    Picker("Resolver Type", selection: binding(prefix + "dns-mode", fallback: "default")) {
+                        Text("System Default").tag("default")
+                        Text("Plain DNS").tag("plain")
                         Text("DNS over HTTPS").tag("doh")
                     }
                     if values[prefix + "dns-mode"] == "plain" {
-                        TextField("IPv4 地址，如 1.1.1.1", text: binding(prefix + "dns-server", fallback: DNSUpstream.defaultPlainServer)).keyboardType(.URL)
+                        TextField("IPv4 Address, e.g. 1.1.1.1", text: binding(prefix + "dns-server", fallback: DNSUpstream.defaultPlainServer)).keyboardType(.URL)
                     } else if values[prefix + "dns-mode"] == "doh" {
                         TextField("https://…/dns-query", text: binding(prefix + "encrypted-dns-server", fallback: DNSUpstream.defaultDoHURL)).keyboardType(.URL)
                     }
                 }
             }
             Section("Bootstrap DNS") {
-                TextField("system 或 IPv4 服务器列表", text: binding("bootstrap-dns", fallback: "system")).keyboardType(.URL)
+                TextField("system or IPv4 DNS Servers", text: binding("bootstrap-dns", fallback: "system")).keyboardType(.URL)
             }
             Section {
-                Button("保存并应用") { Task {
+                Button("Save and Apply") { Task {
                     var text = model.operatingText
                     for (key,value) in values {
                         text = ClientDocumentEditing.set(text, section: .dns, key: key, value: value.isEmpty ? nil : value)
                     }
                     if await model.commit(text) { dismiss() }
                 } }.disabled(model.isBusy)
-            } footer: { Text("修改将应用到当前配置，代理运行时会同步更新解析设置。") }
+            } footer: { Text("Changes apply to the current profile and update DNS settings while connected.") }
         }
         .textInputAutocapitalization(.never).autocorrectionDisabled()
         .navigationTitle("DNS").navigationBarTitleDisplayMode(.inline)
@@ -116,7 +116,7 @@ struct ClientActiveProfileEditor: View {
     @Environment(ClientModel.self) private var model
     var body: some View {
         if let profile = model.profile { ClientProfileEditorView(profile: profile) }
-        else { ContentUnavailableView("暂无配置", systemImage: "doc") }
+        else { ContentUnavailableView("No Profile", systemImage: "doc") }
     }
 }
 
@@ -128,9 +128,9 @@ struct ClientHostnamesView: View {
         Form {
             Section {
                 TextEditor(text: $hostnames).font(.system(.body, design: .monospaced)).frame(minHeight: 240)
-                    .autocorrectionDisabled().textInputAutocapitalization(.never).accessibilityLabel("MITM 域名，每行一个")
-            } header: { Text("拦截域名") } footer: { Text("每行一个域名后缀，如 example.com。仅对配置中的域名启用 MITM，并且必须先安装和信任证书。") }
-            Section { Button("保存并应用") { Task {
+                    .autocorrectionDisabled().textInputAutocapitalization(.never).accessibilityLabel("MITM Hostnames, One per Line")
+            } header: { Text("Intercepted Hostnames") } footer: { Text("Enter one domain suffix per line, e.g. example.com. MITM applies only to configured domains and requires an installed, trusted certificate.") }
+            Section { Button("Save and Apply") { Task {
                 let names = hostnames.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
                 let source = model.operatingText
                 let text = ClientDocumentEditing.set(source, section: .mitm, key: "hostname", value: names.isEmpty ? nil : names.map(ClientDocumentEditing.token).joined(separator: ", "))
@@ -146,11 +146,9 @@ struct ClientGeneralView: View {
     var body: some View {
         @Bindable var settings = settings
         Form {
-            Section("配置") { NavigationLink("配置管理") { ClientProfilesView() } }
-            Section("通知") { NavigationLink("通知设置") { ClientNotificationSettingsView() } }
-            Section("订阅请求") { Toggle("Remnawave HWID", isOn: $settings.remnawaveHWIDEnabled) }
-            Section("诊断") { NavigationLink("诊断工具") { DiagnosisView() } }
-        }.navigationTitle("通用设置").navigationBarTitleDisplayMode(.inline)
+            Section("Notifications") { NavigationLink("Notification Settings") { ClientNotificationSettingsView() } }
+            Section("Subscription Requests") { Toggle("Remnawave HWID", isOn: $settings.remnawaveHWIDEnabled) }
+        }.navigationTitle("General").navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -173,15 +171,15 @@ struct ClientLogsView: View {
                 }.padding(.vertical, 5)
             }
         }
-        .overlay { if visibleLogs.isEmpty { ContentUnavailableView("暂无日志", systemImage: "doc.text.magnifyingglass", description: Text(tunnel.hasRunningTunnel ? "等待新的运行日志" : "启动代理后显示运行日志")) } }
-        .navigationTitle("日志").navigationBarTitleDisplayMode(.inline)
+        .overlay { if visibleLogs.isEmpty { ContentUnavailableView("No Logs", systemImage: "doc.text.magnifyingglass", description: Text(tunnel.hasRunningTunnel ? "Waiting for new logs" : "Connect to view logs.")) } }
+        .navigationTitle("Logs").navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                ShareLink(item: visibleLogs.map { "[\($0.timestamp.formatted())] [\($0.level.rawValue)] \($0.message)" }.joined(separator: "\n")) { Image(systemName: "square.and.arrow.up") }.disabled(visibleLogs.isEmpty)
+                ShareLink(item: visibleLogs.map { "[\($0.timestamp.formatted(.dateTime.locale(Locale(identifier: "en"))))] [\($0.level.rawValue)] \($0.message)" }.joined(separator: "\n")) { Image(systemName: "square.and.arrow.up") }.disabled(visibleLogs.isEmpty)
             }
-            ToolbarItem(placement: .topBarTrailing) { Button("清除", systemImage: "trash") { showClear = true }.disabled(visibleLogs.isEmpty) }
+            ToolbarItem(placement: .topBarTrailing) { Button("Clear", systemImage: "trash") { showClear = true }.disabled(visibleLogs.isEmpty) }
         }
-        .confirmationDialog("清除当前显示的日志？", isPresented: $showClear, titleVisibility: .visible) { Button("清除", role: .destructive) { clearedBefore = .now; logs.clear(); Task { _ = await tunnel.send(.clearLogs) } } }
+        .confirmationDialog("Clear Visible Logs?", isPresented: $showClear, titleVisibility: .visible) { Button("Clear", role: .destructive) { clearedBefore = .now; logs.clear(); Task { _ = await tunnel.send(.clearLogs) } } }
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {
@@ -201,19 +199,19 @@ struct ClientNotificationSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("连接状态通知", isOn: Binding(get: { enabled && allowed }, set: { value in
+                Toggle("Connection Status Notifications", isOn: Binding(get: { enabled && allowed }, set: { value in
                     if !value { enabled = false }
                     else { Task { await requestPermission() } }
                 })).tint(.blue).disabled(requesting)
-            } footer: { Text("应用在后台时，通知代理已连接、已停止或连接失败。") }
+            } footer: { Text("Notify when the proxy connects, disconnects, or fails while the app is in the background.") }
             Section {
-                LabeledContent("系统通知权限", value: allowed ? "已允许" : "未允许")
+                LabeledContent("System Notification Permission", value: allowed ? "Allowed" : "Not Allowed")
                 if !allowed {
-                    Button("打开系统设置") { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
+                    Button("Open System Settings") { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
                 }
             }
         }
-        .navigationTitle("通知").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Notifications").navigationBarTitleDisplayMode(.inline)
         .task { await refresh() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await refresh() } } }
     }

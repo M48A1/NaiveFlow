@@ -23,30 +23,26 @@ struct ClientModulesView: View {
                         Toggle(module.name, isOn: Binding(get: { module.enabled }, set: { value in Task { await model.toggleModule(module, enabled: value) } })).labelsHidden().tint(.blue)
                     }.padding(.vertical, 5)
                     .contextMenu {
-                        Button("编辑", systemImage: "pencil") { editing = module }
-                        if module.sourceURL != nil { Button("更新", systemImage: "arrow.clockwise") { Task { await model.refreshModule(module) } } }
-                        Button("删除", systemImage: "trash", role: .destructive) { pendingDelete = module }
+                        Button("Edit", systemImage: "pencil") { editing = module }
+                        if module.sourceURL != nil { Button("Update", systemImage: "arrow.clockwise") { Task { await model.refreshModule(module) } } }
+                        Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = module }
                     }
-                    .swipeActions { Button("删除", role: .destructive) { pendingDelete = module }; Button("编辑") { editing = module }.tint(.blue) }
+                    .swipeActions { Button("Delete", role: .destructive) { pendingDelete = module }; Button("Edit") { editing = module }.tint(.blue) }
                 }
-            } footer: { Text("模块规则随当前配置保存与应用。启用模块前，请在设置中完成 MITM 证书信任及域名配置。") }
+            } footer: { Text("Module rules are saved and applied with the current profile. Configure MITM certificate trust and hostnames before enabling modules.") }
         }
         .overlay {
             if model.modules.isEmpty {
-                ContentUnavailableView {
-                    Label("暂无模块", systemImage: "puzzlepiece.extension")
-                } description: { Text("导入 Surge 或 Quantumult X 模块。") } actions: { Button("添加模块") { addModule() } }
+                ContentUnavailableView("No Modules", systemImage: "puzzlepiece.extension")
             }
         }
-        .navigationTitle("模块").navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("添加模块", systemImage: "plus") { addModule() } } }
+        .navigationTitle("Modules").navigationBarTitleDisplayMode(.inline)
         .sheet(item: $editing) { ClientModuleEditorView(module: $0) }
-        .confirmationDialog("删除模块及其规则？", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
-            Button("删除", role: .destructive) { if let pendingDelete { Task { await model.deleteModule(pendingDelete) } }; pendingDelete = nil }
+        .confirmationDialog("Delete Module and Its Rules?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { if let pendingDelete { Task { await model.deleteModule(pendingDelete) } }; pendingDelete = nil }
         }
         .disabled(model.isBusy)
     }
-    private func addModule() { editing = ClientModule(name: "新模块", summary: "", source: "", format: .surge) }
 }
 
 struct ClientModuleEditorView: View {
@@ -58,27 +54,27 @@ struct ClientModuleEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("模块信息") {
-                    TextField("模块名称", text: $module.name)
-                    TextField("模块描述", text: $module.summary, axis: .vertical)
-                    Picker("格式", selection: $module.format) { ForEach(ModuleFormat.allCases) { Text($0.displayName).tag($0) } }
-                    Toggle("启用模块", isOn: $module.enabled).tint(.blue)
+                Section("Module Information") {
+                    TextField("Module Name", text: $module.name)
+                    TextField("Description", text: $module.summary, axis: .vertical)
+                    Picker("Format", selection: $module.format) { ForEach(ModuleFormat.allCases) { Text($0.displayName).tag($0) } }
+                    Toggle("Enable Module", isOn: $module.enabled).tint(.blue)
                 }
-                Section("导入与更新") {
-                    TextField("远程地址（HTTPS）", text: Binding(get: { module.sourceURL ?? "" }, set: { module.sourceURL = $0.isEmpty ? nil : $0 }))
+                Section("Import and Update") {
+                    TextField("Remote URL (HTTPS)", text: Binding(get: { module.sourceURL ?? "" }, set: { module.sourceURL = $0.isEmpty ? nil : $0 }))
                         .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Button("从 URL 载入", systemImage: "arrow.down.circle") { Task {
+                    Button("Load from URL", systemImage: "arrow.down.circle") { Task {
                         downloading = true; defer { downloading = false }
                         do { module.source = try await model.fetchText(module.sourceURL ?? "") } catch { model.report(error) }
                     } }.disabled(module.sourceURL?.isEmpty != false)
-                    Button("从本地文件导入", systemImage: "folder") { importingFile = true }
+                    Button("Import Local File", systemImage: "folder") { importingFile = true }
                 }
-                Section("模块内容") {
+                Section("Module Content") {
                     TextEditor(text: $module.source).font(.system(size: 12, design: .monospaced)).frame(minHeight: 260)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityLabel("模块内容")
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityLabel("Module Content")
                 }
                 Section {
-                    Button("保存并应用") { Task {
+                    Button("Save and Apply") { Task {
                         downloading = true; defer { downloading = false }
                         if await model.saveModule(module) { dismiss() }
                     } }.disabled(module.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || module.name.isEmpty)
@@ -88,9 +84,9 @@ struct ClientModuleEditorView: View {
             .clientKeyboardDone()
             .disabled(downloading || model.isBusy)
             .interactiveDismissDisabled(downloading || model.isBusy)
-            .navigationTitle("编辑模块").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Edit Module").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(downloading || model.isBusy) }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(downloading || model.isBusy) }
                 ToolbarItem(placement: .primaryAction) { if downloading || model.isBusy { ProgressView() } }
             }
             .fileImporter(isPresented: $importingFile, allowedContentTypes: [.plainText, .data]) { result in
@@ -100,10 +96,10 @@ struct ClientModuleEditorView: View {
                     module.source = try model.operations.configurationDocument.read(contentsOf: url)
                     if url.pathExtension.lowercased() == "snippet" { module.format = .quantumultX }
                     else if url.pathExtension.lowercased() == "sgmodule" { module.format = .surge }
-                    if module.name == "新模块" { module.name = url.deletingPathExtension().lastPathComponent }
+                    if module.name == "New Module" { module.name = url.deletingPathExtension().lastPathComponent }
                 } catch { model.report(error) }
             }
-            .alert("模块处理失败", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("好") { model.error = nil } } message: { Text(model.error ?? "") }
+            .alert("Module Operation Failed", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
         }
     }
 }
