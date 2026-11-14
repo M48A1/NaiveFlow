@@ -10,17 +10,20 @@ struct TVClientSettingsView: View {
             Section("Configuration") {
                 NavigationLink("Profiles") { TVClientProfilesView() }
                 NavigationLink("DNS") { TVClientDNSView() }
-                NavigationLink("Rules") { TVClientRulesView() }
-                NavigationLink("Modules") {
-                    List(model.modules) { module in
-                        Toggle(module.name, isOn: Binding(
-                            get: { model.modules.first { $0.id == module.id }?.enabled ?? false },
-                            set: { enabled in Task { await model.toggleModule(module, enabled: enabled) } }
+                NavigationLink("Always Connected") {
+                    Form {
+                        Toggle("Always Connected", isOn: Binding(
+                            get: { model.parsed.general.bool("always-on") ?? false },
+                            set: { enabled in
+                                Task { await model.setSetting("always-on", value: enabled ? "true" : "false") }
+                            }
                         ))
                         .disabled(model.isBusy)
                     }
-                    .navigationTitle("Modules")
+                    .navigationTitle("Always Connected")
                 }
+                NavigationLink("Rules") { TVClientRulesView() }
+                NavigationLink("Modules") { TVClientModulesView() }
             }
             Section("Resources") {
                 NavigationLink("Subscriptions") { TVClientSubscriptionsView() }
@@ -49,8 +52,20 @@ struct TVClientRulesView: View {
 
     var body: some View {
         List {
+            if let profile = model.profile {
+                NavigationLink("Edit Routing Rules") { TVClientProfileEditor(profile: profile) }
+            }
+            Button("Update Rule Sets") {
+                Task { _ = await model.manageResource(.update(.ruleSets())) }
+            }
+            .disabled(model.isBusy)
+            NavigationLink("Add Rule Set") { TVClientRuleSetEditor(rule: nil) }
             ForEach(model.parsed.rules) { rule in
-                Text(rule.raw).font(.system(.body, design: .monospaced))
+                if rule.kind.token.uppercased() == "RULE-SET" {
+                    NavigationLink(rule.raw) { TVClientRuleSetEditor(rule: rule) }
+                } else {
+                    Text(rule.raw).font(.system(.body, design: .monospaced))
+                }
             }
         }
         .navigationTitle("Rules")
@@ -310,5 +325,57 @@ private struct TVClientActivityView: View {
             }
         }
         .onDisappear { requests.releaseSnapshot() }
+    }
+}
+
+private struct TVClientRuleSetEditor: View {
+    @Environment(ClientModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let rule: ParsedRule?
+    @State private var source: String
+    @State private var policy: String
+    @State private var noResolve: Bool
+    @State private var confirmingDelete = false
+
+    init(rule: ParsedRule?) {
+        self.rule = rule
+        _source = State(initialValue: rule?.value ?? "")
+        _policy = State(initialValue: rule?.policy.token ?? "PROXY")
+        _noResolve = State(initialValue: rule?.hasOption(.noResolve) ?? false)
+    }
+
+    var body: some View {
+        Form {
+            TextField("Rule Set URL", text: $source).autocorrectionDisabled()
+            Picker("Policy", selection: $policy) {
+                ForEach(policies, id: \.self) { Text($0).tag($0) }
+            }
+            Toggle("No Resolve", isOn: $noResolve)
+            Button("Save and Apply") {
+                Task {
+                    if await model.manageResource(.save(.ruleSet(original: rule, source: source,
+                                                                  policy: policy, noResolve: noResolve))) {
+                        dismiss()
+                    }
+                }
+            }
+            .disabled(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            if rule != nil {
+                Button("Delete Rule Set", role: .destructive) { confirmingDelete = true }
+            }
+        }
+        .navigationTitle(rule == nil ? "New Rule Set" : "Edit Rule Set")
+        .confirmationDialog("Delete Rule Set?", isPresented: $confirmingDelete, presenting: rule) { rule in
+            Button("Delete", role: .destructive) {
+                Task { if await model.manageResource(.delete(.ruleSet(rule))) { dismiss() } }
+            }
+        }
+        .disabled(model.isBusy)
+    }
+
+    private var policies: [String] {
+        var seen = Set<String>()
+        return (["PROXY", "DIRECT", "REJECT"] + model.groups.map(\.name) + [policy])
+            .filter { seen.insert($0).inserted }
     }
 }

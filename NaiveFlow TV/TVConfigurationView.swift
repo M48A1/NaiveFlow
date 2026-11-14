@@ -2,6 +2,11 @@ import SwiftUI
 
 struct TVClientProfilesView: View {
     @Environment(ClientModel.self) private var model
+    @State private var importingURL = false
+    @State private var source = ""
+    @State private var importedProfile: ClientProfile?
+    @State private var pendingDelete: ClientProfile?
+    @State private var downloading = false
 
     var body: some View {
         List {
@@ -13,82 +18,64 @@ struct TVClientProfilesView: View {
                         Label(profile.displayName, systemImage: model.library.selectedID == profile.id && model.hasApplied
                               ? "checkmark.circle.fill" : "doc.text")
                     }
+                    .contextMenu {
+                        Button("Apply") { Task { await model.activate(profile) } }
+                        if profile.sourceURL != nil {
+                            Button("Update Remote Profile") { Task { await model.updateProfile(profile) } }
+                        }
+                        Button("Delete", role: .destructive) { pendingDelete = profile }
+                    }
                 }
                 NavigationLink("New Profile") {
                     TVClientProfileEditor(profile: ClientProfile(name: "New Profile", text: TextConfigurationPipeline.template))
                 }
             }
-            Section("iCloud Drive") {
-                NavigationLink("Open iCloud Configuration") { TVClientCloudProfilesView() }
-            }
+            Button("Import Profile from URL") { importingURL = true }
+                .disabled(model.isBusy || downloading)
+            if downloading { ProgressView("Downloading Profile") }
         }
         .navigationTitle("Configuration")
-    }
-}
-
-private struct TVClientCloudProfilesView: View {
-    @Environment(ClientModel.self) private var model
-    @State private var names: [String] = []
-    private let drive = ConfigurationDrive()
-
-    var body: some View {
-        List {
-            ForEach(names, id: \.self) { name in
-                NavigationLink(name) {
-                    TVClientCloudProfileView(name: name, drive: drive)
-                }
-            }
-            Button("Refresh") { Task { await reload() } }
+        .alert("Import Profile from URL", isPresented: $importingURL) {
+            TextField("HTTPS Configuration URL", text: $source).autocorrectionDisabled()
+            Button("Cancel", role: .cancel) {}
+            Button("Import") { Task { await importProfile() } }
         }
-        .navigationTitle("iCloud Drive")
-        .task { await reload() }
-    }
-
-    private func reload() async {
-        do { names = try await drive.files() }
-        catch { model.report(error) }
-    }
-}
-
-private struct TVClientCloudProfileView: View {
-    @Environment(ClientModel.self) private var model
-    let name: String
-    let drive: ConfigurationDrive
-    @State private var version: ConfigurationDrive.Version?
-
-    var body: some View {
-        Group {
-            if let version {
-                TVClientProfileEditor(
-                    profile: ClientProfile(name: (version.name as NSString).deletingPathExtension, text: version.text),
-                    drive: drive, cloudVersion: version
-                )
-            } else {
-                Button("Load iCloud Configuration") { Task { await load() } }
-            }
+        .sheet(item: $importedProfile) { profile in
+            NavigationStack { TVClientProfileEditor(profile: profile) }
         }
-        .task { await load() }
+        .confirmationDialog("Delete Profile?", isPresented: Binding(
+            get: { pendingDelete != nil },
+            set: { if !$0 { pendingDelete = nil } }
+        ), presenting: pendingDelete) { profile in
+            Button("Delete", role: .destructive) { model.deleteProfile(profile.id) }
+        }
     }
 
-    private func load() async {
+    private func importProfile() async {
+        guard !downloading else { return }
+        downloading = true
+        defer { downloading = false }
         do {
-            version = try await drive.read(name)
+            let url = source.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = try await model.fetchText(url)
+            importedProfile = ClientProfile(name: URL(string: url)?.host ?? "Imported Profile", text: text, sourceURL: url)
         } catch { model.report(error) }
     }
 }
 
-private struct TVClientProfileEditor: View {
+struct TVClientProfileEditor: View {
     @Environment(ClientModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State var profile: ClientProfile
-    var drive = ConfigurationDrive()
-    var cloudVersion: ConfigurationDrive.Version? = nil
-    @State private var savingToCloud = false
 
     var body: some View {
         Form {
             Section("Profile") {
                 TextField("Profile Name", text: $profile.name)
+                TextField("Remote URL (HTTPS)", text: Binding(
+                    get: { profile.sourceURL ?? "" },
+                    set: { profile.sourceURL = $0.isEmpty ? nil : $0 }
+                )).autocorrectionDisabled()
                 TextField("Configuration", text: $profile.text, axis: .vertical)
                     .font(.system(.body, design: .monospaced))
                     .autocorrectionDisabled()
@@ -96,19 +83,8 @@ private struct TVClientProfileEditor: View {
             Section {
                 Button("Save and Apply") { Task { await save(apply: true) } }
                 Button("Save Only") { Task { await save(apply: false) } }
-                Button(cloudVersion == nil ? "Save a Copy to iCloud Drive" : "Save to iCloud Drive") {
-                    Task {
-                        savingToCloud = true
-                        defer { savingToCloud = false }
-                        do {
-                            let name = try ConfigurationDrive.fileName(cloudVersion?.name ?? profile.name)
-                            _ = try await drive.save(profile.text, name: name, replacing: cloudVersion?.digest)
-                            dismiss()
-                        } catch { model.report(error) }
-                    }
-                }
             }
-            .disabled(model.isBusy || savingToCloud || profile.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(model.isBusy || profile.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .navigationTitle("Edit Profile")
     }

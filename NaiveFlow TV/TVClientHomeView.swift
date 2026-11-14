@@ -94,9 +94,13 @@ struct TVClientGroupsView: View {
     let tunnel: TunnelController
     @Environment(ClientModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
+    @State private var pendingDelete: ParsedProxyGroup?
 
     var body: some View {
         ScrollView {
+            NavigationLink("New Group") { TVClientGroupEditor(group: nil) }
+                .disabled(model.isBusy)
+                .padding(.top, 24)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 28)], spacing: 28) {
                 NavigationLink {
                     TVClientNodesView(latency: latency, tunnel: tunnel)
@@ -122,6 +126,9 @@ struct TVClientGroupsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.bordered)
+                    .contextMenu {
+                        Button("Delete Group", role: .destructive) { pendingDelete = group }
+                    }
                 }
             }
             .padding(36)
@@ -130,6 +137,12 @@ struct TVClientGroupsView: View {
                 Text("Add a [Proxy Group] section in Configuration.")
                     .foregroundStyle(.secondary)
             }
+        }
+        .confirmationDialog("Delete Group?", isPresented: Binding(
+            get: { pendingDelete != nil },
+            set: { if !$0 { pendingDelete = nil } }
+        ), presenting: pendingDelete) { group in
+            Button("Delete", role: .destructive) { Task { await model.deleteGroup(group.name) } }
         }
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
@@ -149,6 +162,8 @@ private struct TVClientGroupDetailView: View {
         List {
             if let original = model.groups.first(where: { $0.name == name }) {
                 let group = model.resolvedGroup(original)
+                NavigationLink("Edit Group") { TVClientGroupEditor(group: original) }
+                    .disabled(model.isBusy)
                 Section {
                     ForEach(group.members, id: \.self) { member in
                         if group.kind == .select {
@@ -168,5 +183,74 @@ private struct TVClientGroupDetailView: View {
             }
         }
         .navigationTitle(name)
+    }
+}
+
+private struct TVClientGroupEditor: View {
+    @Environment(ClientModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let group: ParsedProxyGroup?
+    @State private var name: String
+    @State private var kind: String
+    @State private var members: [String]
+
+    init(group: ParsedProxyGroup?) {
+        self.group = group
+        _name = State(initialValue: group?.name ?? "")
+        _kind = State(initialValue: group?.kindToken ?? "select")
+        _members = State(initialValue: group?.members ?? [])
+    }
+
+    var body: some View {
+        List {
+            Section("Group") {
+                TextField("Group Name", text: $name)
+                Picker("Type", selection: $kind) {
+                    ForEach(kinds, id: \.self) { Text($0).tag($0) }
+                }
+            }
+            Section("Member Order") {
+                ForEach(Array(members.enumerated()), id: \.offset) { index, member in
+                    Menu(member) {
+                        Button("Move Up") { members.swapAt(index, index - 1) }.disabled(index == 0)
+                        Button("Move Down") { members.swapAt(index, index + 1) }.disabled(index + 1 == members.count)
+                        Button("Remove", role: .destructive) { members.remove(at: index) }
+                    }
+                }
+            }
+            Section("Add Members") {
+                ForEach(candidates, id: \.self) { member in
+                    Button(member) { members.append(member) }
+                }
+            }
+            Button("Save and Apply") { Task { await save() } }
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || members.isEmpty)
+        }
+        .navigationTitle(group == nil ? "New Group" : "Edit Group")
+        .disabled(model.isBusy)
+    }
+
+    private var kinds: [String] {
+        let defaults = ["select", "url-test", "fallback", "load-balance"]
+        guard let original = group?.kindToken, !defaults.contains(original) else { return defaults }
+        return defaults + [original]
+    }
+
+    private var candidates: [String] {
+        let available = model.nodes.map(\.name) + model.groups.map(\.name).filter { $0 != group?.name && $0 != name }
+            + ["DIRECT", "REJECT", "PROXY"]
+        var seen = Set(members)
+        return available.filter { seen.insert($0).inserted }
+    }
+
+    private func save() async {
+        let style = group.flatMap { model.profile?.groupStyles[$0.name] } ?? ClientGroupStyle()
+        let parameters = (group?.parameters.pairs ?? []).filter { key, value in
+            key != "selected" || (kind == "select" && members.contains(value))
+        }
+        if await model.saveGroup(original: group?.name, name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                                 kind: kind, members: members, parameters: parameters, style: style) {
+            dismiss()
+        }
     }
 }
