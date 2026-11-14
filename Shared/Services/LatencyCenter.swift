@@ -21,9 +21,10 @@ final class LatencyCenter {
     var latencyResults: [UUID: LatencyResult] = [:]
     var chainLatencyResults: [UUID: LatencyResult] = [:]
 
-    nonisolated private static let maxConcurrentLatencyTests = 8
+    @ObservationIgnored private let settingsProvider: @MainActor () -> LatencyTestSettings
 
-    init() {
+    init(settingsProvider: @escaping @MainActor () -> LatencyTestSettings = { LatencyTestSettings.load() }) {
+        self.settingsProvider = settingsProvider
         restoreResults()
     }
 
@@ -41,9 +42,10 @@ final class LatencyCenter {
         let configurationId = configuration.id
         singleLatencyTasks[configurationId]?.cancel()
         latencyResults[configurationId] = .testing
+        let settings = settingsProvider().effective
         let send = Self.tunnelSend(transport)
         singleLatencyTasks[configurationId] = Task { [weak self] in
-            let result = await Self.runSingleLatencyTest(for: configuration, send: send)
+            let result = await Self.runSingleLatencyTest(for: configuration, settings: settings, send: send)
             await MainActor.run {
                 guard !Task.isCancelled else { return }
                 self?.singleLatencyTasks[configurationId] = nil
@@ -64,9 +66,10 @@ final class LatencyCenter {
         for config in targets {
             latencyResults[config.id] = .testing
         }
+        let settings = settingsProvider().effective
         let send = Self.tunnelSend(transport)
         batchLatencyTask = Task { [weak self] in
-            await Self.runLatencyTests(targets, send: send, isStillWanted: isLive) { id, result in
+            await Self.runLatencyTests(targets, settings: settings, send: send, isStillWanted: isLive) { id, result in
                 await MainActor.run {
                     guard !Task.isCancelled else { return }
                     self?.recordLatencyResult(result, for: id, isLive: isLive)
@@ -104,9 +107,10 @@ final class LatencyCenter {
         let chainId = chain.id
         singleChainLatencyTasks[chainId]?.cancel()
         chainLatencyResults[chainId] = .testing
+        let settings = settingsProvider().effective
         let send = Self.tunnelSend(transport)
         singleChainLatencyTasks[chainId] = Task { [weak self] in
-            let result = await Self.runSingleLatencyTest(for: resolved, send: send)
+            let result = await Self.runSingleLatencyTest(for: resolved, settings: settings, send: send)
             await MainActor.run {
                 guard !Task.isCancelled else { return }
                 self?.singleChainLatencyTasks[chainId] = nil
@@ -136,9 +140,10 @@ final class LatencyCenter {
             chainLatencyResults[chainId] = .testing
         }
         let chainIdByConfigId: [UUID: UUID] = Dictionary(uniqueKeysWithValues: chainData.map { ($0.1.id, $0.0) })
+        let settings = settingsProvider().effective
         let send = Self.tunnelSend(transport)
         batchChainLatencyTask = Task { [weak self] in
-            await Self.runLatencyTests(chainData.map(\.1), send: send, isStillWanted: { compositeId in
+            await Self.runLatencyTests(chainData.map(\.1), settings: settings, send: send, isStillWanted: { compositeId in
                 guard let chainId = chainIdByConfigId[compositeId] else { return false }
                 return isResolvableChain(chainId)
             }) { configId, result in
@@ -243,16 +248,18 @@ final class LatencyCenter {
 
     nonisolated private static func runSingleLatencyTest(
         for configuration: ProxyConfiguration,
+        settings: LatencyTestSettings,
         send: (@Sendable (Data) async -> Data?)?
     ) async -> LatencyResult {
         if let send {
-            return await sendLatencyTestMessage(for: configuration, send: send)
+            return await sendLatencyTestMessage(for: configuration, settings: settings, send: send)
         }
-        return await LatencyTester.test(configuration)
+        return await LatencyTester.test(configuration, target: settings.target, timeout: settings.timeout)
     }
 
     nonisolated private static func runLatencyTests(
         _ configurations: [ProxyConfiguration],
+        settings: LatencyTestSettings,
         send: (@Sendable (Data) async -> Data?)?,
         isStillWanted: (@MainActor @Sendable (UUID) -> Bool)? = nil,
         onResult: @Sendable @escaping (UUID, LatencyResult) async -> Void
@@ -260,10 +267,10 @@ final class LatencyCenter {
         guard !configurations.isEmpty else { return }
         await withTaskGroup(of: (UUID, LatencyResult).self) { group in
             var iterator = configurations.makeIterator()
-            for _ in 0..<min(Self.maxConcurrentLatencyTests, configurations.count) {
+            for _ in 0..<min(settings.concurrency, configurations.count) {
                 if let config = iterator.next() {
                     group.addTask {
-                        let r = await runSingleLatencyTest(for: config, send: send)
+                        let r = await runSingleLatencyTest(for: config, settings: settings, send: send)
                         return (config.id, r)
                     }
                 }
@@ -273,7 +280,7 @@ final class LatencyCenter {
                 while let config = iterator.next() {
                     if let isStillWanted, await !isStillWanted(config.id) { continue }
                     group.addTask {
-                        let r = await runSingleLatencyTest(for: config, send: send)
+                        let r = await runSingleLatencyTest(for: config, settings: settings, send: send)
                         return (config.id, r)
                     }
                     break
@@ -284,9 +291,10 @@ final class LatencyCenter {
 
     nonisolated private static func sendLatencyTestMessage(
         for configuration: ProxyConfiguration,
+        settings: LatencyTestSettings,
         send: @Sendable (Data) async -> Data?
     ) async -> LatencyResult {
-        guard let messageData = try? JSONEncoder().encode(TunnelMessage.testLatency(configuration)) else { return .failed }
+        guard let messageData = try? JSONEncoder().encode(TunnelMessage.testLatencyWithSettings(configuration, settings)) else { return .failed }
 
         let responseData = await send(messageData)
         return (responseData.flatMap { try? JSONDecoder().decode(LatencyTestResponse.self, from: $0) })?.asLatencyResult ?? .failed

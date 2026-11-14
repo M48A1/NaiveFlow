@@ -365,6 +365,10 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
             let response = LatencyTestResponse(await LatencyTester.test(configuration))
             return encodeReply(response)
 
+        case .testLatencyWithSettings(let configuration, let settings):
+            let response = LatencyTestResponse(await LatencyTester.test(configuration, target: settings.target, timeout: settings.timeout))
+            return encodeReply(response)
+
         case .applyRuntimeVersion(let id):
             return await applyPublishedVersion(id)
 

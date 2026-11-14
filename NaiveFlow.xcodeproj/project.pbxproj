@@ -114,6 +114,7 @@
 				Models/DNSMode.swift,
 				Models/HostMapping.swift,
 				Models/LatencyResult.swift,
+				Models/LatencyTestSettings.swift,
 				Models/MITMRule.swift,
 				Models/MITMScriptDialect.swift,
 				Models/ProxyMode.swift,

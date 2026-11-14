@@ -7,6 +7,7 @@ struct ClientSettingsView: View {
     var body: some View {
         List {
             NavigationLink { ClientDNSView() } label: { row("DNS", symbol: "safari") }
+            NavigationLink { ClientLatencySettingsView() } label: { row("Latency Test", symbol: "bolt.horizontal.circle") }
             NavigationLink { ClientGeoSettingsView(site: false) } label: { row("GeoIP", symbol: "globe.europe.africa") }
             NavigationLink { ClientGeoSettingsView(site: true) } label: { row("GeoSite", symbol: "globe") }
             NavigationLink { ClientAlwaysConnectedSettingsView() } label: { row("Always Connected", symbol: "arrow.triangle.2.circlepath") }

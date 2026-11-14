@@ -51,7 +51,8 @@ nonisolated struct LatencyTarget: Sendable, Hashable {
         if let query = components.percentEncodedQuery, !query.isEmpty {
             path += "?" + query
         }
-        let port = components.port.map { UInt16(clamping: $0) } ?? scheme.defaultPort
+        if let port = components.port, !(1...65535).contains(port) { return nil }
+        let port = components.port.map { UInt16($0) } ?? scheme.defaultPort
         self.init(scheme: scheme, host: host, port: port, path: path)
     }
 
@@ -68,11 +69,10 @@ nonisolated struct LatencyTarget: Sendable, Hashable {
 }
 
 nonisolated enum LatencyTester {
-    private static let timeout: Duration = .seconds(10)
-
     nonisolated static func test(
         _ configuration: ProxyConfiguration,
-        target: LatencyTarget = .captivePortal
+        target: LatencyTarget = .captivePortal,
+        timeout: Duration = .seconds(10)
     ) async -> LatencyResult {
         ConnectionMetrics.shared.suspendRecording()
         defer { ConnectionMetrics.shared.resumeRecording() }
@@ -84,7 +84,7 @@ nonisolated enum LatencyTester {
                     return try await Self.performTest(testConfiguration, target: target)
                 }
                 group.addTask {
-                    try await Task.sleep(for: Self.timeout, precision: .relaxed)
+                    try await Task.sleep(for: timeout, precision: .relaxed)
                     throw CancellationError()
                 }
 
