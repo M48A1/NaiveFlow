@@ -17,23 +17,6 @@ struct ClientWorkspaceFeatureTests {
         return (root, model)
     }
 
-    @Test func draftReviewRestoresAppliedContentWithoutPublishing() async throws {
-        let (root, model) = await workspace()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let head = model.runningSnapshotID
-        var draft = try #require(model.profile); draft.text += "# draft\n"
-        #expect(await model.saveProfile(draft, apply: false))
-        #expect(model.hasSavedDraft)
-        #expect(!ClientTextChange.compare(model.operatingText, draft.text).isEmpty)
-        #expect(await model.restoreRunningDraft())
-        #expect(!model.hasSavedDraft)
-        #expect(model.profile?.text == base)
-        #expect(model.runningSnapshotID == head)
-        #expect(ClientTextChange.compare("a\nb", "a\nc").first?.before == "b")
-        #expect(ClientTextChange.compare("a\nb", "a\nc").first?.after == "c")
-        #expect(ClientTextChange.compare("a\nb", "x\ny", limit: 1).count == 1)
-    }
-
     @Test func subscriptionPreviewStagesChangesAndCanRemoveMissingNodesAtomically() async throws {
         let (root, model) = await workspace()
         defer { try? FileManager.default.removeItem(at: root) }

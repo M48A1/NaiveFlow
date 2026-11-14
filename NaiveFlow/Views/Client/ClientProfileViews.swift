@@ -15,7 +15,7 @@ struct ClientProfileEditorView: View {
     var body: some View {
         NavigationStack {
             ScrollViewReader { scroll in
-                Form {
+                ClientForm {
                     Section("Profile") {
                         TextField("Profile Name", text: Binding(get: { profile.displayName }, set: { profile.name = $0 }))
                         TextField("Remote URL (Optional, HTTPS)", text: Binding(get: { profile.sourceURL ?? "" }, set: { profile.sourceURL = $0.isEmpty ? nil : $0 }))
@@ -33,7 +33,7 @@ struct ClientProfileEditorView: View {
                     if !errors.isEmpty {
                         Section("Configuration Errors") {
                             ForEach(Array(errors.enumerated()), id: \.offset) { item in
-                                Text(item.element.message).foregroundStyle(.red)
+                                Text(item.element.message).foregroundStyle(DesignSystem.Colors.error)
                             }
                         }
                     }
@@ -107,11 +107,11 @@ struct ClientProfilesView: View {
                             HStack(spacing: 13) {
                                 ClientSectionIcon(symbol: "doc.text")
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(profile.displayName).foregroundStyle(.primary)
-                                    Text(profile.updatedAt, format: .dateTime.month().day().hour().minute()).font(.caption).foregroundStyle(.secondary)
+                                    Text(profile.displayName).foregroundStyle(DesignSystem.Colors.text)
+                                    Text(profile.updatedAt, format: .dateTime.month().day().hour().minute()).designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
                                 }
                                 Spacer()
-                                if model.library.selectedID == profile.id { Image(systemName: "checkmark.circle.fill").foregroundStyle(.blue) }
+                                if model.library.selectedID == profile.id { Image(systemName: "checkmark.circle.fill").foregroundStyle(DesignSystem.Colors.accent) }
                             }.padding(.vertical, 5)
                         }.buttonStyle(.plain)
                         Menu {
@@ -176,14 +176,17 @@ struct ClientNodeSubscriptionsView: View {
     var body: some View {
         List {
             Section {
+                Button("Add Subscription", systemImage: "plus.circle") { editing = ClientNodeSubscription(name: "", url: "") }
+            }
+            Section {
                 if (model.profile?.nodeSubscriptions ?? []).isEmpty {
-                    ContentUnavailableView("No Subscriptions", systemImage: "tray.2", description: Text("Tap + to add a subscription. Nodes also remain in Manage Nodes and PROXY."))
+                    ContentUnavailableView("No Subscriptions", systemImage: "tray.2", description: Text("Add a subscription using the button above. Nodes also remain in Manage Nodes and PROXY."))
                 }
                 ForEach(model.profile?.nodeSubscriptions ?? []) { subscription in
                     NavigationLink { ClientNodeSubscriptionDetailView(id: subscription.id) } label: {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(subscription.name)
-                            Text(subscription.url).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            Text(subscription.url).designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText).lineLimit(1)
                         }.padding(.vertical, 4)
                     }
                 }
@@ -194,9 +197,6 @@ struct ClientNodeSubscriptionsView: View {
             HStack { ClientSubscriptionUpdateAllButton(); Spacer() }
                 .padding(.horizontal, 20).padding(.vertical, 10).background(.bar)
         }
-        .toolbar { ToolbarItem(placement: .clientToolbarTrailing) {
-            Button("Add Subscription", systemImage: "plus") { editing = ClientNodeSubscription(name: "", url: "") }
-        } }
         .sheet(item: $editing) { ClientNodeSubscriptionEditorView(subscription: $0) }
         .disabled(model.isBusy)
     }
@@ -218,8 +218,8 @@ struct ClientNodeSubscriptionDetailView: View {
                 ForEach(nodes) { node in
                     Button { editingNode = node } label: {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(node.name).foregroundStyle(.primary)
-                            Text(node.outboundProtocol.name).font(.caption).foregroundStyle(.secondary)
+                            Text(node.name).foregroundStyle(DesignSystem.Colors.text)
+                            Text(node.outboundProtocol.name).designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
                         }.padding(.vertical, 5).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                     }.buttonStyle(.plain)
                 }
@@ -274,14 +274,14 @@ struct ClientNodeSubscriptionEditorView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            ClientForm {
                 Section {
                     TextField("Subscription Name", text: $subscription.name)
                     TextField("HTTPS Subscription URL", text: $subscription.url).clientKeyboardType(.URL)
                         .clientNoAutocapitalization().autocorrectionDisabled()
                 }
                 Section {
-                    Toggle("Remnawave HWID", isOn: $subscription.remnawaveHWIDEnabled).tint(.blue)
+                    Toggle("Remnawave HWID", isOn: $subscription.remnawaveHWIDEnabled).tint(DesignSystem.Colors.accent)
                 } footer: {
                     Text("Send this device's HWID when importing or updating this subscription. Enable only if required by its provider.")
                 }

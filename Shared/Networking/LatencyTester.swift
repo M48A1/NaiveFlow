@@ -74,9 +74,6 @@ nonisolated enum LatencyTester {
         target: LatencyTarget = .captivePortal,
         timeout: Duration = .seconds(10)
     ) async -> LatencyResult {
-        ConnectionMetrics.shared.suspendRecording()
-        defer { ConnectionMetrics.shared.resumeRecording() }
-
         do {
             let latencyMilliseconds = try await withThrowingTaskGroup(of: Int.self) { group in
                 group.addTask {

@@ -10,6 +10,11 @@ struct ClientModulesView: View {
     var body: some View {
         List {
             Section {
+                Button("Add Module", systemImage: "plus.circle") {
+                    editing = ClientModule(name: "New Module", summary: "", source: "", format: .surge)
+                }
+            }
+            Section {
                 if model.modules.isEmpty {
                     ContentUnavailableView("No Modules", systemImage: "puzzlepiece.extension")
                 }
@@ -18,8 +23,8 @@ struct ClientModulesView: View {
                         HStack(spacing: 12) {
                             ClientSectionIcon(symbol: "puzzlepiece.extension.fill")
                             VStack(alignment: .leading, spacing: 5) {
-                                Text(module.name).font(.body.weight(.medium)).foregroundStyle(.primary)
-                                Text(module.summary.isEmpty ? module.format.displayName : module.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                Text(module.name).designText(.body, weight: .medium).foregroundStyle(DesignSystem.Colors.text)
+                                Text(module.summary.isEmpty ? module.format.displayName : module.summary).designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText).lineLimit(2)
                             }
                             Spacer(minLength: 0)
                         }.contentShape(Rectangle())
@@ -32,7 +37,7 @@ struct ClientModulesView: View {
 #if os(iOS)
                     .clientSwipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button("Delete", role: .destructive) { pendingDelete = module }
-                        Button("Edit", systemImage: "pencil") { editing = module }.tint(.blue)
+                        Button("Edit", systemImage: "pencil") { editing = module }.tint(DesignSystem.Colors.accent)
                         Button("Update", systemImage: "arrow.clockwise") { Task { await model.manageResource(.update(.modules(ids: [module.id]))) } }
                             .tint(.orange).disabled(module.sourceURL?.isEmpty != false)
                     }
@@ -56,13 +61,6 @@ struct ClientModulesView: View {
             }
         }
         .navigationTitle("Modules").clientInlineTitle()
-        .toolbar {
-            ToolbarItem(placement: .clientToolbarTrailing) {
-                Button("Add Module", systemImage: "plus") {
-                    editing = ClientModule(name: "New Module", summary: "", source: "", format: .surge)
-                }
-            }
-        }
         .sheet(item: $editing) { ClientModuleEditorView(module: $0).clientEditorWindow() }
         .alert("Update Complete", isPresented: $updateComplete) { Button("OK", role: .cancel) {} } message: {
             Text("All remote modules were updated and applied to the current profile.")
@@ -82,12 +80,12 @@ struct ClientModuleEditorView: View {
     @State private var downloading = false
     var body: some View {
         NavigationStack {
-            Form {
+            ClientForm {
                 Section("Module Information") {
                     TextField("Module Name", text: $module.name)
                     TextField("Description", text: $module.summary, axis: .vertical)
                     Picker("Format", selection: $module.format) { ForEach(ModuleFormat.allCases) { Text($0.displayName).tag($0) } }
-                    Toggle("Enable Module", isOn: $module.enabled).tint(.blue)
+                    Toggle("Enable Module", isOn: $module.enabled).tint(DesignSystem.Colors.accent)
                 }
                 Section("Import and Update") {
                     TextField("Remote URL (HTTPS)", text: Binding(get: { module.sourceURL ?? "" }, set: { module.sourceURL = $0.isEmpty ? nil : $0 }))
@@ -99,7 +97,7 @@ struct ClientModuleEditorView: View {
                     Button("Import Local File", systemImage: "folder") { importingFile = true }
                 }
                 Section("Module Content") {
-                    TextEditor(text: $module.source).font(.system(size: 12, design: .monospaced)).frame(minHeight: 260)
+                    TextEditor(text: $module.source).designText(.code).frame(minHeight: 260)
                         .clientNoAutocapitalization().autocorrectionDisabled().accessibilityLabel("Module Content")
                 }
                 Section {

@@ -25,7 +25,8 @@ class TVTextInputViewController: UIViewController {
 
         textField.text = currentValue
         textField.placeholder = placeholder
-        textField.font = .systemFont(ofSize: 32)
+        textField.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: DesignSystem.TextRole.body.size))
+        textField.adjustsFontForContentSizeCategory = true
         textField.borderStyle = .roundedRect
         textField.autocorrectionType = .no
         textField.autocapitalizationType = .none

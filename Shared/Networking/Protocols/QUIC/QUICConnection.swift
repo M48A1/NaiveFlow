@@ -67,7 +67,6 @@ nonisolated final class QUICConnection: Sendable {
     func update<T: Sendable>(_ body: (QUICConnectionCore) -> T) -> T { state.update(body) }
 
     func connect() async throws {
-        let attempt = ConnectionMetrics.currentAttempt
         let resolved = usesTransport ? [] : await DNSResolver.proxies.resolveAll(host)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             update { core in
@@ -76,7 +75,6 @@ nonisolated final class QUICConnection: Sendable {
                     return
                 }
                 core.transition(to: .connecting)
-                core.dialAttempt = attempt
                 core.connectContinuation = continuation
                 core.setupUDP(resolvedIPs: resolved)
             }

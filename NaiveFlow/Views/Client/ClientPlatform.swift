@@ -5,18 +5,6 @@ import AppKit
 import UIKit
 #endif
 
-enum ClientAppearance {
-#if os(macOS)
-    static let background = Color(nsColor: .windowBackgroundColor)
-    static let card = Color(nsColor: .controlBackgroundColor)
-    static let tertiaryLabel = Color(nsColor: .tertiaryLabelColor)
-#else
-    static let background = Color(uiColor: .systemGroupedBackground)
-    static let card = Color(uiColor: .secondarySystemGroupedBackground)
-    static let tertiaryLabel = Color(uiColor: .tertiaryLabel)
-#endif
-}
-
 enum ClientSystem {
     static func copy(_ text: String) {
 #if os(macOS)
@@ -59,6 +47,14 @@ extension ToolbarItemPlacement {
 }
 
 extension View {
+    @ViewBuilder func clientIconMenu() -> some View {
+#if os(macOS)
+        self.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+#else
+        self.menuIndicator(.hidden)
+#endif
+    }
+
     @ViewBuilder func clientInlineTitle() -> some View {
 #if os(macOS)
         self
@@ -115,11 +111,7 @@ extension View {
     }
 
     @ViewBuilder func clientNavigationLinkIndicators() -> some View {
-#if os(macOS)
-        self
-#else
         navigationLinkIndicatorVisibility(.hidden)
-#endif
     }
 
     @ViewBuilder func clientSettingsNavigationBar() -> some View {

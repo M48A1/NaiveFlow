@@ -467,14 +467,6 @@ nonisolated struct ClientFailure: LocalizedError {
 extension ClientModel {
     var hasSavedDraft: Bool { hasApplied && profile?.text != operatingText }
     var runningSnapshotID: UUID? { document.activation.store.manifest().activeSnapshotId }
-    var isRuntimeConfirmed: Bool { document.activation.store.isActiveSnapshotConfirmed() }
-
-    func restoreRunningDraft() async -> Bool {
-        guard var candidate = profile, hasApplied else { return false }
-        candidate.text = operatingText
-        return await saveProfile(candidate, apply: false)
-    }
-
     func removeNodes(_ names: Set<String>) async -> Bool {
         guard !names.isEmpty else { return false }
         do {

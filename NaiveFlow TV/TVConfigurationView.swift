@@ -34,7 +34,7 @@ struct TVClientProfilesView: View {
                 .disabled(model.isBusy || downloading)
             if downloading { ProgressView("Downloading Profile") }
         }
-        .navigationTitle("Configuration")
+        .navigationTitle("Profiles")
         .alert("Import Profile from URL", isPresented: $importingURL) {
             TextField("HTTPS Configuration URL", text: $source).autocorrectionDisabled()
             Button("Cancel", role: .cancel) {}
@@ -77,7 +77,7 @@ struct TVClientProfileEditor: View {
                     set: { profile.sourceURL = $0.isEmpty ? nil : $0 }
                 )).autocorrectionDisabled()
                 TextField("Configuration", text: $profile.text, axis: .vertical)
-                    .font(.system(.body, design: .monospaced))
+                    .designText(.body, design: .monospaced)
                     .autocorrectionDisabled()
             }
             Section {

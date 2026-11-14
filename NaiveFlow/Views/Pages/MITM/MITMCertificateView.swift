@@ -27,12 +27,12 @@ struct MITMCertificateView: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        Form {
+        ClientForm {
             Section {
                 Toggle("Enable MITM", isOn: Binding(
                     get: { model.parsed.mitm.bool("enable") ?? model.parsed.general.bool("mitm") ?? false },
                     set: { value in Task { await model.setSetting("enable", value: value ? "true" : "false", section: .mitm) } }
-                )).tint(.blue).disabled(model.isBusy)
+                )).tint(DesignSystem.Colors.accent).disabled(model.isBusy)
             }
             Section {
                 HStack {
@@ -47,12 +47,12 @@ struct MITMCertificateView: View {
                                 .animation(.default, value: badgeIcon)
                                 .animation(.default, value: badgeColor)
                             Text(badgeTitle)
-                                .font(.headline)
+                                .designText(.contentTitle)
                                 .animation(.default, value: badgeTitle)
                         }
                         Text(badgeSubtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .designText(.caption)
+                            .foregroundStyle(DesignSystem.Colors.secondaryText)
                             .animation(.default, value: badgeSubtitle)
                     }
                 }

@@ -7,9 +7,9 @@ struct AboutView: View {
                 VStack(spacing: 12) {
                     Image(systemName: "network").font(.system(size: 38, weight: .medium)).foregroundStyle(.white)
                         .frame(width: 76, height: 76).background(.blue.gradient, in: RoundedRectangle(cornerRadius: 21))
-                    Text("NaiveFlow").font(.title2.weight(.semibold))
+                    Text("NaiveFlow").designText(.sectionTitle, weight: .semibold)
                     Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                        .designText(.secondary).foregroundStyle(DesignSystem.Colors.secondaryText)
                 }.frame(maxWidth: .infinity).padding(.vertical, 22)
             }
             Section {
@@ -18,7 +18,7 @@ struct AboutView: View {
                     HStack {
                         Label("Feedback", systemImage: "envelope")
                         Spacer()
-                        Text("hello@cathayepic.com").font(.subheadline).foregroundStyle(.secondary)
+                        Text("hello@cathayepic.com").designText(.secondary).foregroundStyle(DesignSystem.Colors.secondaryText)
                     }
                 }
             }

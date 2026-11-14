@@ -56,7 +56,7 @@ private struct TVClientModuleEditor: View {
                 Button("Load from URL") { Task { await download() } }
                     .disabled(module.sourceURL == nil)
                 TextField("Module Content", text: $module.source, axis: .vertical)
-                    .font(.system(.body, design: .monospaced))
+                    .designText(.body, design: .monospaced)
                     .autocorrectionDisabled()
             }
             Button("Save and Apply") {

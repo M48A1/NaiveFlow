@@ -34,15 +34,18 @@ struct NaiveFlowApp: App {
             ContentView()
 #if os(macOS)
                 .frame(minWidth: 560, minHeight: 500)
+                .formStyle(.grouped)
 #endif
                 .clientNavigationLinkIndicators()
+                .preferredColorScheme(DesignSystem.appearance)
+                .designText(.body)
+                .tint(DesignSystem.Colors.accent)
                 .environment(\.locale, Locale(identifier: "en"))
                 .environment(operations)
                 .environment(client)
                 .environment(container.tunnel)
                 .environment(container.selection)
                 .environment(container.latency)
-                .environment(container.stats)
                 .environment(mitmCertificateController)
                 .environment(deepLinkManager)
         }
@@ -59,9 +62,6 @@ struct NaiveFlowApp: App {
             content.sound = .default
             let request = UNNotificationRequest(identifier: "naiveflow.connection", content: content, trigger: nil)
             UNUserNotificationCenter.current().add(request)
-        }
-        .onChange(of: scenePhase, initial: true) { _, phase in
-            container.stats.setPresentationActive(phase == .active)
         }
     }
 }

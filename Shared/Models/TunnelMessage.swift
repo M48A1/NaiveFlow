@@ -14,8 +14,6 @@ nonisolated enum TunnelMessage: Codable, Sendable {
     case applyRuntimeVersion(UUID)
     case fetchPolicyGroups
     case fetchRuntimeStatus
-    case fetchStats
-    case resetStats
     case clearLogs
     case fetchLogs
     case fetchRequests
@@ -35,74 +33,6 @@ nonisolated enum ActiveConfiguration {
 }
 
 // MARK: - Responses
-
-nonisolated struct RouteTrafficEntry: Codable, Sendable, Identifiable, Hashable {
-    var target: RouteTarget
-    var bytesIn: Int64
-    var bytesOut: Int64
-
-    var id: String { target.storageKey }
-    var totalBytes: Int64 { bytesIn + bytesOut }
-}
-
-nonisolated struct StatsResponse: Codable, Sendable {
-    var bytesIn: Int64
-    var bytesOut: Int64
-    var routes: [RouteTrafficEntry]
-    var tcpConnectionCount: Int
-    var udpConnectionCount: Int
-    var memoryBytes: UInt64
-    var wakeSeconds: TimeInterval
-    var sleepSeconds: TimeInterval
-    var dialMs: Int?
-    var handshakeMs: Int?
-    var avgDialMs: Int?
-    var avgHandshakeMs: Int?
-
-    init(
-        bytesIn: Int64,
-        bytesOut: Int64,
-        routes: [RouteTrafficEntry] = [],
-        tcpConnectionCount: Int = 0,
-        udpConnectionCount: Int = 0,
-        memoryBytes: UInt64 = 0,
-        wakeSeconds: TimeInterval = 0,
-        sleepSeconds: TimeInterval = 0,
-        dialMs: Int? = nil,
-        handshakeMs: Int? = nil,
-        avgDialMs: Int? = nil,
-        avgHandshakeMs: Int? = nil
-    ) {
-        self.bytesIn = bytesIn
-        self.bytesOut = bytesOut
-        self.routes = routes
-        self.tcpConnectionCount = tcpConnectionCount
-        self.udpConnectionCount = udpConnectionCount
-        self.memoryBytes = memoryBytes
-        self.wakeSeconds = wakeSeconds
-        self.sleepSeconds = sleepSeconds
-        self.dialMs = dialMs
-        self.handshakeMs = handshakeMs
-        self.avgDialMs = avgDialMs
-        self.avgHandshakeMs = avgHandshakeMs
-    }
-    
-    init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        bytesIn = try c.decode(Int64.self, forKey: .bytesIn)
-        bytesOut = try c.decode(Int64.self, forKey: .bytesOut)
-        routes = try c.decodeIfPresent([RouteTrafficEntry].self, forKey: .routes) ?? []
-        tcpConnectionCount = try c.decodeIfPresent(Int.self, forKey: .tcpConnectionCount) ?? 0
-        udpConnectionCount = try c.decodeIfPresent(Int.self, forKey: .udpConnectionCount) ?? 0
-        memoryBytes = try c.decodeIfPresent(UInt64.self, forKey: .memoryBytes) ?? 0
-        wakeSeconds = try c.decodeIfPresent(TimeInterval.self, forKey: .wakeSeconds) ?? 0
-        sleepSeconds = try c.decodeIfPresent(TimeInterval.self, forKey: .sleepSeconds) ?? 0
-        dialMs = try c.decodeIfPresent(Int.self, forKey: .dialMs)
-        handshakeMs = try c.decodeIfPresent(Int.self, forKey: .handshakeMs)
-        avgDialMs = try c.decodeIfPresent(Int.self, forKey: .avgDialMs)
-        avgHandshakeMs = try c.decodeIfPresent(Int.self, forKey: .avgHandshakeMs)
-    }
-}
 
 nonisolated struct LogsResponse: Codable, Sendable {
     var logs: [TunnelLogEntry]

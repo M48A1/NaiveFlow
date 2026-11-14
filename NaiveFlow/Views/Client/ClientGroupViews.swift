@@ -1,57 +1,87 @@
 import SwiftUI
+import CoreTransferable
+import UniformTypeIdentifiers
 
 struct ClientGroupsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(ClientModel.self) private var model
     @State private var editing: ClientGroupEditor?
     @State private var deleteGroup: String?
-    @State private var managing = false
-#if os(iOS)
-    @State private var usesWideGrid = false
-#endif
+    @State private var dragScope = UUID()
+    @State private var dropTarget: String?
+    @State private var savingOrder = false
+    @State private var availableGridWidth: CGFloat = 0
+
+    private var columnCount: Int {
+        let capacity = availableGridWidth >= 700 ? max(2, Int((availableGridWidth + 12) / 222)) : 2
+        return min(model.groups.count + 2, capacity)
+    }
 
     private var columns: [GridItem] {
-#if os(macOS)
-        [GridItem(.adaptive(minimum: 210, maximum: 320), spacing: 12)]
-#else
-        if usesWideGrid {
-            return [GridItem(.adaptive(minimum: 210, maximum: 320), spacing: 12)]
-        }
-        return [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
-#endif
+        Array(repeating: GridItem(.flexible(minimum: 0, maximum: 320), spacing: 12), count: columnCount)
     }
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 12) {
-                NavigationLink { ClientGroupDetailView(name: nil) } label: {
-                    ClientPolicyCard(name: "PROXY", selected: model.selectedNodeName,
-                        style: ClientGroupStyle(symbol: "shippingbox", palette: 0))
-                }.buttonStyle(.plain)
-                ForEach(model.groups) { group in
-                    NavigationLink { ClientGroupDetailView(name: group.name) } label: {
-                        ClientPolicyCard(name: group.name, selected: model.selectedMember(in: group),
-                            style: style(group.name), iconURL: group.parameters["icon-url"])
+            VStack(spacing: 16) {
+                LazyVGrid(columns: columns, spacing: 12) {
+                    NavigationLink { ClientGroupDetailView(name: nil) } label: {
+                        ClientPolicyCard(name: "PROXY", selected: model.selectedNodeName,
+                            style: ClientGroupStyle(symbol: "shippingbox", palette: 0))
                     }.buttonStyle(.plain)
-                    .contextMenu {
-                        Button("Edit", systemImage: "pencil") { editing = ClientGroupEditor(group: group) }
-                        Button("Duplicate", systemImage: "doc.on.doc") { editing = ClientGroupEditor(group: group, duplicate: true) }
-                        Button("Delete", systemImage: "trash", role: .destructive) { deleteGroup = group.name }
+                    ForEach(model.groups) { group in
+                        NavigationLink { ClientGroupDetailView(name: group.name) } label: {
+                            ClientPolicyCard(name: group.name, selected: model.selectedMember(in: group),
+                                style: style(group.name), iconURL: group.parameters["icon-url"])
+                        }.buttonStyle(.plain)
+                        .draggable(ClientGroupCardDrag(name: group.name, scope: dragScope,
+                            profileID: model.profile?.id, order: model.groups.map(\.name)))
+                        .dropDestination(for: ClientGroupCardDrag.self) { items, _ in
+                            guard items.count == 1, let item = items.first,
+                                  item.scope == dragScope, item.profileID == model.profile?.id,
+                                  item.order == model.groups.map(\.name) else { return false }
+                            return moveGroup(item.name, to: group.name)
+                        } isTargeted: { targeted in
+                            if targeted { dropTarget = group.name }
+                            else if dropTarget == group.name { dropTarget = nil }
+                        }
+                        .overlay {
+                            RoundedRectangle(cornerRadius: DesignSystem.Card.policyRadius)
+                                .stroke(dropTarget == group.name ? DesignSystem.Colors.accent : .clear, lineWidth: 3)
+                                .allowsHitTesting(false)
+                        }
+                        .disabled(model.isBusy || savingOrder)
+                        .accessibilityHint("Press and hold, then drag to reorder this group.")
+                        .accessibilityAction(named: Text("Move Earlier")) { moveGroup(group.name, offset: -1) }
+                        .accessibilityAction(named: Text("Move Later")) { moveGroup(group.name, offset: 1) }
+                        .contextMenu {
+                            Button("Edit", systemImage: "pencil") { editing = ClientGroupEditor(group: group) }
+                            Button("Duplicate", systemImage: "doc.on.doc") { editing = ClientGroupEditor(group: group, duplicate: true) }
+                            Button("Delete", systemImage: "trash", role: .destructive) { deleteGroup = group.name }
+                        }
                     }
+                    Button { editing = ClientGroupEditor() } label: {
+                        ClientNewGroupCard()
+                    }.buttonStyle(.plain).disabled(model.isBusy)
                 }
-            }.padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 24)
-            if model.groups.isEmpty {
-                Text("Group your nodes to choose an outbound for different traffic.")
-                    .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 32)
+                .frame(maxWidth: CGFloat(columnCount) * 320 + CGFloat(columnCount - 1) * 12)
+                if model.groups.count > 1 {
+                    Text("Press and hold a group card, then drag it to reorder.")
+                        .designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
+                        .multilineTextAlignment(.center).padding(.horizontal, 20).padding(.vertical, 12)
+                }
+                if model.groups.isEmpty {
+                    Text("Group your nodes to choose an outbound for different traffic.")
+                        .designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText).multilineTextAlignment(.center).padding(.horizontal, 32)
+                }
             }
+            .clientMainContent(maximumWidth: DesignSystem.Layout.groupWidth)
         }
-#if os(iOS)
-        .onGeometryChange(for: Bool.self) { geometry in
-            geometry.size.width >= 700
-        } action: { wide in
-            usesWideGrid = wide
+        .onGeometryChange(for: CGFloat.self) { geometry in
+            max(0, min(DesignSystem.Layout.groupWidth, geometry.size.width - ClientMainLayout.horizontalInset * 2))
+        } action: { width in
+            availableGridWidth = width
         }
-#endif
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {
@@ -61,20 +91,32 @@ struct ClientGroupsView: View {
         }
         .background(ClientAppearance.background)
         .navigationTitle("Groups")
-        .toolbar {
-            ToolbarItem(placement: .clientToolbarTrailing) {
-                Menu {
-                    Button("New Group", systemImage: "plus") { editing = ClientGroupEditor() }
-                    Button("Manage and Reorder", systemImage: "arrow.up.arrow.down") { managing = true }
-                } label: { Image(systemName: "plus").font(.system(size: 21, weight: .medium)) }
-            }
-        }
         .sheet(item: $editing) { ClientGroupEditorView(draft: $0).clientEditorWindow() }
-        .sheet(isPresented: $managing) { NavigationStack { ClientGroupManagementView() } }
         .confirmationDialog("Delete Group?", isPresented: Binding(get: { deleteGroup != nil }, set: { if !$0 { deleteGroup = nil } }), titleVisibility: .visible) {
             Button("Delete", role: .destructive) { if let deleteGroup { Task { await model.deleteGroup(deleteGroup) } }; deleteGroup = nil }
         }
     }
+    @discardableResult
+    private func moveGroup(_ name: String, to target: String) -> Bool {
+        guard !model.isBusy, !savingOrder, name != target else { return false }
+        var names = model.groups.map(\.name)
+        guard let source = names.firstIndex(of: name), let destination = names.firstIndex(of: target) else { return false }
+        names.move(fromOffsets: IndexSet(integer: source), toOffset: destination > source ? destination + 1 : destination)
+        dropTarget = nil
+        savingOrder = true
+        Task {
+            defer { savingOrder = false }
+            await model.reorderGroups(names)
+        }
+        return true
+    }
+
+    private func moveGroup(_ name: String, offset: Int) {
+        let names = model.groups.map(\.name)
+        guard let index = names.firstIndex(of: name), names.indices.contains(index + offset) else { return }
+        moveGroup(name, to: names[index + offset])
+    }
+
     private func style(_ name: String) -> ClientGroupStyle { model.profile?.groupStyles[name] ?? ClientGroupStyle(symbol: symbol(name), palette: ClientPalette.index(for: name)) }
     private func symbol(_ name: String) -> String {
         let name = name.lowercased()
@@ -110,7 +152,7 @@ struct ClientGroupDetailView: View {
                                 if testing { ProgressView().tint(.white) }
                                 else { Image(systemName: "bolt.fill") }
                                 Text(testing ? "Testing…" : "Latency Test")
-                            }.font(.caption.weight(.semibold)).foregroundStyle(.white)
+                            }.designText(.caption, weight: .semibold).foregroundStyle(.white)
                                 .padding(.horizontal, 12).frame(minHeight: 44)
                                 .background(.black.opacity(0.16), in: Capsule())
                         }.buttonStyle(.plain).disabled(candidateNodes.isEmpty || testing)
@@ -118,7 +160,7 @@ struct ClientGroupDetailView: View {
                             .padding(14)
                     }
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Available Nodes").font(.footnote.weight(.medium)).foregroundStyle(.secondary).padding(.leading, 4)
+                    Text("Available Nodes").designText(.caption, weight: .medium).foregroundStyle(DesignSystem.Colors.secondaryText).padding(.leading, 4)
                     ClientCard {
                         ForEach(Array(candidates.enumerated()), id: \.offset) { index, member in
                             if index > 0 { Divider().padding(.leading, 56) }
@@ -127,13 +169,13 @@ struct ClientGroupDetailView: View {
                             } else {
                                 Button { choose(member) } label: {
                                     HStack(spacing: 14) {
-                                        Image(systemName: selected == member ? "checkmark.circle.fill" : "circle").foregroundStyle(selected == member ? Color.blue : .secondary)
-                                        Text(member).foregroundStyle(.primary); Spacer()
+                                        Image(systemName: selected == member ? "checkmark.circle.fill" : "circle").foregroundStyle(selected == member ? DesignSystem.Colors.accent : .secondary)
+                                        Text(member).foregroundStyle(DesignSystem.Colors.text); Spacer()
                                     }.padding(20)
                                 }
                             }
                         }
-                        if candidates.isEmpty { Text("Add nodes on the Home tab first.").font(.subheadline).foregroundStyle(.secondary).padding(24) }
+                        if candidates.isEmpty { Text("Add nodes on the Home tab first.").designText(.secondary).foregroundStyle(DesignSystem.Colors.secondaryText).padding(24) }
                     }
                 }
                 if let group {
@@ -141,12 +183,12 @@ struct ClientGroupDetailView: View {
                         Button("Auto Select", systemImage: "shuffle") { Task {
                             _ = await model.saveGroup(original: group.name, name: group.name, kind: "url-test", members: group.members,
                                 parameters: group.parameters.pairs.filter { $0.0 != "selected" }, style: model.profile?.groupStyles[title] ?? ClientGroupStyle(palette: ClientPalette.index(for: title)))
-                        } }.font(.subheadline).frame(maxWidth: .infinity).padding(18)
+                        } }.designText(.secondary).frame(maxWidth: .infinity).padding(18)
                     }
                 }
                 if let group, group.kind != .select {
                     Text("Currently selected by \(group.kindToken). Selecting a node switches to manual selection.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
                 }
             }.padding(20)
         }
@@ -218,7 +260,7 @@ struct ClientGroupEditorView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            ClientForm {
                 Section {
                     ClientPolicyCard(name: draft.name.isEmpty ? "New Group" : draft.name,
                         selected: effectiveMembers.first ?? "Select Members", style: style, iconURL: draft.iconURL)
@@ -234,14 +276,14 @@ struct ClientGroupEditorView: View {
                     }
                     Button { showIconPacks = true } label: {
                         HStack {
-                            Text("Icon").foregroundStyle(.primary)
+                            Text("Icon").foregroundStyle(DesignSystem.Colors.text)
                             Spacer()
                             if let url = ProxyGroupIconURL.parse(draft.iconURL) {
                                 AsyncImage(url: url) { image in image.resizable().scaledToFit() }
-                                    placeholder: { Image(systemName: "photo").foregroundStyle(.secondary) }
+                                    placeholder: { Image(systemName: "photo").foregroundStyle(DesignSystem.Colors.secondaryText) }
                                     .frame(width: 30, height: 30)
                             } else {
-                                Text("Choose Icon").foregroundStyle(.secondary)
+                                Text("Choose Icon").foregroundStyle(DesignSystem.Colors.secondaryText)
                             }
                         }.frame(minHeight: 36).contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityHint("Open icon packs to select an icon.")
@@ -260,7 +302,7 @@ struct ClientGroupEditorView: View {
                     TextField("Regular Expression (Optional)", text: $draft.nameFilter)
                         .clientNoAutocapitalization().autocorrectionDisabled()
                         .accessibilityLabel("Node Name Regex")
-                    if let error = draft.filterError { Text(error).font(.footnote).foregroundStyle(.red) }
+                    if let error = draft.filterError { Text(error).designText(.caption).foregroundStyle(DesignSystem.Colors.error) }
                 } header: { Text("Node Name Filter") } footer: {
                     Text("Match node names from PROXY or other referenced groups, only for this group. Directly added nodes stay included. Leave empty to include all referenced nodes.\nExample: (🇭🇰|港|HK|Hong Kong|HongKong)")
                 }
@@ -269,7 +311,7 @@ struct ClientGroupEditorView: View {
                         HStack {
                             Text(member)
                             Spacer()
-                            Button { draft.members.removeAll { $0 == member } } label: { Image(systemName: "minus.circle.fill").foregroundStyle(.red) }.buttonStyle(.borderless)
+                            Button { draft.members.removeAll { $0 == member } } label: { Image(systemName: "minus.circle.fill").foregroundStyle(DesignSystem.Colors.error) }.buttonStyle(.borderless)
                         }
                     }.onMove { draft.members.move(fromOffsets: $0, toOffset: $1) }
                 }
@@ -277,7 +319,7 @@ struct ClientGroupEditorView: View {
                     ForEach(availableMembers, id: \.self) { member in
                         Button { draft.members.append(member) } label: { Label(member, systemImage: "plus.circle") }
                     }
-                    if availableMembers.isEmpty { Text("All available members have been added.").foregroundStyle(.secondary) }
+                    if availableMembers.isEmpty { Text("All available members have been added.").foregroundStyle(DesignSystem.Colors.secondaryText) }
                 }
             }
             .clientKeyboardDone()
@@ -314,39 +356,18 @@ struct ClientGroupEditorView: View {
     }
 }
 
-struct ClientGroupManagementView: View {
-    @Environment(ClientModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
-    @State private var editing: ClientGroupEditor?
-    @State private var pendingDelete: String?
-    var body: some View {
-        List {
-            ForEach(model.groups) { group in
-                Button { editing = ClientGroupEditor(group: group) } label: {
-                    HStack { Text(group.name).foregroundStyle(.primary); Spacer(); Text(group.kindToken).font(.caption).foregroundStyle(.secondary) }
-                }
-#if os(macOS)
-                .contextMenu {
-                    Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = group.name }
-                }
-#endif
-            }
-            .onMove { from, to in
-                var names = model.groups.map(\.name); names.move(fromOffsets: from, toOffset: to)
-                Task { await model.reorderGroups(names) }
-            }
-            .onDelete { offsets in if let index = offsets.first { pendingDelete = model.groups[index].name } }
-        }
-        .navigationTitle("Manage Groups").clientInlineTitle()
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
-#if os(iOS)
-            ToolbarItem(placement: .primaryAction) { EditButton() }
-#endif
-        }
-        .sheet(item: $editing) { ClientGroupEditorView(draft: $0).clientEditorWindow() }
-        .confirmationDialog("Delete Group?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { if let pendingDelete { Task { await model.deleteGroup(pendingDelete) } }; pendingDelete = nil }
-        }
+// Only cards from this view and the same unchanged profile order can be reordered.
+nonisolated private struct ClientGroupCardDrag: Codable, Transferable {
+    let name: String
+    let scope: UUID
+    let profileID: UUID?
+    let order: [String]
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .naiveFlowGroupCard)
     }
+}
+
+private extension UTType {
+    nonisolated static let naiveFlowGroupCard = UTType(exportedAs: "com.argsment.NaiveFlow.group-card")
 }

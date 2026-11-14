@@ -7,7 +7,7 @@ struct ClientDiagnosticsView: View {
     @State private var target = LatencyTestSettings.load().effective.url
     @State private var inputError: String?
     var body: some View {
-        Form {
+        ClientForm {
             Section {
                 Picker("Node", selection: $nodeName) { ForEach(model.nodes) { Text($0.name).tag($0.name) } }
                 TextField("HTTP or HTTPS Test URL", text: $target)
@@ -23,7 +23,7 @@ struct ClientDiagnosticsView: View {
                 }.disabled(diagnostics.isRunning || model.nodes.isEmpty)
                 if diagnostics.isRunning { Button("Cancel", role: .cancel) { diagnostics.cancel() } }
             } header: { Text("Connection") } footer: { Text("Makes test connections from this app using the chosen node and its certificate settings. It does not change your selected node or test other apps' VPN routing. Insecure certificate exceptions remain in effect.") }
-            if let inputError { Text(inputError).foregroundStyle(.red) }
+            if let inputError { Text(inputError).foregroundStyle(DesignSystem.Colors.error) }
             ForEach(diagnostics.steps) { step in
                 Section(step.title) {
                     HStack {

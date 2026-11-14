@@ -16,7 +16,6 @@ nonisolated private let logger = NaiveFlowLogger(category: "PacketTunnelProvider
 
 nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private let tunnelStack = TunnelStack()
-    private let statsRecorder = StatsRecorder()
 
     private let pathMonitorBridge = PathMonitorConcurrencyBridge()
 
@@ -131,10 +130,9 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
             }
             switch outcome {
             case .adopted:
-                startStatsRecorder(claim: myClaim)
+                break
             case .taskAlreadyPresent:
                 rootTask.cancel()
-                startStatsRecorder(claim: myClaim)
             case .superseded:
                 rootTask.cancel()
                 installed = false
@@ -175,21 +173,6 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
             ) { [tunnelStack] in tunnelStack.udpConfig().configuration }
             old?.cancel()
             state.lanProxy?.start()
-        }
-    }
-
-    private func startStatsRecorder(claim: UInt64) {
-        statsRecorder.start { [tunnelStack] in
-            return StatsRecorder.RawValues(
-                byteCounts: tunnelStack.byteCountsSnapshot(),
-                tcpConnectionCount: FlowGauge.tcpTable,
-                udpConnectionCount: FlowGauge.udpTable,
-                memoryBytes: Self.memoryFootprint()
-            )
-        }
-        let stillRunning = providerState.withLock { $0.phase == .running && $0.claimGeneration == claim }
-        if !stillRunning {
-            statsRecorder.stop()
         }
     }
 
@@ -327,7 +310,6 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
             return state.lanProxy
         }
         lan?.cancel()
-        statsRecorder.stop()
         MITMScriptDiskStore.shared.flush()
         task?.cancel()
 
@@ -369,14 +351,6 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
 
         case .fetchRuntimeStatus:
             return encodeReply(await tunnelStack.runtimeStatus())
-
-        case .fetchStats:
-            return encodeReply(statsRecorder.snapshot())
-
-        case .resetStats:
-            tunnelStack.resetByteCounts()
-            statsRecorder.reset()
-            return encodeReply(statsRecorder.snapshot())
 
         case .fetchPolicyGroups:
             return encodeReply(await tunnelStack.policyGroupsResponse())
@@ -436,28 +410,13 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
         }
     }
 
-    private static func memoryFootprint() -> UInt64 {
-        var info = task_vm_info_data_t()
-        var count = mach_msg_type_number_t(
-            MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size
-        )
-        let kr = withUnsafeMutablePointer(to: &info) { pointer in
-            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
-                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), intPtr, &count)
-            }
-        }
-        return kr == KERN_SUCCESS ? info.phys_footprint : 0
-    }
-
     override func sleep() async {
-        statsRecorder.noteSleep()
         MITMScriptDiskStore.shared.flush()
         await tunnelStack.sleep()
         TickScheduler.shared.suspend()
     }
 
     override func wake() {
-        statsRecorder.noteWake()
         TickScheduler.shared.resume()
     }
 

@@ -64,8 +64,10 @@ struct TunnelControllerIntentTests {
 
         controller.connect(using: directNode())
         try await waitUntil { entered.entered }
+        #expect(controller.isPreparingConnection)
 
         controller.disconnect()
+        #expect(!controller.isPreparingConnection)
         gate.open()
 
         try await waitUntil { provider.stopCount == 1 }
@@ -83,6 +85,7 @@ struct TunnelControllerIntentTests {
 
         controller.connect(using: directNode())
         try await waitUntil { !provider.startRequests.isEmpty }
+        try await waitUntil { !controller.isPreparingConnection }
         #expect(provider.startRequests.count == 1)
     }
 }

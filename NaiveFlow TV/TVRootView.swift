@@ -16,8 +16,7 @@ struct TVRootView: View {
         TabView {
             Tab("Home", systemImage: "house.fill") {
                 NavigationStack {
-                    TVClientHomeView(tunnel: container.tunnel, stats: container.stats,
-                                     latency: container.latency)
+                    TVClientHomeView(tunnel: container.tunnel, latency: container.latency)
                 }
             }
             Tab("Groups", systemImage: "square.grid.2x2.fill") {
@@ -28,6 +27,10 @@ struct TVRootView: View {
             }
         }
         .tabViewStyle(.tabBarOnly)
+        .navigationLinkIndicatorVisibility(.hidden)
+        .preferredColorScheme(DesignSystem.appearance)
+        .designText(.body)
+        .tint(DesignSystem.Colors.accent)
         .environment(model)
         .sheet(item: Binding(
             get: { model.subscriptionReview },
@@ -52,7 +55,6 @@ struct TVRootView: View {
             }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
-            container.stats.setPresentationActive(phase == .active)
             if phase == .active { model.refresh() }
         }
         .task(id: scenePhase) {

@@ -40,15 +40,15 @@ struct AcknowledgementsView: View {
                         )
                     ) {
                         Text(library.licenseText)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .designText(.caption)
+                            .foregroundStyle(DesignSystem.Colors.secondaryText)
                             .padding(.top, 4)
                     } label: {
                         VStack(alignment: .leading) {
                             Text(library.name)
                             Text(library.licenseType)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .designText(.caption)
+                                .foregroundStyle(DesignSystem.Colors.secondaryText)
                         }
                     }
                 }

@@ -279,7 +279,6 @@ extension TunnelStack {
                 connectionRouter.clearRejectMarks()
                 domainRouter.reset()
                 mitmPolicy.reset()
-                ConnectionMetrics.shared.setDefaultServer(nil)
                 self.configuration = nil
                 EngineConfirmationStore.clear()
             }

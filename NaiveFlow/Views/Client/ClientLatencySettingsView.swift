@@ -9,7 +9,7 @@ struct ClientLatencySettingsView: View {
     @State private var saving = false
 
     var body: some View {
-        Form {
+        ClientForm {
             Section {
                 Picker("Test Address", selection: $customURL) {
                     Text("Apple (Default)").tag(false)
@@ -22,7 +22,7 @@ struct ClientLatencySettingsView: View {
 #endif
                         .accessibilityLabel("Latency Test URL")
                 } else {
-                    Text(LatencyTestSettings.defaultURL).foregroundStyle(.secondary)
+                    Text(LatencyTestSettings.defaultURL).foregroundStyle(DesignSystem.Colors.secondaryText)
                 }
             } header: { Text("Test Address") } footer: {
                 Text("Measures the time for an HTTP or HTTPS response through each node. This tests latency, not download speed.")

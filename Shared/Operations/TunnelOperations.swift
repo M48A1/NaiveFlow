@@ -6,23 +6,11 @@
 //
 
 import Foundation
-import NetworkExtension
 
 @MainActor
 struct TunnelOperations {
     let tunnel: TunnelController
     let selection: ProxySelection
-
-    func toggle() {
-        switch tunnel.rawStatus {
-        case .connected, .connecting:
-            tunnel.disconnect()
-        case .disconnected, .invalid:
-            connect()
-        default:
-            break
-        }
-    }
 
     func connect() {
         guard let configuration = selection.effectiveConfiguration else { return }

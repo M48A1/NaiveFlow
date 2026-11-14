@@ -27,7 +27,7 @@ struct ClientResourceCenterView: View {
             .disabled(model.isBusy || model.activeResourceTitle != nil)
             ForEach(model.resources) { resource in
                 Section(resource.kind + " · " + resource.name) {
-                    Text(resource.source).font(.caption).foregroundStyle(.secondary)
+                    Text(resource.source).designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
 #if !os(tvOS)
                         .textSelection(.enabled)
 #endif
@@ -36,8 +36,8 @@ struct ClientResourceCenterView: View {
                         if let date = activity.succeededAt { LabeledContent("Last Successful Update") { Text(date, style: .relative) } }
                         if activity.awaitingReview { Label("Downloaded · Awaiting Review", systemImage: "doc.text.magnifyingglass") }
                         if let version = activity.version { LabeledContent("Applied Version", value: String(version.prefix(8))) }
-                        if let error = activity.error { Text(error).font(.caption).foregroundStyle(.red) }
-                    } else { Text("No update recorded yet").foregroundStyle(.secondary) }
+                        if let error = activity.error { Text(error).designText(.caption).foregroundStyle(DesignSystem.Colors.error) }
+                    } else { Text("No update recorded yet").foregroundStyle(DesignSystem.Colors.secondaryText) }
                     Button("Update") { Task { await update(resource) } }.disabled(model.isBusy)
                 }
             }

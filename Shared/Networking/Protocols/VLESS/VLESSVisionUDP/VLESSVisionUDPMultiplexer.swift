@@ -90,7 +90,7 @@ nonisolated final class VLESSVisionUDPMultiplexer: Multiplexer, Sendable {
     }
 
     private func performConnect() async throws {
-        let client = ProxyClient(configuration: configuration, isDefaultProxy: true)
+        let client = ProxyClient(configuration: configuration)
         let live = state.withLock { state -> Bool in
             guard state.phase != .closed else { return false }
             state.proxyClient = client

@@ -54,7 +54,8 @@ struct ProfileSourceEditor: UIViewRepresentable {
 
         override init(frame: CGRect) {
             super.init(frame: frame)
-            source.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+            source.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .monospacedSystemFont(ofSize: DesignSystem.TextRole.code.size, weight: .regular))
+            source.adjustsFontForContentSizeCategory = true
             source.backgroundColor = .clear
             source.contentMode = .redraw
             source.textColor = .label
@@ -175,7 +176,7 @@ struct ProfileSourceEditor: UIViewRepresentable {
                 if y + fragment.height >= rect.minY, y <= rect.maxY {
                     let label = errorLines.contains(line) ? "!\(line)" : "\(line)"
                     (label as NSString).draw(in: CGRect(x: 0, y: y, width: 32, height: fragment.height), withAttributes: [
-                        .font: UIFont.monospacedSystemFont(ofSize: 11, weight: .regular),
+                        .font: UIFontMetrics(forTextStyle: .caption2).scaledFont(for: .monospacedSystemFont(ofSize: DesignSystem.TextRole.micro.size, weight: .regular)),
                         .foregroundColor: errorLines.contains(line) ? UIColor.systemRed : UIColor.secondaryLabel
                     ])
                 }
@@ -203,7 +204,7 @@ struct ProfileSourceEditor: NSViewRepresentable {
         editor.isAutomaticDashSubstitutionEnabled = false
         editor.isAutomaticTextReplacementEnabled = false
         editor.isAutomaticSpellingCorrectionEnabled = false
-        editor.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        editor.font = .monospacedSystemFont(ofSize: DesignSystem.TextRole.code.size, weight: .regular)
         editor.textContainerInset = NSSize(width: 8, height: 8)
         return scroll
     }

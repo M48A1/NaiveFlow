@@ -13,7 +13,7 @@ struct TagBadge: View {
 
     var body: some View {
         Text(text)
-            .font(.caption2.weight(.semibold))
+            .designText(.micro, weight: .semibold)
             .foregroundStyle(color)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)

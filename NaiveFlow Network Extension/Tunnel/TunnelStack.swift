@@ -12,123 +12,6 @@ import NaiveFlowIP
 
 nonisolated private let logger = NaiveFlowLogger(category: "TunnelStack")
 
-// MARK: - Traffic Accounting
-
-nonisolated struct TrafficByteCounts {
-    struct ByteCounts: Sendable {
-        var bytesIn: Int64 = 0
-        var bytesOut: Int64 = 0
-    }
-
-    var routes: [RouteTarget: ByteCounts] = [:]
-
-    var totalBytesIn: Int64 { routes.values.reduce(0) { $0 + $1.bytesIn } }
-    var totalBytesOut: Int64 { routes.values.reduce(0) { $0 + $1.bytesOut } }
-
-    mutating func add(bytesIn byteCount: Int64, target: RouteTarget) {
-        routes[target, default: ByteCounts()].bytesIn += byteCount
-    }
-
-    mutating func add(bytesOut byteCount: Int64, target: RouteTarget) {
-        routes[target, default: ByteCounts()].bytesOut += byteCount
-    }
-
-    mutating func add(_ counts: ByteCounts, target: RouteTarget) {
-        guard counts.bytesIn != 0 || counts.bytesOut != 0 else { return }
-        routes[target, default: ByteCounts()].bytesIn += counts.bytesIn
-        routes[target, default: ByteCounts()].bytesOut += counts.bytesOut
-    }
-}
-
-nonisolated final class TrafficMeter: Sendable {
-    fileprivate final class Cell: Sendable {
-        let target: RouteTarget
-        let bytesIn = Atomic<Int64>(0)
-        let bytesOut = Atomic<Int64>(0)
-
-        init(target: RouteTarget) {
-            self.target = target
-        }
-
-        var counts: TrafficByteCounts.ByteCounts {
-            TrafficByteCounts.ByteCounts(
-                bytesIn: bytesIn.load(ordering: .relaxed),
-                bytesOut: bytesOut.load(ordering: .relaxed)
-            )
-        }
-    }
-
-    private let cell: Cell
-    private let ledger: TrafficLedger
-
-    fileprivate init(cell: Cell, ledger: TrafficLedger) {
-        self.cell = cell
-        self.ledger = ledger
-    }
-
-    deinit {
-        ledger.settle(cell)
-    }
-
-    func addBytesIn(_ count: Int) {
-        cell.bytesIn.wrappingAdd(Int64(count), ordering: .relaxed)
-    }
-
-    func addBytesOut(_ count: Int) {
-        cell.bytesOut.wrappingAdd(Int64(count), ordering: .relaxed)
-    }
-}
-
-nonisolated final class TrafficLedger: Sendable {
-    private struct State {
-        var settled = TrafficByteCounts()
-        var live: [ObjectIdentifier: TrafficMeter.Cell] = [:]
-    }
-
-    private let state = Mutex(State())
-
-    func open(target: RouteTarget) -> TrafficMeter {
-        let cell = TrafficMeter.Cell(target: target)
-        state.withLock { $0.live[ObjectIdentifier(cell)] = cell }
-        return TrafficMeter(cell: cell, ledger: self)
-    }
-
-    func add(bytesIn byteCount: Int64, target: RouteTarget) {
-        state.withLock { $0.settled.add(bytesIn: byteCount, target: target) }
-    }
-
-    func add(bytesOut byteCount: Int64, target: RouteTarget) {
-        state.withLock { $0.settled.add(bytesOut: byteCount, target: target) }
-    }
-
-    fileprivate func settle(_ cell: TrafficMeter.Cell) {
-        state.withLock { state in
-            state.live.removeValue(forKey: ObjectIdentifier(cell))
-            state.settled.add(cell.counts, target: cell.target)
-        }
-    }
-
-    func snapshot() -> TrafficByteCounts {
-        state.withLock { state in
-            var counts = state.settled
-            for cell in state.live.values {
-                counts.add(cell.counts, target: cell.target)
-            }
-            return counts
-        }
-    }
-
-    func reset() {
-        state.withLock { state in
-            state.settled = TrafficByteCounts()
-            for cell in state.live.values {
-                cell.bytesIn.store(0, ordering: .relaxed)
-                cell.bytesOut.store(0, ordering: .relaxed)
-            }
-        }
-    }
-}
-
 // MARK: - TCP Connection Table
 
 nonisolated struct TCPConnectionTable {
@@ -299,23 +182,6 @@ actor TunnelStack {
     nonisolated let tcpIdleSweepArmed = Atomic<TimeInterval>(.infinity)
 
     nonisolated let datagramIntake = Mutex<AsyncInbox<[InboundDatagram]>?>(nil)
-
-    nonisolated let trafficLedger = TrafficLedger()
-    nonisolated func openTrafficMeter(target: RouteTarget) -> TrafficMeter {
-        trafficLedger.open(target: target.resolved(against: udpConfig().defaultRouteTarget))
-    }
-    nonisolated func addBytesIn(_ n: Int64, target: RouteTarget) {
-        trafficLedger.add(bytesIn: n, target: target.resolved(against: udpConfig().defaultRouteTarget))
-    }
-    nonisolated func addBytesOut(_ n: Int64, target: RouteTarget) {
-        trafficLedger.add(bytesOut: n, target: target.resolved(against: udpConfig().defaultRouteTarget))
-    }
-    nonisolated func byteCountsSnapshot() -> TrafficByteCounts {
-        trafficLedger.snapshot()
-    }
-    nonisolated func resetByteCounts() {
-        trafficLedger.reset()
-    }
 
     // MARK: - Log Buffer
 
@@ -545,7 +411,6 @@ actor TunnelStack {
             case .outbound:
                 defaultRouteTarget = proxyMode == .direct ? .direct : .proxy(configuration.id)
                 requestLog.setDefaultRouteTarget(defaultRouteTarget)
-                ConnectionMetrics.shared.setDefaultServer(configuration.id)
                 publishUDPConfig()
                 publishReflectionEnabled()
                 publishOutboundRoutingContext(configuration: configuration)

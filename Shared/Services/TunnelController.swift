@@ -18,6 +18,7 @@ final class TunnelController {
     var status: VPNStatus { VPNStatus(rawStatus) }
     var hasRunningTunnel: Bool { rawStatus == .connected || rawStatus == .connecting || rawStatus == .reasserting }
     private(set) var isManagerReady = false
+    private(set) var isPreparingConnection = false
     var startError: String?
     private(set) var pendingReconnect = false
 
@@ -64,6 +65,7 @@ final class TunnelController {
 
     func connect(using configuration: ProxyConfiguration) {
         guard isManagerReady else { return }
+        isPreparingConnection = true
         intentGeneration &+= 1
         let generation = intentGeneration
         connectTask?.cancel()
@@ -73,6 +75,9 @@ final class TunnelController {
                 AWCore.installRuntimePreferences(version.preferences)
             }
             guard let self else { return }
+            defer {
+                if self.intentGeneration == generation { self.isPreparingConnection = false }
+            }
             await self.publish(configuration, refreshingIP: true)
             // The user may have disconnected while the publication was in flight.
             guard !Task.isCancelled, self.intentGeneration == generation else { return }
@@ -101,6 +106,7 @@ final class TunnelController {
     }
 
     func disconnect() {
+        isPreparingConnection = false
         pendingReconnect = false
         // Invalidate any in-flight connect preparation, then stop.
         intentGeneration &+= 1
@@ -111,6 +117,7 @@ final class TunnelController {
     
     func reconnect() {
         guard rawStatus == .connected || rawStatus == .connecting else { return }
+        isPreparingConnection = false
         pendingReconnect = true
         // A pending connect must not race the reconnect's stop/start.
         intentGeneration &+= 1

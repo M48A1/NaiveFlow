@@ -157,8 +157,7 @@ nonisolated enum OutboundConnector {
         configuration: ProxyConfiguration, host: String, port: UInt16
     ) async throws -> Dialed {
         let client = ProxyClient(
-            configuration: configuration,
-            isDefaultProxy: routingContext()?.isDefaultConfiguration(configuration.id) ?? false
+            configuration: configuration
         )
         do {
             let connection = try await client.connect(to: host, port: port, initialData: nil)

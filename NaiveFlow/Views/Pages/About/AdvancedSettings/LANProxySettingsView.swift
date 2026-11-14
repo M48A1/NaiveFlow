@@ -11,7 +11,7 @@ struct LANProxySettingsView: View {
     }
 
     var body: some View {
-        Form {
+        ClientForm {
             Section {
                 Toggle("Enable LAN Proxy", isOn: $enabled)
                 LabeledContent("Port") {
@@ -27,21 +27,21 @@ struct LANProxySettingsView: View {
             Section("Connection") {
                 if !AWCore.getLANProxyAllowed() {
                     Text("LAN proxy is disabled by the active profile.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DesignSystem.Colors.secondaryText)
                 }
                 Text("Up to 3 devices by IPv4 address, 4 connections each and 4 simultaneous handshakes.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
                 Text("The first 3 private Wi-Fi client addresses can connect. A device slot is freed when its last connection closes.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
                 Text("Idle connections close after 2 minutes.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
                 if let address = LANProxyNetwork.wifiAddress() {
                     LabeledContent("Wi-Fi Address", value: address)
                 } else {
                     Text("No private Wi-Fi IPv4 address available.")
                 }
                 Text("Uses the VPN’s current node or proxy chain for new connections. UDP relay is unavailable. Connections close after one hour.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
             }
             Section {
                 Button("Save") {
@@ -50,8 +50,8 @@ struct LANProxySettingsView: View {
                         message = String(localized: "Saved. Reconnect the VPN to apply.")
                     } catch { message = error.localizedDescription }
                 }.disabled(!valid)
-                if !valid { Text("Enter a port from 1024 to 65535.").foregroundStyle(.red) }
-                if let message { Text(message).foregroundStyle(.secondary) }
+                if !valid { Text("Enter a port from 1024 to 65535.").foregroundStyle(DesignSystem.Colors.error) }
+                if let message { Text(message).foregroundStyle(DesignSystem.Colors.secondaryText) }
             }
         }
         .navigationTitle("LAN Proxy")

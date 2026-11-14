@@ -33,36 +33,3 @@ struct SnapshotLifetimeTests {
         #expect(model.logs.isEmpty)
     }
 }
-
-private actor PollCounter {
-    private var hits = 0
-    func increment() { hits += 1 }
-    func count() -> Int { hits }
-}
-
-@MainActor
-struct ForegroundStatsTests {
-    @Test func backgroundPausesSamplingAndDisconnectCannotRestartIt() async throws {
-        let stats = ConnectionStats()
-        defer { stats.stopPolling() }
-        let counter = PollCounter()
-        stats.setPresentationActive(false)
-        stats.startPolling { _ in await counter.increment(); return nil }
-        try await Task.sleep(for: .milliseconds(1200))
-        #expect(await counter.count() == 0)
-        stats.setPresentationActive(true)
-        for _ in 0..<20 {
-            if await counter.count() > 0 { break }
-            try await Task.sleep(for: .milliseconds(150))
-        }
-        #expect(await counter.count() > 0)
-        stats.setPresentationActive(false)
-        let pausedCount = await counter.count()
-        try await Task.sleep(for: .milliseconds(1200))
-        #expect(await counter.count() == pausedCount)
-        stats.stopPolling()
-        stats.setPresentationActive(true)
-        try await Task.sleep(for: .milliseconds(1200))
-        #expect(await counter.count() == pausedCount)
-    }
-}

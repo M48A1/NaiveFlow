@@ -53,14 +53,12 @@ nonisolated final class TCPTransport: ByteTransport, Sendable {
     private let resolution: DialResolution
     let endpointDescription: String
 
-    private let dialAttempt: ConnectionMetrics.Attempt?
 
     init(host: String, port: UInt16, resolution: DialResolution = .system) {
         self.host = host
         self.port = port
         self.resolution = resolution
         self.endpointDescription = "\(host):\(port)"
-        self.dialAttempt = ConnectionMetrics.currentAttempt
     }
 
     deinit {
@@ -131,7 +129,6 @@ nonisolated final class TCPTransport: ByteTransport, Sendable {
             }
 
             if !message.content.isEmpty {
-                dialAttempt?.noteServerResponse()
                 if message.endOfStream { state.withLock { $0.eofLatched = true } }
                 return .bytes(message.content)
             }

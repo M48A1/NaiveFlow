@@ -169,7 +169,7 @@ struct ProxyEditorView: View {
     
     var body: some View {
         NavigationStack {
-            Form {
+            ClientForm {
                 Section {
                     LabeledContent {
                         TextField("Name", text: $name)
@@ -752,7 +752,7 @@ struct ProxyEditorView: View {
                     Text("Select an Existing Node").tag("")
                     ForEach(chainCandidates) { node in Text(node.name).tag(node.name) }
                 }
-                if chainCandidates.isEmpty { Text("Add another proxy node first.").font(.caption).foregroundStyle(.secondary) }
+                if chainCandidates.isEmpty { Text("Add another proxy node first.").designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText) }
             }
         } footer: {
             if chainEnabled, let upstream = chainCandidates.first(where: { $0.name == underlyingProxy }) {
@@ -892,12 +892,12 @@ struct ProxyEditorView: View {
         Section {
             Toggle("Verify Server Certificate", isOn: verify)
             TextField("Certificate SHA-256 Fingerprint (Optional)", text: fingerprint)
-                .font(.system(.footnote, design: .monospaced))
+                .designText(.caption, design: .monospaced)
                 .clientNoAutocapitalization()
                 .autocorrectionDisabled()
             if !TLSCertificatePolicy.isValidFingerprint(fingerprint.wrappedValue) {
                 Text("Enter a SHA-256 fingerprint containing 64 hexadecimal characters.")
-                    .font(.footnote).foregroundStyle(.red)
+                    .designText(.caption).foregroundStyle(DesignSystem.Colors.error)
             }
         } header: {
             Text(title)

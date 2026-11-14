@@ -1,64 +1,25 @@
 import SwiftUI
-import NetworkExtension
 
 struct TVClientHomeView: View {
     @Environment(ClientModel.self) private var model
     let tunnel: TunnelController
-    let stats: ConnectionStats
     let latency: LatencyCenter
+
+    private var ruleSetCount: Int { model.parsed.rules.filter { $0.kind == .ruleSet }.count }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 36) {
-                HStack(spacing: 40) {
-                    Button(tunnel.hasRunningTunnel ? "Disconnect" : "Connect",
-                           systemImage: tunnel.hasRunningTunnel ? "stop.fill" : "power") {
-                        model.operations.tunnel.toggle()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.isBusy || !tunnel.isManagerReady || tunnel.rawStatus.isTransitioning || (!tunnel.hasRunningTunnel && !model.hasApplied))
-
-                    VStack(alignment: .leading) {
-                        Text(tunnel.status.localizedText).font(.title2)
-                        Text(model.hasApplied ? model.activeName : "Select and apply a profile to connect.")
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing) {
-                        traffic("arrow.up", bytes: stats.bytesOut, rate: stats.uploadBytesPerSecond)
-                        traffic("arrow.down", bytes: stats.bytesIn, rate: stats.downloadBytesPerSecond)
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Proxy Mode").font(.headline)
-                    HStack(spacing: 24) {
-                        modeButton("Direct", mode: .direct)
-                        modeButton("Global Proxy", mode: .global)
-                        modeButton("Rule", mode: .rule)
-                    }
-                }
-
-                HStack(spacing: 24) {
-                    NavigationLink {
-                        TVClientProfilesView()
-                    } label: {
-                        Label("Configuration", systemImage: "doc.text")
-                    }
-                    NavigationLink {
-                        TVClientNodesView(latency: latency, tunnel: tunnel)
-                    } label: {
-                        Label("Proxies", systemImage: "server.rack")
-                    }
-                    NavigationLink {
-                        TVClientRulesView()
-                    } label: {
-                        Label("Rules", systemImage: "list.bullet.rectangle")
-                    }
+            VStack(spacing: DesignSystem.Spacing.television) {
+                modeCard
+                HStack(alignment: .top, spacing: 28) {
+                    profilesCard
+                    proxyCard
+                    rulesCard
                 }
             }
-            .padding(36)
+            .clientMainContent(maximumWidth: DesignSystem.Layout.televisionWidth)
         }
+        .background(DesignSystem.Colors.background.ignoresSafeArea())
         .alert("VPN Error", isPresented: Binding(
             get: { tunnel.startError != nil },
             set: { if !$0 { tunnel.startError = nil } }
@@ -67,25 +28,173 @@ struct TVClientHomeView: View {
         } message: { Text(tunnel.startError ?? "") }
     }
 
-    private func traffic(_ symbol: String, bytes: Int64, rate: Int64?) -> some View {
-        HStack {
-            Image(systemName: symbol)
-            Text(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .binary))
-            if let rate, tunnel.rawStatus == .connected {
-                Text(ByteCountFormatter.string(fromByteCount: rate, countStyle: .binary) + "/s")
-                    .foregroundStyle(.secondary)
+    private var modeCard: some View {
+        TVHomeCard(color: DesignSystem.CardTheme.outbound.tint, height: 240) {
+            HStack {
+                heading("Outbound Mode", symbol: "arrow.triangle.branch", color: DesignSystem.CardTheme.outbound.tint)
+                Spacer()
+                Menu {
+                    ClientTunnelMenuActions().environment(tunnel)
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .menuIndicator(.hidden)
+                .buttonStyle(TVHomeButtonStyle(color: DesignSystem.CardTheme.outbound.tint))
+                .frame(width: 64)
+                .accessibilityLabel("Connection actions")
+            }
+            Text(model.mode == .rule ? "Use routing rules to handle requests." : model.mode == .global ? "Route all requests through the proxy." : "Connect all requests directly.")
+                .designText(.body).foregroundStyle(DesignSystem.Colors.secondaryText).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            HStack(spacing: 12) {
+                modeButton("Direct", mode: .direct)
+                modeButton("Global Proxy", mode: .global)
+                modeButton("Rule", mode: .rule)
             }
         }
-        .monospacedDigit()
+    }
+
+    private var profilesCard: some View {
+        TVHomeCard(color: DesignSystem.CardTheme.profiles.tint, height: 410) {
+            heading("Profiles", symbol: "doc.text.fill", color: DesignSystem.CardTheme.profiles.tint)
+            Text(model.activeName).designText(.body, weight: .medium).lineLimit(1)
+            Text(model.hasSavedDraft ? "Saved changes · Not applied" : model.hasApplied ? "Applied profile" : "Saved · Not applied")
+                .designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
+            ForEach(model.library.profiles.prefix(2)) { profile in
+                Button { Task { await model.activate(profile) } } label: {
+                    HStack {
+                        Text(profile.displayName).lineLimit(1)
+                        Spacer(minLength: 4)
+                        if model.library.selectedID == profile.id && model.hasApplied {
+                            Image(systemName: "checkmark.circle.fill")
+                        }
+                    }
+                }
+                .buttonStyle(TVHomeButtonStyle(color: DesignSystem.CardTheme.profiles.tint))
+                .disabled(model.isBusy)
+                .accessibilityHint("Apply this profile")
+            }
+            Spacer(minLength: 0)
+            NavigationLink { TVClientProfilesView() } label: {
+                Label("Manage Profiles", systemImage: "doc.on.doc")
+            }
+            .buttonStyle(TVHomeButtonStyle(color: DesignSystem.CardTheme.profiles.tint))
+        }
+    }
+
+    private var proxyCard: some View {
+        TVHomeCard(color: DesignSystem.CardTheme.proxies.tint, height: 410) {
+            heading("PROXY", symbol: "paperplane.fill", color: DesignSystem.CardTheme.proxies.tint)
+            Text(model.selectedNodeName).designText(.body, weight: .medium).lineLimit(1)
+            Text("Nodes: \(model.nodes.count)").designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
+            if model.nodes.isEmpty {
+                Text("Add a node or import a profile containing nodes.")
+                    .designText(.body).foregroundStyle(DesignSystem.Colors.secondaryText)
+            } else {
+                ForEach(model.nodes.prefix(2)) { node in
+                    Button { Task { await model.selectNode(node.name) } } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: model.selectedNodeName == node.name ? "checkmark.circle.fill" : "circle")
+                            Text(node.name).lineLimit(1)
+                            Spacer(minLength: 0)
+                            if case .success(let ms) = latency.latencyResults[node.id] {
+                                Text("\(ms) ms").designText(.caption).monospacedDigit()
+                            }
+                        }
+                    }
+                    .buttonStyle(TVHomeButtonStyle(color: DesignSystem.CardTheme.proxies.tint))
+                    .disabled(model.isBusy)
+                }
+            }
+            Spacer(minLength: 0)
+            NavigationLink { TVClientNodesView(latency: latency, tunnel: tunnel) } label: {
+                Label("Manage Nodes", systemImage: "network")
+            }
+            .buttonStyle(TVHomeButtonStyle(color: DesignSystem.CardTheme.proxies.tint))
+        }
+    }
+
+    private var rulesCard: some View {
+        TVHomeCard(color: DesignSystem.CardTheme.rules.tint, height: 410) {
+            heading("Routing Rules", symbol: "line.3.horizontal.decrease.circle", color: DesignSystem.CardTheme.rules.tint)
+            HStack(spacing: 20) {
+                ruleCount("Rule Sets", count: ruleSetCount)
+                ruleCount("Local Rules", count: model.parsed.rules.count - ruleSetCount)
+            }
+            .padding(.vertical, 4)
+            ForEach(model.parsed.rules.prefix(2)) { rule in
+                Text(rule.raw).designText(.code)
+                    .foregroundStyle(DesignSystem.Colors.secondaryText).lineLimit(1)
+            }
+            if model.parsed.rules.isEmpty {
+                Text("No routing rules in this profile.").designText(.body).foregroundStyle(DesignSystem.Colors.secondaryText)
+            }
+            Spacer(minLength: 0)
+            NavigationLink { TVClientRulesView() } label: {
+                Label("Manage Rules", systemImage: "list.bullet.rectangle")
+            }
+            .buttonStyle(TVHomeButtonStyle(color: DesignSystem.CardTheme.rules.tint))
+        }
+    }
+
+    private func heading(_ title: String, symbol: String, color: Color) -> some View {
+        Label { Text(title).foregroundStyle(DesignSystem.Colors.text) } icon: {
+            Image(systemName: symbol).foregroundStyle(color)
+        }
+        .designText(.cardTitle).lineLimit(1)
+    }
+
+    private func ruleCount(_ title: String, count: Int) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(String(count)).designText(.value).monospacedDigit()
+            Text(title).designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func modeButton(_ title: LocalizedStringKey, mode: ProxyMode) -> some View {
-        Button {
-            Task { await model.setSetting("proxy-mode", value: mode.rawValue) }
-        } label: {
+        Button { Task { await model.setSetting("proxy-mode", value: mode.rawValue) } } label: {
             Label(title, systemImage: model.mode == mode ? "checkmark.circle.fill" : "circle")
+                .lineLimit(1)
         }
+        .buttonStyle(TVHomeButtonStyle(color: DesignSystem.CardTheme.outbound.tint, selected: model.mode == mode))
         .disabled(model.isBusy)
+        .accessibilityAddTraits(model.mode == mode ? [.isSelected] : [])
+    }
+}
+
+private struct TVHomeCard<Content: View>: View {
+    let color: Color
+    let height: CGFloat
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.regular) { content }
+            .padding(DesignSystem.Card.padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: height, alignment: .top)
+            .designCard(colors: [color])
+    }
+}
+
+private struct TVHomeButtonStyle: ButtonStyle {
+    let color: Color
+    var selected = false
+    @Environment(\.isFocused) private var focused
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .designText(.button)
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .foregroundStyle(focused ? Color.white : selected ? color : Color.primary)
+            .background(focused ? color : color.opacity(selected ? 0.15 : 0.07), in: RoundedRectangle(cornerRadius: DesignSystem.Interaction.buttonRadius))
+            .overlay { RoundedRectangle(cornerRadius: DesignSystem.Interaction.buttonRadius).stroke(focused ? color : .clear, lineWidth: DesignSystem.Interaction.focusOutline) }
+            .scaleEffect(focused && !reduceMotion ? DesignSystem.Interaction.focusScale : 1)
+            .opacity(enabled ? (configuration.isPressed ? 0.75 : 1) : DesignSystem.Interaction.disabledOpacity)
+            .animation(reduceMotion ? nil : .easeOut(duration: DesignSystem.Interaction.focusDuration), value: focused)
     }
 }
 
@@ -96,47 +205,47 @@ struct TVClientGroupsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var pendingDelete: ParsedProxyGroup?
 
+    private var columnCount: Int { min(3, model.groups.count + 2) }
+
     var body: some View {
         ScrollView {
-            NavigationLink("New Group") { TVClientGroupEditor(group: nil) }
-                .disabled(model.isBusy)
-                .padding(.top, 24)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 28)], spacing: 28) {
-                NavigationLink {
-                    TVClientNodesView(latency: latency, tunnel: tunnel)
-                } label: {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Label("PROXY", systemImage: "shippingbox").font(.headline)
-                        Text(model.selectedNodeName).font(.callout).foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.bordered)
-
-                ForEach(model.groups) { group in
+            VStack(spacing: DesignSystem.Spacing.television) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0, maximum: 520), spacing: 28), count: columnCount), spacing: 28) {
                     NavigationLink {
-                        TVClientGroupDetailView(name: group.name)
+                        TVClientNodesView(latency: latency, tunnel: tunnel)
                     } label: {
-                        VStack(alignment: .leading, spacing: 10) {
-                            TVClientGroupLabel(name: group.name, iconURL: group.parameters["icon-url"])
-                                .font(.headline)
-                            Text(model.selectedMember(in: group))
-                                .font(.callout).foregroundStyle(.secondary)
+                        ClientPolicyCard(name: "PROXY", selected: model.selectedNodeName,
+                            style: ClientGroupStyle(symbol: "shippingbox", palette: 0))
+                    }
+                    .buttonStyle(.card)
+
+                    ForEach(model.groups) { group in
+                        NavigationLink {
+                            TVClientGroupDetailView(name: group.name)
+                        } label: {
+                            ClientPolicyCard(name: group.name, selected: model.selectedMember(in: group),
+                                style: model.profile?.groupStyles[group.name] ?? ClientGroupStyle(palette: ClientPalette.index(for: group.name)),
+                                iconURL: group.parameters["icon-url"])
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .buttonStyle(.card)
+                        .contextMenu {
+                            Button("Delete Group", role: .destructive) { pendingDelete = group }
+                        }
                     }
-                    .buttonStyle(.bordered)
-                    .contextMenu {
-                        Button("Delete Group", role: .destructive) { pendingDelete = group }
+                    NavigationLink { TVClientGroupEditor(group: nil) } label: {
+                        ClientNewGroupCard()
                     }
+                    .buttonStyle(.card)
+                    .disabled(model.isBusy)
+                }
+                .frame(maxWidth: CGFloat(columnCount) * 520 + CGFloat(columnCount - 1) * 28)
+
+                if model.groups.isEmpty {
+                    Text("Group your nodes to choose an outbound for different traffic.")
+                        .foregroundStyle(DesignSystem.Colors.secondaryText)
                 }
             }
-            .padding(36)
-
-            if model.groups.isEmpty {
-                Text("Add a [Proxy Group] section in Configuration.")
-                    .foregroundStyle(.secondary)
-            }
+            .clientMainContent(maximumWidth: DesignSystem.Layout.televisionWidth)
         }
         .confirmationDialog("Delete Group?", isPresented: Binding(
             get: { pendingDelete != nil },
@@ -219,7 +328,7 @@ private struct TVClientGroupEditor: View {
                     Button("Use Default Icon") { iconURL = "" }
                 }
                 if !validIconURL {
-                    Text("Enter a valid HTTPS icon URL.").foregroundStyle(.red)
+                    Text("Enter a valid HTTPS icon URL.").foregroundStyle(DesignSystem.Colors.error)
                 }
             }
             Section("Member Order") {

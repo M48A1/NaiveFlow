@@ -1,13 +1,10 @@
 import SwiftUI
-import NetworkExtension
 
 struct ClientHomeView: View {
     @Environment(ClientModel.self) private var model
     @Environment(TunnelController.self) private var tunnel
-    @Environment(ConnectionStats.self) private var stats
     @Environment(LatencyCenter.self) private var latency
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
     @State private var configurationsExpanded = false
     @State private var modeExpanded = false
     @State private var proxiesExpanded = false
@@ -18,20 +15,15 @@ struct ClientHomeView: View {
     @State private var showNodeEditor = false
     @State private var nodeToEdit: ProxyConfiguration?
 
-    private var connected: Bool { tunnel.rawStatus == .connected }
-    private var canToggle: Bool { tunnel.isManagerReady && !tunnel.rawStatus.isTransitioning && (connected || model.hasApplied) }
-
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                runningCard
+            VStack(spacing: DesignSystem.Spacing.regular) {
                 modeCard
                 configurationCard
                 proxyCard
                 rulesCard
             }
-            .frame(maxWidth: 760)
-            .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 24)
+            .clientMainContent()
         }
         .background(ClientAppearance.background)
         .clientNavigationBar(visible: false)
@@ -55,8 +47,8 @@ struct ClientHomeView: View {
     }
 
     private var configurationCard: some View {
-        ClientHomeCard(colors: [Color(red: 0.43, green: 0.28, blue: 0.77), Color(red: 0.64, green: 0.39, blue: 0.87)]) {
-            cardHeader("Profiles", symbol: "doc.text.fill", iconColor: .purple, summary: model.activeName, expanded: $configurationsExpanded, menu: .profiles)
+        ClientHomeCard(colors: DesignSystem.CardTheme.profiles.colors) {
+            cardHeader("Profiles", symbol: "doc.text.fill", iconColor: DesignSystem.CardTheme.profiles.tint, summary: model.activeName, expanded: $configurationsExpanded, menu: .profiles)
             if configurationsExpanded {
             ForEach(model.library.profiles) { profile in
                 HStack(spacing: 10) {
@@ -64,12 +56,12 @@ struct ClientHomeView: View {
                         HStack(spacing: 12) {
                             Image(systemName: "doc.text")
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(profile.displayName).font(.body.weight(.medium))
+                                Text(profile.displayName).designText(.body, weight: .medium)
                                 Text("Last updated: \(profile.updatedAt.formatted(.dateTime.month().day().hour().minute().locale(Locale(identifier: "en"))))")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
                             }
                             Spacer(minLength: 8)
-                            if model.library.selectedID == profile.id { Image(systemName: "checkmark").font(.title3.weight(.semibold)) }
+                            if model.library.selectedID == profile.id { Image(systemName: "checkmark").designText(.cardTitle, weight: .semibold) }
                         }.frame(minHeight: 52).contentShape(Rectangle())
                     }.buttonStyle(.plain).disabled(model.isBusy)
                     Menu {
@@ -78,71 +70,35 @@ struct ClientHomeView: View {
                         Button("DuplicateProfile", systemImage: "doc.on.doc") { editor = model.createProfile(name: profile.name + " Copy", text: profile.text) }
                         Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = profile }
                             .disabled(profile.id == model.library.selectedID)
-                    } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle()) }
+                    } label: { Image(systemName: "ellipsis").frame(width: DesignSystem.Interaction.minimumHitSize, height: DesignSystem.Interaction.minimumHitSize).contentShape(Rectangle()) }
+                    .clientIconMenu()
                 }
-                .padding(.horizontal, 20).padding(.vertical, 8)
+                .padding(.horizontal, DesignSystem.Card.padding).padding(.vertical, 8)
                 .background(model.library.selectedID == profile.id ? Color.primary.opacity(0.045) : .clear)
             }
             }
         }
     }
 
-    private var runningCard: some View {
-        ClientHomeCard(colors: [Color(red: 0.06, green: 0.47, blue: 0.43), Color(red: 0.13, green: 0.65, blue: 0.51)]) {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(spacing: 12) {
-                    if tunnel.rawStatus.isTransitioning { ProgressView().tint(.teal) }
-                    else {
-                        Image(systemName: connected ? "power.circle.fill" : "power.circle")
-                            .font(.title2)
-                            .foregroundStyle(colorScheme == .dark ? Color.teal : Color(red: 0.06, green: 0.47, blue: 0.43))
-                    }
-                    Text("NaiveFlow")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(connected ? Color.green : Color.red)
-                    Spacer()
-                    Toggle("Proxy Connection", isOn: Binding(get: { connected }, set: { _ in model.operations.tunnel.toggle() }))
-                        .labelsHidden().tint(.teal).disabled(!canToggle || model.isBusy)
-                }
-                HStack(spacing: 30) {
-                    traffic(symbol: "arrow.up", total: stats.bytesOut, rate: stats.uploadBytesPerSecond)
-                    traffic(symbol: "arrow.down", total: stats.bytesIn, rate: stats.downloadBytesPerSecond)
-                }
-                ClientConfigurationStatusView()
-                if !model.hasApplied { Text("Select and apply a profile to connect.").font(.caption).foregroundStyle(.secondary) }
-            }.padding(20)
-        }
-    }
-
-    private func traffic(symbol: String, total: Int64, rate: Int64?) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: symbol).font(.body.weight(.medium))
-            VStack(alignment: .leading, spacing: 4) {
-                Text(ByteCountFormatter.string(fromByteCount: total, countStyle: .binary)).font(.subheadline.weight(.medium))
-                if connected, let rate { Text(ByteCountFormatter.string(fromByteCount: rate, countStyle: .binary) + "/s").font(.caption) }
-            }.monospacedDigit()
-        }.foregroundStyle(.secondary)
-    }
-
     private var modeCard: some View {
-        ClientHomeCard(colors: [Color(red: 0.25, green: 0.31, blue: 0.81), Color(red: 0.20, green: 0.56, blue: 0.88)]) {
-            cardHeader("Outbound Mode", symbol: "arrow.triangle.branch", iconColor: .blue, summary: modeTitle(model.mode), expanded: $modeExpanded)
+        ClientHomeCard(colors: DesignSystem.CardTheme.outbound.colors) {
+            cardHeader("Outbound Mode", symbol: "arrow.triangle.branch", iconColor: DesignSystem.CardTheme.outbound.tint, summary: modeTitle(model.mode), expanded: $modeExpanded, menu: .connection)
             if modeExpanded {
             ForEach([ProxyMode.direct, .global, .rule], id: \.rawValue) { mode in
                 Button { Task { await model.setSetting("proxy-mode", value: mode.rawValue) } } label: {
                     HStack(spacing: 14) {
-                        Image(systemName: "checkmark").font(.title3.weight(.semibold))
+                        Image(systemName: "checkmark").designText(.cardTitle, weight: .semibold)
                             .opacity(model.mode == mode ? 1 : 0).accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(modeTitle(mode)).font(.body.weight(model.mode == mode ? .semibold : .regular))
+                            Text(modeTitle(mode)).designText(.contentTitle, weight: model.mode == mode ? .semibold : .regular)
                             if model.mode == mode {
                                 Text(mode == .rule ? "Use routing rules to handle requests." : mode == .global ? "Route all requests through the proxy." : "Connect all requests directly.")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
                             }
                         }
                         Spacer(minLength: 0)
-                    }.padding(.horizontal, 20).padding(.vertical, 15).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(model.mode == mode ? Color.blue.opacity(0.09) : .clear).contentShape(Rectangle())
+                    }.padding(.horizontal, DesignSystem.Card.padding).padding(.vertical, 15).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(model.mode == mode ? DesignSystem.Colors.accent.opacity(0.09) : .clear).contentShape(Rectangle())
                 }.buttonStyle(.plain).disabled(model.isBusy)
                     .accessibilityAddTraits(model.mode == mode ? [.isSelected] : [])
             }
@@ -152,17 +108,17 @@ struct ClientHomeView: View {
     private func modeTitle(_ mode: ProxyMode) -> String { mode == .rule ? "Rule" : mode == .global ? "Global Proxy" : "Direct" }
 
     private var proxyCard: some View {
-        ClientHomeCard(colors: [Color(red: 0.70, green: 0.31, blue: 0.11), Color(red: 0.85, green: 0.48, blue: 0.18)]) {
-            cardHeader("PROXY", symbol: "paperplane.fill", iconColor: colorScheme == .dark ? .orange : Color(red: 0.70, green: 0.31, blue: 0.11), summary: "\(model.selectedNodeName) · Nodes: \(model.nodes.count)", expanded: $proxiesExpanded, menu: .proxies)
+        ClientHomeCard(colors: DesignSystem.CardTheme.proxies.colors) {
+            cardHeader("PROXY", symbol: "paperplane.fill", iconColor: DesignSystem.CardTheme.proxies.tint, summary: "\(model.selectedNodeName) · Nodes: \(model.nodes.count)", expanded: $proxiesExpanded, menu: .proxies)
             if proxiesExpanded {
             if model.nodes.isEmpty {
                 VStack(spacing: 8) {
-                    Text("No Nodes Yet").font(.subheadline.weight(.medium))
-                    Text("Add a node or import a profile containing nodes.").font(.caption).foregroundStyle(.secondary)
+                    Text("No Nodes Yet").designText(.secondary, weight: .medium)
+                    Text("Add a node or import a profile containing nodes.").designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
                 }.frame(maxWidth: .infinity).padding(20)
             } else {
                 ForEach(model.nodes) { node in
-                    Rectangle().fill(.primary.opacity(0.10)).frame(height: 0.5).padding(.horizontal, 20)
+                    Rectangle().fill(.primary.opacity(0.10)).frame(height: 0.5).padding(.horizontal, DesignSystem.Card.padding)
                     ClientNodeRow(node: node, selected: model.selectedNodeName == node.name, latency: latency.latencyResults[node.id]) {
                         Task { await model.selectNode(node.name) }
                     }.disabled(model.isBusy)
@@ -178,26 +134,26 @@ struct ClientHomeView: View {
     private var localRuleCount: Int { model.parsed.rules.filter { $0.kind != .ruleSet }.count }
 
     private var rulesCard: some View {
-        ClientHomeCard(colors: [Color(red: 0.60, green: 0.30, blue: 0.48), Color(red: 0.79, green: 0.46, blue: 0.56)]) {
-            cardHeader("Routing Rules", symbol: "line.3.horizontal.decrease.circle", iconColor: colorScheme == .dark ? .pink : Color(red: 0.60, green: 0.30, blue: 0.48), summary: "RuleSet · \(ruleSetCount)   Local · \(localRuleCount)", expanded: $rulesExpanded, menu: .rules)
+        ClientHomeCard(colors: DesignSystem.CardTheme.rules.colors) {
+            cardHeader("Routing Rules", symbol: "line.3.horizontal.decrease.circle", iconColor: DesignSystem.CardTheme.rules.tint, summary: "RuleSet · \(ruleSetCount)   Local · \(localRuleCount)", expanded: $rulesExpanded, menu: .rules)
             if rulesExpanded {
                 let rules = model.parsed.rules
                 if rules.isEmpty {
-                    Text("No Routing Rules").font(.subheadline).foregroundStyle(.secondary).padding(20)
+                    Text("No Routing Rules").designText(.secondary).foregroundStyle(DesignSystem.Colors.secondaryText).padding(20)
                 } else {
                     ForEach(rules.prefix(5)) { rule in
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text(rule.kind.token).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                Text(rule.kind.token).designText(.caption, weight: .semibold).foregroundStyle(DesignSystem.Colors.secondaryText)
                                 Spacer()
-                                Text(rule.policy.token).font(.caption.weight(.medium)).foregroundStyle(.blue)
+                                Text(rule.policy.token).designText(.caption, weight: .medium).foregroundStyle(DesignSystem.Colors.accent)
                             }
-                            Text(rule.value ?? "Final Match").font(.subheadline).lineLimit(2)
-                        }.padding(.horizontal, 20).padding(.vertical, 12)
+                            Text(rule.value ?? "Final Match").designText(.secondary).lineLimit(2)
+                        }.padding(.horizontal, DesignSystem.Card.padding).padding(.vertical, 12)
                     }
                     if rules.count > 5 {
-                        Text("Showing 5 of \(rules.count) rules").font(.caption).foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 16)
+                        Text("Showing 5 of \(rules.count) rules").designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DesignSystem.Card.padding).padding(.bottom, 16)
                     }
                 }
             }
@@ -210,23 +166,23 @@ struct ClientHomeView: View {
         }
     }
 
-    private enum CardMenu { case profiles, proxies, rules }
+    private enum CardMenu { case connection, profiles, proxies, rules }
 
     private func cardHeader(_ title: String, symbol: String, iconColor: Color, summary: String,
                             expanded: Binding<Bool>, menu: CardMenu? = nil) -> some View {
         HStack(alignment: .top, spacing: 0) {
             Button { toggleDetails(expanded) } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: symbol).font(.title3.weight(.semibold)).frame(width: 28)
+                    Image(systemName: symbol).designText(.cardTitle, weight: .semibold).frame(width: 28)
                         .foregroundStyle(iconColor)
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(title).font(.title3.weight(.semibold))
-                        if !expanded.wrappedValue { Text(summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
+                        Text(title).designText(.cardTitle, weight: .semibold)
+                        if !expanded.wrappedValue { Text(summary).designText(.secondary).foregroundStyle(DesignSystem.Colors.secondaryText).lineLimit(1) }
                     }
                     Spacer(minLength: 0)
                     if title == "Profiles", model.isBusy { ProgressView() }
                 }
-                .padding(.leading, 20).padding(.vertical, 20).padding(.trailing, menu == nil ? 20 : 0)
+                .padding(.leading, DesignSystem.Card.padding).padding(.vertical, 20).padding(.trailing, menu == nil ? DesignSystem.Card.padding : 0)
                 .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain)
                 .accessibilityValue(expanded.wrappedValue ? "Expanded" : "Collapsed")
@@ -234,6 +190,8 @@ struct ClientHomeView: View {
             if let menu {
                 Menu {
                     switch menu {
+                    case .connection:
+                        ClientTunnelMenuActions()
                     case .profiles:
                         NavigationLink { ClientProfilesView().clientNavigationBar(visible: true) } label: {
                             Label("Manage Profiles", systemImage: "doc.text")
@@ -257,9 +215,10 @@ struct ClientHomeView: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "ellipsis").font(.body.weight(.semibold))
-                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                    Image(systemName: "ellipsis").designText(.body, weight: .semibold)
+                        .frame(width: DesignSystem.Interaction.minimumHitSize, height: DesignSystem.Interaction.minimumHitSize).contentShape(Rectangle())
                 }
+                .clientIconMenu()
                 .padding(.top, 12).padding(.trailing, 12)
                 .accessibilityLabel("\(title) actions")
                 .disabled(model.isBusy)
@@ -270,25 +229,12 @@ struct ClientHomeView: View {
 }
 
 private struct ClientHomeCard<Content: View>: View {
-    @Environment(\.colorScheme) private var colorScheme
     var colors: [Color]
     @ViewBuilder var content: Content
     var body: some View {
         VStack(spacing: 0) { content }
-            .foregroundStyle(.primary).tint(.primary)
-            .background {
-                GeometryReader { geometry in
-                    ZStack {
-                        ClientAppearance.card
-                        LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
-                            .opacity(colorScheme == .dark ? 0.18 : 0.12)
-                        Rectangle().fill(.white.opacity(0.10))
-                            .frame(width: geometry.size.width * 1.5, height: geometry.size.height * 0.5)
-                            .rotationEffect(.degrees(-30)).offset(x: geometry.size.width * 0.12, y: -geometry.size.height * 0.3)
-                    }
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .foregroundStyle(DesignSystem.Colors.text).tint(DesignSystem.Colors.text)
+            .designCard(colors: colors)
     }
 }
 
@@ -308,8 +254,16 @@ private struct ClientRoutingRulesView: View {
     var body: some View {
         List {
             Section {
+                Button {
+                    if ruleSets { ruleEditor = ClientRuleSetDraft() }
+                    else { editing = true }
+                } label: {
+                    Label(ruleSets ? "New RuleSet" : "Add Local Rule", systemImage: "plus.circle")
+                }.disabled(model.profile == nil || model.isBusy)
+            }
+            Section {
                 if rules.isEmpty {
-                    ContentUnavailableView(ruleSets ? "No Rule Sets" : "No Local Rules", systemImage: ruleSets ? "square.stack.3d.up" : "doc.text", description: Text(ruleSets ? "Tap + to add a rule set and choose its policy." : "Add routing rules to the current profile."))
+                    ContentUnavailableView(ruleSets ? "No Rule Sets" : "No Local Rules", systemImage: ruleSets ? "square.stack.3d.up" : "doc.text", description: Text(ruleSets ? "Add a rule set using the button above and choose its policy." : "Add routing rules to the current profile."))
                 } else {
                     ForEach(rules) { rule in
                         Button {
@@ -317,20 +271,20 @@ private struct ClientRoutingRulesView: View {
                         } label: {
                         VStack(alignment: .leading, spacing: 7) {
                             HStack {
-                                Text(rule.kind.token).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                Text(rule.kind.token).designText(.caption, weight: .semibold).foregroundStyle(DesignSystem.Colors.secondaryText)
                                 Spacer()
-                                Text(rule.policy.token).font(.caption.weight(.medium)).foregroundStyle(.blue)
+                                Text(rule.policy.token).designText(.caption, weight: .medium).foregroundStyle(DesignSystem.Colors.accent)
                             }
-                            Text(displayValue(rule)).font(.subheadline).textSelection(.enabled)
+                            Text(displayValue(rule)).designText(.secondary).textSelection(.enabled)
                             if !rule.options.isEmpty {
-                                Text(rule.options.map(\.token).joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                                Text(rule.options.map(\.token).joined(separator: " · ")).designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
                             }
                         }.padding(.vertical, 5).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                         }.buttonStyle(.plain).disabled(!ruleSets)
                         .clientSwipeActions(edge: .trailing, allowsFullSwipe: false) {
                             if ruleSets {
                                 Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = rule }
-                                Button("Edit", systemImage: "pencil") { ruleEditor = ClientRuleSetDraft(rule: rule) }.tint(.blue)
+                                Button("Edit", systemImage: "pencil") { ruleEditor = ClientRuleSetDraft(rule: rule) }.tint(DesignSystem.Colors.accent)
                                 Button("Update", systemImage: "arrow.clockwise") { Task { await update(source: rule.value) } }.tint(.orange)
                             }
                         }
@@ -353,20 +307,7 @@ private struct ClientRoutingRulesView: View {
                         .disabled(updating || model.isBusy || rules.isEmpty)
                     if updating { ProgressView() }
                     Spacer()
-                }.padding(.horizontal, 20).padding(.vertical, 10).background(.bar)
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .clientToolbarTrailing) {
-                if ruleSets {
-                    Button { ruleEditor = ClientRuleSetDraft() } label: { Image(systemName: "plus") }
-                        .accessibilityLabel("New RuleSet")
-                        .disabled(model.profile == nil || model.isBusy)
-                } else {
-                    Button { editing = true } label: { Image(systemName: "plus") }
-                        .accessibilityLabel("Add Local Rule")
-                        .disabled(model.profile == nil || model.isBusy)
-                }
+                }.padding(.horizontal, DesignSystem.Card.padding).padding(.vertical, 10).background(.bar)
             }
         }
         .sheet(isPresented: $editing) { ClientActiveProfileEditor() }
@@ -428,7 +369,7 @@ private struct ClientRuleSetEditorView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            ClientForm {
                 Section("Rule Set URL") {
                     TextField("https://example.com/rules.list", text: $draft.source)
                         .clientKeyboardType(.URL).clientNoAutocapitalization().autocorrectionDisabled()

@@ -51,8 +51,6 @@ nonisolated final class ProxyClient: Sendable {
     }
     let parentChain: [ProxyConfiguration]
 
-    let isDefaultProxy: Bool
-
     var directDialHost: String {
         useResolvedAddressForDirectDial ? configuration.connectAddress : configuration.serverAddress
     }
@@ -65,14 +63,12 @@ nonisolated final class ProxyClient: Sendable {
         configuration: ProxyConfiguration,
         tunnel: ProxyConnection? = nil,
         useResolvedAddressForDirectDial: Bool = false,
-        parentChain: [ProxyConfiguration] = [],
-        isDefaultProxy: Bool = false
+        parentChain: [ProxyConfiguration] = []
     ) {
         self.configuration = configuration
         self.state = Mutex(State(tunnel: tunnel))
         self.useResolvedAddressForDirectDial = useResolvedAddressForDirectDial
         self.parentChain = parentChain
-        self.isDefaultProxy = isDefaultProxy
     }
 
     // MARK: - Delivery / teardown
@@ -108,18 +104,6 @@ nonisolated final class ProxyClient: Sendable {
 
     // MARK: - Public API
 
-    private func withOutboundMetrics(
-        _ dial: () async throws -> ProxyConnection
-    ) async throws -> ProxyConnection {
-        guard isDefaultProxy, let attempt = ConnectionMetrics.shared.beginAttempt() else {
-            return try await dial()
-        }
-        let connection = try await ConnectionMetrics.$currentAttempt.withValue(attempt) {
-            try await dial()
-        }
-        return MeteredProxyConnection(connection, attempt: attempt)
-    }
-
     func connect(
         to destinationHost: String,
         port destinationPort: UInt16,
@@ -149,10 +133,8 @@ nonisolated final class ProxyClient: Sendable {
         }
         if !configuration.isDirect { try IPv4Only.requireHost(configuration.serverAddress) }
         if let resolved = configuration.resolvedIP { try IPv4Only.requireHost(resolved) }
-        return try await withOutboundMetrics {
-            try await self.deliver {
-                try await self.connectThroughChainIfNeeded(request)
-            }
+        return try await deliver {
+            try await self.connectThroughChainIfNeeded(request)
         }
     }
 

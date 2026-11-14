@@ -1,24 +1,5 @@
 import Foundation
 
-nonisolated struct ClientTextChange: Identifiable {
-    let line: Int
-    let before: String?
-    let after: String?
-    var id: Int { line }
-
-    static func compare(_ before: String, _ after: String, limit: Int = 400) -> [Self] {
-        let old = before.components(separatedBy: "\n"), new = after.components(separatedBy: "\n")
-        var changes: [Self] = []
-        for index in 0..<max(old.count, new.count) {
-            let a = index < old.count ? old[index] : nil
-            let b = index < new.count ? new[index] : nil
-            if a != b { changes.append(Self(line: index + 1, before: a, after: b)) }
-            if changes.count >= limit { break }
-        }
-        return changes
-    }
-}
-
 @MainActor
 struct ClientSubscriptionReview: Identifiable {
     let id = UUID()

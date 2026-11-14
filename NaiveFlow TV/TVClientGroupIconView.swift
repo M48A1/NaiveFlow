@@ -44,7 +44,7 @@ struct TVClientGroupIconPacksView: View {
                 .disabled(ProxyGroupIconURL.parse(source.trimmingCharacters(in: .whitespacesAndNewlines)) == nil
                           || !library.updating.isEmpty)
             }
-            if let error = library.error { Text(error).foregroundStyle(.red) }
+            if let error = library.error { Text(error).foregroundStyle(DesignSystem.Colors.error) }
         }
         .navigationTitle("Icon Packs")
     }
@@ -63,7 +63,7 @@ private struct TVClientGroupIconPicker: View {
             Button("Refresh Icon Pack") { Task { await library.update(id: packID) } }
                 .disabled(library.updating.contains(packID))
             if library.updating.contains(packID) { ProgressView() }
-            if let error = library.error { Text(error).foregroundStyle(.red) }
+            if let error = library.error { Text(error).foregroundStyle(DesignSystem.Colors.error) }
             ForEach(icons) { icon in
                 Button {
                     iconURL = icon.url

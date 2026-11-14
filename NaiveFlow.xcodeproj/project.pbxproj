@@ -123,7 +123,6 @@
 				Models/RoutingRule.swift,
 				Models/TunnelMessage.swift,
 				Services/RequestLog.swift,
-				Networking/ConnectionMetrics.swift,
 				Networking/DNS/DNSAddressFamily.swift,
 				Networking/DNS/DNSHosts.swift,
 				Networking/DNS/DNSLookupCache.swift,
@@ -376,7 +375,6 @@
 				DeepLinkManager.swift,
 				Info.plist,
 				NaiveFlowApp.swift,
-				"Views/Client/ClientComponents.swift",
 
 				"Views/Client/ClientGeoSettingsView.swift",
 				"Views/Client/ClientGroupViews.swift",
@@ -1407,6 +1405,7 @@
 				CODE_SIGN_ENTITLEMENTS = "NaiveFlow/NaiveFlow.entitlements";
 				CURRENT_PROJECT_VERSION = 414;
 				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "NaiveFlow macOS/Info.plist";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 2.5;
@@ -1427,6 +1426,7 @@
 				CODE_SIGN_ENTITLEMENTS = "NaiveFlow/NaiveFlow.entitlements";
 				CURRENT_PROJECT_VERSION = 414;
 				DEVELOPMENT_TEAM = C7AS5D38Q8;
+				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "NaiveFlow macOS/Info.plist";
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 2.5;

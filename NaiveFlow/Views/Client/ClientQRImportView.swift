@@ -79,7 +79,7 @@ struct ClientQRImportView: View {
                     Section("Choose Content to Import") {
                         ForEach(Array(results.enumerated()), id: \.offset) { _, source in
                             Button { importSource = QRSource(text: source) } label: {
-                                Text(source).font(.system(.caption, design: .monospaced)).lineLimit(4)
+                                Text(source).designText(.caption, design: .monospaced).lineLimit(4)
                             }
                         }
                     }

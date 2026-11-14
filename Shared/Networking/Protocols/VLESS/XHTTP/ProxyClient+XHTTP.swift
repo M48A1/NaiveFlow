@@ -617,13 +617,11 @@ nonisolated extension ProxyClient {
                 }
             }
             return {
-                try await ConnectionMetrics.$currentAttempt.withValue(nil) {
-                    guard let lease = await manager.acquire(), let connection = lease.connection as? XHTTPH1Multiplexer else {
-                        throw NaiveFlowError.transport(.connectionFailed(endpoint: "\(host):\(port)", detail: "xmux H1 upload acquisition failed"))
-                    }
-                    connection.adoptLease(lease)
-                    return connection.sessionTransport
+                guard let lease = await manager.acquire(), let connection = lease.connection as? XHTTPH1Multiplexer else {
+                    throw NaiveFlowError.transport(.connectionFailed(endpoint: "\(host):\(port)", detail: "xmux H1 upload acquisition failed"))
                 }
+                connection.adoptLease(lease)
+                return connection.sessionTransport
             }
         }
 
@@ -632,9 +630,7 @@ nonisolated extension ProxyClient {
                 throw NaiveFlowError.transport(.terminated)
             }
             let route = self.additionalXHTTPRoute()
-            let transport = try await ConnectionMetrics.$currentAttempt.withValue(nil) {
-                try await self.dialXHTTPTransport(endpoint: self.mainXHTTPEndpoint(), httpVersion: httpVersion, route: route)
-            }
+            let transport = try await self.dialXHTTPTransport(endpoint: self.mainXHTTPEndpoint(), httpVersion: httpVersion, route: route)
             switch transport {
             case .byteStream(let closures):
                 return closures

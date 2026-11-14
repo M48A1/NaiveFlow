@@ -105,7 +105,6 @@ actor UDPFlow {
 
     nonisolated let activityRecord: ActivityPool.Record
 
-    private nonisolated let trafficMeter: TrafficMeter
 
     private var bypass: Bool {
         let resolved = routeTarget.resolved(against: stack?.udpConfig().defaultRouteTarget ?? .direct)
@@ -155,7 +154,6 @@ actor UDPFlow {
             defaultRouteTarget: stack.udpConfig().defaultRouteTarget,
             ruleSetName: ruleSetName
         )
-        self.trafficMeter = stack.openTrafficMeter(target: routeTarget)
         (self.jobs, self.jobContinuation) = AsyncStream.makeStream(of: Job.self)
     }
 
@@ -221,7 +219,6 @@ actor UDPFlow {
 
         var admitted: [Data] = []
         for payload in payloads {
-            trafficMeter.addBytesOut(payload.count)
             activityRecord.addBytesOut(payload.count)
 
             switch phase {
@@ -505,8 +502,7 @@ actor UDPFlow {
         guard phase != .closed else { return }
 
         let client = ProxyClient(
-            configuration: configuration,
-            isDefaultProxy: stack?.isDefaultConfiguration(configuration.id) ?? false
+            configuration: configuration
         )
         self.proxyClient = client
 
@@ -552,7 +548,6 @@ actor UDPFlow {
             $0.replyCount += 1
         }
 
-        trafficMeter.addBytesIn(data.count)
         activityRecord.addBytesIn(data.count)
 
         stack?.writeOutboundUDP(data, from: flowKey.destination, to: flowKey.source)

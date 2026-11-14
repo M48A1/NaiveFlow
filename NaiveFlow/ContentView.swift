@@ -26,9 +26,9 @@ struct ClientNodeImportView: View {
     @State private var subscriptionDraft: ClientNodeSubscription?
     var body: some View {
         NavigationStack {
-            Form {
+            ClientForm {
                 Section("Node Links or HTTPS Subscription") {
-                    TextEditor(text: $source).frame(minHeight: 150).font(.system(size: 12, design: .monospaced))
+                    TextEditor(text: $source).frame(minHeight: 150).designText(.code)
                         .clientNoAutocapitalization().autocorrectionDisabled()
                 }
                 Button("Import into Current Profile") { Task {

@@ -22,7 +22,7 @@ struct HomeView: View {
 #if os(iOS)
         .tabViewStyle(.tabBarOnly)
 #endif
-        .tint(.blue)
+        .tint(DesignSystem.Colors.accent)
         .environment(model)
         .alert("Operation Failed", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
@@ -32,7 +32,7 @@ struct HomeView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let title = model.activeResourceTitle {
-                HStack { ProgressView(); Text(title).font(.caption); Spacer(); Button("Cancel") { model.cancelResourceOperation() } }
+                HStack { ProgressView(); Text(title).designText(.caption); Spacer(); Button("Cancel") { model.cancelResourceOperation() } }
                     .padding(12).background(.bar)
             }
         }

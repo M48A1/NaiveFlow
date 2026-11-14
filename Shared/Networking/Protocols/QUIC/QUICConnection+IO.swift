@@ -77,10 +77,6 @@ extension QUICConnectionCore {
 
     func handleReceivedPacket(_ packet: Data, path: QUICPath) {
         guard let engine, !packet.isEmpty else { return }
-        if let dialAttempt {
-            self.dialAttempt = nil
-            dialAttempt.noteServerResponse()
-        }
         engine.receive(packet, from: path, now: currentTimestamp())
         drainEngineEvents(engine)
         if phase != .closed { scheduleFlush() }

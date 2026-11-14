@@ -16,7 +16,6 @@ final class AppContainer {
     let tunnel: TunnelController
     let selection = ProxySelection()
     let latency = LatencyCenter()
-    let stats = ConnectionStats()
 
     private var started = false
 
@@ -66,7 +65,7 @@ final class AppContainer {
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                TunnelSessionReaction(tunnel: self.tunnel, stats: self.stats, selection: self.selection).run()
+                TunnelSessionReaction(tunnel: self.tunnel, selection: self.selection).run()
                 self.observeTunnelStatus()
                 if self.tunnel.rawStatus == .connected {
                     do {

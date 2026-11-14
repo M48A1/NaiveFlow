@@ -21,29 +21,34 @@ struct ClientGeoSettingsView: View {
     var body: some View {
         List {
             Section {
-                if let referenceError { Text(referenceError).font(.footnote).foregroundStyle(.red) }
+                Button { editor = ClientGeoSourceDraft(site: site) } label: {
+                    Label("Add \(title) Source", systemImage: "plus.circle")
+                }.disabled(model.isBusy || updating)
+            }
+            Section {
+                if let referenceError { Text(referenceError).designText(.caption).foregroundStyle(DesignSystem.Colors.error) }
                 if references.isEmpty {
-                    ContentUnavailableView("No Update Sources", systemImage: "globe", description: Text("Tap + to add a \(title) source."))
+                    ContentUnavailableView("No Update Sources", systemImage: "globe", description: Text("Add a \(title) source using the button above."))
                 }
                 ForEach(references, id: \.key) { reference in
                     Button { editor = draft(reference) } label: {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text(site ? reference.key : reference.key.uppercased()).font(.headline)
+                                Text(site ? reference.key : reference.key.uppercased()).designText(.contentTitle)
                                 Spacer()
-                                Text(reference.format).font(.caption).foregroundStyle(.secondary)
+                                Text(reference.format).designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
                             }
-                            Text(reference.url.absoluteString).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                            Text("Source category: \(reference.category)").font(.caption).foregroundStyle(.secondary)
+                            Text(reference.url.absoluteString).designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText).lineLimit(2)
+                            Text("Source category: \(reference.category)").designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
                             if let date = lastLoaded(reference) {
-                                Text("Last loaded: \(date.formatted(.dateTime.month().day().hour().minute().locale(Locale(identifier: "en"))))").font(.caption2).foregroundStyle(.secondary)
+                                Text("Last loaded: \(date.formatted(.dateTime.month().day().hour().minute().locale(Locale(identifier: "en"))))").designText(.micro).foregroundStyle(DesignSystem.Colors.secondaryText)
                             } else {
-                                Text("Not Loaded").font(.caption2).foregroundStyle(.secondary)
+                                Text("Not Loaded").designText(.micro).foregroundStyle(DesignSystem.Colors.secondaryText)
                             }
                         }.padding(.vertical, 5).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                     }.buttonStyle(.plain)
                         .clientSwipeActions(allowsFullSwipe: false) {
-                            Button("Edit") { editor = draft(reference) }.tint(.blue)
+                            Button("Edit") { editor = draft(reference) }.tint(DesignSystem.Colors.accent)
                             Button("Delete", role: .destructive) { pendingDelete = draft(reference) }
                         }
                 }
@@ -63,10 +68,6 @@ struct ClientGeoSettingsView: View {
             }
         }
         .navigationTitle(title).clientInlineTitle()
-        .toolbar { ToolbarItem(placement: .clientToolbarTrailing) {
-            Button { editor = ClientGeoSourceDraft(site: site) } label: { Image(systemName: "plus") }
-                .accessibilityLabel("Add \(title) Source").disabled(model.isBusy || updating)
-        } }
         .task(id: model.profile?.updatedAt) {
             let directory = model.document.activation.store.directory.appendingPathComponent("runtime-v2", isDirectory: true)
             let sources = await Self.loadSources(in: directory)
@@ -118,7 +119,7 @@ private struct ClientGeoSourceEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            ClientForm {
                 Section {
                     TextField(site ? "Tag, e.g. cn or ads" : "Tag, e.g. CN or AS64500", text: $draft.key)
                         .disabled(draft.originalValue != nil)
@@ -134,7 +135,7 @@ private struct ClientGeoSourceEditor: View {
                     Text("The tag must match the name in routing rules. Use the source category to select DAT database contents.")
                 }
                 Section {
-                    TextField("SHA-256 (Optional)", text: $draft.checksum).font(.system(.footnote, design: .monospaced))
+                    TextField("SHA-256 (Optional)", text: $draft.checksum).designText(.caption, design: .monospaced)
                 } footer: { Text("When a checksum is set, only matching files are accepted. Update it when the database changes.") }
             }
             .clientNoAutocapitalization().autocorrectionDisabled().clientKeyboardDone()

@@ -1,67 +1,5 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import NetworkExtension
-
-struct ClientConfigurationStatusView: View {
-    @Environment(ClientModel.self) private var model
-    @Environment(TunnelController.self) private var tunnel
-    @State private var reviewing = false
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 3)) { _ in
-            VStack(alignment: .leading, spacing: 8) {
-                Label(status, systemImage: model.hasSavedDraft ? "doc.badge.ellipsis" : "checkmark.shield")
-                    .font(.caption.weight(.medium)).foregroundStyle(model.hasSavedDraft ? .orange : .secondary)
-                if model.hasSavedDraft {
-                    Button("Review Saved Changes") { reviewing = true }.font(.caption)
-                }
-            }
-        }
-        .sheet(isPresented: $reviewing) { ClientDraftReviewView() }
-    }
-    private var status: String {
-        if model.hasSavedDraft { return "Saved changes · Not applied" }
-        if !model.hasApplied { return "Saved · Not applied" }
-        if tunnel.rawStatus == .connecting || tunnel.rawStatus == .reasserting { return "Connecting · Waiting for tunnel confirmation" }
-        if tunnel.rawStatus == .connected { return model.isRuntimeConfirmed ? "Running · Configuration confirmed" : "Waiting for tunnel confirmation" }
-        return "Applied · VPN stopped"
-    }
-}
-
-struct ClientDraftReviewView: View {
-    @Environment(ClientModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
-    @State private var restore = false
-    private var changes: [ClientTextChange] { ClientTextChange.compare(model.operatingText, model.profile?.text ?? "") }
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    Button("Apply Saved Profile") { Task { if let profile = model.profile, await model.saveProfile(profile, apply: true) { dismiss() } } }
-                    Button("Restore Applied Content", role: .destructive) { restore = true }
-                } footer: { Text("Restoring replaces the saved draft with the currently applied text. It does not change the VPN.") }
-                Section {
-                    if changes.isEmpty { Text("No text changes") }
-                    ForEach(changes) { change in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("Line \(change.line)").font(.caption).foregroundStyle(.secondary)
-                            if let before = change.before { Text("− " + before).foregroundStyle(.red) }
-                            if let after = change.after { Text("+ " + after).foregroundStyle(.green) }
-                        }.font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                    }
-                } header: { Text("Changed Lines") } footer: { Text("Compares the same line numbers in each version. Up to 400 changed lines are shown; inserting a line can shift later comparisons.") }
-            }
-            .navigationTitle("Saved vs Applied").clientInlineTitle()
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
-            .confirmationDialog("Replace Saved Draft?", isPresented: $restore, titleVisibility: .visible) {
-                Button("Restore Applied Content", role: .destructive) { Task { if await model.restoreRunningDraft() { dismiss() } } }
-            }
-            .disabled(model.isBusy)
-            .alert("Could Not Apply", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
-                Button("OK") { model.error = nil }
-            } message: { Text(model.error ?? "") }
-        }
-    }
-}
 
 private struct ClientBackupDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.json] }
@@ -107,7 +45,7 @@ struct ClientBackupView: View {
                     Button("Cancel Restore", role: .cancel) { self.incoming = nil }
                 } header: { Text("Restore Preview") } footer: { Text("Matching IDs are kept unless replacement is enabled. Newly restored profiles are added. Nothing is applied to the VPN automatically.") }
             }
-            if let notice { Text(notice).foregroundStyle(.secondary) }
+            if let notice { Text(notice).foregroundStyle(DesignSystem.Colors.secondaryText) }
         }
         .navigationTitle("Backup and Restore").clientInlineTitle()
         .disabled(model.isBusy)

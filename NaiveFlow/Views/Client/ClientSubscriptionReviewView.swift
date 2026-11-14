@@ -31,7 +31,7 @@ struct ClientSubscriptionReviewView: View {
     }
     private func names(_ title: String, _ values: [String]) -> some View {
         Section("\(title) (\(values.count))") {
-            if values.isEmpty { Text("None").foregroundStyle(.secondary) }
+            if values.isEmpty { Text("None").foregroundStyle(DesignSystem.Colors.secondaryText) }
             ForEach(Array(values.enumerated()), id: \.offset) { _, name in Text(name) }
         }
     }

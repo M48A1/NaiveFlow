@@ -149,7 +149,6 @@ nonisolated final class QUICConnectionCore: QUICPublishingState {
 
     var connectContinuation: CheckedContinuation<Void, Error>?
 
-    var dialAttempt: ConnectionMetrics.Attempt?
 
     typealias StreamTerminationCause = QUICConnection.StreamTerminationCause
     let handlers: QUICHandlerStore

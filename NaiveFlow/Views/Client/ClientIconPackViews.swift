@@ -17,6 +17,9 @@ struct ClientIconPacksView: View {
         NavigationStack {
             List {
                 Section {
+                    Button("Add Icon Pack", systemImage: "plus.circle") { editor = SourceDraft() }
+                }
+                Section {
                     ForEach(library.packs) { pack in
                         NavigationLink {
                             ClientIconPackBrowser(library: library, packID: pack.id) { icon in
@@ -26,16 +29,16 @@ struct ClientIconPacksView: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 5) {
                                 HStack {
-                                    Text(pack.name).font(.headline)
+                                    Text(pack.name).designText(.contentTitle)
                                     Spacer()
                                     if library.updating.contains(pack.id) { ProgressView() }
                                 }
-                                Text(pack.icons.isEmpty ? "Tap to Load Icons" : "Icons: \(pack.icons.count)").font(.caption).foregroundStyle(.secondary)
-                                if let date = pack.updatedAt { Text("Updated \(date.formatted(.dateTime.month().day().hour().minute().locale(Locale(identifier: "en"))))").font(.caption2).foregroundStyle(.secondary) }
+                                Text(pack.icons.isEmpty ? "Tap to Load Icons" : "Icons: \(pack.icons.count)").designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
+                                if let date = pack.updatedAt { Text("Updated \(date.formatted(.dateTime.month().day().hour().minute().locale(Locale(identifier: "en"))))").designText(.micro).foregroundStyle(DesignSystem.Colors.secondaryText) }
                             }.padding(.vertical, 5)
                         }
                         .clientSwipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button("Update") { Task { await library.update(id: pack.id) } }.tint(.blue)
+                            Button("Update") { Task { await library.update(id: pack.id) } }.tint(DesignSystem.Colors.accent)
                                 .disabled(library.updating.contains(pack.id))
                             Button("Edit") { editor = SourceDraft(packID: pack.id, source: pack.source) }.tint(.orange)
                                 .disabled(library.updating.contains(pack.id))
@@ -49,7 +52,6 @@ struct ClientIconPacksView: View {
             .navigationTitle("Icon Packs").clientInlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
-                ToolbarItem(placement: .clientToolbarTrailing) { Button { editor = SourceDraft() } label: { Image(systemName: "plus") }.accessibilityLabel("Add Icon Pack") }
             }
             .sheet(item: $editor) { draft in sourceEditor(draft) }
             .alert("Icon Pack Operation Failed", isPresented: Binding(get: { library.error != nil && editor == nil }, set: { if !$0 { library.error = nil } })) {
@@ -80,12 +82,12 @@ private struct ClientIconPackSourceEditor: View {
     var save: (String) -> Void
     var body: some View {
         NavigationStack {
-            Form {
+            ClientForm {
                 Section("Icon Pack JSON URL") {
                     TextField("https://example.com/icons.json", text: $source)
                         .clientKeyboardType(.URL).clientNoAutocapitalization().autocorrectionDisabled()
                 }
-                if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+                if let error { Text(error).designText(.caption).foregroundStyle(DesignSystem.Colors.error) }
             }
             .navigationTitle("Edit Icon Pack").clientInlineTitle()
             .toolbar {
@@ -116,9 +118,9 @@ private struct ClientIconPackBrowser: View {
                     Button { select(icon) } label: {
                         VStack(spacing: 7) {
                             AsyncImage(url: URL(string: icon.url)) { image in image.resizable().scaledToFit() }
-                                placeholder: { Image(systemName: "photo").foregroundStyle(.secondary) }
+                                placeholder: { Image(systemName: "photo").foregroundStyle(DesignSystem.Colors.secondaryText) }
                                 .frame(width: 44, height: 44)
-                            Text(icon.name).font(.caption2).lineLimit(2).multilineTextAlignment(.center)
+                            Text(icon.name).designText(.micro).lineLimit(2).multilineTextAlignment(.center)
                         }.frame(maxWidth: .infinity).frame(minHeight: 86).contentShape(Rectangle())
                     }.buttonStyle(.plain)
                 }

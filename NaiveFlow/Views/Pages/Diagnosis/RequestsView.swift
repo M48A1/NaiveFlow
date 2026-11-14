@@ -114,8 +114,8 @@ struct RequestsView: View {
             }
         }
         .navigationDestination(isPresented: $showingDisplaySettings) {
-            Form {
-                Toggle("Follow Latest", isOn: $followLatest).tint(.blue)
+            ClientForm {
+                Toggle("Follow Latest", isOn: $followLatest).tint(DesignSystem.Colors.accent)
             }
             .navigationTitle("Display Settings").clientInlineTitle()
         }
@@ -173,7 +173,7 @@ struct RequestsView: View {
                     .foregroundStyle(pollingEnabled && model.refreshState == .current ? Color.green : Color.secondary)
                 Spacer()
                 Text("\(visible.count) / \(model.requests.count)")
-                    .monospacedDigit().foregroundStyle(.secondary)
+                    .monospacedDigit().foregroundStyle(DesignSystem.Colors.secondaryText)
                 if !followLatest {
                     Button("Latest", systemImage: "arrow.up.to.line") { followLatest = true }
                 }
@@ -198,12 +198,12 @@ struct RequestsView: View {
             }
             if model.refreshState == .unavailable {
                 Label("Unable to refresh. Showing recent cached records.", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DesignSystem.Colors.secondaryText)
             }
             Text("Recent 5 minutes · Up to \(RequestLog.maxEntries) records")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DesignSystem.Colors.secondaryText)
         }
-        .font(.caption)
+        .designText(.caption)
         .padding(.horizontal).padding(.vertical, 10)
         .background(.bar)
     }
@@ -228,11 +228,11 @@ struct RequestsView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
                 Text("\(entry.host):\(String(entry.port))")
-                    .font(.system(.subheadline, design: .monospaced))
+                    .designText(.secondary, design: .monospaced)
                     .lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 8)
                 Text(entry.timestamp, format: .dateTime.hour().minute().second())
-                    .font(.caption).foregroundStyle(.secondary)
+                    .designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
             }
             HStack(spacing: 5) {
                 TagBadge(text: protocolName(entry.protocol), color: .blue)
@@ -241,10 +241,10 @@ struct RequestsView: View {
             }
             let detail = [outboundName(entry), entry.ruleSetName, entry.blockReason.map(blockReasonName)]
                 .compactMap { $0 }.joined(separator: " · ")
-            if !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+            if !detail.isEmpty { Text(detail).designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText).lineLimit(1) }
             if let activity = entry.activity {
                 Text("↑ \(formatBytes(activity.bytesOut))  ↓ \(formatBytes(activity.bytesIn))")
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    .font(.caption.monospacedDigit()).foregroundStyle(DesignSystem.Colors.secondaryText)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -266,10 +266,10 @@ private struct RequestDetailView: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            Form {
+            ClientForm {
                 if !live {
                     Label("Updates paused or unavailable. Showing the last observed state.", systemImage: "pause.circle")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText)
                 }
                 Section("Request") {
                     LabeledContent("Host", value: entry.host)

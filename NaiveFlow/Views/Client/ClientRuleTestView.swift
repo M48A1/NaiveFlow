@@ -12,7 +12,7 @@ struct ClientRuleTestView: View {
     @State private var testing = false
     @State private var result: String?
     var body: some View {
-        Form {
+        ClientForm {
             Section("Target") {
                 TextField("Domain (optional with IPv4)", text: $host)
                 TextField("Resolved IPv4 (optional)", text: $ip)

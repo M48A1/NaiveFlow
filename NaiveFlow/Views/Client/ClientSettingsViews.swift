@@ -4,46 +4,43 @@ import UserNotifications
 struct ClientSettingsView: View {
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            VStack(spacing: DesignSystem.Spacing.section) {
                 section("Connectivity") {
-                    row("DNS", symbol: "safari", color: .blue) { ClientDNSView() }
+                    row("DNS", symbol: "safari", color: DesignSystem.CardTheme.outbound.tint) { ClientDNSView() }
                     separator
-                    row("Latency Test", symbol: "bolt.horizontal.circle", color: .blue) { ClientLatencySettingsView() }
+                    row("Latency Test", symbol: "bolt.horizontal.circle", color: DesignSystem.CardTheme.outbound.tint) { ClientLatencySettingsView() }
                     separator
-                    row("GeoIP", symbol: "globe.europe.africa", color: .blue) { ClientGeoSettingsView(site: false) }
+                    row("GeoIP", symbol: "globe.europe.africa", color: DesignSystem.CardTheme.outbound.tint) { ClientGeoSettingsView(site: false) }
                     separator
-                    row("GeoSite", symbol: "globe", color: .blue) { ClientGeoSettingsView(site: true) }
+                    row("GeoSite", symbol: "globe", color: DesignSystem.CardTheme.outbound.tint) { ClientGeoSettingsView(site: true) }
                     separator
-                    row("Always Connected", symbol: "arrow.triangle.2.circlepath", color: .blue) { ClientAlwaysConnectedSettingsView() }
+                    row("Always Connected", symbol: "arrow.triangle.2.circlepath", color: DesignSystem.CardTheme.outbound.tint) { ClientAlwaysConnectedSettingsView() }
                     separator
-                    row("LAN Sharing", symbol: "wifi", color: .blue) { LANProxySettingsView() }
+                    row("LAN Sharing", symbol: "wifi", color: DesignSystem.CardTheme.outbound.tint) { LANProxySettingsView() }
                 }
                 section("Traffic Processing") {
-                    row("MITM", symbol: "shield.lefthalf.filled", color: .purple) { MITMCertificateView() }
+                    row("MITM", symbol: "shield.lefthalf.filled", color: DesignSystem.CardTheme.profiles.tint) { MITMCertificateView() }
                     separator
-                    row("Modules", symbol: "puzzlepiece.extension.fill", color: .purple) { ClientModulesView() }
+                    row("Modules", symbol: "puzzlepiece.extension.fill", color: DesignSystem.CardTheme.profiles.tint) { ClientModulesView() }
                 }
                 section("Diagnostics") {
-                    row("Connection Diagnostics", symbol: "stethoscope", color: .orange) { ClientDiagnosticsView() }
+                    row("Connection Diagnostics", symbol: "stethoscope", color: DesignSystem.CardTheme.proxies.tint) { ClientDiagnosticsView() }
                     separator
-                    row("Rule Test", symbol: "arrow.triangle.branch", color: .orange) { ClientRuleTestView() }
+                    row("Rule Test", symbol: "arrow.triangle.branch", color: DesignSystem.CardTheme.proxies.tint) { ClientRuleTestView() }
                     separator
-                    row("Resource Updates", symbol: "arrow.clockwise", color: .orange) { ClientResourceCenterView() }
+                    row("Resource Updates", symbol: "arrow.clockwise", color: DesignSystem.CardTheme.proxies.tint) { ClientResourceCenterView() }
                     separator
-                    row("Logs", symbol: "doc.text.fill", color: .orange) { ClientLogsView() }
+                    row("Logs", symbol: "doc.text.fill", color: DesignSystem.CardTheme.proxies.tint) { ClientLogsView() }
                     separator
-                    row("Requests", symbol: "list.bullet.rectangle", color: .orange) { RequestsView() }
+                    row("Requests", symbol: "list.bullet.rectangle", color: DesignSystem.CardTheme.proxies.tint) { RequestsView() }
                 }
                 section("Application") {
-                    row("Notification Settings", symbol: "bell.fill", color: .teal) { ClientNotificationSettingsView() }
+                    row("Notification Settings", symbol: "bell.fill", color: DesignSystem.Colors.application) { ClientNotificationSettingsView() }
                     separator
-                    row("About", symbol: "info.circle", color: .teal) { AboutView() }
+                    row("About", symbol: "info.circle", color: DesignSystem.Colors.application) { AboutView() }
                 }
             }
-            .frame(maxWidth: 760)
-            .padding(.horizontal, 20)
-            .padding(.top, 10)
-            .padding(.bottom, 24)
+            .clientMainContent()
         }
         .background(ClientAppearance.background)
         .navigationTitle("Settings")
@@ -53,7 +50,7 @@ struct ClientSettingsView: View {
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.footnote.weight(.medium)).foregroundStyle(.secondary)
+            Text(title).designText(.sectionTitle).foregroundStyle(DesignSystem.Colors.secondaryText)
                 .padding(.leading, 4)
                 .accessibilityAddTraits(.isHeader)
             ClientCard(content: content)
@@ -69,20 +66,16 @@ struct ClientSettingsView: View {
         NavigationLink(destination: destination()) {
             HStack(spacing: 14) {
                 Image(systemName: symbol)
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.system(size: DesignSystem.Icon.row, weight: .medium))
                     .foregroundStyle(color)
-                    .frame(width: 36, height: 36)
-                    .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .frame(width: DesignSystem.Icon.container, height: DesignSystem.Icon.container)
+                    .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: DesignSystem.Icon.backgroundRadius, style: .continuous))
                     .accessibilityHidden(true)
-                Text(title).foregroundStyle(.primary)
+                Text(title).designText(.contentTitle).foregroundStyle(DesignSystem.Colors.text)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, DesignSystem.Card.padding)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -95,10 +88,10 @@ struct ClientAlwaysConnectedSettingsView: View {
     @Environment(ClientModel.self) private var model
 
     var body: some View {
-        Form {
+        ClientForm {
             Toggle("Always Connected", isOn: Binding(get: { model.parsed.general.bool("always-on") ?? false }, set: { value in
                 Task { await model.setSetting("always-on", value: value ? "true" : "false") }
-            })).tint(.blue).disabled(model.isBusy)
+            })).tint(DesignSystem.Colors.accent).disabled(model.isBusy)
         }
         .navigationTitle("Always Connected").clientInlineTitle()
     }
@@ -119,7 +112,7 @@ struct ClientDNSView: View {
     private let resolvers: [(String,String)] = [("", "Local DNS"), ("proxy-", "Proxy Server DNS"), ("subscription-", "Subscription DNS"), ("ech-", "ECH DNS")]
 
     var body: some View {
-        Form {
+        ClientForm {
             ForEach(resolvers, id: \.0) { prefix, title in
                 Section {
                     Picker("Resolver Type", selection: binding(prefix + "dns-mode", fallback: "default")) {
@@ -227,10 +220,10 @@ struct ClientLogsView: View {
             ForEach(visibleLogs.reversed()) { entry in
                 VStack(alignment: .leading, spacing: 7) {
                     HStack {
-                        Text(entry.level.rawValue.uppercased()).font(.system(size: 10, weight: .bold)).foregroundStyle(entry.level == .error ? Color.red : entry.level == .warning ? .orange : .blue)
-                        Spacer(); Text(entry.timestamp, format: .dateTime.hour().minute().second()).font(.caption2).foregroundStyle(.secondary)
+                        Text(entry.level.rawValue.uppercased()).designText(.micro, weight: .bold).foregroundStyle(entry.level == .error ? DesignSystem.Colors.error : entry.level == .warning ? DesignSystem.Colors.warning : DesignSystem.Colors.accent)
+                        Spacer(); Text(entry.timestamp, format: .dateTime.hour().minute().second()).designText(.micro).foregroundStyle(DesignSystem.Colors.secondaryText)
                     }
-                    Text(entry.message).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                    Text(entry.message).designText(.code).textSelection(.enabled)
                 }.padding(.vertical, 5)
             }
         }
@@ -260,12 +253,12 @@ struct ClientNotificationSettingsView: View {
     @State private var allowed = false
     @State private var requesting = false
     var body: some View {
-        Form {
+        ClientForm {
             Section {
                 Toggle("Connection Status Notifications", isOn: Binding(get: { enabled && allowed }, set: { value in
                     if !value { enabled = false }
                     else { Task { await requestPermission() } }
-                })).tint(.blue).disabled(requesting)
+                })).tint(DesignSystem.Colors.accent).disabled(requesting)
             } footer: { Text("Notify when the proxy connects, disconnects, or fails while the app is in the background.") }
             Section {
                 LabeledContent("System Notification Permission", value: allowed ? "Allowed" : "Not Allowed")

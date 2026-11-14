@@ -23,7 +23,7 @@ struct ProfileView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            ClientForm {
                 editorSection
                 resultSection
                 reloadSection
@@ -71,7 +71,7 @@ private extension ProfileView {
     var editorSection: some View {
         Section {
             TextEditor(text: Binding(get: { model.text }, set: { model.edit($0) }))
-                .font(.system(.footnote, design: .monospaced))
+                .designText(.caption, design: .monospaced)
                 .autocorrectionDisabled()
                 .clientNoAutocapitalization()
                 .frame(minHeight: 300)
@@ -81,7 +81,7 @@ private extension ProfileView {
                 Spacer()
                 if model.isDirty {
                     Text("Unsaved")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(DesignSystem.Colors.warning)
                 }
             }
         } footer: {
@@ -111,13 +111,13 @@ private extension ProfileView {
                 }
             } else {
                 Text("Checking the document…")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DesignSystem.Colors.secondaryText)
             }
 
             ForEach(model.notes, id: \.self) { note in
                 Text(note)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .designText(.caption)
+                    .foregroundStyle(DesignSystem.Colors.secondaryText)
             }
         }
     }
@@ -130,10 +130,10 @@ private extension ProfileView {
                 ForEach(plan.changes) { change in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(change.field)
-                            .font(.footnote)
+                            .designText(.caption)
                         Text("\(change.scope.title) · \(change.summary)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .designText(.micro)
+                            .foregroundStyle(DesignSystem.Colors.secondaryText)
                     }
                 }
             } header: {
@@ -200,10 +200,10 @@ private extension ProfileView {
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(snapshot.createdAt.formatted(.dateTime.year().month(.abbreviated).day().hour().minute().locale(Locale(identifier: "en"))))
-                                .font(.footnote)
+                                .designText(.caption)
                             Text(snapshotDescription(snapshot))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .designText(.micro)
+                                .foregroundStyle(DesignSystem.Colors.secondaryText)
                         }
                     }
                     .buttonStyle(.plain)
@@ -220,14 +220,14 @@ private extension ProfileView {
     func diagnosticRow(_ diagnostic: ConfigurationDiagnostic) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: symbol(for: diagnostic.severity))
-                .font(.caption)
+                .designText(.caption)
                 .foregroundStyle(tint(for: diagnostic.severity))
             VStack(alignment: .leading, spacing: 2) {
                 Text(diagnostic.message)
-                    .font(.footnote)
+                    .designText(.caption)
                 Text(diagnosticDescription(diagnostic))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .designText(.micro)
+                    .foregroundStyle(DesignSystem.Colors.secondaryText)
             }
         }
     }

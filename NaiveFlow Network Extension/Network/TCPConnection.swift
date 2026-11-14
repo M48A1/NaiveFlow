@@ -140,7 +140,7 @@ actor TCPConnection: MITMSessionHost {
     }
     private enum DialRoute: Sendable {
         case direct
-        case proxy(configuration: ProxyConfiguration, isDefault: Bool)
+        case proxy(configuration: ProxyConfiguration)
     }
     private enum NurseryJob: Sendable {
         case dial(DialJob)
@@ -244,7 +244,6 @@ actor TCPConnection: MITMSessionHost {
                     var framed = Data([UInt8(response.count >> 8), UInt8(response.count & 255)])
                     framed.append(response)
                     try await connection.send(framed)
-                    stack.addBytesIn(Int64(framed.count), target: routeTarget)
                     activityRecord.addBytesIn(framed.count)
                 }
             }
@@ -636,8 +635,7 @@ actor TCPConnection: MITMSessionHost {
         }
 
         let client = ProxyClient(
-            configuration: configuration,
-            isDefaultProxy: stack?.isDefaultConfiguration(configuration.id) ?? false
+            configuration: configuration
         )
         self.proxyClient = client
 
@@ -708,20 +706,11 @@ actor TCPConnection: MITMSessionHost {
 
     // MARK: - Relay
 
-    private func runRelayAndClose(_ connection: ProxyConnection, stream: NaiveFlowIP.Stream) async {
-        let context = RelayContext(meter: stack?.openTrafficMeter(target: routeTarget))
-        await runRelay(connection, stream: stream, context: context)
-    }
-
-    private struct RelayContext: Sendable {
-        let meter: TrafficMeter?
-    }
-
     @concurrent
-    private nonisolated func runRelay(_ connection: ProxyConnection, stream: NaiveFlowIP.Stream, context: RelayContext) async {
+    private nonisolated func runRelayAndClose(_ connection: ProxyConnection, stream: NaiveFlowIP.Stream) async {
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { await self.runUploadRelay(connection, stream, context: context) }
-            group.addTask { await self.runDownloadRelay(connection, stream, context: context) }
+            group.addTask { await self.runUploadRelay(connection, stream) }
+            group.addTask { await self.runDownloadRelay(connection, stream) }
             await group.next()
             await self.relayFinished()
         }
@@ -731,7 +720,7 @@ actor TCPConnection: MITMSessionHost {
     private static let downloadPrefetchDepth = 1
 
     @concurrent
-    private nonisolated func runUploadRelay(_ connection: ProxyConnection, _ stream: NaiveFlowIP.Stream, context: RelayContext) async {
+    private nonisolated func runUploadRelay(_ connection: ProxyConnection, _ stream: NaiveFlowIP.Stream) async {
         while let batch = try? await uploadInbox.nextBatch() {
             var index = 0
             while index < batch.count {
@@ -749,7 +738,6 @@ actor TCPConnection: MITMSessionHost {
                     return
                 }
                 markActivity()
-                context.meter?.addBytesOut(payload.count)
                 activityRecord.addBytesOut(payload.count)
                 stream.didConsume(payload.count)
                 index = end
@@ -765,7 +753,7 @@ actor TCPConnection: MITMSessionHost {
     }
 
     @concurrent
-    private nonisolated func runDownloadRelay(_ connection: ProxyConnection, _ stream: NaiveFlowIP.Stream, context: RelayContext) async {
+    private nonisolated func runDownloadRelay(_ connection: ProxyConnection, _ stream: NaiveFlowIP.Stream) async {
         let handoff = BoundedAsyncQueue<Data>(capacity: Self.downloadPrefetchDepth)
         let ended = await withTaskGroup(of: Void.self, returning: Bool.self) { group in
             group.addTask {
@@ -801,7 +789,6 @@ actor TCPConnection: MITMSessionHost {
                     return false
                 }
                 markActivity()
-                context.meter?.addBytesIn(data.count)
                 activityRecord.addBytesIn(data.count)
             }
         }
@@ -831,7 +818,6 @@ actor TCPConnection: MITMSessionHost {
 
     private func acknowledgeReceivedBytes(_ byteCount: Int) {
         guard byteCount > 0 else { return }
-        stack?.addBytesOut(Int64(byteCount), target: routeTarget)
         activityRecord.addBytesOut(byteCount)
         connection.didConsume(byteCount)
     }
@@ -1100,8 +1086,7 @@ actor TCPConnection: MITMSessionHost {
         case .route(_, nil):
             route = .direct
         case .route(_, let configuration?):
-            route = .proxy(configuration: configuration,
-                           isDefault: stack?.isDefaultConfiguration(configuration.id) ?? false)
+            route = .proxy(configuration: configuration)
         }
 
         nextDialID += 1
@@ -1149,8 +1134,8 @@ actor TCPConnection: MITMSessionHost {
         switch job.route {
         case .direct:
             return try await dialDirectUpstream(host: job.host, port: job.port)
-        case .proxy(let configuration, let isDefault):
-            return try await dialProxyUpstream(configuration: configuration, isDefault: isDefault,
+        case .proxy(let configuration):
+            return try await dialProxyUpstream(configuration: configuration,
                                                host: job.host, port: job.port)
         }
     }
@@ -1177,9 +1162,9 @@ actor TCPConnection: MITMSessionHost {
         }
     }
 
-    private func dialProxyUpstream(configuration: ProxyConfiguration, isDefault: Bool,
+    private func dialProxyUpstream(configuration: ProxyConfiguration,
                                    host: String, port: UInt16) async throws -> MITMDialResult {
-        let client = ProxyClient(configuration: configuration, isDefaultProxy: isDefault)
+        let client = ProxyClient(configuration: configuration)
         do {
             let connection = try await withDialDeadline(.seconds(TunnelConstants.handshakeTimeout), onExpiry: {
                 client.cancel()

@@ -25,6 +25,12 @@ struct ClientNodeManagerView: View {
     }
     var body: some View {
         List {
+            Section("Add Nodes") {
+                Button("Add Node", systemImage: "plus.circle") { editingNode = nil; editing = true }
+                Button("Import Links or Subscription", systemImage: "link") { importingLinks = true }
+                Button("Import from File", systemImage: "doc") { importingFile = true }
+                Button("Scan QR Code", systemImage: "qrcode.viewfinder") { scanning = true }
+            }
             Section {
                 NavigationLink("Subscription Groups") { ClientNodeSubscriptionsView() }
                 NavigationLink("Connection Diagnostics") { ClientDiagnosticsView() }
@@ -45,7 +51,7 @@ struct ClientNodeManagerView: View {
                 if filtered { Button("Clear Filters") { query = ""; protocolName = ""; subscriptionID = ""; availability = "" } }
             }
             Section {
-                if visible.isEmpty { ContentUnavailableView("No Matching Nodes", systemImage: "network", description: Text("Change filters or use + to import nodes.")) }
+                if visible.isEmpty { ContentUnavailableView("No Matching Nodes", systemImage: "network", description: Text("Change filters or add nodes using the actions above.")) }
                 ForEach(visible) { node in
                     if selecting {
                         Button {
@@ -53,7 +59,7 @@ struct ClientNodeManagerView: View {
                         } label: {
                             HStack {
                                 Image(systemName: selected.contains(node.name) ? "checkmark.circle.fill" : "circle")
-                                VStack(alignment: .leading) { Text(node.name).foregroundStyle(.primary); Text(node.outboundProtocol.name).font(.caption).foregroundStyle(.secondary) }
+                                VStack(alignment: .leading) { Text(node.name).foregroundStyle(DesignSystem.Colors.text); Text(node.outboundProtocol.name).designText(.caption).foregroundStyle(DesignSystem.Colors.secondaryText) }
                                 Spacer()
                             }.contentShape(Rectangle())
                         }.buttonStyle(.plain)
@@ -78,7 +84,7 @@ struct ClientNodeManagerView: View {
 #if os(iOS)
                         .clientSwipeActions {
                             Button("Delete", role: .destructive) { deleting = [node.name]; confirmDelete = true }
-                            Button("Edit") { editingNode = node; editing = true }.tint(.blue)
+                            Button("Edit") { editingNode = node; editing = true }.tint(DesignSystem.Colors.accent)
                         }
 #endif
                     }
@@ -120,14 +126,6 @@ struct ClientNodeManagerView: View {
 #endif
             ToolbarItem(placement: .clientToolbarTrailing) {
                 Button(selecting ? "Done" : "Select") { selecting.toggle(); if !selecting { selected = [] } }
-            }
-            ToolbarItem(placement: .clientToolbarTrailing) {
-                Menu {
-                    Button("Add Node", systemImage: "plus") { editingNode = nil; editing = true }
-                    Button("Import Links or Subscription", systemImage: "link") { importingLinks = true }
-                    Button("Import from File", systemImage: "doc") { importingFile = true }
-                    Button("Scan QR Code", systemImage: "qrcode.viewfinder") { scanning = true }
-                } label: { Image(systemName: "plus") }
             }
         }
         .sheet(isPresented: $editing) { ProxyEditorView(configuration: editingNode) { node in Task { await model.saveNode(node, replacing: editingNode?.name) } } }

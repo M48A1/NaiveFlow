@@ -39,6 +39,9 @@ struct TVClientSettingsView: View {
                 NavigationLink("Logs") { TVClientActivityView(tunnel: container.tunnel, selection: container.selection, showsLogs: true) }
             }
         }
+        .contentMargins(.top, ClientMainLayout.topInset, for: .scrollContent)
+        .frame(maxWidth: DesignSystem.Layout.televisionWidth)
+        .frame(maxWidth: .infinity)
         .navigationTitle("Settings")
     }
 }
@@ -60,7 +63,7 @@ struct TVClientRulesView: View {
                 if rule.kind.token.uppercased() == "RULE-SET" {
                     NavigationLink(rule.raw) { TVClientRuleSetEditor(rule: rule) }
                 } else {
-                    Text(rule.raw).font(.system(.body, design: .monospaced))
+                    Text(rule.raw).designText(.body, design: .monospaced)
                 }
             }
         }
@@ -343,7 +346,7 @@ private struct TVClientActivityView: View {
                         if let name = entry.outbound?.name ?? entry.routeTarget.outboundName(
                             defaultRouteTarget: entry.defaultRouteTarget, selection: selection
                         ) {
-                            Text(name).foregroundStyle(.secondary)
+                            Text(name).foregroundStyle(DesignSystem.Colors.secondaryText)
                         }
                     }
                 }
