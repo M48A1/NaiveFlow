@@ -47,11 +47,7 @@ struct ClientHomeView: View {
             let targets = model.nodes
             guard !targets.contains(where: { results[$0.id] == .testing }) else { return }
             autoChoosing = false
-            let fastest = targets.compactMap { node -> (String, Int)? in
-                if case .success(let ms) = results[node.id] { return (node.name, ms) }; return nil
-            }.min { $0.1 < $1.1 }
-            if let fastest { Task { await model.selectNode(fastest.0) } }
-            else { model.error = "No latency results are available. Check your connection and try again." }
+            Task { await model.selectFastestNode(from: results, testedIDs: Set(targets.map(\.id))) }
         }
         .alert("VPN Error", isPresented: Binding(get: { tunnel.startError != nil }, set: { if !$0 { tunnel.startError = nil } })) {
             Button("OK") { tunnel.startError = nil }

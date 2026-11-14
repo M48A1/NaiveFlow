@@ -256,6 +256,19 @@ final class ClientModel {
 
     func selectNode(_ name: String) async { await setSetting("default-node", value: ClientDocumentEditing.token(name)) }
 
+    func selectFastestNode(from results: [UUID: LatencyResult], testedIDs: Set<UUID>) async {
+        guard !isBusy else { return }
+        let fastest = nodes.compactMap { node -> (name: String, milliseconds: Int)? in
+            guard testedIDs.contains(node.id), case .success(let ms) = results[node.id] else { return nil }
+            return (node.name, ms)
+        }.min { $0.milliseconds < $1.milliseconds }
+        if let fastest {
+            await selectNode(fastest.name)
+        } else {
+            error = "No latency results are available. Check your connection and try again."
+        }
+    }
+
     func selectMember(_ member: String, in group: ParsedProxyGroup) async {
         let parameters = group.parameters.pairs.filter { $0.0 != "selected" } + [("selected", member)]
         // A manual choice is explicit Select; automatic groups retain their strategy until edited.

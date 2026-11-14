@@ -8,6 +8,23 @@ struct ClientResourceCenterView: View {
             Section {
                 Toggle("Review Subscriptions on Open", isOn: $reviewOnOpen)
             } footer: { Text("When enabled, check subscriptions on entering the foreground, at most once every 24 hours. Downloads are staged for review and never applied automatically.") }
+            Section("Batch Updates") {
+                Button("Review All Subscription Updates") {
+                    Task { _ = await model.prepareSubscriptionUpdate() }
+                }
+                .disabled(model.subscriptionReview != nil || !hasResource("Subscription"))
+                Button("Update All Modules") { Task { _ = await model.refreshAllModules() } }
+                    .disabled(!hasResource("Module"))
+                Button("Update All Rule Sets") {
+                    Task { _ = await model.manageResource(.update(.ruleSets())) }
+                }
+                .disabled(!hasResource("Rule Set"))
+                Button("Update GeoIP Sources") { Task { _ = await model.manageResource(.update(.geo(site: false))) } }
+                    .disabled(!hasResource("GeoIP"))
+                Button("Update GeoSite Sources") { Task { _ = await model.manageResource(.update(.geo(site: true))) } }
+                    .disabled(!hasResource("GeoSite"))
+            }
+            .disabled(model.isBusy || model.activeResourceTitle != nil)
             ForEach(model.resources) { resource in
                 Section(resource.kind + " · " + resource.name) {
                     Text(resource.source).font(.caption).foregroundStyle(.secondary)
@@ -32,6 +49,10 @@ struct ClientResourceCenterView: View {
         .clientInlineTitle()
 #endif
     }
+    private func hasResource(_ kind: String) -> Bool {
+        model.resources.contains { $0.kind == kind }
+    }
+
     private func update(_ resource: ClientResourceDescriptor) async {
         switch resource.kind {
         case "Subscription":

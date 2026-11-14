@@ -176,6 +176,8 @@ struct TVClientNodesView: View {
     @State private var source = ""
     @State private var nodeEditor: NodeEditor?
     @State private var pendingDelete: ProxyConfiguration?
+    @State private var autoSelectTargets: Set<UUID> = []
+    @State private var autoSelectProfile: UUID?
 
     private struct NodeEditor: Identifiable {
         let id = UUID()
@@ -205,7 +207,14 @@ struct TVClientNodesView: View {
                     }
                 }
                 Button("Latency Test") { latency.testLatencies(for: model.nodes, transport: tunnel) }
-                    .disabled(model.nodes.isEmpty)
+                    .disabled(model.nodes.isEmpty || !autoSelectTargets.isEmpty)
+                Button("Test and Auto Select", systemImage: "shuffle") {
+                    autoSelectProfile = model.profile?.id
+                    autoSelectTargets = Set(model.nodes.map(\.id))
+                    latency.testLatencies(for: model.nodes, transport: tunnel)
+                }
+                .disabled(model.isBusy || model.nodes.isEmpty || !autoSelectTargets.isEmpty)
+                if !autoSelectTargets.isEmpty { ProgressView("Testing Nodes") }
             }
             Section("Node Tools") {
                 NavigationLink("Connection Diagnostics") { ClientDiagnosticsView() }
@@ -225,6 +234,19 @@ struct TVClientNodesView: View {
             }
         }
         .navigationTitle("Proxies")
+        .onChange(of: latency.latencyResults) { _, results in
+            guard !autoSelectTargets.isEmpty,
+                  !autoSelectTargets.contains(where: { results[$0] == .testing }) else { return }
+            let testedIDs = autoSelectTargets
+            autoSelectTargets = []
+            let profileID = autoSelectProfile
+            autoSelectProfile = nil
+            Task {
+                guard profileID == model.profile?.id else { return }
+                await model.selectFastestNode(from: results, testedIDs: testedIDs)
+            }
+        }
+        .onDisappear { autoSelectTargets = [] }
         .sheet(item: $nodeEditor) { editor in
             TVClientNodeEditorHost(node: editor.node) { node in
                 Task { await model.saveNode(node, replacing: editor.node?.name) }
