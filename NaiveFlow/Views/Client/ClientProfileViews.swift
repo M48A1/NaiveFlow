@@ -113,6 +113,7 @@ struct ClientProfilesView: View {
             Section {
                 Button("New Profile", systemImage: "plus") { editing = model.createProfile() }
                 Button("iCloud Drive and Version History") { showHistory = true }
+                NavigationLink("Backup and Restore") { ClientBackupView() }
             }
         }
         .navigationTitle("Manage Profiles").navigationBarTitleDisplayMode(.inline)
@@ -126,85 +127,7 @@ struct ClientProfilesView: View {
 }
 
 struct ClientNodesView: View {
-    @Environment(ClientModel.self) private var model
-    @Environment(LatencyCenter.self) private var latency
-    @Environment(TunnelController.self) private var tunnel
-    @State private var editNode: ProxyConfiguration?
-    @State private var showEditor = false
-    @State private var deleteName: String?
-    @State private var subscriptionToImport: ClientNodeSubscription?
-    @State private var importingFile = false
-
-    var body: some View {
-        List {
-            Section {
-                NavigationLink("Subscription Groups") { ClientNodeSubscriptionsView() }
-            }
-            Section {
-                if model.nodes.isEmpty {
-                    ContentUnavailableView("No Nodes", systemImage: "network", description: Text("Tap + to add a node or import a node list."))
-                }
-                ForEach(model.nodes) { node in
-                    ClientNodeRow(node: node, selected: model.selectedNodeName == node.name, latency: latency.latencyResults[node.id]) {
-                        Task { await model.selectNode(node.name) }
-                    }.listRowInsets(EdgeInsets())
-                    .contextMenu {
-                        Button("Edit", systemImage: "pencil") { editNode = node; showEditor = true }
-                        Button("Test Latency", systemImage: "bolt") { latency.testLatency(for: node, transport: tunnel) }
-                        Button("Delete", systemImage: "trash", role: .destructive) { deleteName = node.name }
-                    }
-                    .swipeActions {
-                        Button("Delete", role: .destructive) { deleteName = node.name }
-                        Button("Edit") { editNode = node; showEditor = true }.tint(.blue)
-                    }
-                }
-                .onMove { from, to in
-                    var names = model.nodes.map(\.name)
-                    names.move(fromOffsets: from, toOffset: to)
-                    Task { await model.reorderNodes(names) }
-                }
-            }
-            Section {
-                Button("Test All Nodes", systemImage: "bolt.fill") { latency.testLatencies(for: model.nodes, transport: tunnel) }.disabled(model.nodes.isEmpty)
-                Button("Sort by Latency", systemImage: "arrow.up.arrow.down") {
-                    let names = model.nodes.sorted { ms($0) < ms($1) }.map(\.name)
-                    Task { await model.reorderNodes(names) }
-                }.disabled(model.nodes.isEmpty)
-            }
-        }
-        .navigationTitle("Manage Nodes").navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { EditButton() }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("Add Node", systemImage: "plus") { editNode = nil; showEditor = true }
-                    Button("Import from URL", systemImage: "link") { subscriptionToImport = ClientNodeSubscription(name: "", url: "") }
-                    Button("Import from Profile File", systemImage: "doc") { importingFile = true }
-                } label: { Image(systemName: "plus") }
-            }
-        }
-        .sheet(isPresented: $showEditor) { ProxyEditorView(configuration: editNode) { node in Task { await model.saveNode(node, replacing: editNode?.name) } } }
-        .confirmationDialog("Delete Node?", isPresented: Binding(get: { deleteName != nil }, set: { if !$0 { deleteName = nil } }), titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { if let deleteName { Task { await model.deleteNode(deleteName) } }; deleteName = nil }
-        }
-        .sheet(item: $subscriptionToImport) { ClientNodeSubscriptionEditorView(subscription: $0) }
-        .fileImporter(isPresented: $importingFile, allowedContentTypes: [.plainText, .data]) { result in
-            do {
-                let file = try result.get()
-                let access = file.startAccessingSecurityScopedResource()
-                defer { if access { file.stopAccessingSecurityScopedResource() } }
-                let text = try model.operations.configurationDocument.read(contentsOf: file)
-                Task { do { try await importNodes(text) } catch { model.report(error) } }
-            } catch { model.report(error) }
-        }
-        .disabled(model.isBusy)
-    }
-
-    private func ms(_ node: ProxyConfiguration) -> Int { if case .success(let ms) = latency.latencyResults[node.id] { return ms }; return .max }
-
-    private func importNodes(_ source: String) async throws {
-        _ = try await model.importNodes(source)
-    }
+    var body: some View { ClientNodeManagerView() }
 }
 
 struct ClientNodeSubscriptionsView: View {
@@ -294,12 +217,11 @@ private struct ClientSubscriptionUpdateAllButton: View {
     @Environment(ClientModel.self) private var model
     var ids: Set<UUID>? = nil
     @State private var updating = false
-    @State private var complete = false
 
     var body: some View {
         Button { Task {
             updating = true; defer { updating = false }
-            complete = await model.manageResource(.update(.subscriptions(ids: ids)))
+            _ = await model.prepareSubscriptionUpdate(ids: ids)
         } } label: {
             HStack {
                 Label(updating ? "Updating…" : "Update All", systemImage: "arrow.clockwise")
@@ -308,9 +230,6 @@ private struct ClientSubscriptionUpdateAllButton: View {
         }
         .buttonStyle(.bordered).labelStyle(.titleAndIcon)
         .disabled(updating || model.isBusy || !(model.profile?.nodeSubscriptions ?? []).contains { ids?.contains($0.id) ?? true })
-        .alert("Update Complete", isPresented: $complete) { Button("OK", role: .cancel) {} } message: {
-            Text("The subscription nodes were updated. Manual edits were preserved.")
-        }
     }
 }
 

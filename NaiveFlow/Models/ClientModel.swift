@@ -12,6 +12,10 @@ final class ClientModel {
     private(set) var liveGroups: [String: PolicyGroupsResponse.Group] = [:]
     var error: String?
     var message: String?
+    var subscriptionReview: ClientSubscriptionReview?
+    private(set) var resourceActivity: [String: ClientResourceActivity] = [:]
+    private(set) var activeResourceTitle: String?
+    @ObservationIgnored private var cancelResource: (() -> Void)?
     @ObservationIgnored let operations: Operations
     @ObservationIgnored private let directory: URL
     @ObservationIgnored private let documentOverride: ConfigurationDocumentOperations?
@@ -25,6 +29,8 @@ final class ClientModel {
         self.directory = directory
         do { library = try ClientProfileLibrary.load(from: directory) }
         catch { self.error = "Could not load profiles: \(error.localizedDescription)" }
+        if let data = try? Data(contentsOf: directory.appendingPathComponent("resource-activity.json")),
+           let activity = try? JSONDecoder().decode([String: ClientResourceActivity].self, from: data) { resourceActivity = activity.mapValues { value in var entry = value; entry.awaitingReview = false; return entry } }
         let active = activeSnapshot
         if library.profiles.isEmpty {
             let profile = ClientProfile(name: "Default Profile", text: active?.text ?? self.document.draft())
@@ -138,8 +144,21 @@ final class ClientModel {
     /// One entry point for external resource edits and one/many/all updates.
     @discardableResult
     func manageResource(_ request: ClientResourceRequest, fetch: ClientResourceManager.FetchText? = nil) async -> Bool {
-        do { return try await runResource(request, fetch: fetch) }
-        catch { report(error); return false }
+        guard !isBusy, cancelResource == nil else { return false }
+        let descriptors = descriptors(for: request)
+        beginActivity(descriptors)
+        let task = Task { try await self.runResource(request, fetch: fetch) }
+        cancelResource = { task.cancel() }
+        defer { cancelResource = nil; activeResourceTitle = nil }
+        do {
+            let success = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+            finishActivity(descriptors.map(\.id), error: success ? nil : "No resources were changed.")
+            return success
+        } catch {
+            finishActivity(descriptors.map(\.id), error: Task.isCancelled || task.isCancelled || error is CancellationError ? "Cancelled" : error.localizedDescription)
+            if !Task.isCancelled && !task.isCancelled && !(error is CancellationError) { report(error) }
+            return false
+        }
     }
 
     private func runResource(_ request: ClientResourceRequest, fetch: ClientResourceManager.FetchText? = nil) async throws -> Bool {
@@ -429,4 +448,183 @@ nonisolated struct ClientFailure: LocalizedError {
     let message: String
     init(_ message: String) { self.message = message }
     var errorDescription: String? { message }
+}
+
+
+extension ClientModel {
+    var hasSavedDraft: Bool { hasApplied && profile?.text != operatingText }
+    var runningSnapshotID: UUID? { document.activation.store.manifest().activeSnapshotId }
+    var isRuntimeConfirmed: Bool { document.activation.store.isActiveSnapshotConfirmed() }
+
+    func restoreRunningDraft() async -> Bool {
+        guard var candidate = profile, hasApplied else { return false }
+        candidate.text = operatingText
+        return await saveProfile(candidate, apply: false)
+    }
+
+    func removeNodes(_ names: Set<String>) async -> Bool {
+        guard !names.isEmpty else { return false }
+        do {
+            let text = try ClientNodeTools.removing(names, from: operatingText)
+            var subscriptions = profile?.nodeSubscriptions ?? []
+            for index in subscriptions.indices { subscriptions[index].members.removeAll { names.contains($0.name) } }
+            return await commit(text, subscriptions: subscriptions)
+        } catch { report(error); return false }
+    }
+
+    func addNodes(_ names: Set<String>, to groupName: String) async -> Bool {
+        guard !names.isEmpty, let group = groups.first(where: { $0.name == groupName }),
+              names.isSubset(of: Set(nodes.map(\.name))) else { return false }
+        let members = group.members + nodes.filter { names.contains($0.name) && !group.members.contains($0.name) }.map(\.name)
+        let value = ClientDocumentEditing.groupValue(kind: group.kindToken, members: members, parameters: group.parameters.pairs)
+        return await commit(ClientDocumentEditing.set(operatingText, section: .proxyGroup, key: group.name, value: value))
+    }
+
+    func restoreBackup(_ backup: ClientBackup, replaceMatches: Bool) async -> Bool {
+        guard !isBusy else { return false }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let merged = backup.merging(into: library, replaceMatches: replaceMatches)
+            try merged.save(to: directory)
+            library = merged
+            await rebuildAfterSave()
+            message = "Profiles restored. Apply a profile when you are ready."
+            return true
+        } catch { report(error); return false }
+    }
+
+    var resources: [ClientResourceDescriptor] {
+        guard let profile else { return [] }
+        var result = (profile.nodeSubscriptions ?? []).map {
+            ClientResourceDescriptor(id: "subscription:" + $0.id.uuidString, name: $0.name, kind: "Subscription", source: $0.url)
+        }
+        result += profile.modules.filter { $0.sourceURL?.isEmpty == false }.map {
+            ClientResourceDescriptor(id: "module:" + $0.id.uuidString, name: $0.name, kind: "Module", source: $0.sourceURL ?? "")
+        }
+        let sets = Set(parsed.rules.filter { $0.kind == .ruleSet }.compactMap(\.value))
+        result += sets.sorted().map { ClientResourceDescriptor(id: "rules:" + $0, name: URL(string: $0)?.lastPathComponent ?? $0, kind: "Rule Set", source: $0) }
+        result += ((try? NativeGeoResources.references(parsed)) ?? []).map {
+            ClientResourceDescriptor(id: "geo:" + $0.key + ":" + String($0.site), name: $0.key, kind: $0.site ? "GeoSite" : "GeoIP", source: $0.url.absoluteString)
+        }
+        return result
+    }
+
+    private func descriptors(for request: ClientResourceRequest) -> [ClientResourceDescriptor] {
+        guard case .update(let scope) = request else { return [] }
+        switch scope {
+        case .subscriptions(let ids):
+            let allowed = ids.map { Set($0.map { "subscription:" + $0.uuidString }) }
+            return resources.filter { $0.kind == "Subscription" && (allowed?.contains($0.id) ?? true) }
+        case .subscription(let sub): return [ClientResourceDescriptor(id: "subscription:" + sub.id.uuidString, name: sub.name, kind: "Subscription", source: sub.url)]
+        case .subscriptionURL(let url): return resources.filter { $0.kind == "Subscription" && $0.source == url }
+        case .modules(let ids):
+            let allowed = ids.map { Set($0.map { "module:" + $0.uuidString }) }
+            return resources.filter { $0.kind == "Module" && (allowed?.contains($0.id) ?? true) }
+        case .ruleSets(let sources): return resources.filter { $0.kind == "Rule Set" && (sources?.contains($0.source) ?? true) }
+        case .geo: return resources.filter { $0.kind == "GeoIP" || $0.kind == "GeoSite" }
+        }
+    }
+
+    private func beginActivity(_ resources: [ClientResourceDescriptor]) {
+        activeResourceTitle = resources.isEmpty ? "Updating configuration" : "Updating \(resources.count) resource(s)"
+        for resource in resources {
+            var entry = resourceActivity[resource.id] ?? ClientResourceActivity()
+            entry.attemptedAt = .now; entry.error = nil; entry.awaitingReview = false
+            resourceActivity[resource.id] = entry
+        }
+        saveActivity()
+    }
+
+    private func finishActivity(_ ids: [String], error: String?, awaitingReview: Bool = false) {
+        for id in ids {
+            var entry = resourceActivity[id] ?? ClientResourceActivity()
+            entry.error = error; entry.awaitingReview = awaitingReview
+            if error == nil && !awaitingReview {
+                entry.succeededAt = .now
+                entry.version = runningSnapshotID?.uuidString
+            }
+            resourceActivity[id] = entry
+        }
+        saveActivity()
+    }
+
+    private func saveActivity() {
+        guard let data = try? JSONEncoder().encode(resourceActivity) else { return }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? data.write(to: directory.appendingPathComponent("resource-activity.json"), options: .atomic)
+    }
+
+    func cancelResourceOperation() { cancelResource?() }
+
+    func prepareSubscriptionUpdate(ids: Set<UUID>? = nil, fetch: ClientResourceManager.FetchText? = nil) async -> Bool {
+        guard !isBusy, cancelResource == nil, let original = profile else { return false }
+        let text = operatingText
+        let scope = ClientResourceRequest.update(.subscriptions(ids: ids))
+        let descriptors = descriptors(for: scope)
+        guard !descriptors.isEmpty else { return false }
+        beginActivity(descriptors)
+        let task = Task { () throws -> ClientResourceManager.Change? in
+            guard !self.isBusy else { return nil }
+            self.isBusy = true
+            defer { self.isBusy = false }
+            try self.requireAppliedDraft()
+            try Task.checkCancellation()
+            let subscriptionFetch: ClientResourceManager.FetchSubscription? = fetch == nil ? { [self] sub in try await fetchNodeSubscriptionText(sub) } : nil
+            return try await ClientResourceManager.prepare(scope, profile: original, text: text,
+                fetch: fetch ?? { [self] in try await fetchText($0) }, fetchSubscription: subscriptionFetch)
+        }
+        cancelResource = { task.cancel() }
+        defer { cancelResource = nil; activeResourceTitle = nil }
+        do {
+            guard let change = try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() }) else { return false }
+            try Task.checkCancellation()
+            guard profile == original, operatingText == text else { throw ClientFailure("The profile changed. Download the update again.") }
+            let old = TextConfigurationPipeline.process(text: text).compiled.proxies
+            let new = TextConfigurationPipeline.process(text: change.profile.text).compiled.proxies
+            let oldByName = Dictionary(old.map { ($0.name, $0.toURLString()) }, uniquingKeysWith: { first, _ in first })
+            let newByName = Dictionary(new.map { ($0.name, $0.toURLString()) }, uniquingKeysWith: { first, _ in first })
+            let selected = (original.nodeSubscriptions ?? []).filter { ids?.contains($0.id) ?? true }
+            let currentMembers = Set((change.profile.nodeSubscriptions ?? []).filter { sub in selected.contains { $0.id == sub.id } }.flatMap(\.members).map(\.name))
+            let missing = selected.flatMap(\.members).filter { !currentMembers.contains($0.name) }
+            let removable = Set(missing.filter { member in
+                guard !member.edited, let url = oldByName[member.name] else { return false }
+                return member.importedURL.map { $0 == String(url.split(separator: "#", maxSplits: 1)[0]) } ?? true
+            }.map(\.name))
+            let preserved = selected.flatMap(\.members).filter { $0.edited && oldByName[$0.name] != nil }.map(\.name)
+            subscriptionReview = ClientSubscriptionReview(original: original, originalText: text, change: change,
+                added: new.filter { oldByName[$0.name] == nil }.map(\.name),
+                modified: new.filter { oldByName[$0.name] != nil && oldByName[$0.name] != newByName[$0.name] }.map(\.name),
+                missing: missing.map(\.name), preserved: preserved, removable: removable, resourceIDs: descriptors.map(\.id))
+            finishActivity(descriptors.map(\.id), error: nil, awaitingReview: true)
+            return true
+        } catch {
+            finishActivity(descriptors.map(\.id), error: task.isCancelled || error is CancellationError ? "Cancelled" : error.localizedDescription)
+            if !Task.isCancelled && !task.isCancelled && !(error is CancellationError) { report(error) }
+            return false
+        }
+    }
+
+    func applySubscriptionReview(_ review: ClientSubscriptionReview, removeMissing: Bool) async -> Bool {
+        guard !isBusy else { return false }
+        do {
+            guard profile == review.original, operatingText == review.originalText else { throw ClientFailure("The profile changed. Download the update again.") }
+            var candidate = review.change.profile
+            if removeMissing { candidate.text = try ClientNodeTools.removing(review.removable, from: candidate.text) }
+            let success = await saveProfile(candidate, apply: true, refreshingRuleSets: review.change.refreshingRuleSets)
+            finishActivity(review.resourceIDs, error: success ? nil : error ?? "The update could not be applied.")
+            if success { subscriptionReview = nil }
+            return success
+        } catch { report(error); return false }
+    }
+}
+
+
+extension ClientModel {
+    func discardSubscriptionReview() {
+        guard let review = subscriptionReview else { return }
+        for id in review.resourceIDs { resourceActivity[id]?.awaitingReview = false }
+        saveActivity()
+        subscriptionReview = nil
+    }
 }

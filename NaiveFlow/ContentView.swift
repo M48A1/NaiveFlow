@@ -34,7 +34,7 @@ struct ClientNodeImportView: View {
                 Button("Import into Current Profile") { Task {
                     loading = true; defer { loading = false }
                     do {
-                        if source.hasPrefix("https://") {
+                        if URL(string: source)?.scheme?.lowercased() == "https" {
                             if let existing = model.profile?.nodeSubscriptions?.first(where: { $0.url == source }) {
                                 if await model.manageResource(.update(.subscription(existing))) { dismiss() }
                             } else {

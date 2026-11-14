@@ -144,6 +144,7 @@ struct ClientHomeView: View {
                     traffic(symbol: "arrow.up", total: stats.bytesOut, rate: stats.uploadBytesPerSecond)
                     traffic(symbol: "arrow.down", total: stats.bytesIn, rate: stats.downloadBytesPerSecond)
                 }
+                ClientConfigurationStatusView()
                 if !model.hasApplied { Text("Select and apply a profile to connect.").font(.caption).foregroundStyle(.secondary) }
             }.padding(20)
         }

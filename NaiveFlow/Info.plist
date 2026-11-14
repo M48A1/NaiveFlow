@@ -131,6 +131,8 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Scan QR codes to import proxy nodes and subscriptions.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Share the configured proxy with allowed devices on your Wi-Fi network.</string>
 </dict>

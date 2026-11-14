@@ -24,12 +24,20 @@ struct ClientSettingsView: View {
                     row("Modules", symbol: "puzzlepiece.extension.fill", color: .purple) { ClientModulesView() }
                 }
                 section("Diagnostics") {
+                    row("Connection Diagnostics", symbol: "stethoscope", color: .orange) { ClientDiagnosticsView() }
+                    separator
+                    row("Rule Test", symbol: "arrow.triangle.branch", color: .orange) { ClientRuleTestView() }
+                    separator
+                    row("Resource Updates", symbol: "arrow.clockwise", color: .orange) { ClientResourceCenterView() }
+                    separator
                     row("Logs", symbol: "doc.text.fill", color: .orange) { ClientLogsView() }
                     separator
                     row("Requests", symbol: "list.bullet.rectangle", color: .orange) { RequestsView() }
                 }
                 section("Application") {
                     row("Notification Settings", symbol: "bell.fill", color: .teal) { ClientNotificationSettingsView() }
+                    separator
+                    row("Backup and Restore", symbol: "externaldrive", color: .teal) { ClientBackupView() }
                     separator
                     row("About", symbol: "info.circle", color: .teal) { AboutView() }
                 }
