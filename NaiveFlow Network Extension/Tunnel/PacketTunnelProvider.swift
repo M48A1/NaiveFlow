@@ -372,6 +372,10 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
         case .applyRuntimeVersion(let id):
             return await applyPublishedVersion(id)
 
+        case .updateLatencyTestSettings(let settings):
+            await tunnelStack.updateLatencyTestSettings(settings)
+            return encodeReply(true)
+
         case .fetchRuntimeStatus:
             return encodeReply(await tunnelStack.runtimeStatus())
 

@@ -30,6 +30,26 @@ struct LatencyTestSettingsTests {
         #expect(LatencyTestSettings.default.isValid)
     }
 
+    @Test func existingSettingsMigrateOnceIntoSharedPreferences() throws {
+        let sharedName = "SharedLatencyTests.\(UUID())"
+        let legacyName = "LegacyLatencyTests.\(UUID())"
+        let shared = try #require(UserDefaults(suiteName: sharedName))
+        let legacy = try #require(UserDefaults(suiteName: legacyName))
+        defer { shared.removePersistentDomain(forName: sharedName); legacy.removePersistentDomain(forName: legacyName) }
+        let old = LatencyTestSettings(url: "https://example.com/old", timeoutSeconds: 4, concurrency: 3)
+        try old.save(to: legacy)
+        #expect(LatencyTestSettings.load(from: shared, legacyDefaults: legacy) == old)
+        #expect(LatencyTestSettings.load(from: shared) == old)
+        let current = LatencyTestSettings(timeoutSeconds: 6, concurrency: 2)
+        try current.save(to: shared)
+        #expect(LatencyTestSettings.load(from: shared, legacyDefaults: legacy) == current)
+        let data = try JSONEncoder().encode(TunnelMessage.updateLatencyTestSettings(current))
+        guard case .updateLatencyTestSettings(let received) = try JSONDecoder().decode(TunnelMessage.self, from: data) else {
+            Issue.record("Expected background settings update"); return
+        }
+        #expect(received == current)
+    }
+
     @Test func manualBatchHonorsConcurrencyAndFreezesSettingsUntilNextTest() async throws {
         let store = SettingsStore()
         store.value = LatencyTestSettings(url: "https://example.com/probe", timeoutSeconds: 5, concurrency: 2)

@@ -121,9 +121,10 @@ final class LiveTunnelProvider: TunnelProviding {
     func send(_ data: Data) async -> Data? {
         guard let session = manager?.connection as? NETunnelProviderSession else { return nil }
         let timeout: Duration?
-        if case .fetchRequests? = try? JSONDecoder().decode(TunnelMessage.self, from: data) {
+        switch try? JSONDecoder().decode(TunnelMessage.self, from: data) {
+        case .fetchRequests?, .updateLatencyTestSettings?:
             timeout = .seconds(3)
-        } else {
+        default:
             timeout = nil
         }
         return await ProviderMessageConcurrencyBridge.send(data, over: session, timeout: timeout)

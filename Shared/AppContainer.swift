@@ -78,6 +78,8 @@ final class AppContainer {
     func start() {
         guard !started else { return }
         started = true
+        // Migrate host-only test preferences before the tunnel reads them.
+        _ = LatencyTestSettings.load()
 
         Task { await LoadOperation(configurationStore: configurationStore, reaction: mutationReaction).run() }
         observeTunnelStatus()

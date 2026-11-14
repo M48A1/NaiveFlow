@@ -140,7 +140,11 @@ nonisolated extension RuntimeProxyGroup {
     /// when it parses to a dialable http(s) target, otherwise the built-in
     /// captive-portal default.
     var probeTarget: LatencyTarget {
-        url.flatMap(LatencyTarget.init(url:)) ?? .captivePortal
+        probeTarget(defaults: .default)
+    }
+
+    func probeTarget(defaults: LatencyTestSettings) -> LatencyTarget {
+        url.flatMap(LatencyTarget.init(url:)) ?? defaults.target
     }
 }
 
@@ -167,10 +171,11 @@ nonisolated enum ProxyProbePlan {
     /// proxy further down.
     static func groupProbes(
         groups: [RuntimeProxyGroup],
-        nodes: [UUID: ProxyConfiguration]
+        nodes: [UUID: ProxyConfiguration],
+        settings: LatencyTestSettings = .default
     ) -> [(group: RuntimeProxyGroup, probes: [ProxyProbe])] {
         groups.compactMap { group in
-            let target = group.probeTarget
+            let target = group.probeTarget(defaults: settings)
             var seen = Set<UUID>()
             var probes: [ProxyProbe] = []
             for memberID in group.memberIDs {

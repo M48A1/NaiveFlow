@@ -140,6 +140,7 @@
 				Networking/LAN/LANProxySettings.swift,
 				Networking/LAN/LANProxyServer.swift,
 				Networking/LatencyTester.swift,
+				Networking/GroupProbeBatch.swift,
 				Networking/Protocols/AnyTLS/AnyTLSConfiguration.swift,
 				Networking/Protocols/AnyTLS/AnyTLSMultiplexer.swift,
 				Networking/Protocols/AnyTLS/AnyTLSMultiplexerPool.swift,

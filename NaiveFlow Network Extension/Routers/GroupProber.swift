@@ -20,13 +20,15 @@ nonisolated final class GroupProber: Sendable {
     private let state = Mutex(State())
 
     /// Starts (or restarts) probing. Each automatic group gets its own loop so it
-    /// probes its members against *its* configured URL and honours *its* own
-    /// interval, publishing one group's results without disturbing the others.
+    /// honours its URL override and interval, with target defaults, timeout and
+    /// total background concurrency from Settings.
     /// A group with no dialable members simply contributes no task.
-    func start(router: DomainRouter, nodes: [ProxyConfiguration], groups: [RuntimeProxyGroup]) {
+    func start(router: DomainRouter, nodes: [ProxyConfiguration], groups: [RuntimeProxyGroup], settings: LatencyTestSettings = .load()) {
+        let settings = settings.effective
+        let limiter = GroupProbeLimiter(limit: settings.concurrency)
         let nodeMap = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0) })
         let automatic = groups.filter { $0.kind != .select && $0.interval > 0 }
-        let plans = ProxyProbePlan.groupProbes(groups: automatic, nodes: nodeMap)
+        let plans = ProxyProbePlan.groupProbes(groups: automatic, nodes: nodeMap, settings: settings)
         state.withLock { state in
             state.generation &+= 1
             state.tasks.forEach { $0.cancel() }
@@ -38,6 +40,8 @@ nonisolated final class GroupProber: Sendable {
                         group: plan.group,
                         probes: plan.probes,
                         nodeMap: nodeMap,
+                        settings: settings,
+                        limiter: limiter,
                         router: router
                     )
                 }
@@ -58,21 +62,17 @@ nonisolated final class GroupProber: Sendable {
         group: RuntimeProxyGroup,
         probes: [ProxyProbe],
         nodeMap: [UUID: ProxyConfiguration],
+        settings: LatencyTestSettings,
+        limiter: GroupProbeLimiter,
         router: DomainRouter
     ) async {
         while !Task.isCancelled {
-            // Each member is probed against this group's target URL (or the
-            // built-in default). Direct nodes are included on purpose: a
+            // Each member uses the group's URL override or Settings. Direct
+            // nodes are included on purpose: a
             // `fallback` group that lists a reachable direct member first must be
             // able to pick it instead of always resolving to a heavier proxy.
-            var results: [UUID: Int] = [:]
-            for probe in probes {
-                guard !Task.isCancelled else { return }
-                guard let node = nodeMap[probe.memberID] else { continue }
-                if case .success(let ms) = await LatencyTester.test(node, target: probe.target) {
-                    results[probe.memberID] = ms
-                }
-            }
+            let results = await GroupProbeBatch.run(probes: probes, nodes: nodeMap,
+                settings: settings, limiter: limiter)
 
             // A stale generation must not clobber a newer prober's results.
             let published = state.withLock { state in

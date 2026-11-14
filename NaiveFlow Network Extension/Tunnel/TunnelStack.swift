@@ -523,6 +523,12 @@ actor TunnelStack {
 
     // MARK: - Runtime Configuration
 
+    func updateLatencyTestSettings(_ settings: LatencyTestSettings) {
+        guard phase == .running, proxyMode == .rule, let nativeBundle else { return }
+        groupProber.start(router: domainRouter, nodes: nativeBundle.nodes,
+            groups: nativeBundle.policyGroups, settings: settings)
+    }
+
     func configureRuntime(
         for configuration: ProxyConfiguration
     ) {
