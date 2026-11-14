@@ -65,7 +65,7 @@ final class ClientModel {
         let result = TextConfigurationPipeline.process(text: operatingText)
         parsed = result.parsed
         let previous = nodes
-        nodes = result.compiled.proxies.map { candidate in previous.first { $0.name == candidate.name && $0.toURLString() == candidate.toURLString() } ?? candidate }
+        nodes = result.compiled.proxies.map { candidate in previous.first { $0.name == candidate.name && $0.toURLString() == candidate.toURLString() }?.withChain(candidate.chain) ?? candidate }
     }
 
     private func persist() throws { try library.save(to: directory) }
@@ -206,6 +206,11 @@ final class ClientModel {
             result = ClientDocumentEditing.set(result, section: .chain, key: chain.name,
                 value: chain.members.map { ClientDocumentEditing.token($0 == old ? new : $0) }.joined(separator: ", "))
         }
+        for node in nodes where node.underlyingProxy == old {
+            var updated = node
+            updated.underlyingProxy = new
+            result = ClientDocumentEditing.set(result, section: .proxy, key: node.name, value: updated.toURLString())
+        }
         if parsed.general["default-node"] == old { result = ClientDocumentEditing.set(result, section: .general, key: "default-node", value: ClientDocumentEditing.token(new)) }
         return result
     }
@@ -218,7 +223,7 @@ final class ClientModel {
         guard !imported.isEmpty else { throw ClientFailure("没有找到可用节点。") }
         var text = operatingText
         for node in imported {
-            text = ClientDocumentEditing.set(text, section: .proxy, key: node.name, value: node.isDirect ? "direct" : node.toURLString())
+            text = ClientDocumentEditing.set(text, section: .proxy, key: node.name, value: node.toURLString())
         }
         return await commit(text)
     }
@@ -231,14 +236,14 @@ final class ClientModel {
             text = renameReferences(text, from: old, to: node.name)
             text = ClientDocumentEditing.renameKey(text, section: .proxy, from: old, to: node.name)
         }
-        text = ClientDocumentEditing.set(text, section: .proxy, key: node.name, value: node.isDirect ? "direct" : node.toURLString())
+        text = ClientDocumentEditing.set(text, section: .proxy, key: node.name, value: node.toURLString())
         _ = await commit(text)
     }
 
     func deleteNode(_ name: String) async {
         guard profile != nil else { return }
         var text = operatingText
-        if parsed.rules.contains(where: { $0.policy == .named(name) }) || parsed.chains.contains(where: { $0.members.contains(name) }) {
+        if nodes.contains(where: { $0.underlyingProxy == name }) || parsed.rules.contains(where: { $0.policy == .named(name) }) || parsed.chains.contains(where: { $0.members.contains(name) }) {
             error = "这个节点仍被规则或代理链引用，请先在配置中修改这些引用。"; return
         }
         text = ClientDocumentEditing.set(text, section: .proxy, key: name, value: nil)

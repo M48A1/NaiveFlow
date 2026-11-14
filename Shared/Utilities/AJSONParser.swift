@@ -146,7 +146,7 @@ nonisolated enum AJSONParser {
             name: name,
             serverAddress: configuration.serverAddress,
             serverPort: configuration.serverPort,
-            outbound: configuration.outbound
+            outbound: configuration.outbound, blockQUIC: configuration.blockQUIC, underlyingProxy: configuration.underlyingProxy
         )
     }
 

@@ -253,9 +253,16 @@ re-enter exceptions on the relevant nodes. Global `[General] allow-insecure` and
 The separate Trusted Certificates page has been removed.
 
 Options this build cannot express (`udp`, `udp-relay`, `tfo`,
-`mptcp`, `ecn`, `test-url`, `ip-version`, `underlying-proxy`, `block-quic`,
-`no-error-alert`, `fast-open`) are dropped **with a `notApplied` warning** — never
-silently.
+`mptcp`, `ecn`, `test-url`, `ip-version`,
+`no-error-alert`, `fast-open`) are reported as `notApplied` errors and prevent activation.
+
+Node fields `block-quic=true|false` and `underlying-proxy=NodeName` are supported
+and also preserved in exported share links. `underlying-proxy` names an existing
+non-Direct node used before the current node; references are resolved into the
+runtime chain. Missing references, cycles, Direct hops and chains over 16 nodes
+prevent activation. Node QUIC preferences affect forwarded traffic rather than
+the carrier connection; legacy explicit global blocking and MITM policy retain
+priority.
 
 An unknown type is an error (`unknownProxyType`), not a skipped node.
 

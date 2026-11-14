@@ -133,13 +133,34 @@ nonisolated extension ConfigurationCompiler {
         _ configuration: ParsedConfiguration,
         diagnostics: inout [ConfigurationDiagnostic]
     ) -> [ProxyConfiguration] {
-        configuration.proxies.compactMap { proxy in
+        let nodes = configuration.proxies.compactMap { proxy -> ProxyConfiguration? in
             guard let node = compileProxy(proxy, diagnostics: &diagnostics) else { return nil }
             if !node.isDirect, !IPv4Only.supportsHost(node.serverAddress) {
                 diagnostics.append(.init(severity: .error, code: .invalidValue, line: proxy.line,
                     section: "Proxy", message: "This build accepts IPv4 node addresses or host names only."))
                 return nil
             }
+            return node
+        }
+        let byName = Dictionary(nodes.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+        var resolved: [String: ProxyConfiguration] = [:]
+        func resolve(_ node: ProxyConfiguration, path: Set<String>) -> ProxyConfiguration? {
+            if let cached = resolved[node.name] { return cached }
+            guard !path.contains(node.name), path.count < 16 else { return nil }
+            guard let parentName = node.underlyingProxy else { resolved[node.name] = node; return node }
+            guard !node.isDirect, let parent = byName[parentName], !parent.isDirect,
+                  let upstream = resolve(parent, path: path.union([node.name])) else { return nil }
+            let chain = (upstream.chain ?? []) + [upstream.withChain(nil)]
+            guard chain.count < 16 else { return nil }
+            let result = node.withChain(chain)
+            resolved[node.name] = result
+            return result
+        }
+        return nodes.map { node in
+            if let result = resolve(node, path: []) { return result }
+            diagnostics.append(.init(severity: .error, code: .invalidValue,
+                line: configuration.proxies.first { $0.name == node.name }?.line ?? 1,
+                section: "Proxy", message: "Node '\(node.name)' has an invalid underlying-proxy: missing node, DIRECT hop, cycle, or more than 16 hops."))
             return node
         }
     }
@@ -201,7 +222,15 @@ nonisolated extension ConfigurationCompiler {
                     )
                     return nil
                 }
-                return renamed(parsed, to: proxy.name)
+                var node = renamed(parsed, to: proxy.name)
+                if let value = parameters["block-quic"] {
+                    guard let block = parameters.bool("block-quic") else {
+                        throw NaiveFlowError.parse(.invalidURL("Invalid block-quic value: \(value)"))
+                    }
+                    node.blockQUIC = block
+                }
+                node.underlyingProxy = parameters["underlying-proxy"]
+                return node
             } catch {
                 diagnostics.append(
                     ConfigurationDiagnostic(
@@ -225,7 +254,7 @@ nonisolated extension ConfigurationCompiler {
         parameters: OrderedParameters,
         diagnostics: inout [ConfigurationDiagnostic]
     ) {
-        for (key, _) in parameters.pairs where clashParameter(key: key, value: "") == nil {
+        for (key, _) in parameters.pairs where key != "block-quic" && key != "underlying-proxy" && clashParameter(key: key, value: "") == nil {
             diagnostics.append(
                 ConfigurationDiagnostic(
                     severity: .error,
@@ -250,6 +279,8 @@ nonisolated extension ConfigurationCompiler {
             subscriptionId: nil,
             outbound: proxy.outbound,
             chain: nil,
+            blockQUIC: proxy.blockQUIC,
+            underlyingProxy: proxy.underlyingProxy,
             updatedAt: .now
         )
     }

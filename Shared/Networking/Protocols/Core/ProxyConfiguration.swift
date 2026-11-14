@@ -164,6 +164,8 @@ nonisolated struct ProxyConfiguration: Identifiable, Hashable, Codable, Sendable
     let subscriptionId: UUID?
     let outbound: Outbound
     let chain: [ProxyConfiguration]?
+    var blockQUIC: Bool?
+    var underlyingProxy: String?
     var updatedAt: Date
     var deletedAt: Date? = nil
 
@@ -303,6 +305,8 @@ nonisolated struct ProxyConfiguration: Identifiable, Hashable, Codable, Sendable
         subscriptionId: UUID? = nil,
         outbound: Outbound,
         chain: [ProxyConfiguration]? = nil,
+        blockQUIC: Bool? = nil,
+        underlyingProxy: String? = nil,
         updatedAt: Date = .now
     ) {
         self.id = id
@@ -313,6 +317,8 @@ nonisolated struct ProxyConfiguration: Identifiable, Hashable, Codable, Sendable
         self.subscriptionId = subscriptionId
         self.outbound = outbound
         self.chain = chain
+        self.blockQUIC = blockQUIC
+        self.underlyingProxy = underlyingProxy
         self.updatedAt = updatedAt
     }
 
@@ -320,7 +326,7 @@ nonisolated struct ProxyConfiguration: Identifiable, Hashable, Codable, Sendable
         ProxyConfiguration(
             id: id, name: name, serverAddress: serverAddress, serverPort: serverPort,
             resolvedIP: resolvedIP, subscriptionId: subscriptionId,
-            outbound: outbound, chain: chain, updatedAt: updatedAt
+            outbound: outbound, chain: chain, blockQUIC: blockQUIC, underlyingProxy: underlyingProxy, updatedAt: updatedAt
         )
     }
 
@@ -328,7 +334,7 @@ nonisolated struct ProxyConfiguration: Identifiable, Hashable, Codable, Sendable
         ProxyConfiguration(
             id: id, name: name, serverAddress: serverAddress, serverPort: serverPort,
             resolvedIP: resolvedIP, subscriptionId: subscriptionId,
-            outbound: outbound, chain: chain, updatedAt: updatedAt
+            outbound: outbound, chain: chain, blockQUIC: blockQUIC, underlyingProxy: underlyingProxy, updatedAt: updatedAt
         )
     }
     
@@ -337,7 +343,9 @@ nonisolated struct ProxyConfiguration: Identifiable, Hashable, Codable, Sendable
         serverAddress == other.serverAddress &&
         serverPort == other.serverPort &&
         outbound == other.outbound &&
-        chain == other.chain
+        chain == other.chain &&
+        blockQUIC == other.blockQUIC &&
+        underlyingProxy == other.underlyingProxy
     }
 
     // MARK: - Codable
@@ -345,7 +353,7 @@ nonisolated struct ProxyConfiguration: Identifiable, Hashable, Codable, Sendable
     private enum CodingKeys: String, CodingKey {
         case id, name, serverAddress, serverPort, resolvedIP, subscriptionId
         case outbound
-        case chain
+        case chain, blockQUIC, underlyingProxy
         case updatedAt
         case deletedAt
     }
@@ -361,6 +369,8 @@ nonisolated struct ProxyConfiguration: Identifiable, Hashable, Codable, Sendable
         subscriptionId = try container.decodeIfPresent(UUID.self, forKey: .subscriptionId)
         outbound = try container.decode(Outbound.self, forKey: .outbound)
         chain = try container.decodeIfPresent([ProxyConfiguration].self, forKey: .chain)
+        blockQUIC = try container.decodeIfPresent(Bool.self, forKey: .blockQUIC)
+        underlyingProxy = try container.decodeIfPresent(String.self, forKey: .underlyingProxy)
         deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? deletedAt ?? .distantPast
     }
@@ -378,6 +388,8 @@ nonisolated struct ProxyConfiguration: Identifiable, Hashable, Codable, Sendable
         try container.encode(outbound, forKey: .outbound)
 
         try container.encodeIfPresent(chain, forKey: .chain)
+        try container.encodeIfPresent(blockQUIC, forKey: .blockQUIC)
+        try container.encodeIfPresent(underlyingProxy, forKey: .underlyingProxy)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
     }

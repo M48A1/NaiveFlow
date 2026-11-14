@@ -25,7 +25,7 @@ struct SubscriptionOperations {
                 id: stableIDs[configuration.id] ?? configuration.id, name: configuration.name,
                 serverAddress: configuration.serverAddress, serverPort: configuration.serverPort,
                 subscriptionId: subscription.id,
-                outbound: configuration.outbound
+                outbound: configuration.outbound, blockQUIC: configuration.blockQUIC, underlyingProxy: configuration.underlyingProxy
             )
         }
         configurationStore.replaceConfigurations(for: subscription.id, with: tagged)
@@ -87,7 +87,7 @@ struct SubscriptionOperations {
                 id: id, name: configuration.name,
                 serverAddress: configuration.serverAddress, serverPort: configuration.serverPort,
                 subscriptionId: subscriptionId,
-                outbound: configuration.outbound
+                outbound: configuration.outbound, blockQUIC: configuration.blockQUIC, underlyingProxy: configuration.underlyingProxy
             ))
         }
 

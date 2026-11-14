@@ -9,11 +9,15 @@ import SwiftUI
 
 struct ProxyEditorView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(ClientModel.self) private var model
     
     let configuration: ProxyConfiguration?
     let onSave: (ProxyConfiguration) -> Void
     
-    @State private var selectedProtocol: OutboundProtocol = .nowhere
+    @State private var blockQUIC = false
+    @State private var selectedProtocol: OutboundProtocol = .anytls
+    @State private var chainEnabled = false
+    @State private var underlyingProxy = ""
     @State private var verifyServerCertificate = true
     @State private var serverCertificateFingerprint = ""
     @State private var verifyDownloadCertificate = true
@@ -115,6 +119,7 @@ struct ProxyEditorView: View {
     
     private var isValid: Bool {
         guard !name.isEmpty else { return false }
+        if !isDirect && chainEnabled && !chainCandidates.contains(where: { $0.name == underlyingProxy }) { return false }
         if usesNodeTLS && !TLSCertificatePolicy.isValidFingerprint(serverCertificateFingerprint) { return false }
         if isVLESS && vlessXHTTPDownloadEnabled && vlessXHTTPDownloadSecurity == "tls"
             && !TLSCertificatePolicy.isValidFingerprint(downloadCertificateFingerprint) { return false }
@@ -178,14 +183,16 @@ struct ProxyEditorView: View {
                 
                 Section {
                     Picker(selection: $selectedProtocol) {
-                        Text(String("Nowhere")).tag(OutboundProtocol.nowhere)
-                        Text(String("VLESS")).tag(OutboundProtocol.vless)
-                        Text(String("Hysteria")).tag(OutboundProtocol.hysteria)
-                        Text(String("Trojan")).tag(OutboundProtocol.trojan)
                         Text(String("AnyTLS")).tag(OutboundProtocol.anytls)
+                        if configuration?.isDirect == true {
+                            Text(String("Direct")).tag(OutboundProtocol.direct)
+                        }
+                        Text(String("Hysteria")).tag(OutboundProtocol.hysteria)
+                        Text(String("Nowhere")).tag(OutboundProtocol.nowhere)
                         Text(String("Shadowsocks")).tag(OutboundProtocol.shadowsocks)
                         Text(String("SOCKS5")).tag(OutboundProtocol.socks5)
-                        Text(String("Direct")).tag(OutboundProtocol.direct)
+                        Text(String("Trojan")).tag(OutboundProtocol.trojan)
+                        Text(String("VLESS")).tag(OutboundProtocol.vless)
                     } label: {
                         TextWithColorfulIcon(title: "Protocol", systemName: "arrow.down.left.arrow.up.right.circle.fill", foregroundStyle: .white, backgroundStyle: .orange.gradient)
                     }
@@ -195,6 +202,13 @@ struct ProxyEditorView: View {
                     serverSettings
                 }
                 
+                if !isDirect {
+                    Section {
+                        Toggle("关闭 QUIC", isOn: $blockQUIC)
+                    } footer: {
+                        Text("仅控制经此节点转发的 QUIC 流量，不影响节点自身的 QUIC 传输。")
+                    }
+                }
                 networkSettings
                 
                 if isVLESS {
@@ -210,8 +224,9 @@ struct ProxyEditorView: View {
                     certificateSettings(verify: $verifyDownloadCertificate, fingerprint: $downloadCertificateFingerprint, title: "TLS Certificate (Download)")
                 }
                 moreSettings
+                if !isDirect { chainSettings }
             }
-            .navigationTitle(configuration != nil ? "Edit Configuration" : "Add Configuration")
+            .navigationTitle(configuration != nil ? "Edit Node" : "Add Node")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -722,6 +737,33 @@ struct ProxyEditorView: View {
         }
     }
 
+    private var chainCandidates: [ProxyConfiguration] {
+        model.nodes.filter { node in
+            !node.isDirect && node.name != configuration?.name && node.name != name &&
+            !(node.chain ?? []).contains { $0.name == configuration?.name || $0.name == name }
+        }
+    }
+
+    private var chainSettings: some View {
+        Section {
+            Toggle("通过此节点进行链式代理", isOn: $chainEnabled)
+            if chainEnabled {
+                Picker("选择节点", selection: $underlyingProxy) {
+                    Text("请选择现有节点").tag("")
+                    ForEach(chainCandidates) { node in Text(node.name).tag(node.name) }
+                }
+                if chainCandidates.isEmpty { Text("请先添加另一个代理节点").font(.caption).foregroundStyle(.secondary) }
+            }
+        } footer: {
+            if chainEnabled, let upstream = chainCandidates.first(where: { $0.name == underlyingProxy }) {
+                let hops = (upstream.chain ?? []).map(\.name) + [upstream.name, name.isEmpty ? "当前节点" : name]
+                Text((["本机"] + hops + ["目标"]).joined(separator: " → "))
+            } else {
+                Text("选择一个已有节点作为前置代理，再通过当前节点访问目标。")
+            }
+        }
+    }
+
     @ViewBuilder
     private var moreSettings: some View {
         if isVLESS && vlessTransport == "xhttp" {
@@ -872,6 +914,9 @@ struct ProxyEditorView: View {
 
     private func populateFromExisting() {
         guard let configuration else { return }
+        underlyingProxy = configuration.underlyingProxy ?? ""
+        chainEnabled = configuration.underlyingProxy != nil
+        blockQUIC = configuration.blockQUIC ?? AWCore.getQUICPolicy().blocksQUIC(isProxied: !configuration.isDirect)
         let policy = configuration.nodeCertificatePolicy
         verifyServerCertificate = !policy.insecureSkipVerify
         serverCertificateFingerprint = policy.certificateSHA256 ?? ""
@@ -1231,7 +1276,9 @@ struct ProxyEditorView: View {
             serverAddress: isDirect ? "" : bareAddress,
             serverPort: port,
             subscriptionId: self.configuration?.subscriptionId,
-            outbound: outbound
+            outbound: outbound,
+            blockQUIC: blockQUIC,
+            underlyingProxy: !isDirect && chainEnabled ? underlyingProxy : nil
         )
         
         onSave(configuration)

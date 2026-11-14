@@ -30,6 +30,11 @@ nonisolated enum QUICPolicy: String, CaseIterable {
         }
     }
 
+    func blocksQUIC(isProxied: Bool, nodeOverride: Bool?) -> Bool {
+        if blocksAllQUIC { return true }
+        return nodeOverride ?? blocksQUIC(isProxied: isProxied)
+    }
+
     func blocksQUIC(isProxied: Bool) -> Bool {
         switch self {
         case .blocked: return true

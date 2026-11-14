@@ -30,7 +30,6 @@ struct ClientGroupsView: View {
             if model.groups.isEmpty {
                 Text("把常用节点放入策略组，为不同流量选择出站。")
                     .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 32)
-                Button("新建策略组", systemImage: "plus") { editing = ClientGroupEditor() }.padding(.top, 8)
             }
         }
         .task(id: scenePhase) {
@@ -85,6 +84,19 @@ struct ClientGroupDetailView: View {
                 ClientPolicyCard(name: title, selected: selected,
                     style: model.profile?.groupStyles[title] ?? ClientGroupStyle(symbol: name == nil ? "shippingbox" : "square.stack.3d.up.fill", palette: name == nil ? 0 : ClientPalette.index(for: title)),
                     iconURL: group?.parameters["icon-url"])
+                    .overlay(alignment: .topTrailing) {
+                        Button { latency.testLatencies(for: candidateNodes, transport: tunnel) } label: {
+                            HStack(spacing: 5) {
+                                if testing { ProgressView().tint(.white) }
+                                else { Image(systemName: "bolt.fill") }
+                                Text(testing ? "测速中…" : "延迟测试")
+                            }.font(.caption.weight(.semibold)).foregroundStyle(.white)
+                                .padding(.horizontal, 12).frame(minHeight: 44)
+                                .background(.black.opacity(0.16), in: Capsule())
+                        }.buttonStyle(.plain).disabled(candidateNodes.isEmpty || testing)
+                            .accessibilityLabel("测试当前策略组节点延迟")
+                            .padding(14)
+                    }
                 VStack(alignment: .leading, spacing: 10) {
                     Text("可用节点").font(.footnote.weight(.medium)).foregroundStyle(.secondary).padding(.leading, 4)
                     ClientCard {
@@ -104,19 +116,13 @@ struct ClientGroupDetailView: View {
                         if candidates.isEmpty { Text("先在首页添加节点").font(.subheadline).foregroundStyle(.secondary).padding(24) }
                     }
                 }
-                ClientCard {
-                    HStack {
-                        Button("延迟测试", systemImage: "bolt.fill") { latency.testLatencies(for: candidateNodes, transport: tunnel) }.frame(maxWidth: .infinity)
-                        Divider().frame(height: 20)
-                        if let group {
-                            Button("自动选择", systemImage: "shuffle") { Task {
-                                _ = await model.saveGroup(original: group.name, name: group.name, kind: "url-test", members: group.members,
-                                    parameters: group.parameters.pairs.filter { $0.0 != "selected" }, style: model.profile?.groupStyles[title] ?? ClientGroupStyle(palette: ClientPalette.index(for: title)))
-                            } }.frame(maxWidth: .infinity)
-                        } else {
-                            NavigationLink("节点管理") { ClientNodesView() }.frame(maxWidth: .infinity)
-                        }
-                    }.font(.subheadline).padding(18)
+                if let group {
+                    ClientCard {
+                        Button("自动选择", systemImage: "shuffle") { Task {
+                            _ = await model.saveGroup(original: group.name, name: group.name, kind: "url-test", members: group.members,
+                                parameters: group.parameters.pairs.filter { $0.0 != "selected" }, style: model.profile?.groupStyles[title] ?? ClientGroupStyle(palette: ClientPalette.index(for: title)))
+                        } }.font(.subheadline).frame(maxWidth: .infinity).padding(18)
+                    }
                 }
                 if let group, group.kind != .select {
                     Text("当前由 \(group.kindToken) 自动选择。点击节点会切换为 Select 手动选择。")
@@ -140,9 +146,11 @@ struct ClientGroupDetailView: View {
         .disabled(model.isBusy)
     }
     private func liveLatency(for node: ProxyConfiguration) -> LatencyResult? {
+        if let result = latency.latencyResults[node.id] { return result }
         if let name, let ms = model.liveGroups[name]?.latencies[node.name] { return .success(ms) }
         return latency.latencyResults[node.id]
     }
+    private var testing: Bool { candidateNodes.contains { latency.latencyResults[$0.id] == .testing } }
     private var candidateNodes: [ProxyConfiguration] { model.nodes.filter { candidates.contains($0.name) } }
     private func choose(_ member: String) {
         Task { if let group { await model.selectMember(member, in: group) } else { await model.selectNode(member) } }
@@ -179,7 +187,7 @@ struct ClientGroupEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @State var draft: ClientGroupEditor
     @State private var style = ClientGroupStyle()
-    private let symbols = ["square.stack.3d.up.fill", "shippingbox", "globe", "building.columns.fill", "play.rectangle.fill", "gamecontroller.fill", "bubble.left.and.bubble.right.fill", "house.fill", "bolt.fill", "network"]
+    @State private var showIconPacks = false
 
     var body: some View {
         NavigationStack {
@@ -197,8 +205,19 @@ struct ClientGroupEditorView: View {
                         Text("Fallback · 故障转移").tag("fallback")
                         Text("Load Balance · 负载均衡").tag("load-balance")
                     }
-                    Picker("图标", selection: $style.symbol) { ForEach(symbols, id: \.self) { Image(systemName: $0).tag($0) } }
-                    TextField("自定义图标 HTTPS 地址", text: $draft.iconURL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Button { showIconPacks = true } label: {
+                        HStack {
+                            Text("图标").foregroundStyle(.primary)
+                            Spacer()
+                            if let url = ProxyGroupIconURL.parse(draft.iconURL) {
+                                AsyncImage(url: url) { image in image.resizable().scaledToFit() }
+                                    placeholder: { Image(systemName: "photo").foregroundStyle(.secondary) }
+                                    .frame(width: 30, height: 30)
+                            } else {
+                                Text("选择图标").foregroundStyle(.secondary)
+                            }
+                        }.frame(minHeight: 36).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityHint("打开图标集选择图标")
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             ForEach(ClientPalette.colors.indices, id: \.self) { index in
@@ -247,6 +266,7 @@ struct ClientGroupEditorView: View {
                         .disabled(model.isBusy || draft.name.isEmpty || draft.members.isEmpty)
                 }
             }
+            .sheet(isPresented: $showIconPacks) { ClientIconPacksView(selectedURL: $draft.iconURL) }
             .task { style = model.profile?.groupStyles[draft.originalName ?? draft.name] ?? ClientGroupStyle(palette: ClientPalette.index(for: draft.name)) }
             .alert("无法保存策略组", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("好") { model.error = nil } } message: { Text(model.error ?? "") }
         }

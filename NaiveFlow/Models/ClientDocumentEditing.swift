@@ -26,6 +26,31 @@ nonisolated enum ClientDocumentEditing {
         return document.appendingLine("\n[\(section.displayName)]\n\(line)").text
     }
 
+    static func saveRuleSet(_ text: String, original: ParsedRule?, source: String, policy: String, noResolve: Bool) throws -> String {
+        let source = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.contains(where: { $0.isNewline }), !policy.contains(where: { $0.isNewline }) else {
+            throw ClientFailure("地址和策略不能包含换行。")
+        }
+        _ = try NativeRuleSet.sourceURL(source)
+        let otherOptions = original?.options.filter { $0 != .noResolve }.map(\.token) ?? []
+        let fields = ["RULE-SET", token(source), token(policy)] + otherOptions + (noResolve ? ["no-resolve"] : [])
+        let line = fields.joined(separator: ", ")
+        let document = ConfigurationDocument.parse(text: text)
+        let parsed = NaiveFlowConfigurationParser.parse(text: text).configuration
+        if let original {
+            guard original.kind == .ruleSet, parsed.rules.contains(original) else {
+                throw ClientFailure("规则已发生变化，请关闭后重新打开编辑。")
+            }
+            let comment = document.entries(.rule).first { $0.line == original.line }?.comment.map { "  # " + $0 } ?? ""
+            return document.replacingLine(original.line, with: line + comment).text
+        }
+        // A new reference must precede FINAL so it remains reachable.
+        if let final = parsed.rules.first(where: \.isFinal) {
+            return document.insertingLine(line, after: final.line - 1).text
+        }
+        return document.insertingRule(line).text
+    }
+
     static func renameKey(_ text: String, section: ConfigurationDocument.SectionKind, from old: String, to new: String) -> String {
         let document = ConfigurationDocument.parse(text: text)
         guard let entry = document.entries(section).first(where: { ConfigurationDocument.unquoted($0.key ?? "") == old }) else { return text }

@@ -45,6 +45,8 @@ nonisolated struct ProxyChain: Identifiable, Codable, Hashable, SoftDeletable {
             serverPort: exit.serverPort,
             outbound: exit.outbound,
             chain: Array(configs.dropLast()),
+            blockQUIC: exit.blockQUIC,
+            underlyingProxy: exit.underlyingProxy,
             updatedAt: configs.reduce(updatedAt) { max($0, $1.updatedAt) }
         )
     }

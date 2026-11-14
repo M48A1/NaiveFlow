@@ -28,7 +28,45 @@ nonisolated extension ProxyConfiguration {
     }
     
     static func parse(url: String) throws -> ProxyConfiguration {
-        let node = try parseSupportedURL(url: url)
+        var transportURL = url
+        var blockQUIC: Bool?
+        var underlyingProxy: String?
+        let fragments = url.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+        let beforeFragment = fragments[0]
+        if let query = beforeFragment.firstIndex(of: "?") {
+            let fields = beforeFragment[beforeFragment.index(after: query)...].split(separator: "&", omittingEmptySubsequences: false)
+            let parsedFields = fields.map { $0.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false) }
+            let preferences = parsedFields.filter { $0.first == "block-quic" }
+            if !preferences.isEmpty {
+                guard preferences.count == 1, preferences[0].count == 2,
+                      ["true", "false", "1", "0"].contains(String(preferences[0][1]).lowercased()) else {
+                    throw NaiveFlowError.parse(.invalidURL("Invalid block-quic parameter"))
+                }
+                blockQUIC = ["true", "1"].contains(String(preferences[0][1]).lowercased())
+            }
+            let parents = parsedFields.filter { $0.first == "underlying-proxy" }
+            if !parents.isEmpty {
+                guard parents.count == 1, parents[0].count == 2,
+                      let value = String(parents[0][1]).removingPercentEncoding,
+                      !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      !value.contains(where: { $0.isNewline }) else {
+                    throw NaiveFlowError.parse(.invalidURL("Invalid underlying-proxy parameter"))
+                }
+                underlyingProxy = value
+            }
+            if !preferences.isEmpty || !parents.isEmpty {
+                let remaining = fields.filter {
+                    let key = $0.split(separator: "=", maxSplits: 1).first
+                    return key != "block-quic" && key != "underlying-proxy"
+                }
+                transportURL = String(beforeFragment[..<query])
+                    + (remaining.isEmpty ? "" : "?" + remaining.joined(separator: "&"))
+                    + (fragments.count > 1 ? "#" + fragments[1] : "")
+            }
+        }
+        var node = try parseSupportedURL(url: transportURL)
+        node.blockQUIC = blockQUIC
+        node.underlyingProxy = underlyingProxy
         if !node.isDirect { try IPv4Only.requireHost(node.serverAddress) }
         return node
     }

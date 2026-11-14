@@ -28,7 +28,7 @@ struct ConfigurationOperations {
             ProxyConfiguration(
                 id: stableIDs[configuration.id] ?? configuration.id, name: configuration.name,
                 serverAddress: configuration.serverAddress, serverPort: configuration.serverPort,
-                outbound: configuration.outbound
+                outbound: configuration.outbound, blockQUIC: configuration.blockQUIC, underlyingProxy: configuration.underlyingProxy
             )
         }
         store.upsert(imported)

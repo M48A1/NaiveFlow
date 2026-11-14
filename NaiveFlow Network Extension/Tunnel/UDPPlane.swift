@@ -411,6 +411,13 @@ actor UDPPlane {
             flowConfiguration = selected
         }
 
+        if isQUIC, routeTarget.resolved(against: udpConfig.defaultRouteTarget).configurationID != nil,
+           udpConfig.quicPolicy.blocksQUIC(isProxied: true, nodeOverride: flowConfiguration.blockQUIC) {
+            blockQUIC(datagram, flowKey: flowKey, cause: .proxied(routeTarget), host: policyHost,
+                      identifiedQUIC: sniffedServerName != nil)
+            return
+        }
+
         let resolvedTarget = routeTarget.resolved(against: udpConfig.defaultRouteTarget)
         let outbound: TunnelRequestOutbound = resolvedTarget == .direct
             ? .direct : TunnelRequestOutbound(configuration: flowConfiguration)
@@ -445,9 +452,9 @@ actor UDPPlane {
     }
 
     private func blocksQUIC(routedTo routeTarget: RouteTarget, udpConfig: TunnelStack.UDPConfig) -> Bool {
-        udpConfig.quicPolicy.blocksQUIC(
-            isProxied: routeTarget.resolved(against: udpConfig.defaultRouteTarget).configurationID != nil
-        )
+        let target = routeTarget.resolved(against: udpConfig.defaultRouteTarget)
+        let node = stack.domainRouter.resolveConfiguration(action: target, consumingGroupSelection: false)
+        return udpConfig.quicPolicy.blocksQUIC(isProxied: target.configurationID != nil, nodeOverride: node?.blockQUIC)
     }
 
     private func revalidateQUIC() {

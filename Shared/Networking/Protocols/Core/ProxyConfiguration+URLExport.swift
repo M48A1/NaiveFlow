@@ -24,6 +24,17 @@ extension ProxyConfiguration {
     }
 
     func toURLString() -> String {
+        let link = baseURLString()
+        var preferences: [String] = []
+        if let blockQUIC { preferences.append("block-quic=\(blockQUIC)") }
+        if let underlyingProxy { preferences.append("underlying-proxy=\(encodedQueryValue(underlyingProxy))") }
+        guard !preferences.isEmpty else { return link }
+        let parts = link.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+        let base = String(parts[0])
+        return base + (base.contains("?") ? "&" : "?") + preferences.joined(separator: "&") + (parts.count > 1 ? "#" + parts[1] : "")
+    }
+
+    private func baseURLString() -> String {
         switch outboundProtocol {
         case .nowhere:
             return toNowhereURLString()

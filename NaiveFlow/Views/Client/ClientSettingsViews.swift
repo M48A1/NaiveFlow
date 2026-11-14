@@ -11,7 +11,13 @@ struct ClientSettingsView: View {
         List {
             Section("代理核心") {
                 NavigationLink { ClientDNSView() } label: { row("DNS", symbol: "safari", detail: dnsSummary) }
-                NavigationLink { ClientNetworkView() } label: { row("网络", symbol: "wifi") }
+                NavigationLink { ClientGeoSettingsView(site: false) } label: { row("GeoIP", symbol: "globe.europe.africa") }
+                NavigationLink { ClientGeoSettingsView(site: true) } label: { row("GeoSite", symbol: "globe") }
+                Toggle(isOn: Binding(get: { model.parsed.general.bool("always-on") ?? false }, set: { value in
+                    Task { await model.setSetting("always-on", value: value ? "true" : "false") }
+                })) { row("始终保持连接", symbol: "arrow.triangle.2.circlepath") }
+                    .tint(.blue).disabled(model.isBusy)
+                NavigationLink { LANProxySettingsView() } label: { row("局域网共享", symbol: "wifi") }
                 NavigationLink { ClientLogsView() } label: { row("日志", symbol: "doc.text.fill") }
                 NavigationLink { RequestsView() } label: { row("请求记录", symbol: "list.bullet.rectangle") }
             }
@@ -103,41 +109,6 @@ struct ClientDNSView: View {
     }
     private func binding(_ key: String, fallback: String) -> Binding<String> {
         Binding(get: { values[key] ?? fallback }, set: { values[key] = $0 })
-    }
-}
-
-struct ClientNetworkView: View {
-    @Environment(ClientModel.self) private var model
-    @State private var routeEditor = false
-    var body: some View {
-        Form {
-            Section("运行与隧道") {
-                flag("始终保持连接", key: "always-on")
-                flag("包括所有网络", key: "include-all-networks")
-                flag("排除局域网", key: "exclude-local-network")
-                flag("包括 APNs", key: "include-apns")
-                flag("包括蜂窝服务", key: "include-cellular-services")
-                flag("排除设备通信", key: "exclude-device-communication")
-            }
-            Section("流量与隐私") {
-                flag("阻止 UDP", key: "block-udp")
-                flag("阻止 WebRTC", key: "block-webrtc", fallback: true)
-                flag("防止 DNS 泄漏", key: "prevent-dns-leak")
-                Picker("QUIC", selection: Binding(get: { model.parsed.general["quic-policy"] ?? "automatic" }, set: { value in Task { await model.setSetting("quic-policy", value: value) } })) {
-                    Text("自动").tag("automatic"); Text("阻止").tag("blocked"); Text("允许").tag("unblocked")
-                }
-            }
-            Section {
-                NavigationLink("LAN 代理共享") { LANProxySettingsView() }
-                Button("路由、网络范围与更多参数") { routeEditor = true }
-            }
-        }
-        .navigationTitle("网络").navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $routeEditor) { ClientActiveProfileEditor() }
-        .disabled(model.isBusy)
-    }
-    private func flag(_ title: String, key: String, fallback: Bool = false) -> some View {
-        Toggle(title, isOn: Binding(get: { model.parsed.general.bool(key) ?? fallback }, set: { value in Task { await model.setSetting(key, value: value ? "true" : "false") } })).tint(.blue)
     }
 }
 
