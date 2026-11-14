@@ -5,9 +5,14 @@ struct ClientModulesView: View {
     @Environment(ClientModel.self) private var model
     @State private var editing: ClientModule?
     @State private var pendingDelete: ClientModule?
+    @State private var updating = false
+    @State private var updateComplete = false
     var body: some View {
         List {
             Section {
+                if model.modules.isEmpty {
+                    ContentUnavailableView("No Modules", systemImage: "puzzlepiece.extension")
+                }
                 ForEach(model.modules) { module in
                     Button { editing = module } label: {
                         HStack(spacing: 12) {
@@ -21,21 +26,31 @@ struct ClientModulesView: View {
                     }.buttonStyle(.plain).padding(.vertical, 5)
                     .contextMenu {
                         Button("Edit", systemImage: "pencil") { editing = module }
-                        if module.sourceURL != nil { Button("Update", systemImage: "arrow.clockwise") { Task { await model.refreshModule(module) } } }
+                        if module.sourceURL != nil { Button("Update", systemImage: "arrow.clockwise") { Task { await model.manageResource(.update(.modules(ids: [module.id]))) } } }
                         Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = module }
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button("Delete", role: .destructive) { pendingDelete = module }
                         Button("Edit", systemImage: "pencil") { editing = module }.tint(.blue)
-                        Button("Update", systemImage: "arrow.clockwise") { Task { await model.refreshModule(module) } }
+                        Button("Update", systemImage: "arrow.clockwise") { Task { await model.manageResource(.update(.modules(ids: [module.id]))) } }
                             .tint(.orange).disabled(module.sourceURL?.isEmpty != false)
                     }
                 }
             } footer: { Text("Module rules are saved and applied with the current profile. Configure MITM certificate trust and hostnames before enabling modules.") }
-        }
-        .overlay {
-            if model.modules.isEmpty {
-                ContentUnavailableView("No Modules", systemImage: "puzzlepiece.extension")
+            Section {
+                Button { Task {
+                    updating = true
+                    defer { updating = false }
+                    updateComplete = await model.manageResource(.update(.modules()))
+                } } label: {
+                    HStack {
+                        Label(updating ? "Updating…" : "Update Now", systemImage: "arrow.clockwise")
+                        Spacer()
+                        if updating { ProgressView() }
+                    }
+                }.disabled(updating || model.isBusy || !model.modules.contains { $0.sourceURL?.isEmpty == false })
+            } footer: {
+                Text("Update all modules with remote URLs. Local modules are kept. Changes apply only after every download and validation succeeds.")
             }
         }
         .navigationTitle("Modules").navigationBarTitleDisplayMode(.inline)
@@ -47,8 +62,11 @@ struct ClientModulesView: View {
             }
         }
         .sheet(item: $editing) { ClientModuleEditorView(module: $0) }
+        .alert("Update Complete", isPresented: $updateComplete) { Button("OK", role: .cancel) {} } message: {
+            Text("All remote modules were updated and applied to the current profile.")
+        }
         .confirmationDialog("Delete Module and Its Rules?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { if let pendingDelete { Task { await model.deleteModule(pendingDelete) } }; pendingDelete = nil }
+            Button("Delete", role: .destructive) { if let pendingDelete { Task { await model.manageResource(.delete(.module(pendingDelete.id))) } }; pendingDelete = nil }
         }
         .disabled(model.isBusy)
     }
@@ -85,7 +103,7 @@ struct ClientModuleEditorView: View {
                 Section {
                     Button("Save and Apply") { Task {
                         downloading = true; defer { downloading = false }
-                        if await model.saveModule(module) { dismiss() }
+                        if await model.manageResource(.save(.module(module))) { dismiss() }
                     } }.disabled(module.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || module.name.isEmpty)
                 }
             }

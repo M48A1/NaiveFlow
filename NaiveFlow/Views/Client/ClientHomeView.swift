@@ -302,6 +302,9 @@ private struct ClientRoutingRulesView: View {
     let ruleSets: Bool
     @State private var editing = false
     @State private var ruleEditor: ClientRuleSetDraft?
+    @State private var pendingDelete: ParsedRule?
+    @State private var updating = false
+    @State private var updateComplete = false
 
     private var rules: [ParsedRule] {
         model.parsed.rules.filter { ($0.kind == .ruleSet) == ruleSets }
@@ -323,12 +326,19 @@ private struct ClientRoutingRulesView: View {
                                 Spacer()
                                 Text(rule.policy.token).font(.caption.weight(.medium)).foregroundStyle(.blue)
                             }
-                            Text(rule.value ?? "Final Match").font(.subheadline).textSelection(.enabled)
+                            Text(displayValue(rule)).font(.subheadline).textSelection(.enabled)
                             if !rule.options.isEmpty {
                                 Text(rule.options.map(\.token).joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                             }
                         }.padding(.vertical, 5).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                         }.buttonStyle(.plain).disabled(!ruleSets)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if ruleSets {
+                                Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = rule }
+                                Button("Edit", systemImage: "pencil") { ruleEditor = ClientRuleSetDraft(rule: rule) }.tint(.blue)
+                                Button("Update", systemImage: "arrow.clockwise") { Task { await update(source: rule.value) } }.tint(.orange)
+                            }
+                        }
                     }
                 }
             } header: {
@@ -339,6 +349,18 @@ private struct ClientRoutingRulesView: View {
         }
         .navigationTitle(ruleSets ? "RuleSet" : "Local")
         .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if ruleSets {
+                HStack {
+                    Button { Task { await update() } } label: {
+                        Label(updating ? "Updating…" : "Update All", systemImage: "arrow.clockwise")
+                    }.buttonStyle(.bordered).labelStyle(.titleAndIcon)
+                        .disabled(updating || model.isBusy || rules.isEmpty)
+                    if updating { ProgressView() }
+                    Spacer()
+                }.padding(.horizontal, 20).padding(.vertical, 10).background(.bar)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if ruleSets {
@@ -353,11 +375,28 @@ private struct ClientRoutingRulesView: View {
             }
         }
         .sheet(isPresented: $editing) { ClientActiveProfileEditor() }
+        .confirmationDialog("Delete RuleSet?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { if let pendingDelete { Task { _ = await model.manageResource(.delete(.ruleSet(pendingDelete))) } }; pendingDelete = nil }
+        }
+        .alert("Update Complete", isPresented: $updateComplete) { Button("OK", role: .cancel) {} }
         .sheet(item: $ruleEditor) { draft in
             ClientRuleSetEditorView(draft: draft)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .disabled(updating || model.isBusy)
+    }
+
+    @MainActor private func update(source: String? = nil) async {
+        guard !updating else { return }
+        updating = true; defer { updating = false }
+        updateComplete = await model.manageResource(.update(.ruleSets(sources: source.map { Set([$0]) })))
+    }
+
+    private func displayValue(_ rule: ParsedRule) -> String {
+        let value = rule.value ?? "Final Match"
+        if ruleSets, let url = URL(string: value), url.isFileURL { return url.lastPathComponent }
+        return value
     }
 }
 
@@ -429,14 +468,11 @@ private struct ClientRuleSetEditorView: View {
     @MainActor private func save() async {
         saving = true
         defer { saving = false }
-        do {
-            let text = try ClientDocumentEditing.saveRuleSet(model.operatingText, original: draft.original,
-                source: draft.source, policy: draft.policy, noResolve: draft.noResolve)
-            if await model.commit(text) { dismiss() }
-            else {
-                error = model.error ?? "Could not save. Try again later."
-                model.error = nil
-            }
-        } catch { self.error = error.localizedDescription }
+        if await model.manageResource(.save(.ruleSet(original: draft.original, source: draft.source,
+            policy: draft.policy, noResolve: draft.noResolve))) { dismiss() }
+        else {
+            error = model.error ?? "Could not save. Try again later."
+            model.error = nil
+        }
     }
 }

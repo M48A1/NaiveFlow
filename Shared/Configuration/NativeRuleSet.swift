@@ -34,7 +34,8 @@ nonisolated enum NativeRuleSet {
     }
 
     @concurrent
-    static func resolve(_ configuration: ParsedConfiguration, loader: Loader? = nil) async throws -> [String: String] {
+    static func resolve(_ configuration: ParsedConfiguration, loader: Loader? = nil,
+                        cachedContents: [String: String] = [:], refreshing sources: Set<String>? = nil) async throws -> [String: String] {
         var contents: [String: String] = [:]
         var total = 0
         for rule in configuration.rules where rule.kind == .ruleSet {
@@ -45,7 +46,8 @@ nonisolated enum NativeRuleSet {
             do {
                 let url = try sourceURL(source)
                 let data: Data
-                if let loader { data = try await loader(url) }
+                if let sources, !sources.contains(source), let cached = cachedContents[source] { data = Data(cached.utf8) }
+                else if let loader { data = try await loader(url) }
                 else { data = try await download(url) }
                 guard data.count <= maximumSourceBytes else { throw Failure(message: "RULE-SET exceeds 4 MiB.") }
                 total += data.count

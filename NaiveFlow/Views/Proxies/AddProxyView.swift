@@ -50,8 +50,6 @@ struct AddProxyView: View {
     @State private var isLoading = false
     @State private var showingError = false
     @State private var errorMessage = ""
-    @State private var showingRemnawaveHWIDAlert = false
-    @State private var pendingSubscriptionURL = ""
 
     init(showingManualAddSheet: Binding<Bool>, deepLinkURL: String? = nil) {
         _showingManualAddSheet = showingManualAddSheet
@@ -100,14 +98,7 @@ struct AddProxyView: View {
         } message: {
             Text(errorMessage)
         }
-        .alert("Remnawave HWID", isPresented: $showingRemnawaveHWIDAlert) {
-            Button("Enable") {
-                fetchSubscription(url: pendingSubscriptionURL)
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Enable \("Remnawave HWID") to continue.")
-        }
+
     }
 
     private var isContinueDisabled: Bool {
@@ -283,12 +274,6 @@ struct AddProxyView: View {
                 showingError = true
             }
         } else {
-            let requiresRemnawaveHWID = false
-            if requiresRemnawaveHWID && !AWCore.getRemnawaveHWIDEnabled() {
-                pendingSubscriptionURL = trimmedURL
-                showingRemnawaveHWIDAlert = true
-                return
-            }
             fetchSubscription(url: trimmedURL)
         }
     }

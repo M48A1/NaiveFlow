@@ -132,7 +132,6 @@ nonisolated final class AWCore {
         static let quicPolicy = "quicPolicy"
         static let reflectionEnabled = "reflectionEnabled"
         static let remnawaveHWID = "remnawaveHWID"
-        static let remnawaveHWIDEnabled = "remnawaveHWIDEnabled"
         static let selectedChainId = "selectedChainId"
         static let selectedConfigurationId = "selectedConfigurationId"
         static let subscriptionDNSDoHURL = "subscriptionDNSDoHURL"
@@ -619,19 +618,12 @@ nonisolated final class AWCore {
         }
     }
     
-    static func getRemnawaveHWIDEnabled() -> Bool {
-        userDefaults.bool(forKey: UserDefaultsKey.remnawaveHWIDEnabled)
-    }
-
-    static func setRemnawaveHWIDEnabled(_ value: Bool) {
-        userDefaults.set(value, forKey: UserDefaultsKey.remnawaveHWIDEnabled)
-        if value {
-            userDefaults.set(UUID().uuidString, forKey: UserDefaultsKey.remnawaveHWID)
-        }
-    }
-    
     static func getRemnawaveHWID() -> String {
-        userDefaults.string(forKey: UserDefaultsKey.remnawaveHWID)!
+        let value = userDefaults.string(forKey: UserDefaultsKey.remnawaveHWID) ?? UUID().uuidString
+        // Persist the registered fallback on first use so per-subscription opt-in
+        // keeps the same device identity across application launches.
+        userDefaults.set(value, forKey: UserDefaultsKey.remnawaveHWID)
+        return value
     }
 
     static func getMITMEnabled() -> Bool {

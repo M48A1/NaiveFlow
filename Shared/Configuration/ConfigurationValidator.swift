@@ -368,8 +368,8 @@ nonisolated extension ConfigurationValidator {
             }
 
             let supportedParameters: Set<String> = kind == .select
-                ? ["selected", "icon-url"]
-                : ["selected", "interval", "tolerance", "url", "icon-url"]
+                ? ["selected", "icon-url", "filter"]
+                : ["selected", "interval", "tolerance", "url", "icon-url", "filter"]
             for (key, _) in group.parameters.pairs where !supportedParameters.contains(key) {
                 diagnostics.append(.init(severity: .error, code: .notApplied, line: group.line,
                     section: "Proxy Group", message: "Unsupported native group option '\(key)'."))

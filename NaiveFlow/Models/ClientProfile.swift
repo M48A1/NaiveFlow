@@ -24,9 +24,41 @@ nonisolated struct ClientProfile: Codable, Identifiable, Equatable {
     var sourceURL: String?
     var modules: [ClientModule] = []
     var groupStyles: [String: ClientGroupStyle] = [:]
+    var nodeSubscriptions: [ClientNodeSubscription]?
 
     // Display the legacy built-in label in English without renaming stored data.
     var displayName: String { name == "默认配置" ? "Default Profile" : name }
+}
+
+nonisolated struct ClientSubscriptionMember: Codable, Equatable {
+    var sourceName: String
+    var name: String
+    var edited = false
+}
+
+nonisolated struct ClientNodeSubscription: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var name: String
+    var url: String
+    var members: [ClientSubscriptionMember] = []
+    var updatedAt = Date()
+    var remnawaveHWIDEnabled = false
+}
+
+nonisolated extension ClientNodeSubscription {
+    private enum CodingKeys: String, CodingKey {
+        case id, name, url, members, updatedAt, remnawaveHWIDEnabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        url = try container.decode(String.self, forKey: .url)
+        members = try container.decodeIfPresent([ClientSubscriptionMember].self, forKey: .members) ?? []
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
+        remnawaveHWIDEnabled = try container.decodeIfPresent(Bool.self, forKey: .remnawaveHWIDEnabled) ?? false
+    }
 }
 
 nonisolated struct ClientProfileLibrary: Codable {

@@ -199,3 +199,52 @@ struct BuiltInGroupMembershipTests {
         #expect(result.compiled.policyGroups.contains { $0.name == "Auto" })
     }
 }
+
+extension BuiltInGroupMembershipTests {
+    @Test func regexFiltersOnlyReferencedInventoriesAndLeavesSourcesUntouched() throws {
+        let names = ["🇭🇰 A", "香港 B", "HK C", "Hong Kong D", "HongKong E", "Japan F"]
+        let nodes = names.enumerated().map { "\"\($0.element)\" = socks5, 192.0.2.\($0.offset + 1), 1080" }.joined(separator: "\n")
+        let memberList = names.map(ClientDocumentEditing.token).joined(separator: ", ")
+        let source = """
+        [Proxy]
+        \(nodes)
+        [Proxy Group]
+        Base = select, \(memberList), selected="Japan F"
+        HK = select, Base, filter="(🇭🇰|港|HK|Hong Kong|HongKong)"
+        Mixed = select, Base, "Japan F", filter="(🇭🇰|港|HK|Hong Kong|HongKong)"
+        Auto = url-test, Base, filter="(🇭🇰|港|HK|Hong Kong|HongKong)"
+        All = select, PROXY
+        [Rule]
+        FINAL, HK
+        """
+        let result = compile(source)
+        #expect(result.isActivatable)
+        let ids = Dictionary(uniqueKeysWithValues: result.compiled.proxies.map { ($0.id, $0.name) })
+        func members(_ name: String) -> [String] {
+            result.compiled.proxyGroups.first { $0.name == name }?.memberIds.compactMap { ids[$0] } ?? []
+        }
+        #expect(members("Base") == names)
+        #expect(members("HK") == Array(names.prefix(5)))
+        #expect(members("Mixed") == names)
+        #expect(members("All") == names)
+        #expect(result.compiled.policyGroups.first { $0.name == "Auto" }?.memberIDs.compactMap { ids[$0] } == Array(names.prefix(5)))
+        #expect(result.parsed.proxyGroup(named: "HK")?.members == ["Base"])
+        #expect(result.parsed.proxyGroup(named: "Base")?.parameters["selected"] == "Japan F")
+        let extended = source.replacingOccurrences(of: "[Proxy Group]", with: "\"HK New\" = socks5, 192.0.2.99, 1080\n[Proxy Group]")
+        let added = compile(extended)
+        #expect(added.isActivatable)
+        #expect(added.compiled.proxyGroups.first { $0.name == "All" }?.memberIds.count == 7)
+    }
+
+    @Test func regexValidationRejectsInvalidEmptyAndCyclicSources() {
+        for groups in [
+            "HK = select, PROXY, filter=\"[\"",
+            "HK = select, PROXY, filter=\"NoMatch\"",
+            "HK = select, Base, filter=\"HK\"\nBase = select, HK"
+        ] {
+            let result = compile("[Proxy]\nHKNode = socks5, 192.0.2.1, 1080\n[Proxy Group]\n" + groups + "\n[Rule]\nFINAL,DIRECT")
+            #expect(!result.isActivatable)
+            #expect(result.diagnostics.contains { $0.severity == .error })
+        }
+    }
+}

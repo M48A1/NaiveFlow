@@ -39,16 +39,8 @@ final class ClientModel {
     var mode: ProxyMode { ProxyMode(rawValue: parsed.general["proxy-mode"] ?? "rule") ?? .rule }
     var selectedNodeName: String { parsed.general["default-node"] ?? self.document.selection?.effectiveConfiguration?.name ?? nodes.first?.name ?? "No Node Selected" }
     var modules: [ClientModule] {
-        (profile?.modules ?? []).map { source in
-            var module = source
-            let sets = source.setKeys.compactMap { key -> MITMRuleSet? in
-                guard let encoded = parsed.mitmSets[key], encoded.hasPrefix("base64:"),
-                      let data = Data(base64Encoded: String(encoded.dropFirst(7))) else { return nil }
-                return try? JSONDecoder().decode(MITMRuleSet.self, from: data)
-            }
-            module.enabled = !sets.isEmpty && sets.allSatisfy(\.enabled)
-            return module
-        }
+        guard let profile else { return [] }
+        return ClientResourceManager.modules(in: profile, parsed: parsed)
     }
     var activeName: String { profile?.displayName ?? "Profiles" }
 
@@ -79,27 +71,56 @@ final class ClientModel {
     }
 
     @discardableResult
-    func saveProfile(_ candidate: ClientProfile, apply: Bool) async -> Bool {
+    func saveProfile(_ candidate: ClientProfile, apply: Bool, refreshingRuleSets: Set<String>? = nil) async -> Bool {
         guard !isBusy else { return false }
         isBusy = true
         defer { isBusy = false }
         do {
-            var saved = candidate
-            saved.updatedAt = .now
-            if apply {
-                _ = try await self.document.apply(saved.text)
-                liveGroups = [:]
-                library.selectedID = saved.id
-                lastActiveText = saved.text
-                hasApplied = true
-            }
-            if let index = library.profiles.firstIndex(where: { $0.id == saved.id }) { library.profiles[index] = saved }
-            else { library.profiles.append(saved) }
-            try persist()
-            rebuild()
-            message = apply ? "Applied \(saved.name)" : "Profile saved"
+            try await storeProfile(candidate, apply: apply, refreshingRuleSets: refreshingRuleSets)
             return true
         } catch { report(error); return false }
+    }
+
+    private func storeProfile(_ candidate: ClientProfile, apply: Bool, refreshingRuleSets: Set<String>?) async throws {
+        var saved = candidate
+        saved.updatedAt = .now
+        if apply {
+            _ = try await document.apply(saved.text, refreshingRuleSets: refreshingRuleSets)
+            liveGroups = [:]
+            library.selectedID = saved.id
+            lastActiveText = saved.text
+            hasApplied = true
+        }
+        if let index = library.profiles.firstIndex(where: { $0.id == saved.id }) { library.profiles[index] = saved }
+        else { library.profiles.append(saved) }
+        try persist()
+        rebuild()
+        message = apply ? "Applied \(saved.name)" : "Profile saved"
+    }
+
+    /// One entry point for external resource edits and one/many/all updates.
+    @discardableResult
+    func manageResource(_ request: ClientResourceRequest, fetch: ClientResourceManager.FetchText? = nil) async -> Bool {
+        do { return try await runResource(request, fetch: fetch) }
+        catch { report(error); return false }
+    }
+
+    private func runResource(_ request: ClientResourceRequest, fetch: ClientResourceManager.FetchText? = nil) async throws -> Bool {
+        guard !isBusy, let original = profile else { return false }
+        let originalText = operatingText
+        isBusy = true
+        defer { isBusy = false }
+        try Task.checkCancellation()
+        let subscriptionFetch: ClientResourceManager.FetchSubscription? = fetch == nil
+            ? { [self] subscription in try await fetchNodeSubscriptionText(subscription) } : nil
+        guard let change = try await ClientResourceManager.prepare(request, profile: original, text: originalText,
+            fetch: fetch ?? { [self] source in try await fetchText(source) }, fetchSubscription: subscriptionFetch) else { return false }
+        guard profile == original, operatingText == originalText else {
+            throw ClientFailure("The current profile has changed. Reopen the resource and try again.")
+        }
+        try Task.checkCancellation()
+        try await storeProfile(change.profile, apply: change.apply, refreshingRuleSets: change.refreshingRuleSets)
+        return true
     }
 
     func activate(_ profile: ClientProfile) async { _ = await saveProfile(profile, apply: true) }
@@ -129,13 +150,25 @@ final class ClientModel {
         return ConfigurationImport.normalize(text)
     }
 
+    private func fetchNodeSubscriptionText(_ subscription: ClientNodeSubscription) async throws -> String {
+        guard let url = URL(string: subscription.url), url.scheme?.lowercased() == "https", url.host != nil else {
+            throw ClientFailure("Enter a valid HTTPS URL.")
+        }
+        let request = SubscriptionFetcher.request(url: url, remnawaveHWIDEnabled: subscription.remnawaveHWIDEnabled)
+        let (data, response) = try await BoundedHTTPFetcher.fetch(request, maxBytes: ConfigurationImport.maximumBytes)
+        guard (200...299).contains(response.statusCode), response.url?.scheme?.lowercased() == "https",
+              let text = String(data: data, encoding: .utf8) else { throw ClientFailure("Download failed or the file is not UTF-8 text.") }
+        return ConfigurationImport.normalize(text)
+    }
+
     @discardableResult
-    func commit(_ text: String, moduleUpdate: [ClientModule]? = nil, styles: [String: ClientGroupStyle]? = nil) async -> Bool {
+    func commit(_ text: String, moduleUpdate: [ClientModule]? = nil, styles: [String: ClientGroupStyle]? = nil, subscriptions: [ClientNodeSubscription]? = nil, refreshingRuleSets: Set<String>? = nil) async -> Bool {
         guard var candidate = profile else { return false }
         candidate.text = text
         if let moduleUpdate { candidate.modules = moduleUpdate }
         if let styles { candidate.groupStyles = styles }
-        return await saveProfile(candidate, apply: true)
+        if let subscriptions { candidate.nodeSubscriptions = subscriptions }
+        return await saveProfile(candidate, apply: true, refreshingRuleSets: refreshingRuleSets)
     }
 
     func setSetting(_ key: String, value: String, section: ConfigurationDocument.SectionKind = .general) async {
@@ -156,6 +189,7 @@ final class ClientModel {
     }
 
     func selectedMember(in group: ParsedProxyGroup) -> String {
+        let group = resolvedGroup(group)
         if group.kind != .select, let live = liveGroups[group.name]?.nextMember {
             return group.kind == .loadBalance ? "Round Robin · " + live : live
         }
@@ -166,6 +200,11 @@ final class ClientModel {
         case .loadBalance: return "Auto · Load Balance"
         default: return group.members.first ?? "No Members"
         }
+    }
+
+    func resolvedGroup(_ group: ParsedProxyGroup) -> ParsedProxyGroup {
+        var diagnostics: [ConfigurationDiagnostic] = []
+        return ProxyGroupMembership.resolve(parsed, diagnostics: &diagnostics).proxyGroup(named: group.name) ?? group
     }
 
     func pollPolicyStatus() async {
@@ -216,16 +255,8 @@ final class ClientModel {
     }
 
     @discardableResult
-    func importNodes(_ source: String) async throws -> Bool {
-        let result = TextConfigurationPipeline.process(text: source)
-        let imported = !result.compiled.proxies.isEmpty ? result.compiled.proxies
-            : try SubscriptionFetcher.parseLocal(data: Data(source.utf8)).configurations
-        guard !imported.isEmpty else { throw ClientFailure("No usable nodes found.") }
-        var text = operatingText
-        for node in imported {
-            text = ClientDocumentEditing.set(text, section: .proxy, key: node.name, value: node.toURLString())
-        }
-        return await commit(text)
+    func importNodes(_ source: String, subscriptionURL: String? = nil, subscription: ClientNodeSubscription? = nil) async throws -> Bool {
+        try await runResource(.importNodes(source, subscriptionURL: subscriptionURL, subscription: subscription))
     }
 
     func saveNode(_ node: ProxyConfiguration, replacing old: String? = nil) async {
@@ -237,7 +268,34 @@ final class ClientModel {
             text = ClientDocumentEditing.renameKey(text, section: .proxy, from: old, to: node.name)
         }
         text = ClientDocumentEditing.set(text, section: .proxy, key: node.name, value: node.toURLString())
-        _ = await commit(text)
+        var subscriptions = profile?.nodeSubscriptions ?? []
+        for index in subscriptions.indices {
+            for member in subscriptions[index].members.indices where subscriptions[index].members[member].name == (old ?? node.name) {
+                subscriptions[index].members[member].name = node.name
+                subscriptions[index].members[member].edited = true
+            }
+        }
+        _ = await commit(text, subscriptions: subscriptions)
+    }
+
+    func refreshNodeSubscription(_ subscription: ClientNodeSubscription) async -> Bool {
+        await manageResource(.update(.subscription(subscription)))
+    }
+
+    func saveNodeSubscription(_ subscription: ClientNodeSubscription) async -> Bool {
+        await manageResource(.save(.subscription(subscription)))
+    }
+
+    func refreshNodeSubscriptions(ids: Set<UUID>? = nil, fetch: ClientResourceManager.FetchText? = nil) async -> Bool {
+        await manageResource(.update(.subscriptions(ids: ids)), fetch: fetch)
+    }
+
+    func refreshRuleSets(source: String? = nil) async -> Bool {
+        await manageResource(.update(.ruleSets(sources: source.map { Set([$0]) })))
+    }
+
+    func deleteRuleSet(_ rule: ParsedRule) async -> Bool {
+        await manageResource(.delete(.ruleSet(rule)))
     }
 
     func deleteNode(_ name: String) async {
@@ -266,6 +324,10 @@ final class ClientModel {
 
     func saveGroup(original: String?, name: String, kind: String, members: [String], parameters: [(String,String)], style: ClientGroupStyle) async -> Bool {
         guard profile != nil else { return false }
+        guard ConfigurationValidator.builtInPolicyName(name) != "PROXY",
+              original.map({ ConfigurationValidator.builtInPolicyName($0) != "PROXY" }) ?? true else {
+            error = "PROXY is the built-in group containing all nodes and cannot be modified."; return false
+        }
         var text = operatingText
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty, !members.isEmpty else { error = "Enter a name and select at least one member."; return false }
         if original != name, groups.contains(where: { $0.name == name }) { error = "A group with this name already exists."; return false }
@@ -283,6 +345,9 @@ final class ClientModel {
 
     func deleteGroup(_ name: String) async {
         guard profile != nil else { return }
+        guard ConfigurationValidator.builtInPolicyName(name) != "PROXY" else {
+            error = "PROXY is the built-in group containing all nodes and cannot be deleted."; return
+        }
         let text = operatingText
         if groups.contains(where: { $0.members.contains(name) }) || parsed.rules.contains(where: { $0.policy == .named(name) }) {
             error = "This group is still referenced by rules or other groups. Update those references first."; return
@@ -299,61 +364,25 @@ final class ClientModel {
     }
 
     func saveModule(_ candidate: ClientModule) async -> Bool {
-        guard profile != nil else { return false }
-        let profileID = profile?.id
-        do {
-            let made = try await ModuleImporter.makeModule(from: candidate.source, fallbackName: candidate.name,
-                subscriptionURL: candidate.sourceURL.flatMap(URL.init(string:)), format: candidate.format)
-            guard !made.module.mitmRuleSets.isEmpty else { throw ClientFailure("This module contains no usable MITM rules.") }
-            guard profile?.id == profileID else { throw ClientFailure("The current profile has changed. Save the module again in the intended profile.") }
-            var text = operatingText
-            var saved = candidate
-            saved.summary = candidate.summary.isEmpty ? made.module.description ?? "" : candidate.summary
-            for key in candidate.setKeys { text = ClientDocumentEditing.set(text, section: .mitmSet, key: key, value: nil) }
-            saved.setKeys = []
-            for (index, raw) in made.module.mitmRuleSets.enumerated() {
-                var set = raw.asMITMRuleSet()
-                set.id = UUID() // scope identity belongs to this publication, not an old module store
-                set.enabled = candidate.enabled
-                let key = "module_\(candidate.id.uuidString.replacingOccurrences(of: "-", with: ""))_\(index)"
-                let value = "base64:" + (try JSONEncoder().encode(set)).base64EncodedString()
-                text = ClientDocumentEditing.set(text, section: .mitmSet, key: key, value: value)
-                saved.setKeys.append(key)
-            }
-            var modules = self.modules.filter { $0.id != candidate.id }
-            modules.append(saved)
-            return await commit(text, moduleUpdate: modules)
-        } catch { report(error); return false }
+        await manageResource(.save(.module(candidate)))
     }
 
     func toggleModule(_ module: ClientModule, enabled: Bool) async {
-        guard profile != nil else { return }
-        var text = operatingText
-        do {
-            for key in module.setKeys {
-                guard let encoded = parsed.mitmSets[key], encoded.hasPrefix("base64:"), let data = Data(base64Encoded: String(encoded.dropFirst(7))) else { throw ClientFailure("Module rules could not be found. Save the module again.") }
-                var set = try JSONDecoder().decode(MITMRuleSet.self, from: data)
-                set.enabled = enabled
-                text = ClientDocumentEditing.set(text, section: .mitmSet, key: key, value: "base64:" + (try JSONEncoder().encode(set)).base64EncodedString())
-            }
-            var modules = self.modules
-            if let index = modules.firstIndex(where: { $0.id == module.id }) { modules[index].enabled = enabled }
-            _ = await commit(text, moduleUpdate: modules)
-        } catch { report(error) }
+        await manageResource(.save(.moduleEnabled(module.id, enabled)))
     }
 
     func deleteModule(_ module: ClientModule) async {
-        guard profile != nil else { return }
-        var text = operatingText
-        for key in module.setKeys { text = ClientDocumentEditing.set(text, section: .mitmSet, key: key, value: nil) }
-        _ = await commit(text, moduleUpdate: modules.filter { $0.id != module.id })
+        await manageResource(.delete(.module(module.id)))
     }
 
     func refreshModule(_ module: ClientModule) async {
-        guard let url = module.sourceURL else { return }
-        do { var updated = module; updated.source = try await fetchText(url); _ = await saveModule(updated) }
-        catch { report(error) }
+        await manageResource(.update(.modules(ids: [module.id])))
     }
+
+    func refreshAllModules(fetch: ClientResourceManager.FetchText? = nil) async -> Bool {
+        await manageResource(.update(.modules()), fetch: fetch)
+    }
+
 }
 
 nonisolated struct ClientFailure: LocalizedError {

@@ -60,8 +60,8 @@ struct ConfigurationDocumentOperations {
     }
 
     /// Compiles and publishes one complete runtime version.
-    func apply(_ text: String) async throws -> ConfigurationInstaller.Outcome {
-        try await publisher.publish(text: text).1
+    func apply(_ text: String, refreshingRuleSets: Set<String>? = nil) async throws -> ConfigurationInstaller.Outcome {
+        try await publisher.publish(text: text, refreshingRuleSets: refreshingRuleSets).1
     }
 
     func rollbackRuntimeVersion() async throws -> ProfileApplyOutcome {

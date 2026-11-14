@@ -65,7 +65,8 @@ nonisolated enum ConfigurationCompiler {
         geoResources: NativeGeoDatabase? = nil
     ) -> CompiledConfiguration {
         var diagnostics = parsingDiagnostics
-        let configuration = NativeRuleSet.expand(sourceConfiguration, contents: ruleSetContents, diagnostics: &diagnostics)
+        let expanded = NativeRuleSet.expand(sourceConfiguration, contents: ruleSetContents, diagnostics: &diagnostics)
+        let configuration = ProxyGroupMembership.resolve(expanded, diagnostics: &diagnostics)
         diagnostics += ConfigurationValidator.validate(configuration, capabilities: capabilities)
 
         let proxies = compileProxies(configuration, diagnostics: &diagnostics)

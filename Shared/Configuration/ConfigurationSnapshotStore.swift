@@ -31,6 +31,7 @@ nonisolated struct ConfigurationSnapshot: Codable, Equatable, Sendable, Identifi
     let text: String
     let summary: Summary
     let diagnostics: [ConfigurationDiagnostic]
+    var ruleSetContents: [String: String]?
 
     var errorCount: Int { diagnostics.count { $0.severity == .error } }
     var warningCount: Int { diagnostics.count { $0.severity == .warning } }
@@ -39,7 +40,8 @@ nonisolated struct ConfigurationSnapshot: Codable, Equatable, Sendable, Identifi
         id: UUID = UUID(),
         createdAt: Date = .now,
         text: String,
-        compiled: CompiledConfiguration
+        compiled: CompiledConfiguration,
+        ruleSetContents: [String: String]? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -52,6 +54,7 @@ nonisolated struct ConfigurationSnapshot: Codable, Equatable, Sendable, Identifi
             hostCount: compiled.hosts.count
         )
         self.diagnostics = compiled.diagnostics
+        self.ruleSetContents = ruleSetContents
     }
 }
 

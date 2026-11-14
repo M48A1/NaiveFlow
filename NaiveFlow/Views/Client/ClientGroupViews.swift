@@ -75,7 +75,7 @@ struct ClientGroupDetailView: View {
     @State private var editing: ClientGroupEditor?
     private var group: ParsedProxyGroup? { model.groups.first { $0.name == name } }
     private var title: String { name ?? "PROXY" }
-    private var candidates: [String] { group?.members ?? model.nodes.map(\.name) }
+    private var candidates: [String] { group.map { model.resolvedGroup($0).members } ?? model.nodes.map(\.name) }
     private var selected: String { group.map { model.selectedMember(in: $0) } ?? model.selectedNodeName }
 
     var body: some View {
@@ -163,22 +163,29 @@ struct ClientGroupEditor: Identifiable {
     var name = ""
     var kind = "select"
     var members: [String] = []
-    var selected = ""
+    var nameFilter = ""
     var iconURL = ""
-    var interval = "300"
-    var tolerance = "50"
-    var probeURL = "https://www.gstatic.com/generate_204"
     init() {}
     init(group: ParsedProxyGroup, duplicate: Bool = false) {
         originalName = duplicate ? nil : group.name
         name = group.name + (duplicate ? " Copy" : "")
         kind = group.kindToken
         members = group.members
-        selected = group.parameters["selected"] ?? ""
+        nameFilter = group.parameters["filter"] ?? ""
         iconURL = group.parameters["icon-url"] ?? ""
-        interval = group.parameters["interval"] ?? "300"
-        tolerance = group.parameters["tolerance"] ?? "50"
-        probeURL = group.parameters["url"] ?? "https://www.gstatic.com/generate_204"
+    }
+
+    var parameters: [(String, String)] {
+        var result: [(String, String)] = []
+        if !iconURL.isEmpty { result.append(("icon-url", iconURL)) }
+        if !nameFilter.isEmpty { result.append(("filter", nameFilter)) }
+        return result
+    }
+
+    var filterError: String? {
+        guard !nameFilter.isEmpty else { return nil }
+        do { _ = try NSRegularExpression(pattern: nameFilter); return nil }
+        catch { return "Invalid node name regular expression." }
     }
 }
 
@@ -194,7 +201,7 @@ struct ClientGroupEditorView: View {
             Form {
                 Section {
                     ClientPolicyCard(name: draft.name.isEmpty ? "New Group" : draft.name,
-                        selected: draft.selected.isEmpty ? draft.members.first ?? "Select Members" : draft.selected, style: style, iconURL: draft.iconURL)
+                        selected: effectiveMembers.first ?? "Select Members", style: style, iconURL: draft.iconURL)
                         .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
                 }
                 Section("Basic Information") {
@@ -229,6 +236,14 @@ struct ClientGroupEditorView: View {
                         }
                     }
                 }
+                Section {
+                    TextField("Regular Expression (Optional)", text: $draft.nameFilter)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .accessibilityLabel("Node Name Regex")
+                    if let error = draft.filterError { Text(error).font(.footnote).foregroundStyle(.red) }
+                } header: { Text("Node Name Filter") } footer: {
+                    Text("Match node names from PROXY or other referenced groups, only for this group. Directly added nodes stay included. Leave empty to include all referenced nodes.\nExample: (🇭🇰|港|HK|Hong Kong|HongKong)")
+                }
                 Section("Member Order") {
                     ForEach(draft.members, id: \.self) { member in
                         HStack {
@@ -244,26 +259,15 @@ struct ClientGroupEditorView: View {
                     }
                     if availableMembers.isEmpty { Text("All available members have been added.").foregroundStyle(.secondary) }
                 }
-                Section("Parameters") {
-                    if draft.kind == "select" {
-                        Picker("Default Member", selection: $draft.selected) {
-                            Text("Use First Member").tag("")
-                            ForEach(draft.members, id: \.self) { Text($0).tag($0) }
-                        }
-                    } else {
-                        TextField("Probe URL", text: $draft.probeURL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        TextField("Probe Interval (seconds)", text: $draft.interval).keyboardType(.numberPad)
-                        if draft.kind == "url-test" { TextField("Switching Tolerance (ms)", text: $draft.tolerance).keyboardType(.numberPad) }
-                    }
-                }
             }
+            .clientKeyboardDone()
             .navigationTitle(draft.originalName == nil ? "New Group" : "Edit Group").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .primaryAction) { EditButton() }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { if await model.saveGroup(original: draft.originalName, name: draft.name, kind: draft.kind, members: draft.members, parameters: parameters, style: style) { dismiss() } } }
-                        .disabled(model.isBusy || draft.name.isEmpty || draft.members.isEmpty)
+                    Button("Save") { Task { if await model.saveGroup(original: draft.originalName, name: draft.name, kind: draft.kind, members: draft.members, parameters: draft.parameters, style: style) { dismiss() } } }
+                        .disabled(model.isBusy || draft.name.isEmpty || draft.members.isEmpty || draft.filterError != nil || effectiveMembers.isEmpty)
                 }
             }
             .sheet(isPresented: $showIconPacks) { ClientIconPacksView(selectedURL: $draft.iconURL) }
@@ -275,16 +279,16 @@ struct ClientGroupEditorView: View {
         (model.nodes.map(\.name) + model.groups.map(\.name).filter { $0 != draft.originalName && $0 != draft.name } + ["DIRECT", "REJECT", "PROXY"])
             .filter { !draft.members.contains($0) }
     }
-    private var parameters: [(String,String)] {
-        var result: [(String,String)] = []
-        if !draft.iconURL.isEmpty { result.append(("icon-url", draft.iconURL)) }
-        if draft.kind == "select" {
-            if draft.members.contains(draft.selected) { result.append(("selected", draft.selected)) }
-        } else {
-            result += [("url", draft.probeURL), ("interval", draft.interval)]
-            if draft.kind == "url-test" { result.append(("tolerance", draft.tolerance)) }
-        }
-        return result
+    private var effectiveMembers: [String] {
+        var configuration = model.parsed
+        var options = OrderedParameters()
+        options.set("filter", draft.nameFilter)
+        let name = draft.name.isEmpty ? "New Group" : draft.name
+        configuration.proxyGroups.removeAll { $0.name == draft.originalName || $0.name == name }
+        configuration.proxyGroups.append(ParsedProxyGroup(name: name, line: 0, kindToken: draft.kind,
+            kind: .init(token: draft.kind), members: draft.members, parameters: options, raw: ""))
+        var diagnostics: [ConfigurationDiagnostic] = []
+        return ProxyGroupMembership.resolve(configuration, diagnostics: &diagnostics).proxyGroup(named: name)?.members ?? []
     }
 }
 

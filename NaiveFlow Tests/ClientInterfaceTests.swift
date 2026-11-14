@@ -451,6 +451,108 @@ struct ClientInterfaceTests {
         #expect(model.parsed.mitmSets.pairs.isEmpty)
     }
 
+    @Test func bulkModuleRefreshPreservesLocalModulesAndEnabledStateAndRejectsPartialUpdates() async throws {
+        let (root, model) = workspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        await model.activate(model.createProfile(name: "Test", text: text))
+        func source(_ host: String, revision: String) -> String {
+            "[URL Rewrite]\n^https://\(host)/ https://example.org/\(revision) 302\n[MITM]\nhostname = \(host)"
+        }
+        for (host, remote, enabled) in [("one.example", true, true), ("two.example", true, false), ("local.example", false, true)] {
+            let module = ClientModule(name: host, summary: host, source: source(host, revision: "old"),
+                sourceURL: remote ? "https://\(host)/module" : nil, format: .surge, enabled: enabled)
+            #expect(await model.saveModule(module))
+        }
+        let local = try #require(model.modules.first { $0.sourceURL == nil })
+        let before = model.operatingText
+        #expect(!(await model.refreshAllModules { url in
+            if url.contains("two.example") { throw ClientFailure("Download failed") }
+            return source("one.example", revision: "new")
+        }))
+        #expect(model.operatingText == before)
+        #expect(model.modules.filter { $0.sourceURL != nil }.allSatisfy { $0.source.contains("/old") })
+        #expect(model.error?.contains("two.example") == true)
+        model.error = nil
+        #expect(await model.refreshAllModules { url in
+            source(url.contains("one.example") ? "one.example" : "two.example", revision: "new")
+        })
+        #expect(model.modules.first { $0.sourceURL == nil } == local)
+        #expect(model.modules.filter { $0.sourceURL != nil }.allSatisfy { $0.source.contains("/new") })
+        #expect(model.modules.first { $0.name == "one.example" }?.enabled == true)
+        #expect(model.modules.first { $0.name == "two.example" }?.enabled == false)
+        #expect(model.parsed.mitmSets.pairs.count == 3)
+        #expect(!model.isBusy)
+    }
+
+    @Test func subscriptionNodesRemainInAllNodesAndKeepManualEditsOnRefresh() async throws {
+        let (root, model) = workspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        await model.activate(model.createProfile(name: "Subscriptions", text: text))
+        let url = "https://subscription.example/nodes"
+        let source = "[Proxy]\n\"HK Sub\" = socks5, 192.0.2.10, 1080\n\"JP Sub\" = socks5, 192.0.2.20, 1080"
+        #expect(try await model.importNodes(source, subscriptionURL: url))
+        #expect(model.nodes.count == 4)
+        let hk = try #require(model.nodes.first { $0.name == "HK Sub" })
+        let edited = ProxyConfiguration(name: "Custom HK", serverAddress: "198.51.100.99", serverPort: 1081, outbound: hk.outbound)
+        await model.saveNode(edited, replacing: hk.name)
+        #expect(try await model.importNodes(source.replacingOccurrences(of: "1080", with: "2080"), subscriptionURL: url))
+        #expect(model.nodes.first { $0.name == "Custom HK" }?.serverAddress == "198.51.100.99")
+        #expect(model.nodes.first { $0.name == "Custom HK" }?.serverPort == 1081)
+        #expect(model.nodes.first { $0.name == "JP Sub" }?.serverPort == 2080)
+        #expect(model.nodes.count == 4)
+        let subscription = try #require(model.profile?.nodeSubscriptions?.first)
+        #expect(subscription.members.map(\.name) == ["Custom HK", "JP Sub"])
+        #expect(subscription.members.first?.edited == true)
+        #expect(await model.saveGroup(original: nil, name: "HK Only", kind: "select", members: ["PROXY"],
+            parameters: [("filter", "(HK|港)")], style: ClientGroupStyle()))
+        let group = try #require(model.groups.first { $0.name == "HK Only" })
+        #expect(model.resolvedGroup(group).members == ["Custom HK"])
+        #expect(await model.saveGroup(original: nil, name: "PROXY", kind: "select", members: ["First"], parameters: [], style: ClientGroupStyle()) == false)
+        await model.deleteGroup("PROXY")
+        #expect(model.nodes.count == 4)
+        #expect(model.profile?.nodeSubscriptions?.count == 1)
+        let encoded = try JSONEncoder().encode(model.profile)
+        #expect(try JSONDecoder().decode(ClientProfile?.self, from: encoded)?.nodeSubscriptions == [subscription])
+    }
+
+    @Test func subscriptionUpdateAllIsAtomicAndCanBeScopedToOneGroup() async throws {
+        let (root, model) = workspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        await model.activate(model.createProfile(name: "Subscriptions", text: text))
+        func source(_ name: String, port: Int) -> String { "[Proxy]\n\(name) = socks5, 192.0.2.1, \(port)" }
+        for name in ["A", "B"] {
+            #expect(try await model.importNodes(source(name, port: 1080), subscriptionURL: "https://\(name.lowercased()).example/list"))
+        }
+        let before = model.operatingText
+        #expect(!(await model.refreshNodeSubscriptions { url in
+            if url.contains("b.example") { throw ClientFailure("Download failed") }
+            return source("A", port: 2080)
+        }))
+        #expect(model.operatingText == before)
+        model.error = nil
+        #expect(await model.refreshNodeSubscriptions { url in source(url.contains("a.example") ? "A" : "B", port: 2080) })
+        #expect(model.nodes.first { $0.name == "A" }?.serverPort == 2080)
+        #expect(model.nodes.first { $0.name == "B" }?.serverPort == 2080)
+        let group = try #require(model.profile?.nodeSubscriptions?.first { $0.url.contains("a.example") })
+        #expect(await model.refreshNodeSubscriptions(ids: [group.id]) { url in
+            guard url == group.url else { throw ClientFailure("Only the selected subscription may refresh") }
+            return source("A", port: 3080)
+        })
+        #expect(model.nodes.first { $0.name == "A" }?.serverPort == 3080)
+        #expect(model.nodes.first { $0.name == "B" }?.serverPort == 2080)
+        #expect(model.nodes.count == 4)
+        #expect(!model.isBusy)
+    }
+
+    @Test func legacyProfileWithoutSubscriptionsStillDecodes() throws {
+        let original = ClientProfile(name: "Legacy", text: text)
+        var object = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
+        object.removeValue(forKey: "nodeSubscriptions")
+        let decoded = try JSONDecoder().decode(ClientProfile.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(decoded.nodeSubscriptions == nil)
+        #expect(decoded.name == "Legacy")
+    }
+
     @Test func pastedBase64SubscriptionsImportIntoTheDocument() async throws {
         let (root, model) = workspace()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -473,4 +575,231 @@ struct ClientInterfaceTests {
         #expect(renamed.contains("# Keep this"))
     }
 
+}
+
+extension ClientInterfaceTests {
+    @Test func unifiedResourceUpdatesHoldOneLockAndPublishOnlyOnce() async throws {
+        let (root, model) = workspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        await model.activate(model.createProfile(name: "Resources", text: text))
+        for name in ["first", "second"] {
+            let module = ClientModule(name: name, summary: name,
+                source: "[URL Rewrite]\n^https://\(name).example/ https://example.org/old 302\n[MITM]\nhostname=\(name).example",
+                sourceURL: "https://\(name).example/module", format: .surge)
+            #expect(await model.manageResource(.save(.module(module))))
+        }
+        let before = model.document.activation.store.snapshots().count
+        let ids = model.modules.map(\.id)
+        var blocked = false
+        let updated = await model.manageResource(.update(.modules()), fetch: { url in
+            guard model.isBusy else { throw ClientFailure("Resource lock must cover downloading") }
+            let unrelated = ClientNodeSubscription(name: "Other", url: "https://other.example/list")
+            blocked = !(await model.manageResource(.save(.subscription(unrelated))))
+            guard blocked else { throw ClientFailure("Overlapping resource writes must be blocked") }
+            let host = url.contains("first.example") ? "first.example" : "second.example"
+            return "[URL Rewrite]\n^https://\(host)/ https://example.org/new 302\n[MITM]\nhostname=\(host)"
+        })
+        #expect(updated)
+        #expect(blocked)
+        #expect(!model.isBusy)
+        #expect(model.document.activation.store.snapshots().count == before + 1)
+        #expect(model.modules.map(\.id) == ids)
+        #expect(model.modules.allSatisfy { $0.source.contains("/new") })
+        #expect(model.profile?.nodeSubscriptions == nil)
+    }
+
+    @Test func unifiedMetadataEditsPreserveSavedDraftAndDoNotPublish() async throws {
+        let (root, model) = workspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        await model.activate(model.createProfile(name: "Resources", text: text))
+        let liveText = model.operatingText
+        var draft = try #require(model.profile)
+        draft.text += "\n# saved draft only\n"
+        #expect(await model.saveProfile(draft, apply: false))
+        let before = model.document.activation.store.snapshots().count
+        let first = ClientNodeSubscription(name: "First", url: "https://first.example/list")
+        let second = ClientNodeSubscription(name: "Second", url: "https://second.example/list")
+        #expect(await model.manageResource(.save(.subscription(first))))
+        #expect(await model.manageResource(.save(.subscription(second))))
+        var renamed = first; renamed.name = "Renamed"
+        #expect(await model.manageResource(.save(.subscription(renamed))))
+        #expect(model.profile?.nodeSubscriptions?.map(\.id) == [first.id, second.id])
+        #expect(model.profile?.text == draft.text)
+        #expect(model.operatingText == liveText)
+        #expect(await model.manageResource(.delete(.subscription(first.id))))
+        #expect(model.nodes.count == 2)
+        #expect(model.document.activation.store.snapshots().count == before)
+        #expect(model.profile?.nodeSubscriptions?.map(\.id) == [second.id])
+    }
+
+    @Test func unifiedResourceUpdateRejectsConcurrentExternalProfileChange() async throws {
+        let (root, model) = workspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        await model.activate(model.createProfile(name: "Resources", text: text))
+        let subscription = ClientNodeSubscription(name: "External", url: "https://external.example/list")
+        #expect(await model.manageResource(.save(.subscription(subscription))))
+        let changed = model.operatingText + "\n# external version\n"
+        let updated = await model.manageResource(.update(.subscriptions()), fetch: { _ in
+            _ = try await model.document.apply(changed)
+            model.refresh()
+            return "socks5://192.0.2.99:1080#ShouldNotApply"
+        })
+        #expect(!updated)
+        #expect(!model.isBusy)
+        #expect(model.error?.contains("changed") == true)
+        #expect(model.document.activation.active?.text == changed)
+        #expect(!model.nodes.contains { $0.name == "ShouldNotApply" })
+        #expect(model.profile?.nodeSubscriptions?.first?.members.isEmpty == true)
+    }
+
+    @Test func cancelledUnifiedResourceOperationNeverFetchesOrPublishes() async throws {
+        let (root, model) = workspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        await model.activate(model.createProfile(name: "Resources", text: text))
+        let subscription = ClientNodeSubscription(name: "External", url: "https://external.example/list")
+        #expect(await model.manageResource(.save(.subscription(subscription))))
+        let before = model.document.activation.store.manifest().activeSnapshotId
+        var calls = 0
+        let task = Task { await model.manageResource(.update(.subscriptions()), fetch: { _ in
+            calls += 1
+            return "socks5://192.0.2.99:1080#Cancelled"
+        }) }
+        task.cancel()
+        #expect(!(await task.value))
+        #expect(calls == 0)
+        #expect(!model.isBusy)
+        #expect(model.document.activation.store.manifest().activeSnapshotId == before)
+        #expect(!model.nodes.contains { $0.name == "Cancelled" })
+    }
+
+    @Test func unifiedGeoResourceEditsValidateBeforeReplacingTheProfile() async throws {
+        let (root, model) = workspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        await model.activate(model.createProfile(name: "Resources", text: text))
+        let file = root.appendingPathComponent("geo.txt")
+        try Data("example.com\nexample.org\n".utf8).write(to: file)
+        var draft = ClientGeoSourceDraft(site: true)
+        draft.key = "demo"; draft.source = file.absoluteString; draft.format = "domain"
+        #expect(await model.manageResource(.save(.geo(draft, site: true))))
+        let applied = model.operatingText
+        let original = try #require(model.parsed.geoSite["demo"])
+        let reference = try #require(try NativeGeoResources.references(model.parsed).first { $0.key == "demo" })
+        var edit = ClientGeoSourceDraft(site: true, reference: reference, originalValue: original)
+        edit.checksum = "invalid"
+        #expect(!(await model.manageResource(.save(.geo(edit, site: true)))))
+        #expect(model.operatingText == applied)
+        model.error = nil
+        edit.checksum = ""
+        #expect(await model.manageResource(.delete(.geo(edit, site: true))))
+        #expect(model.parsed.geoSite["demo"] == nil)
+        #expect(!model.isBusy)
+    }
+}
+
+extension ClientInterfaceTests {
+    @Test func subscriptionHWIDDefaultsOffAndPersistsPerSubscription() throws {
+        var enabled = ClientNodeSubscription(name: "Enabled", url: "https://enabled.example/list")
+        #expect(!enabled.remnawaveHWIDEnabled)
+        enabled.remnawaveHWIDEnabled = true
+        let decoded = try JSONDecoder().decode(ClientNodeSubscription.self, from: JSONEncoder().encode(enabled))
+        #expect(decoded.remnawaveHWIDEnabled)
+        var legacy = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(enabled)) as? [String: Any])
+        legacy.removeValue(forKey: "remnawaveHWIDEnabled")
+        let old = try JSONDecoder().decode(ClientNodeSubscription.self, from: JSONSerialization.data(withJSONObject: legacy))
+        #expect(!old.remnawaveHWIDEnabled)
+        #expect(old.id == enabled.id)
+    }
+
+    @Test func unifiedSubscriptionUpdatesKeepEachHWIDOptionForImportAndUpdateAll() async throws {
+        let enabled = ClientNodeSubscription(name: "Enabled", url: "https://enabled.example/list", remnawaveHWIDEnabled: true)
+        let disabled = ClientNodeSubscription(name: "Disabled", url: "https://disabled.example/list")
+        var profile = ClientProfile(name: "Requests", text: text)
+        profile.nodeSubscriptions = [enabled, disabled]
+        var seen: [UUID: Bool] = [:]
+        let fetch: ClientResourceManager.FetchSubscription = { subscription in
+            seen[subscription.id] = subscription.remnawaveHWIDEnabled
+            return "socks5://192.0.2.10:1080#\(subscription.name)"
+        }
+        let generic: ClientResourceManager.FetchText = { _ in throw ClientFailure("Node subscriptions must use their own request options") }
+        let all = try #require(try await ClientResourceManager.prepare(.update(.subscriptions()), profile: profile,
+            text: text, fetch: generic, fetchSubscription: fetch))
+        #expect(seen == [enabled.id: true, disabled.id: false])
+        #expect(all.profile.nodeSubscriptions?.map(\.remnawaveHWIDEnabled) == [true, false])
+        seen = [:]
+        _ = try await ClientResourceManager.prepare(.update(.subscriptionURL(enabled.url)), profile: all.profile,
+            text: all.profile.text, fetch: generic, fetchSubscription: fetch)
+        #expect(seen == [enabled.id: true])
+        seen = [:]
+        let fresh = ClientNodeSubscription(name: "New", url: "https://new.example/list", remnawaveHWIDEnabled: true)
+        let imported = try #require(try await ClientResourceManager.prepare(.update(.subscription(fresh)), profile: all.profile,
+            text: all.profile.text, fetch: generic, fetchSubscription: fetch))
+        #expect(seen == [fresh.id: true])
+        #expect(imported.profile.nodeSubscriptions?.first { $0.id == fresh.id }?.remnawaveHWIDEnabled == true)
+    }
+}
+
+extension ClientInterfaceTests {
+    @Test func groupEditorNoLongerSavesDefaultMemberButManualNodeSelectionStillWorks() async throws {
+        let (root, model) = workspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = ClientDocumentEditing.set(text, section: .proxyGroup, key: "Video", value: "select, First, Second, selected=Second")
+        await model.activate(model.createProfile(name: "Group Editor", text: source))
+        let original = try #require(model.groups.first { $0.name == "Video" })
+        #expect(model.selectedMember(in: original) == "Second")
+        let draft = ClientGroupEditor(group: original)
+        #expect(await model.saveGroup(original: draft.originalName, name: draft.name, kind: draft.kind,
+            members: draft.members, parameters: draft.parameters, style: ClientGroupStyle()))
+        let saved = try #require(model.groups.first { $0.name == "Video" })
+        #expect(saved.parameters["selected"] == nil)
+        #expect(model.selectedMember(in: saved) == "First")
+        let firstResult = TextConfigurationPipeline.process(text: model.operatingText)
+        let firstID = try #require(firstResult.compiled.proxies.first { $0.name == "First" }?.id)
+        #expect(firstResult.route(host: "www.example.com").action == .proxy(firstID))
+        await model.selectMember("Second", in: saved)
+        let selected = try #require(model.groups.first { $0.name == "Video" })
+        #expect(model.selectedMember(in: selected) == "Second")
+        let secondResult = TextConfigurationPipeline.process(text: model.operatingText)
+        let secondID = try #require(secondResult.compiled.proxies.first { $0.name == "Second" }?.id)
+        #expect(secondResult.route(host: "www.example.com").action == .proxy(secondID))
+    }
+
+    @Test func automaticGroupEditorUsesEngineDefaultsInsteadOfParameterOverrides() throws {
+        let source = ClientDocumentEditing.set(text, section: .proxyGroup, key: "Video",
+            value: "url-test, First, Second, selected=Second, interval=10, tolerance=20, url=https://probe.example/check")
+        let group = try #require(NaiveFlowConfigurationParser.parse(text: source).configuration.proxyGroup(named: "Video"))
+        let draft = ClientGroupEditor(group: group)
+        let updated = ClientDocumentEditing.set(source, section: .proxyGroup, key: draft.name,
+            value: ClientDocumentEditing.groupValue(kind: draft.kind, members: draft.members, parameters: draft.parameters))
+        let result = TextConfigurationPipeline.process(text: updated)
+        #expect(result.isActivatable)
+        let saved = try #require(result.parsed.proxyGroup(named: "Video"))
+        for key in ["selected", "interval", "tolerance", "url"] { #expect(saved.parameters[key] == nil) }
+        let runtime = try #require(result.compiled.policyGroups.first { $0.name == "Video" })
+        #expect(runtime.interval == 600)
+        #expect(runtime.url == nil)
+        #expect(runtime.selectedID == nil)
+        #expect(runtime.memberIDs.count == 2)
+    }
+
+    @Test func nodeNameRegexCanBeEnteredBeforeChoosingAnyGroup() throws {
+        var draft = ClientGroupEditor()
+        draft.name = "Filtered"
+        draft.nameFilter = "(🇭🇰|港|HK|Hong Kong|HongKong)"
+        #expect(draft.filterError == nil)
+        #expect(draft.parameters.contains { $0.0 == "filter" && $0.1 == draft.nameFilter })
+        draft.nameFilter = "["
+        #expect(draft.filterError != nil)
+        draft.nameFilter = "First"
+        draft.members = ["Second"]
+        var updated = ClientDocumentEditing.set(text, section: .proxyGroup, key: draft.name,
+            value: ClientDocumentEditing.groupValue(kind: draft.kind, members: draft.members, parameters: draft.parameters))
+        #expect(TextConfigurationPipeline.process(text: updated).isActivatable)
+        draft.members = ["PROXY"]
+        updated = ClientDocumentEditing.set(text, section: .proxyGroup, key: draft.name,
+            value: ClientDocumentEditing.groupValue(kind: draft.kind, members: draft.members, parameters: draft.parameters))
+        let result = TextConfigurationPipeline.process(text: updated)
+        #expect(result.isActivatable)
+        let firstID = try #require(result.compiled.proxies.first { $0.name == "First" }?.id)
+        #expect(result.compiled.proxyGroups.first { $0.name == draft.name }?.memberIds == [firstID])
+    }
 }

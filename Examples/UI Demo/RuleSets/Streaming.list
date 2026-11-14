@@ -1,0 +1,4 @@
+# UI demo conditions; policy is selected in the profile.
+DOMAIN-SUFFIX, video.demo.example
+DOMAIN-SUFFIX, stream.demo.example
+DOMAIN-KEYWORD, media-demo

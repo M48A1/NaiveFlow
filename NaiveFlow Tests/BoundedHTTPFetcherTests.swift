@@ -54,6 +54,48 @@ struct BoundedHTTPFetcherTests {
 
     private let url = URL(string: "https://example.com/set")!
 
+    @Test func subscriptionHWIDHeadersAreExplicitAndIgnoreTheLegacyGlobalSwitch() async throws {
+        let preferences = try #require(UserDefaults(suiteName: AWCore.Identifier.appGroupSuite))
+        let key = "remnawaveHWIDEnabled"
+        let original = preferences.object(forKey: key)
+        preferences.set(true, forKey: key)
+        defer {
+            if let original { preferences.set(original, forKey: key) }
+            else { preferences.removeObject(forKey: key) }
+        }
+        for enabled in [false, true, false] {
+            let request = SubscriptionFetcher.request(url: url, remnawaveHWIDEnabled: enabled, hwid: "test-device")
+            StubProtocol.handler = { request in
+                #expect(request.value(forHTTPHeaderField: "x-hwid") == (enabled ? "test-device" : nil))
+                #expect(request.value(forHTTPHeaderField: "User-Agent") == "NaiveFlow")
+                #expect(request.value(forHTTPHeaderField: "X-NaiveFlow-Format") == AJSONParser.formatHeaderValue)
+                return (makeHTTPResponse("https://example.com/set"), Data("hello".utf8))
+            }
+            _ = try await BoundedHTTPFetcher.fetch(request, maxBytes: 64, session: session())
+        }
+        #expect(SubscriptionFetcher.request(url: url).value(forHTTPHeaderField: "x-hwid") == nil)
+        StubProtocol.handler = { request in
+            #expect(request.value(forHTTPHeaderField: "x-hwid") == nil)
+            return (makeHTTPResponse("https://example.com/set"), Data("hello".utf8))
+        }
+        _ = try await BoundedHTTPFetcher.fetch(url, maxBytes: 64, session: session())
+    }
+
+    @Test func deviceHWIDIsPersistedWithoutAGlobalEnableSwitch() throws {
+        let preferences = try #require(UserDefaults(suiteName: AWCore.Identifier.appGroupSuite))
+        let key = "remnawaveHWID"
+        let original = preferences.persistentDomain(forName: AWCore.Identifier.appGroupSuite)?[key]
+        defer {
+            if let original { preferences.set(original, forKey: key) }
+            else { preferences.removeObject(forKey: key) }
+        }
+        preferences.removeObject(forKey: key)
+        let first = AWCore.getRemnawaveHWID()
+        #expect(!first.isEmpty)
+        #expect(preferences.persistentDomain(forName: AWCore.Identifier.appGroupSuite)?[key] as? String == first)
+        #expect(AWCore.getRemnawaveHWID() == first)
+    }
+
     @Test func fetchesBodyUnderLimit() async throws {
         StubProtocol.handler = { _ in (makeHTTPResponse("https://example.com/set"), Data("hello".utf8)) }
         let (data, http) = try await BoundedHTTPFetcher.fetch(url, maxBytes: 64, session: session())

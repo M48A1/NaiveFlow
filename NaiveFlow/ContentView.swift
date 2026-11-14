@@ -23,6 +23,7 @@ struct ClientNodeImportView: View {
     @Environment(\.dismiss) private var dismiss
     @State var source: String
     @State private var loading = false
+    @State private var subscriptionDraft: ClientNodeSubscription?
     var body: some View {
         NavigationStack {
             Form {
@@ -33,13 +34,21 @@ struct ClientNodeImportView: View {
                 Button("Import into Current Profile") { Task {
                     loading = true; defer { loading = false }
                     do {
-                        let text = source.hasPrefix("https://") ? try await model.fetchText(source) : source
-                        if try await model.importNodes(text) { dismiss() }
+                        if source.hasPrefix("https://") {
+                            if let existing = model.profile?.nodeSubscriptions?.first(where: { $0.url == source }) {
+                                if await model.manageResource(.update(.subscription(existing))) { dismiss() }
+                            } else {
+                                subscriptionDraft = ClientNodeSubscription(name: URL(string: source)?.host ?? "Subscription", url: source)
+                            }
+                        } else if try await model.importNodes(source) { dismiss() }
                     } catch { model.report(error) }
                 } }.disabled(loading || model.isBusy || source.isEmpty)
             }
             .navigationTitle("Import Nodes").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .sheet(item: $subscriptionDraft) { subscription in
+                ClientNodeSubscriptionEditorView(subscription: subscription, onSaved: { dismiss() })
+            }
             .alert("Import Failed", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
         }
     }

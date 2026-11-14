@@ -124,6 +124,39 @@ struct NativeRuleSetTests {
         }
     }
 
+    @Test func singleRuleSetRefreshPinsOtherSourcesAndDeleteDoesNotRedownload() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let activation = ConfigurationActivation(store: ConfigurationSnapshotStore(directory: directory))
+        let firstURL = source
+        let secondURL = "https://rules.example.test/other.list"
+        var publisher = ConfigurationPublisher(activation: activation, tunnel: nil, ruleSetLoader: { url in
+            Data("DOMAIN,\(url.absoluteString == firstURL ? "first.example" : "other.example")".utf8)
+        }, preferencesSink: { _ in })
+        let text = "[Rule]\nRULE-SET, \(firstURL), REJECT\nRULE-SET, \(secondURL), REJECT\nFINAL, DIRECT"
+        _ = try await publisher.publish(text: text)
+        #expect(activation.active?.snapshot.ruleSetContents?.count == 2)
+        publisher.ruleSetLoader = { url in
+            guard url.absoluteString == firstURL else { throw ClientFailure("Other sources must stay pinned") }
+            return Data("DOMAIN,new.example".utf8)
+        }
+        _ = try await publisher.publish(text: text, refreshingRuleSets: [firstURL])
+        let head = try #require(try publisher.bundleStore.head())
+        let bundle = try publisher.bundleStore.load(head.current)
+        let matcher = OrderedRouteMatcher(rules: bundle.rules ?? [], finalAction: bundle.finalAction)
+        #expect(matcher.match(RouteQuery(host: "new.example")).action == .reject)
+        #expect(matcher.match(RouteQuery(host: "other.example")).action == .reject)
+        #expect(matcher.match(RouteQuery(host: "first.example")).action == .direct)
+        publisher.ruleSetLoader = { _ in Data("DOMAIN-REGEX,[".utf8) }
+        await #expect(throws: (any Error).self) { try await publisher.publish(text: text, refreshingRuleSets: [firstURL]) }
+        #expect(try publisher.bundleStore.head() == head)
+        publisher.ruleSetLoader = { _ in throw ClientFailure("Delete must not redownload remaining sources") }
+        _ = try await publisher.publish(text: text.replacingOccurrences(of: "RULE-SET, \(secondURL), REJECT\n", with: ""), refreshingRuleSets: [])
+        #expect(activation.active?.snapshot.ruleSetContents == [firstURL: "DOMAIN,new.example"])
+        _ = try await publisher.rollback()
+        #expect(activation.active?.snapshot.ruleSetContents?[secondURL] == "DOMAIN,other.example")
+    }
+
     @Test func failedRefreshLeavesPublishedVersionUntouchedAndRollbackDoesNotFetch() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

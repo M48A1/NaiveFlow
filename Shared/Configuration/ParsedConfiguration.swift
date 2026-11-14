@@ -431,3 +431,61 @@ nonisolated struct ParsedRewriteDirective: Equatable, Sendable, Identifiable {
     var id: String { "\(line)#\(text)" }
 }
 
+
+/// A filter opts referenced groups into node-inventory expansion. Directly
+/// listed nodes are untouched; the source groups and built-in PROXY stay intact.
+nonisolated enum ProxyGroupMembership {
+    static func resolve(_ source: ParsedConfiguration, diagnostics: inout [ConfigurationDiagnostic]) -> ParsedConfiguration {
+        let nodeNames = source.proxies.map(\.name)
+        let nodes = Set(nodeNames)
+        func fail(_ group: ParsedProxyGroup, _ message: String) {
+            diagnostics.append(.init(severity: .error, code: .invalidValue, line: group.line,
+                section: "Proxy Group", message: "\(group.name): \(message)"))
+        }
+        func leaves(_ name: String, path: Set<String>) -> [String] {
+            if nodes.contains(name) { return [name] }
+            if ConfigurationValidator.builtInPolicyName(name) == "PROXY" { return nodeNames }
+            guard let child = source.proxyGroup(named: name) else { return [] }
+            return members(child, path: path).flatMap { leaves($0, path: path.union([child.name])) }
+        }
+        func members(_ group: ParsedProxyGroup, path: Set<String>) -> [String] {
+            guard !path.contains(group.name), path.count < 64 else {
+                fail(group, "Cyclic or excessively deep group reference.")
+                return []
+            }
+            let pattern = group.parameters["filter"] ?? ""
+            let regex: NSRegularExpression?
+            do { regex = pattern.isEmpty ? nil : try NSRegularExpression(pattern: pattern) }
+            catch { fail(group, "Invalid node name regular expression."); return [] }
+            let next = path.union([group.name])
+            var result: [String] = []
+            for member in group.members {
+                let proxy = ConfigurationValidator.builtInPolicyName(member) == "PROXY"
+                let referencedGroup = !nodes.contains(member) && source.proxyGroup(named: member) != nil
+                let expand = proxy || (regex != nil && referencedGroup)
+                let candidates = expand ? leaves(member, path: next) : [member]
+                for candidate in candidates {
+                    if expand, let regex,
+                       regex.firstMatch(in: candidate, range: NSRange(candidate.startIndex..., in: candidate)) == nil { continue }
+                    if !result.contains(candidate) { result.append(candidate) }
+                }
+            }
+            if result.isEmpty, !group.members.isEmpty, regex != nil {
+                fail(group, "The node name filter matched no nodes.")
+            }
+            return result
+        }
+        var result = source
+        result.proxyGroups = source.proxyGroups.map { group in
+            let resolved = members(group, path: [])
+            var parameters = OrderedParameters()
+            for (key, value) in group.parameters.pairs {
+                if key == "selected", !resolved.contains(value), resolved != group.members { continue }
+                parameters.set(key, value)
+            }
+            return ParsedProxyGroup(name: group.name, line: group.line, kindToken: group.kindToken,
+                kind: group.kind, members: resolved, parameters: parameters, raw: group.raw)
+        }
+        return result
+    }
+}

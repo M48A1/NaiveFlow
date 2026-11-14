@@ -17,7 +17,6 @@ struct ClientSettingsView: View {
             NavigationLink { ClientModulesView() } label: { row("Modules", symbol: "puzzlepiece.extension.fill") }
             NavigationLink { ClientHostnamesView() } label: { row("Hostname", symbol: "house.fill") }
             NavigationLink { ClientNotificationSettingsView() } label: { row("Notification Settings", symbol: "bell.fill") }
-            NavigationLink { ClientSubscriptionRequestSettingsView() } label: { row("Subscription Requests", symbol: "person.crop.rectangle") }
             NavigationLink { AboutView() } label: { row("About", symbol: "info.circle") }
             Button(role: .destructive) { showClearCache = true } label: {
                 HStack(spacing: 15) { ClientSectionIcon(symbol: "trash", color: .red); Text("Clear Cache") }
@@ -50,18 +49,6 @@ struct ClientAlwaysConnectedSettingsView: View {
             })).tint(.blue).disabled(model.isBusy)
         }
         .navigationTitle("Always Connected").navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-struct ClientSubscriptionRequestSettingsView: View {
-    @Environment(AppSettings.self) private var settings
-
-    var body: some View {
-        @Bindable var settings = settings
-        Form {
-            Toggle("Remnawave HWID", isOn: $settings.remnawaveHWIDEnabled).tint(.blue)
-        }
-        .navigationTitle("Subscription Requests").navigationBarTitleDisplayMode(.inline)
     }
 }
 

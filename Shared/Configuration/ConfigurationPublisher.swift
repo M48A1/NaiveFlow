@@ -41,13 +41,14 @@ struct ConfigurationPublisher {
         preferencesSink(bundle.preferences)
     }
 
-    func publish(text: String) async throws -> (ConfigurationActivation.Activation, ConfigurationInstaller.Outcome) {
+    func publish(text: String, refreshingRuleSets: Set<String>? = nil) async throws -> (ConfigurationActivation.Activation, ConfigurationInstaller.Outcome) {
         try activation.saveDraft(text)
         var result = ConfigurationCoordinator().compile(text: text)
         guard result.isActivatable else {
             throw ConfigurationActivation.Failure.notActivatable(errors: result.errorCount, warnings: result.warningCount)
         }
-        let ruleSetContents = try await NativeRuleSet.resolve(result.parsed, loader: ruleSetLoader)
+        let ruleSetContents = try await NativeRuleSet.resolve(result.parsed, loader: ruleSetLoader,
+            cachedContents: activation.active?.snapshot.ruleSetContents ?? [:], refreshing: refreshingRuleSets)
         let geoResources = try await NativeGeoResources.resolve(result.parsed,
             cacheDirectory: activation.store.directory.appendingPathComponent("geo-sources", isDirectory: true), loader: geoLoader)
         if !ruleSetContents.isEmpty || geoResources != nil {
@@ -65,7 +66,7 @@ struct ConfigurationPublisher {
         let head = try bundleStore.head()
         let previous = try head.map { try bundleStore.load($0.current) }
         let compiled = result.compiled
-        let snapshot = ConfigurationSnapshot(text: text, compiled: compiled)
+        let snapshot = ConfigurationSnapshot(text: text, compiled: compiled, ruleSetContents: ruleSetContents)
         var nodes = compiled.proxies
         for chain in compiled.chains {
             if let composite = chain.resolveComposite(from: compiled.proxies) {

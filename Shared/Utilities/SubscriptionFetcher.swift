@@ -22,17 +22,22 @@ nonisolated struct SubscriptionFetcher {
 
     static let maxResponseBytes = 8 * 1024 * 1024
 
-    static func fetch(url urlString: String) async throws -> Result {
+    static func request(url: URL, remnawaveHWIDEnabled: Bool = false, hwid: String? = nil) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.setValue("NaiveFlow", forHTTPHeaderField: "User-Agent")
+        request.setValue(AJSONParser.formatHeaderValue, forHTTPHeaderField: "X-NaiveFlow-Format")
+        if remnawaveHWIDEnabled {
+            request.setValue(hwid ?? AWCore.getRemnawaveHWID(), forHTTPHeaderField: "x-hwid")
+        }
+        return request
+    }
+
+    static func fetch(url urlString: String, remnawaveHWIDEnabled: Bool = false) async throws -> Result {
         guard let url = URL(string: urlString) else {
             throw NaiveFlowError.subscription(.invalidURL)
         }
 
-        var request = URLRequest(url: url)
-        request.setValue("NaiveFlow", forHTTPHeaderField: "User-Agent")
-        request.setValue(AJSONParser.formatHeaderValue, forHTTPHeaderField: "X-NaiveFlow-Format")
-        if AWCore.getRemnawaveHWIDEnabled() {
-            request.setValue(AWCore.getRemnawaveHWID(), forHTTPHeaderField: "x-hwid")
-        }
+        let request = Self.request(url: url, remnawaveHWIDEnabled: remnawaveHWIDEnabled)
 
         let allowInsecure = false // Node exceptions never apply to subscription downloads.
         let (data, response): (Data, URLResponse)

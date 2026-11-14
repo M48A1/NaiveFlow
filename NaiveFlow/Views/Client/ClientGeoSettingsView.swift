@@ -98,14 +98,13 @@ struct ClientGeoSettingsView: View {
         guard !model.isBusy, !updating else { return }
         updating = true
         defer { updating = false }
-        if await model.commit(model.operatingText) { success = true }
+        if await model.manageResource(.update(.geo(site: site))) { success = true }
         else { error = model.error ?? "Could not update. Try again later."; model.error = nil }
     }
     @MainActor private func remove(_ draft: ClientGeoSourceDraft) async {
-        do {
-            let text = try draft.applying(to: model.operatingText, site: site, deleting: true)
-            if !(await model.commit(text)) { error = model.error ?? "Could not delete."; model.error = nil }
-        } catch { self.error = error.localizedDescription }
+        if !(await model.manageResource(.delete(.geo(draft, site: site)))) {
+            error = model.error ?? "Could not delete."; model.error = nil
+        }
     }
 }
 
@@ -157,10 +156,7 @@ private struct ClientGeoSourceEditor: View {
         guard !saving, !model.isBusy else { return }
         saving = true
         defer { saving = false }
-        do {
-            let text = try draft.applying(to: model.operatingText, site: site)
-            if await model.commit(text) { dismiss() }
-            else { error = model.error ?? "Could not save."; model.error = nil }
-        } catch { self.error = error.localizedDescription }
+        if await model.manageResource(.save(.geo(draft, site: site))) { dismiss() }
+        else { error = model.error ?? "Could not save."; model.error = nil }
     }
 }

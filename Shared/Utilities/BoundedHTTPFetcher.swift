@@ -45,7 +45,14 @@ nonisolated enum BoundedHTTPFetcher {
     ) async throws -> (data: Data, response: HTTPURLResponse) {
         var request = URLRequest(url: url)
         request.setValue("NaiveFlow", forHTTPHeaderField: "User-Agent")
+        return try await fetch(request, maxBytes: maxBytes, session: session)
+    }
 
+    static func fetch(
+        _ request: URLRequest,
+        maxBytes: Int = defaultMaxBytes,
+        session: URLSession = .shared
+    ) async throws -> (data: Data, response: HTTPURLResponse) {
         let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw Failure.nonHTTP }
 
