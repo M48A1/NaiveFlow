@@ -85,6 +85,10 @@ struct ClientProfilesView: View {
     @State private var editing: ClientProfile?
     @State private var pendingDelete: ClientProfile?
     @State private var showHistory = false
+    @State private var importingFile = false
+    @State private var showURL = false
+    @State private var remoteURL = ""
+    @State private var downloading = false
     var body: some View {
         List {
             Section {
@@ -112,12 +116,38 @@ struct ClientProfilesView: View {
             } footer: { Text("Tap a profile to apply it. Switch profiles before deleting the current one.") }
             Section {
                 Button("New Profile", systemImage: "plus") { editing = model.createProfile() }
+                Menu("Import Profile", systemImage: "square.and.arrow.down") {
+                    Button("Import from URL", systemImage: "link") { showURL = true }
+                    Button("Import from File", systemImage: "folder") { importingFile = true }
+                }
                 Button("iCloud Drive and Version History") { showHistory = true }
                 NavigationLink("Backup and Restore") { ClientBackupView() }
             }
         }
         .navigationTitle("Manage Profiles").navigationBarTitleDisplayMode(.inline)
-        .disabled(model.isBusy)
+        .disabled(model.isBusy || downloading)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { if downloading { ProgressView() } } }
+        .alert("Import Profile from URL", isPresented: $showURL) {
+            TextField("https://example.com/config.conf", text: $remoteURL).textInputAutocapitalization(.never).autocorrectionDisabled()
+            Button("Import") {
+                let source = remoteURL
+                Task {
+                    downloading = true; defer { downloading = false }
+                    do {
+                        let text = try await model.fetchText(source)
+                        editing = model.createProfile(name: URL(string: source)?.deletingPathExtension().lastPathComponent ?? "Remote Profile", text: text, sourceURL: source)
+                    } catch { model.report(error) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .fileImporter(isPresented: $importingFile, allowedContentTypes: [.plainText, .data]) { result in
+            do {
+                let url = try result.get()
+                let text = try model.operations.configurationDocument.read(contentsOf: url)
+                editing = model.createProfile(name: url.deletingPathExtension().lastPathComponent, text: text)
+            } catch { model.report(error) }
+        }
         .sheet(item: $editing) { ClientProfileEditorView(profile: $0) }
         .sheet(isPresented: $showHistory, onDismiss: { model.refresh() }) { ProfileView() }
         .confirmationDialog("Delete This Profile?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {

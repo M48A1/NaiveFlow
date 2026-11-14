@@ -37,8 +37,6 @@ struct ClientSettingsView: View {
                 section("Application") {
                     row("Notification Settings", symbol: "bell.fill", color: .teal) { ClientNotificationSettingsView() }
                     separator
-                    row("Backup and Restore", symbol: "externaldrive", color: .teal) { ClientBackupView() }
-                    separator
                     row("About", symbol: "info.circle", color: .teal) { AboutView() }
                 }
             }

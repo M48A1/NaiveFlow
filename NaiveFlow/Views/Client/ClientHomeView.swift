@@ -1,6 +1,5 @@
 import SwiftUI
 import NetworkExtension
-import UniformTypeIdentifiers
 
 struct ClientHomeView: View {
     @Environment(ClientModel.self) private var model
@@ -14,9 +13,6 @@ struct ClientHomeView: View {
     @State private var proxiesExpanded = false
     @State private var rulesExpanded = false
     @State private var editor: ClientProfile?
-    @State private var showURL = false
-    @State private var remoteURL = ""
-    @State private var importingFile = false
     @State private var pendingDelete: ClientProfile?
     @State private var autoChoosing = false
     @State private var showNodeEditor = false
@@ -29,8 +25,8 @@ struct ClientHomeView: View {
         ScrollView {
             VStack(spacing: 16) {
                 runningCard
-                configurationCard
                 modeCard
+                configurationCard
                 proxyCard
                 rulesCard
             }.padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 24)
@@ -40,25 +36,6 @@ struct ClientHomeView: View {
         .sheet(item: $editor) { ClientProfileEditorView(profile: $0) }
         .sheet(isPresented: $showNodeEditor) {
             ProxyEditorView(configuration: nodeToEdit) { node in Task { await model.saveNode(node, replacing: nodeToEdit?.name) } }
-        }
-        .fileImporter(isPresented: $importingFile, allowedContentTypes: [.plainText, .data]) { result in
-            do {
-                let url = try result.get()
-                let access = url.startAccessingSecurityScopedResource()
-                defer { if access { url.stopAccessingSecurityScopedResource() } }
-                let text = try model.operations.configurationDocument.read(contentsOf: url)
-                editor = model.createProfile(name: url.deletingPathExtension().lastPathComponent, text: text)
-            } catch { model.report(error) }
-        }
-        .alert("Import Profile from URL", isPresented: $showURL) {
-            TextField("https://example.com/config.conf", text: $remoteURL).textInputAutocapitalization(.never).autocorrectionDisabled()
-            Button("Import") { Task {
-                do {
-                    let text = try await model.fetchText(remoteURL)
-                    editor = model.createProfile(name: URL(string: remoteURL)?.deletingPathExtension().lastPathComponent ?? "Remote Profile", text: text, sourceURL: remoteURL)
-                } catch { model.report(error) }
-            } }
-            Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog("Delete Profile?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
             Button("Delete", role: .destructive) { if let pendingDelete { model.deleteProfile(pendingDelete.id) }; pendingDelete = nil }
@@ -81,7 +58,7 @@ struct ClientHomeView: View {
 
     private var configurationCard: some View {
         ClientHomeCard(colors: [Color(red: 0.43, green: 0.28, blue: 0.77), Color(red: 0.64, green: 0.39, blue: 0.87)]) {
-            cardHeader("Profiles", symbol: "doc.text.fill", iconColor: .purple, summary: model.activeName, expanded: $configurationsExpanded)
+            cardHeader("Profiles", symbol: "doc.text.fill", iconColor: .purple, summary: model.activeName, expanded: $configurationsExpanded, menu: .profiles)
             if configurationsExpanded {
             ForEach(model.library.profiles) { profile in
                 HStack(spacing: 10) {
@@ -108,19 +85,8 @@ struct ClientHomeView: View {
                 .padding(.horizontal, 20).padding(.vertical, 8)
                 .background(model.library.selectedID == profile.id ? Color.primary.opacity(0.045) : .clear)
             }
-            HStack(spacing: 8) { configurationActions }
-                .buttonStyle(ClientHomeActionStyle()).padding(16)
             }
         }
-    }
-
-    @ViewBuilder private var configurationActions: some View {
-        Button("New") { editor = model.createProfile() }.frame(maxWidth: .infinity)
-        Menu {
-            Button("Import from URL", systemImage: "link") { showURL = true }
-            Button("Import from File", systemImage: "folder") { importingFile = true }
-        } label: { Text("Import").frame(maxWidth: .infinity).frame(minHeight: 44).background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12)) }
-        NavigationLink("Manage") { ClientProfilesView().toolbar(.visible, for: .navigationBar) }.frame(maxWidth: .infinity)
     }
 
     private var runningCard: some View {
@@ -189,7 +155,7 @@ struct ClientHomeView: View {
 
     private var proxyCard: some View {
         ClientHomeCard(colors: [Color(red: 0.70, green: 0.31, blue: 0.11), Color(red: 0.85, green: 0.48, blue: 0.18)]) {
-            cardHeader("PROXY", symbol: "paperplane.fill", iconColor: colorScheme == .dark ? .orange : Color(red: 0.70, green: 0.31, blue: 0.11), summary: "\(model.selectedNodeName) · Nodes: \(model.nodes.count)", expanded: $proxiesExpanded)
+            cardHeader("PROXY", symbol: "paperplane.fill", iconColor: colorScheme == .dark ? .orange : Color(red: 0.70, green: 0.31, blue: 0.11), summary: "\(model.selectedNodeName) · Nodes: \(model.nodes.count)", expanded: $proxiesExpanded, menu: .proxies)
             if proxiesExpanded {
             if model.nodes.isEmpty {
                 VStack(spacing: 8) {
@@ -206,46 +172,38 @@ struct ClientHomeView: View {
                     .contextMenu { Button("Edit Node", systemImage: "pencil") { nodeToEdit = node; showNodeEditor = true } }
                 }
             }
-            HStack(spacing: 8) { proxyActions }
-                .buttonStyle(ClientHomeActionStyle()).padding(16)
             }
         }
     }
 
-    @ViewBuilder private var proxyActions: some View {
-        Menu {
-            Button("Latency Test", systemImage: "bolt.fill") { latency.testLatencies(for: model.nodes, transport: tunnel) }
-                .disabled(model.nodes.isEmpty)
-            Button("Test and Auto Select", systemImage: "shuffle") { autoChoosing = true; latency.testLatencies(for: model.nodes, transport: tunnel) }
-                .disabled(model.nodes.isEmpty || autoChoosing)
-        } label: { Text(autoChoosing ? "Testing…" : "Test").frame(maxWidth: .infinity).frame(minHeight: 44).background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12)) }
-        NavigationLink("Manage Nodes") { ClientNodesView().toolbar(.visible, for: .navigationBar) }.frame(maxWidth: .infinity)
-    }
     private var ruleSetCount: Int { model.parsed.rules.filter { $0.kind == .ruleSet }.count }
     private var localRuleCount: Int { model.parsed.rules.filter { $0.kind != .ruleSet }.count }
 
     private var rulesCard: some View {
         ClientHomeCard(colors: [Color(red: 0.60, green: 0.30, blue: 0.48), Color(red: 0.79, green: 0.46, blue: 0.56)]) {
-            cardHeader("Routing Rules", symbol: "line.3.horizontal.decrease.circle", iconColor: colorScheme == .dark ? .pink : Color(red: 0.60, green: 0.30, blue: 0.48), summary: "RuleSet · \(ruleSetCount)   Local · \(localRuleCount)", expanded: $rulesExpanded)
+            cardHeader("Routing Rules", symbol: "line.3.horizontal.decrease.circle", iconColor: colorScheme == .dark ? .pink : Color(red: 0.60, green: 0.30, blue: 0.48), summary: "RuleSet · \(ruleSetCount)   Local · \(localRuleCount)", expanded: $rulesExpanded, menu: .rules)
             if rulesExpanded {
-                HStack(spacing: 12) {
-                    ruleTile("RuleSet", symbol: "square.stack.3d.up", count: ruleSetCount, color: .indigo, ruleSets: true)
-                    ruleTile("Local", symbol: "doc.text", count: localRuleCount, color: .teal, ruleSets: false)
-                }.padding(.horizontal, 16).padding(.bottom, 16)
+                let rules = model.parsed.rules
+                if rules.isEmpty {
+                    Text("No Routing Rules").font(.subheadline).foregroundStyle(.secondary).padding(20)
+                } else {
+                    ForEach(rules.prefix(5)) { rule in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(rule.kind.token).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                Spacer()
+                                Text(rule.policy.token).font(.caption.weight(.medium)).foregroundStyle(.blue)
+                            }
+                            Text(rule.value ?? "Final Match").font(.subheadline).lineLimit(2)
+                        }.padding(.horizontal, 20).padding(.vertical, 12)
+                    }
+                    if rules.count > 5 {
+                        Text("Showing 5 of \(rules.count) rules").font(.caption).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 16)
+                    }
+                }
             }
         }
-    }
-
-    private func ruleTile(_ title: String, symbol: String, count: Int, color: Color, ruleSets: Bool) -> some View {
-        NavigationLink { ClientRoutingRulesView(ruleSets: ruleSets).toolbar(.visible, for: .navigationBar) } label: {
-            VStack(alignment: .leading, spacing: 12) {
-                Image(systemName: symbol).font(.title2).foregroundStyle(color)
-                Text(title).font(.headline)
-                Text("\(ruleSets ? "Rule sets" : "Local rules"): \(count)").font(.caption).foregroundStyle(.secondary)
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
-                .background(color.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
-                .contentShape(RoundedRectangle(cornerRadius: 16))
-        }.buttonStyle(.plain)
     }
 
     private func toggleDetails(_ expanded: Binding<Bool>) {
@@ -254,22 +212,63 @@ struct ClientHomeView: View {
         }
     }
 
-    private func cardHeader(_ title: String, symbol: String, iconColor: Color, summary: String, expanded: Binding<Bool>) -> some View {
-        Button { toggleDetails(expanded) } label: {
-            HStack(spacing: 12) {
-                Image(systemName: symbol).font(.title3.weight(.semibold)).frame(width: 28)
-                    .foregroundStyle(iconColor)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(title).font(.title3.weight(.semibold))
-                    if !expanded.wrappedValue { Text(summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
+    private enum CardMenu { case profiles, proxies, rules }
+
+    private func cardHeader(_ title: String, symbol: String, iconColor: Color, summary: String,
+                            expanded: Binding<Bool>, menu: CardMenu? = nil) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            Button { toggleDetails(expanded) } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: symbol).font(.title3.weight(.semibold)).frame(width: 28)
+                        .foregroundStyle(iconColor)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(title).font(.title3.weight(.semibold))
+                        if !expanded.wrappedValue { Text(summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
+                    }
+                    Spacer(minLength: 0)
+                    if title == "Profiles", model.isBusy { ProgressView() }
                 }
-                Spacer(minLength: 0)
-                if title == "Profiles", model.isBusy { ProgressView() }
-            }.padding(20).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-        }.buttonStyle(.plain)
-            .accessibilityValue(expanded.wrappedValue ? "Expanded" : "Collapsed")
-            .accessibilityHint("Tap to expand or collapse details.")
+                .padding(.leading, 20).padding(.vertical, 20).padding(.trailing, menu == nil ? 20 : 0)
+                .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+                .accessibilityValue(expanded.wrappedValue ? "Expanded" : "Collapsed")
+                .accessibilityHint("Tap to expand or collapse details.")
+            if let menu {
+                Menu {
+                    switch menu {
+                    case .profiles:
+                        NavigationLink { ClientProfilesView().toolbar(.visible, for: .navigationBar) } label: {
+                            Label("Manage Profiles", systemImage: "doc.text")
+                        }
+                    case .proxies:
+                        NavigationLink { ClientNodesView().toolbar(.visible, for: .navigationBar) } label: {
+                            Label("Manage Nodes", systemImage: "network")
+                        }
+                        Divider()
+                        Button("Latency Test", systemImage: "bolt.fill") { latency.testLatencies(for: model.nodes, transport: tunnel) }
+                            .disabled(model.nodes.isEmpty)
+                        Button(autoChoosing ? "Testing…" : "Test and Auto Select", systemImage: "shuffle") {
+                            autoChoosing = true; latency.testLatencies(for: model.nodes, transport: tunnel)
+                        }.disabled(model.nodes.isEmpty || autoChoosing)
+                    case .rules:
+                        NavigationLink { ClientRoutingRulesView(ruleSets: true).toolbar(.visible, for: .navigationBar) } label: {
+                            Label("Rule Sets", systemImage: "square.stack.3d.up")
+                        }
+                        NavigationLink { ClientRoutingRulesView(ruleSets: false).toolbar(.visible, for: .navigationBar) } label: {
+                            Label("Local Rules", systemImage: "doc.text")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis").font(.body.weight(.semibold))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .padding(.top, 12).padding(.trailing, 12)
+                .accessibilityLabel("\(title) actions")
+                .disabled(model.isBusy)
+            }
+        }
     }
+
 }
 
 private struct ClientHomeCard<Content: View>: View {
@@ -292,15 +291,6 @@ private struct ClientHomeCard<Content: View>: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-    }
-}
-
-private struct ClientHomeActionStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.subheadline.weight(.medium))
-            .lineLimit(1).frame(maxWidth: .infinity).frame(minHeight: 44)
-            .background(.primary.opacity(configuration.isPressed ? 0.12 : 0.06), in: RoundedRectangle(cornerRadius: 12))
-            .foregroundStyle(.primary)
     }
 }
 
