@@ -118,7 +118,7 @@ struct TVClientGroupsView: View {
                         TVClientGroupDetailView(name: group.name)
                     } label: {
                         VStack(alignment: .leading, spacing: 10) {
-                            Label(group.name, systemImage: "square.stack.3d.up.fill")
+                            TVClientGroupLabel(name: group.name, iconURL: group.parameters["icon-url"])
                                 .font(.headline)
                             Text(model.selectedMember(in: group))
                                 .font(.callout).foregroundStyle(.secondary)
@@ -178,7 +178,7 @@ private struct TVClientGroupDetailView: View {
                         }
                     }
                 } header: {
-                    Text(model.selectedMember(in: original))
+                    TVClientGroupLabel(name: model.selectedMember(in: original), iconURL: original.parameters["icon-url"])
                 }
             }
         }
@@ -193,12 +193,14 @@ private struct TVClientGroupEditor: View {
     @State private var name: String
     @State private var kind: String
     @State private var members: [String]
+    @State private var iconURL: String
 
     init(group: ParsedProxyGroup?) {
         self.group = group
         _name = State(initialValue: group?.name ?? "")
         _kind = State(initialValue: group?.kindToken ?? "select")
         _members = State(initialValue: group?.members ?? [])
+        _iconURL = State(initialValue: group?.parameters["icon-url"] ?? "")
     }
 
     var body: some View {
@@ -207,6 +209,17 @@ private struct TVClientGroupEditor: View {
                 TextField("Group Name", text: $name)
                 Picker("Type", selection: $kind) {
                     ForEach(kinds, id: \.self) { Text($0).tag($0) }
+                }
+            }
+            Section("Group Icon") {
+                TVClientGroupLabel(name: "Icon Preview", iconURL: normalizedIconURL)
+                TextField("HTTPS Icon URL", text: $iconURL).autocorrectionDisabled()
+                NavigationLink("Choose from Icon Pack") { TVClientGroupIconPacksView(iconURL: $iconURL) }
+                if !normalizedIconURL.isEmpty {
+                    Button("Use Default Icon") { iconURL = "" }
+                }
+                if !validIconURL {
+                    Text("Enter a valid HTTPS icon URL.").foregroundStyle(.red)
                 }
             }
             Section("Member Order") {
@@ -224,10 +237,18 @@ private struct TVClientGroupEditor: View {
                 }
             }
             Button("Save and Apply") { Task { await save() } }
-                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || members.isEmpty)
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || members.isEmpty || !validIconURL)
         }
         .navigationTitle(group == nil ? "New Group" : "Edit Group")
         .disabled(model.isBusy)
+    }
+
+    private var normalizedIconURL: String {
+        iconURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var validIconURL: Bool {
+        normalizedIconURL.isEmpty || ProxyGroupIconURL.parse(normalizedIconURL) != nil
     }
 
     private var kinds: [String] {
@@ -245,9 +266,11 @@ private struct TVClientGroupEditor: View {
 
     private func save() async {
         let style = group.flatMap { model.profile?.groupStyles[$0.name] } ?? ClientGroupStyle()
-        let parameters = (group?.parameters.pairs ?? []).filter { key, value in
-            key != "selected" || (kind == "select" && members.contains(value))
+        var parameters = (group?.parameters.pairs ?? []).filter { key, value in
+            key.caseInsensitiveCompare("icon-url") != .orderedSame &&
+                (key != "selected" || (kind == "select" && members.contains(value)))
         }
+        if !normalizedIconURL.isEmpty { parameters.append(("icon-url", normalizedIconURL)) }
         if await model.saveGroup(original: group?.name, name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                                  kind: kind, members: members, parameters: parameters, style: style) {
             dismiss()
