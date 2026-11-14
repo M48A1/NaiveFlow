@@ -27,6 +27,15 @@ struct TVRootView: View {
         }
         .tabViewStyle(.tabBarOnly)
         .environment(model)
+        .sheet(item: Binding(
+            get: { model.subscriptionReview },
+            set: { review in
+                if let review { model.subscriptionReview = review }
+                else { model.discardSubscriptionReview() }
+            }
+        )) { review in
+            ClientSubscriptionReviewView(review: review)
+        }
         .safeAreaInset(edge: .bottom) {
             if let title = model.activeResourceTitle {
                 HStack {

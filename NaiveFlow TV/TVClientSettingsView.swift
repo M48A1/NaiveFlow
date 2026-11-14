@@ -215,6 +215,9 @@ struct TVClientNodesView: View {
                 Button("Latency Test") { latency.testLatencies(for: model.nodes, transport: tunnel) }
                     .disabled(model.nodes.isEmpty)
             }
+            Section("Node Tools") {
+                NavigationLink("Connection Diagnostics") { ClientDiagnosticsView() }
+            }
             Section("Import Nodes") {
                 Button("Add Node") { nodeEditor = NodeEditor() }.disabled(model.isBusy)
                 NavigationLink("Subscription Groups") { TVClientSubscriptionsView() }
@@ -268,13 +271,14 @@ private struct TVClientSubscriptionsView: View {
             Section("Subscriptions") {
                 ForEach(model.profile?.nodeSubscriptions ?? []) { subscription in
                     Button {
-                        Task { _ = await model.manageResource(.update(.subscription(subscription))) }
+                        Task { _ = await model.prepareSubscriptionUpdate(ids: [subscription.id]) }
                     } label: {
                         Label(subscription.name, systemImage: "arrow.clockwise")
+                            .accessibilityHint("Review changes before applying")
                     }
                     .disabled(model.isBusy)
                 }
-                Button("Update Subscriptions") { Task { _ = await model.refreshNodeSubscriptions() } }
+                Button("Review Subscription Updates") { Task { _ = await model.prepareSubscriptionUpdate() } }
                     .disabled(model.isBusy || model.profile?.nodeSubscriptions?.isEmpty != false)
             }
             Section("Import Subscription") {
@@ -282,9 +286,12 @@ private struct TVClientSubscriptionsView: View {
                 Button("Import into Current Profile") {
                     guard let url = subscriptionURL, let host = url.host else { return }
                     Task {
-                        let subscription = model.profile?.nodeSubscriptions?.first { $0.url == url.absoluteString }
-                            ?? ClientNodeSubscription(name: host, url: url.absoluteString)
-                        if await model.manageResource(.update(.subscription(subscription))) { source = "" }
+                        if let existing = model.profile?.nodeSubscriptions?.first(where: { $0.url == url.absoluteString }) {
+                            if await model.prepareSubscriptionUpdate(ids: [existing.id]) { source = "" }
+                        } else {
+                            let subscription = ClientNodeSubscription(name: host, url: url.absoluteString)
+                            if await model.manageResource(.update(.subscription(subscription))) { source = "" }
+                        }
                     }
                 }
                 .disabled(model.isBusy || subscriptionURL == nil)
