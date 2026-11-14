@@ -11,8 +11,6 @@ import Observation
 
 @MainActor
 final class AppContainer {
-    let syncStore: SyncStore
-
     // MARK: - Residents
 
     let tunnel: TunnelController
@@ -20,19 +18,11 @@ final class AppContainer {
     let latency = LatencyCenter()
     let stats = ConnectionStats()
 
-    let configurationStore: ConfigurationStore
-    let chainStore: ChainStore
-    let groupStore: GroupStore
-    let subscriptionStore: SubscriptionStore
-    let subscriptionRefreshCoordinator = SubscriptionRefreshCoordinator()
-
     private var started = false
 
-    init(syncStore: SyncStore = .shared, tunnelProvider: TunnelProviding? = nil) {
-        self.syncStore = syncStore
+    init(tunnelProvider: TunnelProviding? = nil) {
         AWCore.discardManualSettings()
         do {
-            try syncStore.discardRemovedConfigurationCollections()
             let configurations = EngineConfirmationStore.directory
             let group = configurations.deletingLastPathComponent()
             for url in [configurations.appendingPathComponent("runtime"),
@@ -42,12 +32,7 @@ final class AppContainer {
             }
         } catch { ConfigurationActivation().record(error.localizedDescription) }
 
-
         tunnel = TunnelController(provider: tunnelProvider ?? LiveTunnelProvider())
-        configurationStore = ConfigurationStore(syncStore: syncStore)
-        chainStore = ChainStore(syncStore: syncStore)
-        groupStore = GroupStore(syncStore: syncStore)
-        subscriptionStore = SubscriptionStore(syncStore: syncStore)
         do {
             let publisher = ConfigurationPublisher(activation: ConfigurationActivation(), tunnel: tunnel,
                 clearStateSink: { [selection] in selection.clearRuntimeVersion() },
@@ -62,17 +47,6 @@ final class AppContainer {
         catch { ConfigurationActivation().record(error.localizedDescription) }
     }
 
-    // MARK: - Operation Factories
-
-    var mutationReaction: StoreMutationReaction {
-        StoreMutationReaction(
-            configurationStore: configurationStore,
-            chainStore: chainStore,
-            selection: selection,
-            latency: latency
-        )
-    }
-
     // MARK: - Startup
 
     func start() {
@@ -81,7 +55,6 @@ final class AppContainer {
         // Migrate host-only test preferences before the tunnel reads them.
         _ = LatencyTestSettings.load()
 
-        Task { await LoadOperation(configurationStore: configurationStore, reaction: mutationReaction).run() }
         observeTunnelStatus()
         observeSelection()
         tunnel.start()

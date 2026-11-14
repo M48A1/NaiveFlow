@@ -171,8 +171,6 @@ struct ClientNodesView: View {
 
 struct ClientNodeSubscriptionsView: View {
     @Environment(ClientModel.self) private var model
-    @Environment(SubscriptionStore.self) private var legacySubscriptions
-    @Environment(ConfigurationStore.self) private var legacyNodes
     @State private var editing: ClientNodeSubscription?
 
     var body: some View {
@@ -200,17 +198,6 @@ struct ClientNodeSubscriptionsView: View {
             Button("Add Subscription", systemImage: "plus") { editing = ClientNodeSubscription(name: "", url: "") }
         } }
         .sheet(item: $editing) { ClientNodeSubscriptionEditorView(subscription: $0) }
-        .task {
-            for source in legacySubscriptions.subscriptions {
-                guard !(model.profile?.nodeSubscriptions ?? []).contains(where: { $0.url == source.url }) else { continue }
-                let names = Set(legacyNodes.configurations(for: source).map(\.name))
-                let members = model.nodes.filter { names.contains($0.name) }.map {
-                    ClientSubscriptionMember(sourceName: $0.name, name: $0.name, edited: true)
-                }
-                guard !members.isEmpty else { continue }
-                _ = await model.manageResource(.save(.subscription(ClientNodeSubscription(id: source.id, name: source.name, url: source.url, members: members))))
-            }
-        }
         .disabled(model.isBusy)
     }
 }

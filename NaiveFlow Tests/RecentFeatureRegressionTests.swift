@@ -75,15 +75,15 @@ struct RuntimeGroupRefreshTests {
         selection.showRuntimeVersion(bundle)
         #expect(selection.runtimeConfiguration == node)
         #expect(selection.runtimeGroups.first?.iconURL == "https://example.com/new.png")
-        let store = SyncStore.ephemeral()
-        #expect(RouteTarget.defaultProxy.displayName(configStore: ConfigurationStore(syncStore: store),
-            chainStore: ChainStore(syncStore: store), selection: selection) == node.name)
+        #expect(RouteTarget.defaultProxy.outboundName(defaultRouteTarget: nil, selection: selection) == node.name)
+        #expect(RouteTarget.proxy(node.id).outboundName(defaultRouteTarget: nil, selection: selection) == node.name)
 
         let baseline = RuntimeConfigurationBundle(id: UUID(), snapshotID: UUID(), parentID: nil,
             preferences: [:], nodes: [], selectedNodeID: UUID(), rules: [],
             finalAction: .defaultProxy, mitmRuleSets: [])
         selection.showRuntimeVersion(baseline)
         #expect(selection.runtimeGroups.isEmpty)
+        #expect(selection.runtimeOutboundNames.isEmpty)
         #expect(!selection.usesRuntimeVersion)
     }
 }

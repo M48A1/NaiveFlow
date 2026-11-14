@@ -8,17 +8,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The text profile, edited inside the app and wired straight into the app's own
-/// stores.
-///
-/// This page is a renderer: every decision — what the buffer holds, when it is
-/// recompiled, when the draft is written, what a failed apply leaves behind, and
-/// how much work the tunnel still has to do — lives in `ProfileEditorModel`, so
-/// the same behaviour is available to another platform, a deep link or a test.
-///
-/// The name is deliberate: in this project `Configuration…` means a *proxy node*
-/// (`ProxyConfiguration`, `ConfigurationStore`), while the *profile* is the single
-/// text document that describes the whole setup.
+/// Text configuration editor with version history and iCloud Drive support.
 struct ProfileView: View {
     @Environment(Operations.self) private var operations
 

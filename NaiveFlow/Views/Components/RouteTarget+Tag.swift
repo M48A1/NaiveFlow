@@ -25,22 +25,4 @@ extension RouteTarget {
         case .defaultProxy, .proxy: .purple
         }
     }
-    
-    func outboundName(
-        defaultRouteTarget: RouteTarget?,
-        configStore: ConfigurationStore,
-        chainStore: ChainStore,
-        selection: ProxySelection?
-    ) -> String? {
-        switch self {
-        case .default:
-            defaultRouteTarget?.displayName(configStore: configStore, chainStore: chainStore, selection: selection)
-        case .defaultProxy:
-            (defaultRouteTarget ?? .defaultProxy).displayName(configStore: configStore, chainStore: chainStore, selection: selection)
-        case .proxy:
-            displayName(configStore: configStore, chainStore: chainStore, selection: selection)
-        case .direct, .reject:
-            nil
-        }
-    }
 }

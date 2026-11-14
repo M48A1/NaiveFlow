@@ -7,8 +7,6 @@ struct RequestsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(TunnelController.self) private var tunnel
     @State private var model = RequestsModel()
-    @Environment(ConfigurationStore.self) private var configStore
-    @Environment(ChainStore.self) private var chainStore
     @Environment(ProxySelection.self) private var proxySelection: ProxySelection?
     @State private var selection = Set<UUID>()
     @State private var selecting = false
@@ -256,7 +254,7 @@ struct RequestsView: View {
 
     private func outboundName(_ entry: RequestsModel.Entry) -> String? {
         entry.outbound?.name ?? entry.routeTarget.outboundName(defaultRouteTarget: entry.defaultRouteTarget,
-            configStore: configStore, chainStore: chainStore, selection: proxySelection)
+            selection: proxySelection)
     }
 }
 

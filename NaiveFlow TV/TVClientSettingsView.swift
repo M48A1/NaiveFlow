@@ -39,8 +39,8 @@ struct TVClientSettingsView: View {
                     .disabled(model.isBusy || model.modules.isEmpty)
             }
             Section("Diagnostics") {
-                NavigationLink("Requests") { TVClientActivityView(tunnel: container.tunnel, showsLogs: false) }
-                NavigationLink("Logs") { TVClientActivityView(tunnel: container.tunnel, showsLogs: true) }
+                NavigationLink("Requests") { TVClientActivityView(tunnel: container.tunnel, selection: container.selection, showsLogs: false) }
+                NavigationLink("Logs") { TVClientActivityView(tunnel: container.tunnel, selection: container.selection, showsLogs: true) }
             }
         }
         .navigationTitle("Settings")
@@ -301,6 +301,7 @@ private struct TVClientSubscriptionsView: View {
 private struct TVClientActivityView: View {
     @Environment(\.scenePhase) private var scenePhase
     let tunnel: TunnelController
+    let selection: ProxySelection
     let showsLogs: Bool
     @State private var logs = LogsModel()
     @State private var requests = RequestsModel()
@@ -310,7 +311,17 @@ private struct TVClientActivityView: View {
             if showsLogs {
                 ForEach(logs.logs) { entry in Text(entry.message) }
             } else {
-                ForEach(requests.requests) { entry in Text(entry.host) }
+                ForEach(requests.requests) { entry in
+                    HStack {
+                        Text(entry.host)
+                        Spacer()
+                        if let name = entry.outbound?.name ?? entry.routeTarget.outboundName(
+                            defaultRouteTarget: entry.defaultRouteTarget, selection: selection
+                        ) {
+                            Text(name).foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
         }
         .navigationTitle(showsLogs ? "Logs" : "Requests")

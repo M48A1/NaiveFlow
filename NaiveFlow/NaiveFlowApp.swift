@@ -24,8 +24,6 @@ struct NaiveFlowApp: App {
         container.start()
         let operations = Operations(container: container)
 
-        Task { await CloudSync.shared.start { keys in await operations.reload(keys) } }
-
         _container = State(initialValue: container)
         _operations = State(initialValue: operations)
         _client = State(initialValue: ClientModel(operations: operations))
@@ -45,10 +43,6 @@ struct NaiveFlowApp: App {
                 .environment(container.selection)
                 .environment(container.latency)
                 .environment(container.stats)
-                .environment(container.configurationStore)
-                .environment(container.chainStore)
-                .environment(container.groupStore)
-                .environment(container.subscriptionStore)
                 .environment(mitmCertificateController)
                 .environment(deepLinkManager)
         }

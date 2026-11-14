@@ -8,24 +8,28 @@
 import Foundation
 
 extension RouteTarget {
-    func displayName(configStore: ConfigurationStore, chainStore: ChainStore, selection: ProxySelection? = nil) -> String {
+    @MainActor
+    func outboundName(
+        defaultRouteTarget: RouteTarget?,
+        selection: ProxySelection?
+    ) -> String? {
+        let target: RouteTarget
         switch self {
         case .default:
-            return String(localized: "Default")
+            guard let defaultRouteTarget else { return nil }
+            target = defaultRouteTarget
         case .defaultProxy:
-            return selection?.effectiveConfiguration?.name ?? String(localized: "Proxy")
-        case .direct:
-            return String(localized: "DIRECT")
-        case .reject:
-            return String(localized: "REJECT")
-        case .proxy(let id):
-            if let configuration = configStore.configurations.first(where: { $0.id == id }) {
-                return configuration.name
-            }
-            if let chain = chainStore.chains.first(where: { $0.id == id }) {
-                return chain.name
-            }
-            return String(localized: "Proxy")
+            target = defaultRouteTarget ?? .defaultProxy
+        default:
+            target = self
+        }
+
+        switch target {
+        case .default: return String(localized: "Default")
+        case .defaultProxy: return selection?.effectiveConfiguration?.name ?? String(localized: "Proxy")
+        case .proxy(let id): return selection?.runtimeOutboundNames[id] ?? String(localized: "Proxy")
+        case .direct: return self == .direct ? nil : String(localized: "DIRECT")
+        case .reject: return self == .reject ? nil : String(localized: "REJECT")
         }
     }
 }
