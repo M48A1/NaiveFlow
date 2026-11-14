@@ -108,7 +108,7 @@
 				Networking/Routing/NativeGeoDatabase.swift,
 				Networking/Routing/RuntimeProxyGroup.swift,
 				DataStore/FailableDecodable.swift,
-				DataStore/SyncStore.swift,
+
 				MITM/MITMCertificateStore.swift,
 				MITM/X509Builder.swift,
 				Models/DNSMode.swift,

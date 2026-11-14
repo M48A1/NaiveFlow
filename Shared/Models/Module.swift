@@ -136,7 +136,7 @@ nonisolated struct ModuleMITMRuleSet: Codable, Equatable, Identifiable {
 nonisolated struct Module: Codable, Equatable, Identifiable, SoftDeletable {
     static let maxRuleSetCount = 64
     static let maxIconBytes = 64 * 1024
-    static let maxEncodedBytes = SyncStore.maxSyncedPayloadBytes
+    static let maxEncodedBytes = 900_000
 
     let id: UUID
     var name: String

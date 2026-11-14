@@ -106,7 +106,6 @@ nonisolated final class AWCore {
         static let alwaysUntrustCellular = "alwaysUntrustCellular"
         static let blockUDP = "blockUDP"
         static let blockWebRTC = "blockWebRTC"
-        static let chainLatencyResults = "chainLatencyResults"
         static let echDNSDoHURL = "echDNSDoHURL"
         static let echDNSMode = "echDNSMode"
         static let echDNSPlainServer = "echDNSPlainServer"
@@ -115,7 +114,6 @@ nonisolated final class AWCore {
         static let fallbackDNSServer = "fallbackDNSServer"
         static let hideVPNIcon = "hideVPNIcon"
         static let hostMappings = "hostMappings"
-        static let iCloudSyncEnabled = "iCloudSyncEnabled"
         static let identifier = "identifier"
         static let latencyResults = "latencyResults"
         static let localRequestDNSDoHURL = "localRequestDNSDoHURL"
@@ -123,7 +121,6 @@ nonisolated final class AWCore {
         static let localRequestDNSPlainServer = "localRequestDNSPlainServer"
         static let mitmEnabled = "mitmEnabled"
         static let preventDNSLeak = "preventDNSLeak"
-        static let proxiesPageProxyType = "proxiesPageProxyType"
         static let proxyDNSDoHURL = "proxyDNSDoHURL"
         static let proxyDNSMode = "proxyDNSMode"
         static let proxyDNSPlainServer = "proxyDNSPlainServer"
@@ -131,8 +128,6 @@ nonisolated final class AWCore {
         static let quicPolicy = "quicPolicy"
         static let reflectionEnabled = "reflectionEnabled"
         static let remnawaveHWID = "remnawaveHWID"
-        static let selectedChainId = "selectedChainId"
-        static let selectedConfigurationId = "selectedConfigurationId"
         static let subscriptionDNSDoHURL = "subscriptionDNSDoHURL"
         static let subscriptionDNSMode = "subscriptionDNSMode"
         static let subscriptionDNSPlainServer = "subscriptionDNSPlainServer"
@@ -168,24 +163,6 @@ nonisolated final class AWCore {
 
     // MARK: - Typed UserDefaults Accessors
     
-    // App
-
-    static func getProxiesPageProxyType() -> String? {
-        userDefaults.string(forKey: UserDefaultsKey.proxiesPageProxyType)
-    }
-
-    static func setProxiesPageProxyType(_ rawValue: String) {
-        userDefaults.set(rawValue, forKey: UserDefaultsKey.proxiesPageProxyType)
-    }
-    
-    static func getICloudSyncEnabled() -> Bool {
-        userDefaults.bool(forKey: UserDefaultsKey.iCloudSyncEnabled)
-    }
-
-    static func setICloudSyncEnabled(_ value: Bool) {
-        userDefaults.set(value, forKey: UserDefaultsKey.iCloudSyncEnabled)
-    }
-    
     // Tunnel
     static func getActiveConfigurationData() -> Data? {
         userDefaults.data(forKey: UserDefaultsKey.activeConfiguration)
@@ -199,30 +176,6 @@ nonisolated final class AWCore {
         }
     }
     
-    static func getSelectedConfigurationId() -> UUID? {
-        userDefaults.string(forKey: UserDefaultsKey.selectedConfigurationId).flatMap(UUID.init(uuidString:))
-    }
-    
-    static func setSelectedConfigurationId(_ id: UUID?) {
-        if let id {
-            userDefaults.set(id.uuidString, forKey: UserDefaultsKey.selectedConfigurationId)
-        } else {
-            userDefaults.removeObject(forKey: UserDefaultsKey.selectedConfigurationId)
-        }
-    }
-
-    static func getSelectedChainId() -> UUID? {
-        userDefaults.string(forKey: UserDefaultsKey.selectedChainId).flatMap(UUID.init(uuidString:))
-    }
-    
-    static func setSelectedChainId(_ id: UUID?) {
-        if let id {
-            userDefaults.set(id.uuidString, forKey: UserDefaultsKey.selectedChainId)
-        } else {
-            userDefaults.removeObject(forKey: UserDefaultsKey.selectedChainId)
-        }
-    }
-
     // Latency
     static func getLatencyResultsData() -> Data? {
         userDefaults.data(forKey: UserDefaultsKey.latencyResults)
@@ -230,14 +183,6 @@ nonisolated final class AWCore {
 
     static func setLatencyResultsData(_ data: Data) {
         userDefaults.set(data, forKey: UserDefaultsKey.latencyResults)
-    }
-
-    static func getChainLatencyResultsData() -> Data? {
-        userDefaults.data(forKey: UserDefaultsKey.chainLatencyResults)
-    }
-
-    static func setChainLatencyResultsData(_ data: Data) {
-        userDefaults.set(data, forKey: UserDefaultsKey.chainLatencyResults)
     }
 
     // Settings

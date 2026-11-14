@@ -19,7 +19,6 @@ protocol LatencyTransport: AnyObject, Sendable {
 @Observable
 final class LatencyCenter {
     var latencyResults: [UUID: LatencyResult] = [:]
-    var chainLatencyResults: [UUID: LatencyResult] = [:]
 
     @ObservationIgnored private let settingsProvider: @MainActor () -> LatencyTestSettings
 
@@ -91,82 +90,13 @@ final class LatencyCenter {
         }
     }
 
-    // MARK: - Chain Tests
-
-    @ObservationIgnored private var batchChainLatencyTask: Task<Void, Never>?
-    @ObservationIgnored private var batchChainLatencyTargetIds: Set<UUID> = []
-    @ObservationIgnored private var singleChainLatencyTasks: [UUID: Task<Void, Never>] = [:]
-
-    func testChainLatency(
-        for chain: ProxyChain,
-        configurations: [ProxyConfiguration],
-        transport: LatencyTransport?,
-        isLiveChain: @escaping @MainActor @Sendable (UUID) -> Bool = { _ in true }
-    ) {
-        guard let resolved = chain.resolveComposite(from: configurations) else { return }
-        let chainId = chain.id
-        singleChainLatencyTasks[chainId]?.cancel()
-        chainLatencyResults[chainId] = .testing
-        let settings = settingsProvider().effective
-        let send = Self.tunnelSend(transport)
-        singleChainLatencyTasks[chainId] = Task { [weak self] in
-            let result = await Self.runSingleLatencyTest(for: resolved, settings: settings, send: send)
-            await MainActor.run {
-                guard !Task.isCancelled else { return }
-                self?.singleChainLatencyTasks[chainId] = nil
-                self?.recordChainLatencyResult(result, for: chainId, isLive: isLiveChain)
-            }
-        }
-    }
-
-    func testAllChainLatencies(
-        chains: [ProxyChain],
-        configurations: [ProxyConfiguration],
-        transport: LatencyTransport?,
-        isLiveChain: @escaping @MainActor @Sendable (UUID) -> Bool = { _ in true },
-        isResolvableChain: @escaping @MainActor @Sendable (UUID) -> Bool = { _ in true }
-    ) {
-        batchChainLatencyTask?.cancel()
-        var chainData: [(UUID, ProxyConfiguration)] = []
-        for chain in chains {
-            if let resolved = chain.resolveComposite(from: configurations) {
-                chainData.append((chain.id, resolved))
-            }
-        }
-        let targetIds = Set(chainData.map(\.0))
-        restoreDisplacedResults(in: \.chainLatencyResults, stored: storedChainLatencyResults, previousTargets: batchChainLatencyTargetIds, newTargets: targetIds)
-        batchChainLatencyTargetIds = targetIds
-        for (chainId, _) in chainData {
-            chainLatencyResults[chainId] = .testing
-        }
-        let chainIdByConfigId: [UUID: UUID] = Dictionary(uniqueKeysWithValues: chainData.map { ($0.1.id, $0.0) })
-        let settings = settingsProvider().effective
-        let send = Self.tunnelSend(transport)
-        batchChainLatencyTask = Task { [weak self] in
-            await Self.runLatencyTests(chainData.map(\.1), settings: settings, send: send, isStillWanted: { compositeId in
-                guard let chainId = chainIdByConfigId[compositeId] else { return false }
-                return isResolvableChain(chainId)
-            }) { configId, result in
-                if let chainId = chainIdByConfigId[configId] {
-                    await MainActor.run {
-                        guard !Task.isCancelled else { return }
-                        self?.recordChainLatencyResult(result, for: chainId, isLive: isLiveChain)
-                    }
-                }
-            }
-        }
-    }
-
     // MARK: - Persistence
 
     @ObservationIgnored private var storedLatencyResults: [UUID: LatencyResult] = [:]
-    @ObservationIgnored private var storedChainLatencyResults: [UUID: LatencyResult] = [:]
 
     private func restoreResults() {
         storedLatencyResults = Self.decodeLatencyResults(AWCore.getLatencyResultsData())
-        storedChainLatencyResults = Self.decodeLatencyResults(AWCore.getChainLatencyResultsData())
         latencyResults = storedLatencyResults
-        chainLatencyResults = storedChainLatencyResults
     }
 
     private func recordLatencyResult(
@@ -182,19 +112,6 @@ final class LatencyCenter {
         }
     }
 
-    private func recordChainLatencyResult(
-        _ result: LatencyResult,
-        for chainId: UUID,
-        isLive: @MainActor (UUID) -> Bool
-    ) {
-        guard isLive(chainId) else { return }
-        chainLatencyResults[chainId] = result
-        storedChainLatencyResults[chainId] = result
-        if let data = Self.encodeLatencyResults(storedChainLatencyResults) {
-            AWCore.setChainLatencyResultsData(data)
-        }
-    }
-
     func pruneLatencyState(liveConfigurationIds: Set<UUID>) {
         for (id, task) in singleLatencyTasks where !liveConfigurationIds.contains(id) {
             task.cancel()
@@ -207,22 +124,6 @@ final class LatencyCenter {
             for id in staleStored { storedLatencyResults[id] = nil }
             if let data = Self.encodeLatencyResults(storedLatencyResults) {
                 AWCore.setLatencyResultsData(data)
-            }
-        }
-    }
-
-    func pruneChainLatencyState(liveChainIds: Set<UUID>) {
-        for (id, task) in singleChainLatencyTasks where !liveChainIds.contains(id) {
-            task.cancel()
-            singleChainLatencyTasks[id] = nil
-        }
-        let staleLive = chainLatencyResults.keys.filter { !liveChainIds.contains($0) }
-        for id in staleLive { chainLatencyResults[id] = nil }
-        let staleStored = storedChainLatencyResults.keys.filter { !liveChainIds.contains($0) }
-        if !staleStored.isEmpty {
-            for id in staleStored { storedChainLatencyResults[id] = nil }
-            if let data = Self.encodeLatencyResults(storedChainLatencyResults) {
-                AWCore.setChainLatencyResultsData(data)
             }
         }
     }

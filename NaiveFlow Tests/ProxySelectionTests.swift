@@ -24,15 +24,7 @@ struct ProxySelectionTests {
         )
     }
 
-    /// Clears the persisted manual selection so each test controls `AWCore`
-    /// state regardless of execution order.
-    private func resetPersistedSelection() {
-        AWCore.setSelectedChainId(nil)
-        AWCore.setSelectedConfigurationId(nil)
-    }
-
     @Test func textVersionPinsSelection() {
-        resetPersistedSelection()
         let selection = ProxySelection()
         let n = node("A")
         selection.showRuntimeVersion(bundle(node: n, snapshotID: UUID()))
@@ -41,9 +33,8 @@ struct ProxySelectionTests {
         #expect(selection.effectiveConfiguration?.id == n.id)
     }
 
-    @Test func librarySelectionDoesNotActivateWithoutDocument() {
+    @Test func noSelectionWithoutAppliedProfile() {
         let selection = ProxySelection()
-        selection.select(node("Library"))
         #expect(selection.effectiveConfiguration == nil)
     }
 }

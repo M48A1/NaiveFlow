@@ -164,6 +164,27 @@ struct ClientDataIntegrityTests {
         #expect(!model.isBusy)
     }
 
+    @Test func subscriptionRefreshPreventsCompetingWrites() async throws {
+        let (root, model) = workspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = "https://example.com/feed"
+        let subscription = ClientNodeSubscription(name: "Feed", url: url)
+        let profile = model.createProfile(name: "Test", text: base)
+        await model.activate(profile)
+        let request = ClientResourceRequest.update(.subscription(subscription))
+        let result = await model.manageResource(request, fetch: { _ in
+            #expect(model.isBusy)
+            let competing = await model.manageResource(request, fetch: { _ in
+                "socks5://192.0.2.2:1080#Competing"
+            })
+            #expect(!competing)
+            return "socks5://192.0.2.1:1080#Refreshed"
+        })
+        #expect(result)
+        #expect(model.profile?.nodeSubscriptions?.first?.members.map(\.name) == ["Refreshed"])
+        #expect(!model.nodes.contains { $0.name == "Competing" })
+    }
+
     @Test func unchangedRefreshAndMetadataSaveRetainNodeIdentities() async throws {
         let (root, model) = workspace()
         defer { try? FileManager.default.removeItem(at: root) }
