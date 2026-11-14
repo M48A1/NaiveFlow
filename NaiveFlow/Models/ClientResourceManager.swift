@@ -207,11 +207,28 @@ enum ClientResourceManager {
         }
         if let record { try validateSubscription(record) }
         let current = TextConfigurationPipeline.process(text: profile.text).compiled.proxies
+        let currentByName = Dictionary(current.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+        let previousBySource = Dictionary(grouping: record?.members ?? [], by: \.sourceName)
+        var cursors: [String: Int] = [:]
+        var claimed: Set<String> = []
         var used = Set(current.map(\.name))
         var members: [ClientSubscriptionMember] = []
         for node in imported {
-            let previous = record?.members.first { $0.sourceName == node.name }
-            if let previous, previous.edited, current.contains(where: { $0.name == previous.name }) {
+            let cursor = cursors[node.name, default: 0]
+            cursors[node.name] = cursor + 1
+            let matches = previousBySource[node.name] ?? []
+            var previous = cursor < matches.count ? matches[cursor] : nil
+            if let member = previous {
+                // Consume each old member once, including libraries previously
+                // damaged by duplicate-name refreshes. Never overwrite a raw
+                // configuration edit or a node belonging to another source.
+                let owned = currentByName[member.name].map { current in
+                    member.edited || member.importedURL.map { $0 == nodeURL(current) } ?? true
+                } ?? false
+                if !owned || claimed.contains(member.name) { previous = nil }
+            }
+            if let previous, previous.edited {
+                claimed.insert(previous.name)
                 members.append(previous); continue
             }
             var name = previous?.name ?? node.name
@@ -220,14 +237,19 @@ enum ClientResourceManager {
                 while used.contains(name) { name = "\(node.name) (\(suffix))"; suffix += 1 }
             }
             used.insert(name)
+            claimed.insert(name)
             profile.text = ClientDocumentEditing.set(profile.text, section: .proxy, key: name, value: node.toURLString())
-            members.append(ClientSubscriptionMember(sourceName: node.name, name: name))
+            members.append(ClientSubscriptionMember(sourceName: node.name, name: name, importedURL: nodeURL(node)))
         }
         if var record {
             record.members = members; record.updatedAt = .now
             upsertSubscription(record, in: &profile)
         }
         return profile
+    }
+
+    private static func nodeURL(_ node: ProxyConfiguration) -> String {
+        String(node.toURLString().split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0])
     }
 
     private static func installingModule(_ candidate: ClientModule, into original: ClientProfile) async throws -> ClientProfile {

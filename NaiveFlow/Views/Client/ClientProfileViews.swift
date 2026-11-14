@@ -8,7 +8,9 @@ struct ClientProfileEditorView: View {
     @State private var errors: [ConfigurationDiagnostic] = []
     @State private var errorFocus = UUID()
     @State private var showDiscard = false
-    @State private var initialText: String?
+    @State private var initialProfile: ClientProfile?
+
+    private var hasUnsavedChanges: Bool { initialProfile.map { $0 != profile } ?? false }
 
     var body: some View {
         NavigationStack {
@@ -34,6 +36,7 @@ struct ClientProfileEditorView: View {
                             .disabled(model.isBusy || profile.name.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
+                .disabled(model.isBusy)
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: errorFocus) { _, _ in
                     if !errors.isEmpty { scroll.scrollTo("profile-source", anchor: .top) }
@@ -43,19 +46,19 @@ struct ClientProfileEditorView: View {
             .navigationTitle("Edit Profile").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") {
-                    if profile.text != initialText { showDiscard = true } else { dismiss() }
-                } }
+                    if hasUnsavedChanges { showDiscard = true } else { dismiss() }
+                }.disabled(model.isBusy) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Apply") { Task { await save(apply: true) } }
                         .disabled(model.isBusy || profile.name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 ToolbarItem(placement: .primaryAction) { if model.isBusy { ProgressView() } }
             }
-            .task { initialText = profile.text }
+            .onAppear { if initialProfile == nil { initialProfile = profile } }
             .confirmationDialog("Discard Unsaved Changes?", isPresented: $showDiscard, titleVisibility: .visible) {
                 Button("Discard Changes", role: .destructive) { dismiss() }
             }
-            .interactiveDismissDisabled(profile.text != initialText)
+            .interactiveDismissDisabled(hasUnsavedChanges || model.isBusy)
             .alert("Could Not Save Profile", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
                 Button("OK") { model.error = nil }
             } message: { Text(model.error ?? "") }
@@ -64,15 +67,16 @@ struct ClientProfileEditorView: View {
 
     private func save(apply: Bool) async {
         // Preserve even invalid drafts, but never send them to the running tunnel.
-        guard await model.saveProfile(profile, apply: false) else { return }
-        initialText = profile.text
-        errors = TextConfigurationPipeline.process(text: profile.text).diagnostics.errors.sorted
+        let submitted = profile
+        guard await model.saveProfile(submitted, apply: false) else { return }
+        initialProfile = submitted
+        errors = TextConfigurationPipeline.process(text: submitted.text).diagnostics.errors.sorted
         errorFocus = UUID()
         guard errors.isEmpty else { return }
         if apply {
-            guard await model.saveProfile(profile, apply: true) else { return }
+            guard await model.saveProfile(submitted, apply: true) else { return }
         }
-        dismiss()
+        if profile == submitted { dismiss() }
     }
 }
 

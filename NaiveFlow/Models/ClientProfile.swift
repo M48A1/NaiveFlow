@@ -34,6 +34,8 @@ nonisolated struct ClientSubscriptionMember: Codable, Equatable {
     var sourceName: String
     var name: String
     var edited = false
+    // Canonical node URL without its display name; nil for older libraries.
+    var importedURL: String?
 }
 
 nonisolated struct ClientNodeSubscription: Codable, Identifiable, Equatable {

@@ -22,6 +22,34 @@ nonisolated struct SubscriptionFetcher {
 
     static let maxResponseBytes = 8 * 1024 * 1024
 
+    typealias SystemFetch = @Sendable (URLRequest, Int) async throws -> (Data, HTTPURLResponse)
+    typealias ResolvedFetch = @Sendable (URLRequest, DNSUpstream) async throws -> (Data, HTTPURLResponse)
+
+    /// Shared transport for both client interfaces. An explicit DNS upstream
+    /// must succeed; failure never retries using the system resolver.
+    static func fetchResponse(
+        _ request: URLRequest,
+        maxBytes: Int = maxResponseBytes,
+        upstream: DNSUpstream? = nil,
+        systemFetch: SystemFetch = { request, limit in
+            let result = try await BoundedHTTPFetcher.fetch(request, maxBytes: limit)
+            return (result.data, result.response)
+        },
+        resolvedFetch: ResolvedFetch = { request, upstream in
+            let result = try await ResolvedHostFetcher.fetch(request) { host in
+                try await DNSUpstreamClient.resolve(host, via: upstream).first
+            }
+            return (result.data, result.response)
+        }
+    ) async throws -> (Data, HTTPURLResponse) {
+        let upstream = upstream ?? AWCore.getSubscriptionDNSUpstream()
+        let result: (Data, HTTPURLResponse)
+        if upstream.isSystem { result = try await systemFetch(request, maxBytes) }
+        else { result = try await resolvedFetch(request, upstream) }
+        guard result.0.count <= maxBytes else { throw NaiveFlowError.subscription(.responseTooLarge(limit: maxBytes)) }
+        return result
+    }
+
     static func request(url: URL, remnawaveHWIDEnabled: Bool = false, hwid: String? = nil) -> URLRequest {
         var request = URLRequest(url: url)
         request.setValue("NaiveFlow", forHTTPHeaderField: "User-Agent")
@@ -39,14 +67,9 @@ nonisolated struct SubscriptionFetcher {
 
         let request = Self.request(url: url, remnawaveHWIDEnabled: remnawaveHWIDEnabled)
 
-        let allowInsecure = false // Node exceptions never apply to subscription downloads.
         let (data, response): (Data, URLResponse)
         do {
-            if let viaUpstream = try await fetchViaConfiguredDNS(request, allowInsecure: allowInsecure) {
-                (data, response) = viaUpstream
-            } else {
-                (data, response) = try await streamResponse(request, allowInsecure: allowInsecure)
-            }
+            (data, response) = try await fetchResponse(request)
         } catch let error as NaiveFlowError {
             throw error
         } catch is CancellationError {
@@ -154,60 +177,6 @@ nonisolated struct SubscriptionFetcher {
         )
     }
 
-    // MARK: - Streaming download
-
-    /// Streams the response body and enforces `maxResponseBytes`, cancelling the
-    /// task as soon as the cumulative size is exceeded (instead of loading the
-    /// whole body via `URLSession.data(for:)` without any bound).
-    private static func streamResponse(
-        _ request: URLRequest,
-        allowInsecure: Bool
-    ) async throws -> (data: Data, response: URLResponse) {
-        let session: URLSession
-        if allowInsecure {
-            session = URLSession(configuration: .default, delegate: InsecureSessionDelegate(), delegateQueue: nil)
-        } else {
-            session = .shared
-        }
-        defer {
-            if allowInsecure { session.finishTasksAndInvalidate() }
-        }
-
-        let (bytes, response) = try await session.bytes(for: request)
-        // Reject immediately when the server declares an over-limit Content-Length.
-        if response.expectedContentLength > Int64(maxResponseBytes) {
-            bytes.task.cancel()
-            throw NaiveFlowError.subscription(.responseTooLarge(limit: maxResponseBytes))
-        }
-
-        var data = Data()
-        if response.expectedContentLength > 0 {
-            data.reserveCapacity(min(Int(response.expectedContentLength), maxResponseBytes))
-        } else {
-            data.reserveCapacity(64 * 1024)
-        }
-        for try await byte in bytes {
-            guard data.count < maxResponseBytes else {
-                bytes.task.cancel()
-                throw NaiveFlowError.subscription(.responseTooLarge(limit: maxResponseBytes))
-            }
-            data.append(byte)
-        }
-        return (data, response)
-    }
-
-    // MARK: - Configured DNS
-    
-    private static func fetchViaConfiguredDNS(_ request: URLRequest, allowInsecure: Bool) async throws -> (Data, URLResponse)? {
-        let upstream = AWCore.getSubscriptionDNSUpstream()
-        guard !upstream.isSystem else { return nil }
-
-        let result = try await ResolvedHostFetcher.fetch(request, allowInsecure: allowInsecure) { host in
-            try await DNSUpstreamClient.resolve(host, via: upstream).first
-        }
-        return (result.data, result.response)
-    }
-
     // MARK: - Header Parsing
 
     private static func parseProfileTitle(from response: HTTPURLResponse?) -> String? {
@@ -268,15 +237,5 @@ nonisolated struct SubscriptionFetcher {
         }
 
         return (upload, download, total, expire)
-    }
-}
-
-nonisolated private final class InsecureSessionDelegate: NSObject, URLSessionDelegate {
-    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
-        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-           let trust = challenge.protectionSpace.serverTrust {
-            return (.useCredential, URLCredential(trust: trust))
-        }
-        return (.performDefaultHandling, nil)
     }
 }

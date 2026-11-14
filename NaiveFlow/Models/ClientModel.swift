@@ -17,6 +17,7 @@ final class ClientModel {
     @ObservationIgnored private let documentOverride: ConfigurationDocumentOperations?
     var document: ConfigurationDocumentOperations { documentOverride ?? operations.configurationDocument }
     @ObservationIgnored private var lastActiveText: String?
+    @ObservationIgnored private var rebuiltText: String?
 
     init(operations: Operations, directory: URL = ClientProfileLibrary.directory, document: ConfigurationDocumentOperations? = nil) {
         self.documentOverride = document
@@ -24,7 +25,7 @@ final class ClientModel {
         self.directory = directory
         do { library = try ClientProfileLibrary.load(from: directory) }
         catch { self.error = "Could not load profiles: \(error.localizedDescription)" }
-        let active = self.document.activation.active
+        let active = activeSnapshot
         if library.profiles.isEmpty {
             let profile = ClientProfile(name: "Default Profile", text: active?.text ?? self.document.draft())
             library.profiles = [profile]
@@ -44,8 +45,13 @@ final class ClientModel {
     }
     var activeName: String { profile?.displayName ?? "Profiles" }
 
+    private var activeSnapshot: ConfigurationSnapshot? {
+        guard let id = document.activation.store.manifest().activeSnapshotId else { return nil }
+        return document.activation.store.snapshot(id)
+    }
+
     func refresh() {
-        let active = self.document.activation.active
+        let active = activeSnapshot
         hasApplied = self.document.selection?.usesRuntimeVersion == true
         if let active { lastActiveText = active.text }
         rebuild()
@@ -54,19 +60,38 @@ final class ClientModel {
     var operatingText: String { hasApplied ? lastActiveText ?? profile?.text ?? "" : profile?.text ?? "" }
 
     private func rebuild() {
-        let result = TextConfigurationPipeline.process(text: operatingText)
-        parsed = result.parsed
-        let previous = nodes
-        nodes = result.compiled.proxies.map { candidate in previous.first { $0.name == candidate.name && $0.toURLString() == candidate.toURLString() }?.withChain(candidate.chain) ?? candidate }
+        let text = operatingText
+        guard rebuiltText != text else { return }
+        installDisplay(TextConfigurationPipeline.process(text: text), text: text)
     }
 
-    private func persist() throws { try library.save(to: directory) }
+    private func rebuildAfterSave() async {
+        let text = operatingText
+        guard rebuiltText != text else { return }
+        let result = await Task.detached(priority: .userInitiated) { TextConfigurationPipeline.process(text: text) }.value
+        guard operatingText == text else { return }
+        installDisplay(result, text: text)
+    }
+
+    private func installDisplay(_ result: TextConfigurationPipeline.Result, text: String) {
+        parsed = result.parsed
+        struct NodeKey: Hashable { let name: String; let url: String }
+        let previous = Dictionary(nodes.map { (NodeKey(name: $0.name, url: $0.toURLString()), $0) },
+                                  uniquingKeysWith: { first, _ in first })
+        nodes = result.compiled.proxies.map { candidate in
+            previous[NodeKey(name: candidate.name, url: candidate.toURLString())]?.withChain(candidate.chain) ?? candidate
+        }
+        rebuiltText = text
+    }
+
     func report(_ error: Error) { self.error = error.localizedDescription }
 
     func createProfile(name: String = "New Profile", text: String? = nil, sourceURL: String? = nil) -> ClientProfile {
         let profile = ClientProfile(name: name, text: text ?? TextConfigurationPipeline.template, sourceURL: sourceURL)
-        library.profiles.append(profile)
-        do { try persist() } catch { report(error) }
+        guard !isBusy else { error = "Wait for the current profile operation to finish."; return profile }
+        var next = library
+        next.profiles.append(profile)
+        do { try next.save(to: directory); library = next } catch { report(error) }
         return profile
     }
 
@@ -76,6 +101,7 @@ final class ClientModel {
         isBusy = true
         defer { isBusy = false }
         do {
+            try Task.checkCancellation()
             try await storeProfile(candidate, apply: apply, refreshingRuleSets: refreshingRuleSets)
             return true
         } catch { report(error); return false }
@@ -84,17 +110,28 @@ final class ClientModel {
     private func storeProfile(_ candidate: ClientProfile, apply: Bool, refreshingRuleSets: Set<String>?) async throws {
         var saved = candidate
         saved.updatedAt = .now
+        let original = library
+        var next = original
+        if let index = next.profiles.firstIndex(where: { $0.id == saved.id }) { next.profiles[index] = saved }
+        else { next.profiles.append(saved) }
+        if apply { next.selectedID = saved.id }
+        // A failed local write must never publish a new runtime configuration.
+        // Keep the observable library unchanged until both steps succeed.
+        try next.save(to: directory)
         if apply {
-            _ = try await document.apply(saved.text, refreshingRuleSets: refreshingRuleSets)
+            do { _ = try await document.apply(saved.text, refreshingRuleSets: refreshingRuleSets) }
+            catch {
+                let failure = error
+                do { try original.save(to: directory) }
+                catch { throw ClientFailure("\(failure.localizedDescription) Could not restore the profile library: \(error.localizedDescription)") }
+                throw failure
+            }
             liveGroups = [:]
-            library.selectedID = saved.id
             lastActiveText = saved.text
             hasApplied = true
         }
-        if let index = library.profiles.firstIndex(where: { $0.id == saved.id }) { library.profiles[index] = saved }
-        else { library.profiles.append(saved) }
-        try persist()
-        rebuild()
+        library = next
+        await rebuildAfterSave()
         message = apply ? "Applied \(saved.name)" : "Profile saved"
     }
 
@@ -119,6 +156,7 @@ final class ClientModel {
             throw ClientFailure("The current profile has changed. Reopen the resource and try again.")
         }
         try Task.checkCancellation()
+        if change.apply { try requireAppliedDraft() }
         try await storeProfile(change.profile, apply: change.apply, refreshingRuleSets: change.refreshingRuleSets)
         return true
     }
@@ -126,17 +164,29 @@ final class ClientModel {
     func activate(_ profile: ClientProfile) async { _ = await saveProfile(profile, apply: true) }
 
     func deleteProfile(_ id: UUID) {
+        guard !isBusy else { return }
         guard id != library.selectedID else { error = "Switch to another profile before deleting the current profile."; return }
-        library.profiles.removeAll { $0.id == id }
-        do { try persist() } catch { report(error) }
+        var next = library
+        next.profiles.removeAll { $0.id == id }
+        do { try next.save(to: directory); library = next } catch { report(error) }
     }
 
-    func updateProfile(_ profile: ClientProfile) async {
-        guard let source = profile.sourceURL else { return }
+    func updateProfile(_ profile: ClientProfile, fetch: ClientResourceManager.FetchText? = nil) async {
+        guard !isBusy, let source = profile.sourceURL,
+              library.profiles.first(where: { $0.id == profile.id }) == profile else { return }
+        isBusy = true
+        defer { isBusy = false }
+        let originalText = operatingText
         do {
+            try Task.checkCancellation()
             var candidate = profile
-            candidate.text = try await fetchText(source)
-            _ = await saveProfile(candidate, apply: profile.id == library.selectedID && hasApplied)
+            candidate.text = try await (fetch ?? { [self] in try await fetchText($0) })(source)
+            try Task.checkCancellation()
+            guard library.profiles.first(where: { $0.id == profile.id }) == profile,
+                  operatingText == originalText else {
+                throw ClientFailure("The profile has changed. Reopen it and try again.")
+            }
+            try await storeProfile(candidate, apply: profile.id == library.selectedID && hasApplied, refreshingRuleSets: nil)
         } catch { report(error) }
     }
 
@@ -155,7 +205,7 @@ final class ClientModel {
             throw ClientFailure("Enter a valid HTTPS URL.")
         }
         let request = SubscriptionFetcher.request(url: url, remnawaveHWIDEnabled: subscription.remnawaveHWIDEnabled)
-        let (data, response) = try await BoundedHTTPFetcher.fetch(request, maxBytes: ConfigurationImport.maximumBytes)
+        let (data, response) = try await SubscriptionFetcher.fetchResponse(request, maxBytes: ConfigurationImport.maximumBytes)
         guard (200...299).contains(response.statusCode), response.url?.scheme?.lowercased() == "https",
               let text = String(data: data, encoding: .utf8) else { throw ClientFailure("Download failed or the file is not UTF-8 text.") }
         return ConfigurationImport.normalize(text)
@@ -164,11 +214,19 @@ final class ClientModel {
     @discardableResult
     func commit(_ text: String, moduleUpdate: [ClientModule]? = nil, styles: [String: ClientGroupStyle]? = nil, subscriptions: [ClientNodeSubscription]? = nil, refreshingRuleSets: Set<String>? = nil) async -> Bool {
         guard var candidate = profile else { return false }
+        do { try requireAppliedDraft() }
+        catch { report(error); return false }
         candidate.text = text
         if let moduleUpdate { candidate.modules = moduleUpdate }
         if let styles { candidate.groupStyles = styles }
         if let subscriptions { candidate.nodeSubscriptions = subscriptions }
         return await saveProfile(candidate, apply: true, refreshingRuleSets: refreshingRuleSets)
+    }
+
+    private func requireAppliedDraft() throws {
+        guard !hasApplied || profile?.text == operatingText else {
+            throw ClientFailure("This profile has saved changes that are not applied. Open the profile and apply or discard those changes before editing the running configuration.")
+        }
     }
 
     func setSetting(_ key: String, value: String, section: ConfigurationDocument.SectionKind = .general) async {
@@ -297,7 +355,9 @@ final class ClientModel {
                 value: ClientDocumentEditing.groupValue(kind: group.kindToken, members: members, parameters: parameters))
         }
         if parsed.general["default-node"] == name { text = ClientDocumentEditing.set(text, section: .general, key: "default-node", value: nil) }
-        _ = await commit(text)
+        var subscriptions = profile?.nodeSubscriptions ?? []
+        for index in subscriptions.indices { subscriptions[index].members.removeAll { $0.name == name } }
+        _ = await commit(text, subscriptions: subscriptions)
     }
 
     func reorderNodes(_ names: [String]) async {

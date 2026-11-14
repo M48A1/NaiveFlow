@@ -127,4 +127,38 @@ struct BoundedHTTPFetcherTests {
         let (_, http) = try await BoundedHTTPFetcher.fetch(url, maxBytes: 64, session: session())
         #expect(http.statusCode == 500)
     }
+
+    @Test(arguments: [DNSUpstream.system, .plain(host: "192.0.2.53", port: 5353), .doh(URL(string: "https://resolver.example/dns-query")!)])
+    func subscriptionTransportUsesChosenDNSAndPreservesRequestOptions(upstream: DNSUpstream) async throws {
+        let request = SubscriptionFetcher.request(url: url, remnawaveHWIDEnabled: true, hwid: "device-for-test")
+        let (body, _) = try await SubscriptionFetcher.fetchResponse(request, maxBytes: 32, upstream: upstream,
+            systemFetch: { request, limit in
+                #expect(upstream.isSystem)
+                #expect(limit == 32)
+                #expect(request.value(forHTTPHeaderField: "x-hwid") == "device-for-test")
+                return (Data("system".utf8), makeHTTPResponse(request.url!.absoluteString))
+            }, resolvedFetch: { request, selected in
+                #expect(!upstream.isSystem)
+                #expect(selected == upstream)
+                #expect(request.value(forHTTPHeaderField: "x-hwid") == "device-for-test")
+                #expect(request.value(forHTTPHeaderField: "X-NaiveFlow-Format") == AJSONParser.formatHeaderValue)
+                return (Data("configured".utf8), makeHTTPResponse(request.url!.absoluteString))
+            })
+        #expect(String(decoding: body, as: UTF8.self) == (upstream.isSystem ? "system" : "configured"))
+    }
+
+    @Test func explicitSubscriptionDNSFailureNeverFallsBackToSystem() async {
+        await #expect(throws: URLError.self) {
+            try await SubscriptionFetcher.fetchResponse(URLRequest(url: url), upstream: .defaultPlain,
+                systemFetch: { _, _ in Issue.record("Explicit DNS must not fall back"); throw URLError(.unknown) },
+                resolvedFetch: { _, _ in throw URLError(.cannotFindHost) })
+        }
+    }
+
+    @Test func configuredSubscriptionDNSCannotBypassTheCallersBodyLimit() async {
+        await #expect(throws: (any Error).self) {
+            try await SubscriptionFetcher.fetchResponse(URLRequest(url: url), maxBytes: 16, upstream: .defaultPlain,
+                resolvedFetch: { request, _ in (Data(count: 17), makeHTTPResponse(request.url!.absoluteString)) })
+        }
+    }
 }
