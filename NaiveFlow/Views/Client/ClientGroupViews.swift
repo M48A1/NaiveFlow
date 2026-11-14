@@ -6,11 +6,18 @@ struct ClientGroupsView: View {
     @State private var editing: ClientGroupEditor?
     @State private var deleteGroup: String?
     @State private var managing = false
+#if os(iOS)
+    @State private var usesWideGrid = false
+#endif
+
     private var columns: [GridItem] {
 #if os(macOS)
         [GridItem(.adaptive(minimum: 210, maximum: 320), spacing: 12)]
 #else
-        [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+        if usesWideGrid {
+            return [GridItem(.adaptive(minimum: 210, maximum: 320), spacing: 12)]
+        }
+        return [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 #endif
     }
 
@@ -38,6 +45,13 @@ struct ClientGroupsView: View {
                     .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 32)
             }
         }
+#if os(iOS)
+        .onGeometryChange(for: Bool.self) { geometry in
+            geometry.size.width >= 700
+        } action: { wide in
+            usesWideGrid = wide
+        }
+#endif
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {

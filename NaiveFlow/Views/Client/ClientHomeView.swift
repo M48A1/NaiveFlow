@@ -30,9 +30,7 @@ struct ClientHomeView: View {
                 proxyCard
                 rulesCard
             }
-#if os(macOS)
             .frame(maxWidth: 760)
-#endif
             .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 24)
         }
         .background(ClientAppearance.background)
