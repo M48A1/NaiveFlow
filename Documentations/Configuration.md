@@ -277,15 +277,54 @@ document keeps meaning the same thing after it is read back.
 
 ```ini
 [Proxy Group]
-PROXY = select, Tokyo, Frankfurt, DIRECT
-Auto = url-test, Tokyo, Frankfurt, url=http://cp.cloudflare.com, interval=300
+Main = select, Tokyo, Frankfurt, DIRECT
+Auto = url-test, Tokyo, Frankfurt, interval=300
+Streaming = url-test, Tokyo, Frankfurt, url=https://example.com/generate_204, interval=600
+Failover = fallback, Tokyo, Frankfurt, interval=600
 ```
 
-Kinds `select`, `url-test`, `fallback`, `load-balance`, `smart` and `random` are
-recognized. Only `select` is expressible today; the others produce a warning and
-are treated as a manual selection group. A group is flattened to its dialable
-members, and routing resolves a group policy to its **first** member, because this
-build has one selected node per route.
+Supported kinds are `select` (manual selection), `url-test` (lowest measured
+latency), `fallback` (first reachable member in declaration order), and
+`load-balance` (round-robin across reachable members). `smart` and `random` are
+recognized but rejected as unsupported. Automatic groups run background probes
+inside the tunnel while rule routing is active; `select` groups do not run
+background probes. Automatic groups cannot directly nest other automatic groups.
+
+### Background latency tests and Settings
+
+**Settings → Latency Test** supplies the defaults for manual node/chain tests and
+automatic groups' background tests:
+
+| Setting | Default | Supported values |
+| --- | --- | --- |
+| Test address | `http://captive.apple.com/` | Default address or a custom HTTP/HTTPS URL |
+| Timeout | 10 seconds | 1–30 seconds |
+| Concurrent tests | 8 | 1–16 |
+
+For background tests, an explicit group `url` takes priority over the address in
+Settings. Without `url`, the group uses the Settings address. In the example,
+`Auto` and `Failover` inherit that address, while `Streaming` uses its own URL.
+The scheme, host, port, path and query are preserved when probing. These tests
+measure response latency in milliseconds, not download bandwidth.
+
+Timeout and concurrency come from Settings. The concurrency limit is shared
+across all background groups, rather than applied separately to each group.
+Each group keeps its own `interval`, in seconds (default 600); the interval is
+the wait after a test round completes. Changing Settings does not rewrite group
+URLs or intervals in the configuration file.
+
+The group editor currently has no URL input field. Set a group-specific address
+by editing its `[Proxy Group]` declaration in the configuration file. The manual
+**Latency Test** button in group details uses Settings, even when that group has
+a URL override for background tests.
+
+Saving Settings while the VPN is connected restarts background probes with the
+new parameters. If the tunnel does not acknowledge the update, the app reports
+that the preferences were saved and asks the user to reconnect. While
+disconnected, saved preferences take effect on the next connection. Preferences
+are stored in the local App Group, separately from text profiles; previous
+host-only test preferences migrate automatically. See also
+[the iOS settings guide](ClientInterface.md#延迟测试设置).
 
 Unknown members are errors (`unresolvedPolicy`). Cycles are detected
 (`groupCycle`) and validation continues instead of recursing.
