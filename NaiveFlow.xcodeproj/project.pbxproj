@@ -372,7 +372,39 @@
 		CB8632442FB83C1600059EFE /* Exceptions for "NaiveFlow" folder in "NaiveFlow TV" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				ContentView.swift,
 				DeepLinkManager.swift,
+				Info.plist,
+				NaiveFlowApp.swift,
+				"Views/Client/ClientComponents.swift",
+				"Views/Client/ClientDiagnosticsView.swift",
+				"Views/Client/ClientGeoSettingsView.swift",
+				"Views/Client/ClientGroupViews.swift",
+				"Views/Client/ClientHomeView.swift",
+				"Views/Client/ClientIconPackViews.swift",
+				"Views/Client/ClientLatencySettingsView.swift",
+				"Views/Client/ClientModuleViews.swift",
+				"Views/Client/ClientNodeManagerView.swift",
+				"Views/Client/ClientPlatform.swift",
+				"Views/Client/ClientProfileViews.swift",
+				"Views/Client/ClientQRImportView.swift",
+				"Views/Client/ClientSettingsViews.swift",
+				"Views/Client/ClientWorkspaceViews.swift",
+				"Views/Client/ProfileSourceEditor.swift",
+				"Views/Components/CancelButton.swift",
+				"Views/Components/ConfirmButton.swift",
+				"Views/Components/RouteTarget+Tag.swift",
+				"Views/Components/TagBadge.swift",
+				"Views/Components/TextWithColorfulIcon.swift",
+				"Views/HomeView.swift",
+				"Views/Pages/About/AboutView.swift",
+				"Views/Pages/About/AcknowledgementsView.swift",
+				"Views/Pages/About/AdvancedSettings/LANProxySettingsView.swift",
+				"Views/Pages/Diagnosis/RequestsView.swift",
+				"Views/Pages/MITM/MITMCertificateView.swift",
+				"Views/Pages/MITM/MITMProfileServer.swift",
+				"Views/Pages/Profile/ProfileView.swift",
+				"Views/Proxies/ProxyEditorView.swift",
 			);
 			target = CB2B549B2F6C3E2700F24AC2 /* NaiveFlow TV */;
 		};
@@ -660,6 +692,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				CB2B549D2F6C3E2700F24AC2 /* NaiveFlow TV */,
+				CB1C10672F23B81500B74CD8 /* NaiveFlow */,
 				CB7A00022F65700100C85E4A /* Shared */,
 			);
 			name = "NaiveFlow TV";
