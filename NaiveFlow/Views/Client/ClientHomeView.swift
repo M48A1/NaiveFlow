@@ -8,6 +8,7 @@ struct ClientHomeView: View {
     @Environment(ConnectionStats.self) private var stats
     @Environment(LatencyCenter.self) private var latency
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @State private var configurationsExpanded = false
     @State private var modeExpanded = false
     @State private var proxiesExpanded = false
@@ -80,7 +81,7 @@ struct ClientHomeView: View {
 
     private var configurationCard: some View {
         ClientHomeCard(colors: [Color(red: 0.43, green: 0.28, blue: 0.77), Color(red: 0.64, green: 0.39, blue: 0.87)]) {
-            cardHeader("Profiles", symbol: "doc.text.fill", summary: model.activeName, expanded: $configurationsExpanded)
+            cardHeader("Profiles", symbol: "doc.text.fill", iconColor: .purple, summary: model.activeName, expanded: $configurationsExpanded)
             if configurationsExpanded {
             ForEach(model.library.profiles) { profile in
                 HStack(spacing: 10) {
@@ -126,8 +127,12 @@ struct ClientHomeView: View {
         ClientHomeCard(colors: [Color(red: 0.06, green: 0.47, blue: 0.43), Color(red: 0.13, green: 0.65, blue: 0.51)]) {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(spacing: 12) {
-                    if tunnel.rawStatus.isTransitioning { ProgressView() }
-                    else { Image(systemName: connected ? "power.circle.fill" : "power.circle").font(.title2) }
+                    if tunnel.rawStatus.isTransitioning { ProgressView().tint(.teal) }
+                    else {
+                        Image(systemName: connected ? "power.circle.fill" : "power.circle")
+                            .font(.title2)
+                            .foregroundStyle(colorScheme == .dark ? Color.teal : Color(red: 0.06, green: 0.47, blue: 0.43))
+                    }
                     Text("NaiveFlow")
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(connected ? Color.green : Color.red)
@@ -156,7 +161,7 @@ struct ClientHomeView: View {
 
     private var modeCard: some View {
         ClientHomeCard(colors: [Color(red: 0.25, green: 0.31, blue: 0.81), Color(red: 0.20, green: 0.56, blue: 0.88)]) {
-            cardHeader("Outbound Mode", symbol: "arrow.triangle.branch", summary: modeTitle(model.mode), expanded: $modeExpanded)
+            cardHeader("Outbound Mode", symbol: "arrow.triangle.branch", iconColor: .blue, summary: modeTitle(model.mode), expanded: $modeExpanded)
             if modeExpanded {
             ForEach([ProxyMode.direct, .global, .rule], id: \.rawValue) { mode in
                 Button { Task { await model.setSetting("proxy-mode", value: mode.rawValue) } } label: {
@@ -183,7 +188,7 @@ struct ClientHomeView: View {
 
     private var proxyCard: some View {
         ClientHomeCard(colors: [Color(red: 0.70, green: 0.31, blue: 0.11), Color(red: 0.85, green: 0.48, blue: 0.18)]) {
-            cardHeader("PROXY", symbol: "paperplane.fill", summary: "\(model.selectedNodeName) · Nodes: \(model.nodes.count)", expanded: $proxiesExpanded)
+            cardHeader("PROXY", symbol: "paperplane.fill", iconColor: colorScheme == .dark ? .orange : Color(red: 0.70, green: 0.31, blue: 0.11), summary: "\(model.selectedNodeName) · Nodes: \(model.nodes.count)", expanded: $proxiesExpanded)
             if proxiesExpanded {
             if model.nodes.isEmpty {
                 VStack(spacing: 8) {
@@ -220,7 +225,7 @@ struct ClientHomeView: View {
 
     private var rulesCard: some View {
         ClientHomeCard(colors: [Color(red: 0.60, green: 0.30, blue: 0.48), Color(red: 0.79, green: 0.46, blue: 0.56)]) {
-            cardHeader("Routing Rules", symbol: "line.3.horizontal.decrease.circle", summary: "RuleSet · \(ruleSetCount)   Local · \(localRuleCount)", expanded: $rulesExpanded)
+            cardHeader("Routing Rules", symbol: "line.3.horizontal.decrease.circle", iconColor: colorScheme == .dark ? .pink : Color(red: 0.60, green: 0.30, blue: 0.48), summary: "RuleSet · \(ruleSetCount)   Local · \(localRuleCount)", expanded: $rulesExpanded)
             if rulesExpanded {
                 HStack(spacing: 12) {
                     ruleTile("RuleSet", symbol: "square.stack.3d.up", count: ruleSetCount, color: .indigo, ruleSets: true)
@@ -248,10 +253,11 @@ struct ClientHomeView: View {
         }
     }
 
-    private func cardHeader(_ title: String, symbol: String, summary: String, expanded: Binding<Bool>) -> some View {
+    private func cardHeader(_ title: String, symbol: String, iconColor: Color, summary: String, expanded: Binding<Bool>) -> some View {
         Button { toggleDetails(expanded) } label: {
             HStack(spacing: 12) {
                 Image(systemName: symbol).font(.title3.weight(.semibold)).frame(width: 28)
+                    .foregroundStyle(iconColor)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title).font(.title3.weight(.semibold))
                     if !expanded.wrappedValue { Text(summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }

@@ -3,30 +3,88 @@ import UserNotifications
 
 struct ClientSettingsView: View {
     var body: some View {
-        List {
-            NavigationLink { ClientDNSView() } label: { row("DNS", symbol: "safari") }
-            NavigationLink { ClientLatencySettingsView() } label: { row("Latency Test", symbol: "bolt.horizontal.circle") }
-            NavigationLink { ClientGeoSettingsView(site: false) } label: { row("GeoIP", symbol: "globe.europe.africa") }
-            NavigationLink { ClientGeoSettingsView(site: true) } label: { row("GeoSite", symbol: "globe") }
-            NavigationLink { ClientAlwaysConnectedSettingsView() } label: { row("Always Connected", symbol: "arrow.triangle.2.circlepath") }
-            NavigationLink { LANProxySettingsView() } label: { row("LAN Sharing", symbol: "wifi") }
-            NavigationLink { ClientLogsView() } label: { row("Logs", symbol: "doc.text.fill") }
-            NavigationLink { RequestsView() } label: { row("Requests", symbol: "list.bullet.rectangle") }
-            NavigationLink { MITMCertificateView() } label: { row("MITM", symbol: "shield.lefthalf.filled") }
-            NavigationLink { ClientModulesView() } label: { row("Modules", symbol: "puzzlepiece.extension.fill") }
-            NavigationLink { ClientHostnamesView() } label: { row("Hostname", symbol: "house.fill") }
-            NavigationLink { ClientNotificationSettingsView() } label: { row("Notification Settings", symbol: "bell.fill") }
-            NavigationLink { AboutView() } label: { row("About", symbol: "info.circle") }
+        ScrollView {
+            VStack(spacing: 24) {
+                section("Connectivity") {
+                    row("DNS", symbol: "safari", color: .blue) { ClientDNSView() }
+                    separator
+                    row("Latency Test", symbol: "bolt.horizontal.circle", color: .blue) { ClientLatencySettingsView() }
+                    separator
+                    row("GeoIP", symbol: "globe.europe.africa", color: .blue) { ClientGeoSettingsView(site: false) }
+                    separator
+                    row("GeoSite", symbol: "globe", color: .blue) { ClientGeoSettingsView(site: true) }
+                    separator
+                    row("Always Connected", symbol: "arrow.triangle.2.circlepath", color: .blue) { ClientAlwaysConnectedSettingsView() }
+                    separator
+                    row("LAN Sharing", symbol: "wifi", color: .blue) { LANProxySettingsView() }
+                }
+                section("Traffic Processing") {
+                    row("MITM", symbol: "shield.lefthalf.filled", color: .purple) { MITMCertificateView() }
+                    separator
+                    row("Modules", symbol: "puzzlepiece.extension.fill", color: .purple) { ClientModulesView() }
+                    separator
+                    row("Hostname", symbol: "house.fill", color: .purple) { ClientHostnamesView() }
+                }
+                section("Diagnostics") {
+                    row("Logs", symbol: "doc.text.fill", color: .orange) { ClientLogsView() }
+                    separator
+                    row("Requests", symbol: "list.bullet.rectangle", color: .orange) { RequestsView() }
+                }
+                section("Application") {
+                    row("Notification Settings", symbol: "bell.fill", color: .teal) { ClientNotificationSettingsView() }
+                    separator
+                    row("About", symbol: "info.circle", color: .teal) { AboutView() }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
+            .padding(.bottom, 24)
         }
-        .listStyle(.insetGrouped).listRowSpacing(0)
+        .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbarBackground(Color(uiColor: .systemGroupedBackground), for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
     }
-    private func row(_ title: String, symbol: String) -> some View {
-        HStack(spacing: 15) {
-            ClientSectionIcon(symbol: symbol)
-            Text(title)
-            Spacer(minLength: 6)
-        }.padding(.vertical, 4)
+
+    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.footnote.weight(.medium)).foregroundStyle(.secondary)
+                .padding(.leading, 4)
+                .accessibilityAddTraits(.isHeader)
+            ClientCard(content: content)
+        }
+    }
+
+    private var separator: some View {
+        Divider().padding(.leading, 70).padding(.trailing, 20)
+    }
+
+    private func row<Destination: View>(_ title: String, symbol: String, color: Color,
+        @ViewBuilder destination: () -> Destination) -> some View {
+        NavigationLink(destination: destination()) {
+            HStack(spacing: 14) {
+                Image(systemName: symbol)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(color)
+                    .frame(width: 36, height: 36)
+                    .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .accessibilityHidden(true)
+                Text(title).foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
