@@ -4,6 +4,8 @@ struct TVRootView: View {
     let container: AppContainer
     @State private var model: ClientModel
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("reviewSubscriptionsOnOpen") private var reviewSubscriptionsOnOpen = false
+    @AppStorage("lastSubscriptionReviewCheck") private var lastReviewCheck = 0.0
 
     init(container: AppContainer) {
         self.container = container
@@ -52,6 +54,11 @@ struct TVRootView: View {
         .onChange(of: scenePhase, initial: true) { _, phase in
             container.stats.setPresentationActive(phase == .active)
             if phase == .active { model.refresh() }
+        }
+        .task(id: scenePhase) {
+            guard scenePhase == .active, reviewSubscriptionsOnOpen, !model.isBusy, !model.hasSavedDraft, model.subscriptionReview == nil,
+                  Date().timeIntervalSince1970 - lastReviewCheck > 86_400 else { return }
+            if await model.prepareSubscriptionUpdate() { lastReviewCheck = Date().timeIntervalSince1970 }
         }
         .alert("Operation Failed", isPresented: Binding(
             get: { model.error != nil },

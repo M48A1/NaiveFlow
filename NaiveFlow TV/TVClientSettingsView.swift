@@ -28,19 +28,11 @@ struct TVClientSettingsView: View {
             }
             Section("Resources") {
                 NavigationLink("Subscriptions") { TVClientSubscriptionsView() }
-                Button("Update Rule Sets") {
-                    Task { _ = await model.manageResource(.update(.ruleSets(sources: nil))) }
-                }
-                .disabled(model.isBusy)
-                Button("Update GeoIP") { Task { _ = await model.manageResource(.update(.geo(site: false))) } }
-                    .disabled(model.isBusy)
-                Button("Update GeoSite") { Task { _ = await model.manageResource(.update(.geo(site: true))) } }
-                    .disabled(model.isBusy)
-                Button("Update Modules") { Task { _ = await model.refreshAllModules() } }
-                    .disabled(model.isBusy || model.modules.isEmpty)
+                NavigationLink("Resource Updates") { ClientResourceCenterView() }
             }
             Section("Diagnostics") {
                 NavigationLink("Connection Diagnostics") { ClientDiagnosticsView() }
+                NavigationLink("Rule Test") { ClientRuleTestView() }
                 NavigationLink("Requests") { TVClientActivityView(tunnel: container.tunnel, selection: container.selection, showsLogs: false) }
                 NavigationLink("Logs") { TVClientActivityView(tunnel: container.tunnel, selection: container.selection, showsLogs: true) }
             }
