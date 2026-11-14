@@ -71,10 +71,6 @@ nonisolated final class MultiplexerPool<S: Multiplexer & Sendable, Extra: Sendab
         state.withLock { $0.idleCheck?.cancel() }
     }
 
-    static func makeKey(host: String, port: UInt16, sni: String) -> String {
-        "\(host):\(port):\(sni)"
-    }
-
     // MARK: - Idle eviction
 
     func startIdleEviction(_ policy: MultiplexerPolicy) {

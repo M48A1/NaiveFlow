@@ -140,24 +140,6 @@ nonisolated enum HPACKEncoder {
 
     // MARK: - CONNECT Request Encoding
 
-    static func encodeConnectRequest(
-        authority: String,
-        extraHeaders: [(name: String, value: String)]
-    ) -> Data {
-        var block = Data()
-        encodeLiteralWithoutIndexing(nameIndex: 2, value: "CONNECT", into: &block)
-        encodeLiteralWithoutIndexing(nameIndex: 1, value: authority, into: &block)
-        for header in extraHeaders {
-            let name = lowercasedName(header.name)
-            if let nameIdx = staticTableNameIndex[name] {
-                encodeLiteralWithoutIndexing(nameIndex: nameIdx, value: header.value, into: &block)
-            } else {
-                encodeLiteralWithoutIndexing(name: name, value: header.value, into: &block)
-            }
-        }
-        return block
-    }
-
     // MARK: - Generic Header Block Encoding
 
     static func encodeHeaderBlock(

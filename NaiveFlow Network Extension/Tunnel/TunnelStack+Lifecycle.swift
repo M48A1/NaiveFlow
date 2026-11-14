@@ -122,11 +122,6 @@ extension TunnelStack {
         for waiter in waiters { waiter.resume() }
     }
     
-    func applyConfiguration(_ newConfiguration: ProxyConfiguration) {
-        guard phase == .running, newConfiguration != configuration else { return }
-        restartStack(configuration: newConfiguration)
-    }
-
     func sleep() {
         guard !configurationTransition.load(ordering: .acquiring), phase == .running, let configuration else { return }
         executeLifecycle(.sleep, configuration: configuration)

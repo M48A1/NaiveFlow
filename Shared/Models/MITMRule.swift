@@ -322,38 +322,6 @@ nonisolated struct MITMRule: Codable, Equatable, Identifiable, Sendable {
 }
 
 extension MITMRule {
-    var summaryTitle: String {
-        "\(phase.description) \(operation.description)"
-    }
-
-    var summarySubtitle: String {
-        switch operation {
-        case .rewrite(let action):
-            switch action {
-            case .transparent(let url), .redirect302(let url):
-                return url
-            case .reject200Text:
-                return String(localized: "Reject Text")
-            case .reject200Gif:
-                return String(localized: "Reject GIF")
-            case .reject200Data:
-                return String(localized: "Reject Data")
-            }
-        case .headerAdd(let name, _):
-            return name
-        case .headerDelete(let name):
-            return name
-        case .headerReplace(let name, _):
-            return name
-        case .script(let scriptBase64, _):
-            let bytes = Data(base64Encoded: scriptBase64)?.count ?? 0
-            return String(localized: "\(bytes) byte(s)")
-        case .bodyReplace(let search, _):
-            return search
-        case .bodyJSON(let operation):
-            return operation.description
-        }
-    }
 }
 
 nonisolated enum MITMRewriteAction: Equatable, Sendable {

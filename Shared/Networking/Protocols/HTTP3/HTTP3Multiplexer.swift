@@ -138,25 +138,8 @@ nonisolated final class HTTP3Multiplexer: Multiplexer, Sendable {
         }
     }
 
-    func forceReserveStream() -> Bool {
-        state.withLock { session in
-            guard session.phase != .closed && !session.isStreamBlocked else { return false }
-            session.reservedStreams += 1
-            return true
-        }
-    }
-
     var activeStreamCount: Int {
         state.withLock { $0.startedStreams + $0.reservedStreams }
-    }
-
-    func noteStreamStarted() -> Bool {
-        state.withLock { session in
-            session.reservedStreams = max(0, session.reservedStreams - 1)
-            guard session.phase != .closed else { return false }
-            session.startedStreams += 1
-            return true
-        }
     }
 
     // MARK: - Stream Creation
@@ -173,17 +156,6 @@ nonisolated final class HTTP3Multiplexer: Multiplexer, Sendable {
         }
     }
 
-    func releaseUnopenedStream() {
-        let shouldClose: Bool = state.withLock { session in
-            guard session.phase != .closed else { return false }
-            session.startedStreams = max(0, session.startedStreams - 1)
-            return session.isDrainedIdle
-        }
-        if shouldClose {
-            close()
-        }
-    }
-
     func removeStream(_ streamID: Int64) {
         let shouldClose: Bool = state.withLock { session in
             let removed = session.streams.removeValue(forKey: streamID) != nil
@@ -195,10 +167,6 @@ nonisolated final class HTTP3Multiplexer: Multiplexer, Sendable {
         if shouldClose {
             close()
         }
-    }
-
-    func markStreamBlocked() {
-        state.withLock { $0.isStreamBlocked = true }
     }
 
     // MARK: - Connection Lifecycle
@@ -469,17 +437,6 @@ nonisolated final class HTTP3Multiplexer: Multiplexer, Sendable {
             default:
                 break
             }
-        }
-        return true
-    }
-
-    func isWithinPeerFieldSectionLimit(_ headers: [(name: String, value: String)]) -> Bool {
-        let limit = peerMaxFieldSectionSize
-        if limit == UInt64.max { return true }
-        var total: UInt64 = 0
-        for header in headers {
-            total = total &+ UInt64(header.name.utf8.count) &+ UInt64(header.value.utf8.count) &+ 32
-            if total > limit { return false }
         }
         return true
     }

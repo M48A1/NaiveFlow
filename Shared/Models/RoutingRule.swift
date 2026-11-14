@@ -14,22 +14,6 @@ nonisolated enum RoutingRuleType: Int, Codable {
 }
 
 extension RoutingRuleType {
-    var displayLabel: String {
-        switch self {
-        case .domainSuffix: return String(localized: "Domain Suffix")
-        case .domainKeyword: return String(localized: "Domain Keyword")
-        case .ipCIDR: return String(localized: "IPv4 CIDR")
-        }
-    }
-    
-    var iconName: String {
-        switch self {
-        case .domainSuffix: return "globe"
-        case .domainKeyword: return "magnifyingglass"
-        case .ipCIDR: return "network"
-        }
-    }
-    
     func normalized(_ value: String) -> String {
         switch self {
         case .ipCIDR:

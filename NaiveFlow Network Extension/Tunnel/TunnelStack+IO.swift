@@ -39,10 +39,6 @@ extension TunnelStack {
         }
     }
 
-    nonisolated func flushOutputBuffer() {
-        if claimOutputDrain() { drainOutput() }
-    }
-
     nonisolated func enqueueOutbound(_ packet: OutboundPacket) {
         guard !configurationTransition.load(ordering: .acquiring) else { return }
         let drains = outputBuffer.withLock { buffer in

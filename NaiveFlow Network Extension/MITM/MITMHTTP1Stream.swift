@@ -203,11 +203,6 @@ actor MITMHTTP1Stream {
         return bodyAccumulator
     }
 
-    private func takeChunkAccumulator() -> Data {
-        defer { chunkAccumulator = Data() }
-        return chunkAccumulator
-    }
-
     private var headScanned: Int = 0
 
     private var verbatimHead: (startLine: String, headers: [Header], bytes: Data)?

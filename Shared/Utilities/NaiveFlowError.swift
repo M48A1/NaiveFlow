@@ -649,23 +649,6 @@ nonisolated extension NaiveFlowError {
             false
         }
     }
-
-    var posixErrno: Int32? {
-        if case .transport(.posix(_, let errno)) = self { errno } else { nil }
-    }
-
-    var underlyingError: (any Error)? {
-        switch self {
-        case .wrapped(_, let e),
-             .certificate(.buildFailed(let e)),
-             .store(.loadFailed(_, let e)), .store(.saveFailed(_, let e)), .store(.syncFailed(let e)),
-             .subscription(.fetchFailed(let e)),
-             .tunnel(.settingsApplyFailed(let e)), .tunnel(.ipcFailed(let e)):
-            e
-        default:
-            nil
-        }
-    }
     var logLevel: NaiveFlowLogger.Level? {
         switch self {
         case .transport(.posix(_, errno: EPIPE)),

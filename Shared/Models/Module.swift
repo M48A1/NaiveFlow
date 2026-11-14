@@ -219,19 +219,8 @@ nonisolated struct Module: Codable, Equatable, Identifiable, SoftDeletable {
         try c.encodeIfPresent(deletedAt, forKey: .deletedAt)
     }
 
-    var isSubscribed: Bool { subscriptionURL != nil }
-
     var ruleSetCount: Int { routingRuleSets.count + mitmRuleSets.count }
 
-    var mitmParameters: [MITMParameter] {
-        var seen: Set<String> = []
-        var merged: [MITMParameter] = []
-        for parameter in mitmRuleSets.flatMap(\.parameters) where seen.insert(parameter.name).inserted {
-            merged.append(parameter)
-        }
-        return merged
-    }
-    
     static func validSubscriptionURL(from rawValue: String) -> URL? {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed),

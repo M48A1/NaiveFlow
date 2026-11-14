@@ -153,14 +153,6 @@ nonisolated final class XHTTPConnection: Sendable {
         }
     }
 
-    func pathWithQueryPadding(_ basePath: String) -> String {
-        if configuration.xPaddingObfsMode && configuration.xPaddingPlacement == .query {
-            let padding = configuration.generatePadding()
-            return "\(basePath)?\(configuration.xPaddingKey)=\(padding)"
-        }
-        return basePath
-    }
-
     // MARK: - Session/Seq Metadata
 
     func applySessionId(to request: inout String, path: inout String) {

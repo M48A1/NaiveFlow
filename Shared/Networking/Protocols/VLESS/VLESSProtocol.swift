@@ -111,28 +111,6 @@ nonisolated struct VLESSProtocol {
         return data
     }
     
-    static func decodeResponseHeader(data: Data) throws -> Int {
-        guard data.count >= 2 else {
-            return 0
-        }
-
-        let startIdx = data.startIndex
-        let version = data[startIdx]
-        
-        guard version == Self.version else {
-            return 0
-        }
-
-        let addonsLength = Int(data[data.index(startIdx, offsetBy: 1)])
-        let totalLength = 2 + addonsLength
-
-        guard data.count >= totalLength else {
-            return 0
-        }
-
-        return totalLength
-    }
-
     private static func parseIPv4(_ address: String) -> [UInt8]? {
         var addr = in_addr()
         guard inet_pton(AF_INET, address, &addr) == 1 else { return nil }

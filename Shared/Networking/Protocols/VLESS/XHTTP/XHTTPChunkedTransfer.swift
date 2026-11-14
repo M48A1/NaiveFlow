@@ -100,8 +100,4 @@ nonisolated enum ChunkedTransferEncoder {
         encoded.append(contentsOf: [0x0D, 0x0A])
         return encoded
     }
-
-    static func encodeTerminator() -> Data {
-        return Data([0x30, 0x0D, 0x0A, 0x0D, 0x0A])
-    }
 }

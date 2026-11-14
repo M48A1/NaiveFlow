@@ -48,18 +48,6 @@ nonisolated enum ShadowsocksKeyDerivation {
         return derivedKey.withUnsafeBytes { Data($0) }
     }
 
-    static func decodePSK(password: String, keySize: Int) -> Data? {
-        let parts = password.split(separator: ":")
-        guard let lastPart = parts.last,
-              let psk = Data(base64Encoded: ShadowsocksKeyDerivation.padBase64(String(lastPart))) else {
-            return nil
-        }
-        guard psk.count == keySize else {
-            return nil
-        }
-        return psk
-    }
-
     static func decodePSKList(password: String, keySize: Int) -> [Data]? {
         let parts = password.split(separator: ":")
         var psks: [Data] = []

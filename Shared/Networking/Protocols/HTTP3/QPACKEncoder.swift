@@ -7,59 +7,9 @@
 
 import Foundation
 
-// MARK: - QPACK Static Table (Subset)
-
-/// Indices into the QPACK static table (RFC 9204, Appendix A).
-nonisolated private enum QPACKStaticIndex: Int {
-    case methodConnect  = 15  // :method = CONNECT
-    case status200      = 25  // :status = 200
-}
-
 // MARK: - QPACKEncoder
 
 nonisolated enum QPACKEncoder {
-
-    /// Encodes CONNECT headers: classic CONNECT (RFC 9114 §4.4) sends only `:method` and
-    /// `:authority`; extended CONNECT (RFC 9220/9298) adds `:protocol`, `:scheme`, `:path`.
-    static func encodeConnectHeaders(
-        authority: String,
-        protocolPseudo: String? = nil,
-        path: String? = nil,
-        extraHeaders: [(name: String, value: String)]
-    ) -> Data {
-        var block = Data()
-
-        // Header block prefix: Required Insert Count 0, Delta Base 0 (no dynamic table).
-        block.append(0x00)
-        block.append(0x00)
-
-        block.append(contentsOf: encodeIndexedFieldLine(QPACKStaticIndex.methodConnect.rawValue))
-
-        if let protocolPseudo {
-            // Extended CONNECT (RFC 9220 §3 / RFC 9298 §3): :protocol, :scheme,
-            // and :path are all mandatory alongside :method and :authority.
-            block.append(contentsOf: encodeLiteralFieldLine(
-                name: ":protocol", value: protocolPseudo
-            ))
-            block.append(contentsOf: encodeIndexedFieldLine(23))  // :scheme = https (index 23)
-            block.append(contentsOf: encodeLiteralWithNameRef(
-                staticIndex: 1, value: path ?? "/"
-            ))
-        }
-
-        // :authority (literal with name ref, static index 0)
-        block.append(contentsOf: encodeLiteralWithNameRef(
-            staticIndex: 0, value: authority
-        ))
-
-        for header in extraHeaders {
-            block.append(contentsOf: encodeLiteralFieldLine(
-                name: header.name, value: header.value
-            ))
-        }
-
-        return block
-    }
 
     /// Decodes a QPACK header block; nil if malformed or it references the dynamic
     /// table — a protocol violation since we advertise `QPACK_MAX_TABLE_CAPACITY=0`.
@@ -142,27 +92,6 @@ nonisolated enum QPACKEncoder {
         }
 
         return headers
-    }
-
-    /// Encodes HTTP/3 POST request headers into a QPACK header block.
-    static func encodePostHeaders(
-        authority: String,
-        path: String,
-        extraHeaders: [(name: String, value: String)]
-    ) -> Data {
-        var block = Data()
-        block.append(0x00)
-        block.append(0x00)
-
-        block.append(contentsOf: encodeIndexedFieldLine(20))  // :method POST
-        block.append(contentsOf: encodeIndexedFieldLine(23))  // :scheme https
-        block.append(contentsOf: encodeLiteralWithNameRef(staticIndex: 0, value: authority))
-        block.append(contentsOf: encodeLiteralWithNameRef(staticIndex: 1, value: path))
-
-        for header in extraHeaders {
-            block.append(contentsOf: encodeLiteralFieldLine(name: header.name, value: header.value))
-        }
-        return block
     }
 
     /// Encodes HTTP/3 request headers for an arbitrary method into a QPACK header block.
@@ -310,21 +239,6 @@ nonisolated enum QPACKEncoder {
         }
         guard let string else { return nil }
         return (string, lenBytes + Int(length))
-    }
-
-    /// `offset` is relative to `data.startIndex`; slice-safe.
-    private static func decodeStringAfterPrefix(from data: Data, offset: Int, prefixBits: Int) -> (String, Int)? {
-        guard let (nameLen, nLenBytes) = decodeVarIntPrefix(from: data, offset: offset, prefixBits: prefixBits) else {
-            return nil
-        }
-        let strStart = offset + nLenBytes
-        guard strStart + Int(nameLen) <= data.count else { return nil }
-        let base = data.startIndex
-        let absStart = base + strStart
-        let absEnd = absStart + Int(nameLen)
-        let strData = Data(data[absStart..<absEnd])
-        guard let string = String(data: strData, encoding: .utf8) else { return nil }
-        return (string, nLenBytes + Int(nameLen))
     }
 
     // MARK: - Static Table

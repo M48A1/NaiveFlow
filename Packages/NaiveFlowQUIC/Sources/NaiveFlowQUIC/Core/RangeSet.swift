@@ -57,14 +57,6 @@ struct RangeSet: Hashable, Sendable {
             && self.ranges[index].upperBound >= range.upperBound
     }
 
-    func intersects(_ range: Range<UInt64>) -> Bool {
-        if range.isEmpty {
-            return false
-        }
-        let index = self.indexOfFirstRange(endingAfter: range.lowerBound)
-        return index < self.ranges.count && self.ranges[index].lowerBound < range.upperBound
-    }
-
     mutating func insert(_ range: Range<UInt64>) {
         if range.isEmpty {
             return

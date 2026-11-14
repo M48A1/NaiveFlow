@@ -531,17 +531,6 @@ actor MITMHTTP2UpstreamLeg {
         delegate?.upstreamLegWriteToOrigin(Codec.windowUpdate(streamID: upstreamStreamID, increment: credit))
     }
 
-    private func resumeAfterScript() {
-        guard phase != .torn, phase != .failed else {
-            let continuation = parkedContinuation
-            parkedContinuation = nil
-            continuation?.resume()
-            return
-        }
-        let parked = pump()
-        finishPass(parked: parked)
-    }
-
     private func fail(_ message: String) {
         guard transition(to: .failed) else { return }
         receiveBuffer = MITMByteBuffer()

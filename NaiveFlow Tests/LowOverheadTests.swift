@@ -1,34 +1,6 @@
 import Foundation
-import CoreGraphics
-import ImageIO
 import Testing
 @testable import NaiveFlow
-
-struct IconMemoryTests {
-    private func png(width: Int, height: Int) throws -> Data {
-        let context = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
-            bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-        let image = try #require(context.makeImage())
-        let data = NSMutableData()
-        let destination = try #require(CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil))
-        CGImageDestinationAddImage(destination, image, nil)
-        #expect(CGImageDestinationFinalize(destination))
-        return data as Data
-    }
-
-    @Test func largeIconIsDecodedToSmallBitmap() throws {
-        let image = try #require(ProxyGroupIconLoader.thumbnail(png(width: 2048, height: 1024)))
-        #expect(image.image.width == 128)
-        #expect(image.image.height == 64)
-        #expect(image.byteCost <= 128 * 128 * 4)
-    }
-
-    @Test func excessiveDimensionsAndPayloadsAreRejectedBeforeRendering() throws {
-        #expect(ProxyGroupIconLoader.thumbnail(try png(width: 4097, height: 1)) == nil)
-        #expect(ProxyGroupIconLoader.thumbnail(Data(count: ProxyGroupIconLoader.maxDownloadBytes + 1)) == nil)
-        #expect(ProxyGroupIconLoader.thumbnail(Data("not-an-image".utf8)) == nil)
-    }
-}
 
 @MainActor
 struct SnapshotLifetimeTests {

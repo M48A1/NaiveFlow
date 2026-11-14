@@ -22,10 +22,6 @@ extension OutputBuffer {
         return self.writeFrameType(.ping)
     }
 
-    mutating func writeHandshakeDone() -> Bool {
-        return self.writeFrameType(.handshakeDone)
-    }
-
     mutating func writeACK(_ ack: ACKFrame) -> Bool {
         return self.rewindOnFailure { buffer in
             var isWritten = buffer.writeFrameType(ack.ecnCounts == nil ? .ack : .ackECN)

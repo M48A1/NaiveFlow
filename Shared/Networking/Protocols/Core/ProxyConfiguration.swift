@@ -338,16 +338,6 @@ nonisolated struct ProxyConfiguration: Identifiable, Hashable, Codable, Sendable
         )
     }
     
-    func contentEquals(_ other: ProxyConfiguration) -> Bool {
-        name == other.name &&
-        serverAddress == other.serverAddress &&
-        serverPort == other.serverPort &&
-        outbound == other.outbound &&
-        chain == other.chain &&
-        blockQUIC == other.blockQUIC &&
-        underlyingProxy == other.underlyingProxy
-    }
-
     // MARK: - Codable
 
     private enum CodingKeys: String, CodingKey {

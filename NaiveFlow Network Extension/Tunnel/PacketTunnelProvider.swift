@@ -202,15 +202,6 @@ nonisolated class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Senda
         }
     }
 
-    private func resolveStartConfiguration() -> ProxyConfiguration? {
-        do {
-            return try ActiveConfiguration.load()
-        } catch {
-            logger.report(NaiveFlowError.store(.corrupted(.configurations, detail: NaiveFlowError.describe(error))))
-            return nil
-        }
-    }
-
     // MARK: - Tunnel Settings
 
     private let discoveredMTU = Mutex<Int?>(nil)

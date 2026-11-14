@@ -136,8 +136,6 @@ nonisolated struct ConfigurationDocument: Equatable, Sendable {
         let value: String
         let raw: String
         let comment: String?
-
-        var isDirective: Bool { key == nil }
     }
 
     struct Section: Equatable, Sendable {

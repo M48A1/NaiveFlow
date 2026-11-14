@@ -30,12 +30,6 @@ nonisolated struct ParsedConfiguration: Equatable, Sendable {
     /// Raw header text of sections this build does not model.
     var unsupportedSections: [String] = []
 
-    var hasContent: Bool {
-        !general.isEmpty || !proxies.isEmpty || !proxyGroups.isEmpty || !rules.isEmpty
-            || !geoIP.isEmpty || !geoSite.isEmpty || !mitmSets.isEmpty || finalRule != nil || !hosts.isEmpty || !mitm.isEmpty || !scripts.isEmpty
-            || !rewrites.isEmpty || !chains.isEmpty
-    }
-
     func proxy(named name: String) -> ParsedProxy? {
         proxies.first { $0.name == name }
     }
@@ -163,8 +157,6 @@ nonisolated struct ParsedProxyGroup: Equatable, Sendable, Identifiable {
     let raw: String
 
     var id: String { name }
-
-    var isWellFormed: Bool { kind != nil && !members.isEmpty }
 }
 
 // MARK: - Rule

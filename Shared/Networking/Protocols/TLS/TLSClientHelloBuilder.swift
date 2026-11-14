@@ -179,9 +179,6 @@ nonisolated struct TLSClientHelloBuilder {
         return ext(0x0033, payload)
     }
 
-    /// 0x3374 (13172) — Next Protocol Negotiation (legacy).
-    private static func npnExt() -> Data { ext(0x3374) }
-
     /// 0x4469 (17513) — Application settings (ALPS, old codepoint).
     private static func applicationSettingsExt(_ protocols: [String]) -> Data {
         var list = Data()
@@ -209,9 +206,6 @@ nonisolated struct TLSClientHelloBuilder {
         payload.append(list)
         return ext(0x44CD, payload)
     }
-
-    /// 0x754F (30031) — Fake Channel ID (old extension ID).
-    private static func fakeChannelIDOldExt() -> Data { ext(0x754F) }
 
     /// 0xFE0D — GREASE Encrypted Client Hello.
     private static func greaseECHExt(random: Data, kdfId: UInt16, aeadId: UInt16, payloadLen: Int) -> Data {

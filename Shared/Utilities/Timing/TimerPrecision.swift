@@ -35,13 +35,6 @@ nonisolated enum TimerPrecision: Sendable, Hashable {
         }
     }
 
-    var isCoarse: Bool {
-        switch self {
-        case .exact, .prompt: false
-        case .relaxed, .lazy: true
-        }
-    }
-
     func aligned(_ instant: MonotonicClock.Instant) -> MonotonicClock.Instant {
         guard let grid, grid > .zero else { return instant }
         let step = UInt64(grid.nanosecondsClamped)

@@ -48,12 +48,6 @@ nonisolated enum ConfigurationValidator {
         )
     }
 
-    /// Derived from the settings catalog so the parser and the compiler can never
-    /// disagree about which `[General]` keys exist.
-    static var knownGeneralKeys: Set<String> {
-        ConfigurationSettings.names
-    }
-
     static let knownMITMKeys: Set<String> = [
         "enable",
         "hostname",

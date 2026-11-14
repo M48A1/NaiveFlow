@@ -104,10 +104,6 @@ nonisolated final class MITMHTTP2Rewriter: Sendable {
         applyResponseHeaderRules(headers, verdicts: verdicts)
     }
 
-    static func requestPath(in headers: [(name: String, value: String)]) -> String? {
-        HTTPHeader.firstValue(in: headers, named: ":path")
-    }
-
     func requestSynthesizedResponse(gates: RequestHeadGates) -> MITMScriptEngine.SynthesizedResponse? {
         for (index, rule) in requestRules.enumerated() {
             guard case .rewrite(let action) = rule.operation else { continue }
