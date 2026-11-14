@@ -1,0 +1,6 @@
+#!name=Demo · Request Headers
+#!desc=Preview a custom request header. Disabled by default.
+[Header Rewrite]
+request, ^https://headers.demo.example/, add, X-UI-Demo, preview
+[MITM]
+hostname = headers.demo.example

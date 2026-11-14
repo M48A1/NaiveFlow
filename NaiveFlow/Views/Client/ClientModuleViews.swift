@@ -24,7 +24,12 @@ struct ClientModulesView: View {
                         if module.sourceURL != nil { Button("Update", systemImage: "arrow.clockwise") { Task { await model.refreshModule(module) } } }
                         Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = module }
                     }
-                    .swipeActions { Button("Delete", role: .destructive) { pendingDelete = module }; Button("Edit") { editing = module }.tint(.blue) }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button("Delete", role: .destructive) { pendingDelete = module }
+                        Button("Edit", systemImage: "pencil") { editing = module }.tint(.blue)
+                        Button("Update", systemImage: "arrow.clockwise") { Task { await model.refreshModule(module) } }
+                            .tint(.orange).disabled(module.sourceURL?.isEmpty != false)
+                    }
                 }
             } footer: { Text("Module rules are saved and applied with the current profile. Configure MITM certificate trust and hostnames before enabling modules.") }
         }

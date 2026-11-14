@@ -1,0 +1,6 @@
+#!name=Demo · URL Redirect
+#!desc=Preview a simple URL redirect. Uses demo domains only.
+[URL Rewrite]
+^https://redirect.demo.example/old https://redirect.demo.example/new 302
+[MITM]
+hostname = redirect.demo.example

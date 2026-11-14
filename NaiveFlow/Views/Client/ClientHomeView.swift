@@ -22,6 +22,7 @@ struct ClientHomeView: View {
     @State private var nodeToEdit: ProxyConfiguration?
 
     private var connected: Bool { tunnel.rawStatus == .connected }
+    private var canToggle: Bool { tunnel.isManagerReady && !tunnel.rawStatus.isTransitioning && (connected || model.hasApplied) }
 
     var body: some View {
         ScrollView {
@@ -124,16 +125,16 @@ struct ClientHomeView: View {
     private var runningCard: some View {
         ClientHomeCard(colors: [Color(red: 0.06, green: 0.47, blue: 0.43), Color(red: 0.13, green: 0.65, blue: 0.51)]) {
             VStack(alignment: .leading, spacing: 18) {
-                NavigationLink { ClientConnectionSettingsView().toolbar(.visible, for: .navigationBar) } label: {
-                    HStack(spacing: 12) {
-                        if tunnel.rawStatus.isTransitioning { ProgressView() }
-                        else { Image(systemName: connected ? "power.circle.fill" : "power.circle").font(.title2) }
-                        Text("NaiveFlow")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(connected ? Color.green : Color.red)
-                        Spacer()
-                    }.contentShape(Rectangle())
-                }.buttonStyle(.plain)
+                HStack(spacing: 12) {
+                    if tunnel.rawStatus.isTransitioning { ProgressView() }
+                    else { Image(systemName: connected ? "power.circle.fill" : "power.circle").font(.title2) }
+                    Text("NaiveFlow")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(connected ? Color.green : Color.red)
+                    Spacer()
+                    Toggle("Proxy Connection", isOn: Binding(get: { connected }, set: { _ in model.operations.tunnel.toggle() }))
+                        .labelsHidden().tint(.teal).disabled(!canToggle || model.isBusy)
+                }
                 HStack(spacing: 30) {
                     traffic(symbol: "arrow.up", total: stats.bytesOut, rate: stats.uploadBytesPerSecond)
                     traffic(symbol: "arrow.down", total: stats.bytesIn, rate: stats.downloadBytesPerSecond)
@@ -261,27 +262,6 @@ struct ClientHomeView: View {
         }.buttonStyle(.plain)
             .accessibilityValue(expanded.wrappedValue ? "Expanded" : "Collapsed")
             .accessibilityHint("Tap to expand or collapse details.")
-    }
-}
-
-struct ClientConnectionSettingsView: View {
-    @Environment(ClientModel.self) private var model
-    @Environment(TunnelController.self) private var tunnel
-
-    private var connected: Bool { tunnel.rawStatus == .connected }
-    private var canToggle: Bool { tunnel.isManagerReady && !tunnel.rawStatus.isTransitioning && (connected || model.hasApplied) }
-
-    var body: some View {
-        Form {
-            Section {
-                Toggle("Proxy Connection", isOn: Binding(get: { connected }, set: { _ in model.operations.tunnel.toggle() }))
-                    .tint(.teal).disabled(!canToggle || model.isBusy)
-                if tunnel.rawStatus.isTransitioning { ProgressView("Connecting") }
-            } footer: {
-                if !model.hasApplied { Text("Select and apply a profile to connect.") }
-            }
-        }
-        .navigationTitle("Proxy Connection").navigationBarTitleDisplayMode(.inline)
     }
 }
 

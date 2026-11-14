@@ -1,0 +1,6 @@
+#!name=Demo · Response Cleanup
+#!desc=Preview response body editing. Disabled by default.
+[Body Rewrite]
+response, ^https://cleanup.demo.example/, json-delete, $.ads
+[MITM]
+hostname = cleanup.demo.example
