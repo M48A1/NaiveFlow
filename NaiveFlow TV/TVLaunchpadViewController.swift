@@ -30,8 +30,6 @@ class TVLaunchpadViewController: UIViewController {
 
     private let gradientLayer = CAGradientLayer()
 
-    private let contentStack = UIStackView()
-
     private let powerButton = UIButton(type: .custom)
     private let powerIcon = UIImageView()
     private let activityIndicator = UIActivityIndicatorView(style: .large)
@@ -39,9 +37,7 @@ class TVLaunchpadViewController: UIViewController {
     private let statusLabel = UILabel()
 
     private let statsButton = UIButton(type: .custom)
-    private let uploadIcon = UIImageView()
     private let uploadLabel = UILabel()
-    private let downloadIcon = UIImageView()
     private let downloadLabel = UILabel()
 
     private let configButton = UIButton(type: .custom)

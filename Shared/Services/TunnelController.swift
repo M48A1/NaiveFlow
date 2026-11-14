@@ -253,14 +253,6 @@ extension TunnelController: LatencyTransport {
     var isTunnelActive: Bool { rawStatus == .connected }
 }
 
-#if DEBUG
-extension TunnelController {
-    func setStatusForPreview(_ status: NEVPNStatus) {
-        rawStatus = status
-    }
-}
-#endif
-
 extension NEVPNStatus {
     var isTransitioning: Bool {
         self == .connecting || self == .disconnecting || self == .reasserting

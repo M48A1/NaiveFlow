@@ -397,15 +397,6 @@ class TVProxyEditorViewController: UITableViewController {
         }
     }
 
-    private var securityDisplayValue: String {
-        switch vlessSecurity {
-        case "none": String(localized: "None")
-        case "tls": "TLS"
-        case "reality": "Reality"
-        default: vlessSecurity
-        }
-    }
-
     private var downloadSecurityDisplayValue: String {
         switch vlessXHTTPDownloadSecurity {
         case "none": String(localized: "None")

@@ -30,9 +30,6 @@ nonisolated struct Deadline: Sendable, Hashable {
         precision.tolerance(forRemaining: now.duration(to: scheduledAt))
     }
 
-    func isDue(at now: MonotonicClock.Instant = MonotonicClock.instant) -> Bool {
-        scheduledAt <= now
-    }
 }
 
 extension Task where Success == Never, Failure == Never {

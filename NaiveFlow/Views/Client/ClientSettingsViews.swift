@@ -22,8 +22,6 @@ struct ClientSettingsView: View {
                     row("MITM", symbol: "shield.lefthalf.filled", color: .purple) { MITMCertificateView() }
                     separator
                     row("Modules", symbol: "puzzlepiece.extension.fill", color: .purple) { ClientModulesView() }
-                    separator
-                    row("Hostname", symbol: "house.fill", color: .purple) { ClientHostnamesView() }
                 }
                 section("Diagnostics") {
                     row("Logs", symbol: "doc.text.fill", color: .orange) { ClientLogsView() }
@@ -209,27 +207,6 @@ struct ClientActiveProfileEditor: View {
     var body: some View {
         if let profile = model.profile { ClientProfileEditorView(profile: profile) }
         else { ContentUnavailableView("No Profile", systemImage: "doc") }
-    }
-}
-
-struct ClientHostnamesView: View {
-    @Environment(ClientModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
-    @State private var hostnames = ""
-    var body: some View {
-        Form {
-            Section {
-                TextEditor(text: $hostnames).font(.system(.body, design: .monospaced)).frame(minHeight: 240)
-                    .autocorrectionDisabled().textInputAutocapitalization(.never).accessibilityLabel("MITM Hostnames, One per Line")
-            } header: { Text("Intercepted Hostnames") } footer: { Text("Enter one domain suffix per line, e.g. example.com. MITM applies only to configured domains and requires an installed, trusted certificate.") }
-            Section { Button("Save and Apply") { Task {
-                let names = hostnames.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-                let source = model.operatingText
-                let text = ClientDocumentEditing.set(source, section: .mitm, key: "hostname", value: names.isEmpty ? nil : names.map(ClientDocumentEditing.token).joined(separator: ", "))
-                if await model.commit(text) { dismiss() }
-            } }.disabled(model.isBusy) }
-        }.clientKeyboardDone().navigationTitle("Hostname").navigationBarTitleDisplayMode(.inline)
-        .task { hostnames = (model.parsed.mitm.list("hostname") ?? []).joined(separator: "\n") }
     }
 }
 

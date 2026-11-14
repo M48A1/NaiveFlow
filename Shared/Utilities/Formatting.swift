@@ -14,11 +14,6 @@ nonisolated enum Formatting {
         bytes.formatted(byteCountStyle)
     }
 
-    static func formatBytesPerSecond(_ bytesPerSecond: Int64?) -> String {
-        guard let bytesPerSecond else { return "—" }
-        return String(localized: "\(formatBytes(bytesPerSecond))/s")
-    }
-
     static func formatMilliseconds(_ ms: Int?) -> String {
         guard let ms else { return "—" }
         return String(localized: "\(ms) ms")

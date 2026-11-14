@@ -158,29 +158,3 @@ class ConnectionStats {
         uploadBytesPerSecond = Int64(Double(bytesOut - last.bytesOut) / seconds)
     }
 }
-
-#if DEBUG
-extension ConnectionStats {
-    static func previewSeeded() -> ConnectionStats {
-        let model = ConnectionStats()
-        model.routes = [
-            RouteTrafficEntry(target: .proxy(UUID()), bytesIn: 1_600_000_000, bytesOut: 280_000_000),
-            RouteTrafficEntry(target: .direct, bytesIn: 240_000_000, bytesOut: 40_000_000),
-        ]
-        model.bytesIn = model.routes.reduce(0) { $0 + $1.bytesIn }
-        model.bytesOut = model.routes.reduce(0) { $0 + $1.bytesOut }
-        model.tcpConnectionCount = 5
-        model.udpConnectionCount = 64
-        model.memoryBytes = 31_000_000
-        model.wakeSeconds = 3 * 3600 + 24 * 60
-        model.sleepSeconds = 47 * 60
-        model.dialMs = 62
-        model.handshakeMs = 200
-        model.avgDialMs = 50
-        model.avgHandshakeMs = 150
-        model.uploadBytesPerSecond = 1_200_000
-        model.downloadBytesPerSecond = 5_100_000
-        return model
-    }
-}
-#endif

@@ -278,24 +278,8 @@ final class ClientModel {
         _ = await commit(text, subscriptions: subscriptions)
     }
 
-    func refreshNodeSubscription(_ subscription: ClientNodeSubscription) async -> Bool {
-        await manageResource(.update(.subscription(subscription)))
-    }
-
-    func saveNodeSubscription(_ subscription: ClientNodeSubscription) async -> Bool {
-        await manageResource(.save(.subscription(subscription)))
-    }
-
     func refreshNodeSubscriptions(ids: Set<UUID>? = nil, fetch: ClientResourceManager.FetchText? = nil) async -> Bool {
         await manageResource(.update(.subscriptions(ids: ids)), fetch: fetch)
-    }
-
-    func refreshRuleSets(source: String? = nil) async -> Bool {
-        await manageResource(.update(.ruleSets(sources: source.map { Set([$0]) })))
-    }
-
-    func deleteRuleSet(_ rule: ParsedRule) async -> Bool {
-        await manageResource(.delete(.ruleSet(rule)))
     }
 
     func deleteNode(_ name: String) async {
@@ -373,10 +357,6 @@ final class ClientModel {
 
     func deleteModule(_ module: ClientModule) async {
         await manageResource(.delete(.module(module.id)))
-    }
-
-    func refreshModule(_ module: ClientModule) async {
-        await manageResource(.update(.modules(ids: [module.id])))
     }
 
     func refreshAllModules(fetch: ClientResourceManager.FetchText? = nil) async -> Bool {

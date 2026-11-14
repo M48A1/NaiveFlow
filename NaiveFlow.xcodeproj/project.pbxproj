@@ -167,7 +167,7 @@
 				Networking/Protocols/Core/ProxyRequest.swift,
 				Networking/Protocols/Core/ProxyUserAgent.swift,
 				Networking/Protocols/Core/SerialSender.swift,
-				Networking/Protocols/Core/TerminationLatch.swift,
+				Networking/Protocols/Core/OneShotLatch.swift,
 				Networking/Protocols/Core/TransportPool.swift,
 				Networking/Protocols/Core/TransportReclaim.swift,
 				Networking/Protocols/Core/TunneledTransport.swift,
@@ -309,7 +309,6 @@
 				Networking/Protocols/VLESS/XHTTP/XHTTPHeaderBlockAccumulator.swift,
 				Networking/Protocols/VLESS/XHTTP/XHTTPProxyConnection.swift,
 				Networking/Routing/FlatLabelTrie.swift,
-				Networking/Routing/RouteMatching.swift,
 				Networking/Transport/ByteTransport.swift,
 				Networking/Transport/ByteTransportAdapters.swift,
 				Networking/Transport/DialDeadline.swift,
@@ -1363,6 +1362,7 @@
 		D1000000000000000000000E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CODE_SIGN_ENTITLEMENTS = "NaiveFlow/NaiveFlow.entitlements";
 				CURRENT_PROJECT_VERSION = 414;
@@ -1382,6 +1382,7 @@
 		D1000000000000000000000F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CODE_SIGN_ENTITLEMENTS = "NaiveFlow/NaiveFlow.entitlements";
 				CURRENT_PROJECT_VERSION = 414;
