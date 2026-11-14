@@ -14,11 +14,6 @@ nonisolated enum Formatting {
         bytes.formatted(byteCountStyle)
     }
 
-    static func formatMilliseconds(_ ms: Int?) -> String {
-        guard let ms else { return "—" }
-        return String(localized: "\(ms) ms")
-    }
-
     static func formatDuration(_ seconds: TimeInterval) -> String {
         Duration.seconds(seconds).formatted(
             .units(allowed: [.hours, .minutes, .seconds], width: .narrow, maximumUnitCount: 2)

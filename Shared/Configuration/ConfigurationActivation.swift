@@ -91,14 +91,6 @@ nonisolated struct ConfigurationActivation: Sendable {
         try? FileManager.default.removeItem(at: draftURL)
     }
 
-    /// Compiles the stored draft; used for the editor's live diagnostics before
-    /// the first keystroke of a session.
-    func processDraft(
-        capabilities: ConfigurationValidator.Capabilities = .current
-    ) -> TextConfigurationPipeline.Result {
-        TextConfigurationPipeline.process(text: draft(), capabilities: capabilities)
-    }
-
     private func createDirectory() throws {
         do {
             try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
@@ -183,12 +175,6 @@ nonisolated struct ConfigurationActivation: Sendable {
     }
 
     // MARK: - Rollout state
-
-    /// What the extension last reported running, or `nil` while it has not
-    /// confirmed anything.
-    func engineConfirmation() -> ConfigurationEngineConfirmation? {
-        store.confirmation()
-    }
 
     /// True when the extension confirmed the snapshot the manifest points at.
     /// The editor shows "not yet confirmed" until then, instead of assuming a

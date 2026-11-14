@@ -13,24 +13,11 @@ actor AWNotificationCenter {
 
     enum Notification {
         nonisolated(unsafe) static let configurationVersionChanged = "\(AWCore.Identifier.bundle).configurationVersion" as CFString
-        nonisolated(unsafe) static let certificatePolicyChanged = "\(AWCore.Identifier.bundle).certificatePolicyChanged" as CFString
     }
 
     // MARK: - Public API
 
     static func notifyConfigurationVersionChanged() { post(Notification.configurationVersionChanged) }
-
-
-
-
-
-
-
-    static func notifyCertificatePolicyChanged() {
-        post(Notification.certificatePolicyChanged)
-    }
-
-
 
     // MARK: - Throttled Posting
 

@@ -22,12 +22,6 @@ nonisolated extension ConfigurationDocument {
         lines.first { $0.number == number }
     }
 
-    /// Whether the line is a whole-line comment (`# …` or `// …`).
-    func isCommented(_ number: Int) -> Bool {
-        guard let stored = line(number) else { return false }
-        return stored.content.isEmpty && stored.comment != nil
-    }
-
     func replacingLine(_ number: Int, with content: String) -> ConfigurationDocument {
         var rawLines = rawLineTexts
         guard rawLines.indices.contains(number - 1) else { return self }
@@ -54,27 +48,6 @@ nonisolated extension ConfigurationDocument {
         return document(from: rawLines)
     }
 
-    /// Swaps a line's comment state, keeping its indentation.
-    func togglingComment(_ number: Int) -> ConfigurationDocument {
-        guard let stored = line(number), !stored.isBlank else { return self }
-        var rawLines = rawLineTexts
-        let index = number - 1
-        guard rawLines.indices.contains(index) else { return self }
-
-        let raw = rawLines[index]
-        let indent = String(raw.prefix { $0 == " " || $0 == "\t" })
-        let body = raw.dropFirst(indent.count)
-
-        if body.hasPrefix("#") || body.hasPrefix("//") {
-            var stripped = body.dropFirst(body.hasPrefix("#") ? 1 : 2)
-            if stripped.hasPrefix(" ") { stripped = stripped.dropFirst() }
-            rawLines[index] = indent + String(stripped)
-        } else {
-            rawLines[index] = indent + "# " + body
-        }
-        return document(from: rawLines)
-    }
-
     // MARK: - Rules
 
     /// Appends a rule to `[Rule]`, or inserts it after `lineNumber` when that line
@@ -89,11 +62,6 @@ nonisolated extension ConfigurationDocument {
             return withHeader.appendingLine(rule)
         }
         return insertingLine(rule, after: section.entries.last?.line ?? section.headerLine)
-    }
-
-    func removingRule(at lineNumber: Int) -> ConfigurationDocument {
-        guard isRuleLine(lineNumber) else { return self }
-        return removingLine(lineNumber)
     }
 
     /// Moves a rule by `offset` positions inside `[Rule]`. Offsets that would
@@ -131,12 +99,6 @@ nonisolated extension ConfigurationDocument {
 
     func settingValue(_ value: Bool, forKey key: String, in kind: SectionKind) -> ConfigurationDocument {
         settingValue(value ? "true" : "false", forKey: key, in: kind)
-    }
-
-    func removingEntry(_ key: String, in kind: SectionKind) -> ConfigurationDocument {
-        guard let entry = entries(kind).first(where: { $0.key?.caseInsensitiveCompare(key) == .orderedSame })
-        else { return self }
-        return removingLine(entry.line)
     }
 
     // MARK: - Helpers

@@ -45,12 +45,6 @@ nonisolated enum DNSUpstream: Sendable, Equatable {
     static let defaultPlain = DNSUpstream.plain(host: defaultPlainServer, port: defaultPort)
     static let defaultDoH = DNSUpstream.doh(URL(string: defaultDoHURL)!)
     
-    static func forwardingServers(preferring preferred: DNSUpstream) -> [String] {
-        let builtIn = ["1.1.1.1", "1.0.0.1"]
-        guard case .plain(let host, _) = preferred, canonicalIPv4(host) != nil else { return builtIn }
-        return [host] + builtIn.filter { $0 != host }
-    }
-
     init(mode: DNSMode, plainServer: String, dohURL: String) {
         switch mode {
         case .default: self = .system
@@ -90,7 +84,6 @@ nonisolated enum DNSUpstream: Sendable, Equatable {
         return port
     }
 
-    
     static func canonicalIPv4(_ host: String) -> String? {
         var address = in_addr()
         guard inet_pton(AF_INET, host, &address) == 1 else { return nil }

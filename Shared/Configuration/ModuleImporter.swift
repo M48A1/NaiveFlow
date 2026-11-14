@@ -104,14 +104,6 @@ enum ModuleImporter {
         return data
     }
 
-    static func fetchBody(from url: URL) async throws -> String {
-        let data = try await fetchData(from: url)
-        guard let body = String(data: data, encoding: .utf8) else {
-            throw ModuleImportError.undecodableBody
-        }
-        return body
-    }
-
     static func fallbackName(for url: URL) -> String {
         let base = url.deletingPathExtension().lastPathComponent
         return base.isEmpty ? "Subscription" : base

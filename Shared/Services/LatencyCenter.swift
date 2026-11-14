@@ -112,22 +112,6 @@ final class LatencyCenter {
         }
     }
 
-    func pruneLatencyState(liveConfigurationIds: Set<UUID>) {
-        for (id, task) in singleLatencyTasks where !liveConfigurationIds.contains(id) {
-            task.cancel()
-            singleLatencyTasks[id] = nil
-        }
-        let staleLive = latencyResults.keys.filter { !liveConfigurationIds.contains($0) }
-        for id in staleLive { latencyResults[id] = nil }
-        let staleStored = storedLatencyResults.keys.filter { !liveConfigurationIds.contains($0) }
-        if !staleStored.isEmpty {
-            for id in staleStored { storedLatencyResults[id] = nil }
-            if let data = Self.encodeLatencyResults(storedLatencyResults) {
-                AWCore.setLatencyResultsData(data)
-            }
-        }
-    }
-
     private static func encodeLatencyResults(_ results: [UUID: LatencyResult]) -> Data? {
         try? JSONEncoder().encode(results.mapValues { LatencyTestResponse($0) })
     }

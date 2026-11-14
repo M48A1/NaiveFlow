@@ -223,14 +223,6 @@ nonisolated struct Module: Codable, Equatable, Identifiable, SoftDeletable {
 
     var ruleSetCount: Int { routingRuleSets.count + mitmRuleSets.count }
 
-    func routingRuleSet(id: UUID) -> ModuleRoutingRuleSet? {
-        routingRuleSets.first { $0.id == id }
-    }
-
-    func mitmRuleSet(id: UUID) -> ModuleMITMRuleSet? {
-        mitmRuleSets.first { $0.id == id }
-    }
-    
     var mitmParameters: [MITMParameter] {
         var seen: Set<String> = []
         var merged: [MITMParameter] = []
@@ -240,18 +232,6 @@ nonisolated struct Module: Codable, Equatable, Identifiable, SoftDeletable {
         return merged
     }
     
-    func mitmParameterValue(name: String) -> String? {
-        for ruleSet in mitmRuleSets {
-            guard let definition = ruleSet.parameters.first(where: { $0.name == name }) else { continue }
-            return definition.effectiveValue(ruleSet.parameterValues[name])
-        }
-        return nil
-    }
-    
-    func qualifiedName(for ruleSetName: String) -> String {
-        "\(name) · \(ruleSetName)"
-    }
-
     static func validSubscriptionURL(from rawValue: String) -> URL? {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed),
